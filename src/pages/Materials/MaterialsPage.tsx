@@ -129,6 +129,7 @@ export default function MaterialsPage() {
                           <div className="font-semibold mb-1">{m.sku}</div>
                           <div className="text-sm text-slate-600 mb-2">Poprečni presek profila (mere u mm)</div>
                           <table className="text-sm"><tbody>{profileGeometry(spec).facts.map((f) => <tr key={f.label}><td className="pr-4 py-0.5 text-muted">{f.label}</td><td className="py-0.5 font-medium tabular-nums">{f.value}</td></tr>)}</tbody></table>
+                          {profileGeometry(spec).note && <p className="text-[12px] text-muted mt-2 max-w-[300px]" data-testid="drawing-note">{profileGeometry(spec).note}</p>}
                         </div>
                       </div>
                     </td>

@@ -715,18 +715,22 @@ test('materijali: klik na materijal sa crtežom otvara crtež ispod reda; ostali
   await page.goto('/materijali');
   await expect(page.getByTestId('profile-drawing')).toHaveCount(0);
   const withDrawing = page.locator('[data-testid="material-row"][data-has-drawing="true"]');
-  await expect(withDrawing).toHaveCount(2);
-  await withDrawing.first().click();
+  await expect(withDrawing).toHaveCount(5); // KV000007, KV000016, KZ000003, KZ000004, KU000002
+  const row = (sku: string) => withDrawing.filter({ hasText: sku });
+  await row('KV000007').click();
   await expect(page.getByTestId('profile-drawing')).toBeVisible();
-  await expect(page.getByTestId('material-drawing-row')).toContainText('KZ000003');
+  await expect(page.getByTestId('material-drawing-row')).toContainText('KV000007');
+  await expect(page.getByTestId('material-drawing-row')).toContainText('A — širina');
   // klik na polje sa cenom ne otvara/zatvara crtež
-  await withDrawing.first().getByLabel(/^Cena:/).click();
+  await row('KV000007').getByLabel(/^Cena:/).click();
   await expect(page.getByTestId('profile-drawing')).toBeVisible();
   // drugi materijal zamenjuje prvi, ponovni klik zatvara
-  await withDrawing.nth(1).click();
+  await row('KU000002').click();
   await expect(page.getByTestId('material-drawing-row')).toContainText('KU000002');
   await expect(page.getByTestId('profile-drawing')).toHaveCount(1);
-  await withDrawing.nth(1).click();
+  await row('KZ000003').click();
+  await expect(page.getByTestId('material-drawing-row')).toContainText('KZ000003');
+  await row('KZ000003').click();
   await expect(page.getByTestId('profile-drawing')).toHaveCount(0);
   // materijal bez crteža: klik ne radi ništa
   await page.getByTestId('material-row').first().click();
