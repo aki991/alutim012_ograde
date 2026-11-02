@@ -32,7 +32,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
   useOutside(userRef, () => setUser(false));
 
   // prijavljen korisnik: ime iz naloga, a ako ga nema deo emaila; bez prijave ostaje lokalno ime iz podešavanja
-  const displayName = auth.enabled ? (auth.name ?? auth.email?.split('@')[0] ?? settings.userName) : settings.userName;
+  const displayName = auth.guest ? 'Gost' : auth.enabled ? (auth.name ?? auth.email?.split('@')[0] ?? settings.userName) : settings.userName;
   const initials = initialsOf(displayName);
 
   return (
@@ -83,7 +83,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
               </div>
               {auth.enabled && (
                 <div className="p-1.5 border-t border-line">
-                  <button className="w-full flex items-center gap-2.5 h-9 px-3 rounded-lg hover:bg-[#fef3f2] text-sm font-medium text-[#b42318]" role="menuitem" data-testid="btn-logout" onClick={() => { setUser(false); void auth.signOut(); }}><LogOut size={16} />Odjavi se</button>
+                  <button className="w-full flex items-center gap-2.5 h-9 px-3 rounded-lg hover:bg-[#fef3f2] text-sm font-medium text-[#b42318]" role="menuitem" data-testid="btn-logout" onClick={() => { setUser(false); void auth.signOut(); }}><LogOut size={16} />{auth.guest ? 'Izađi iz gostujućeg režima' : 'Odjavi se'}</button>
                 </div>
               )}
             </div>

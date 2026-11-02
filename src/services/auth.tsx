@@ -5,6 +5,9 @@ import { authEnabled, loginErrorMessage, supabase } from './supabase';
 interface AuthState {
   /** prijava je uključena (Supabase je podešen) */
   enabled: boolean;
+  /** rad bez prijave (samo bez interneta): lokalni podaci ovog pregledača, bez naloga */
+  guest: boolean;
+  enterGuest: () => void;
   /** čeka se provera sačuvane sesije */
   loading: boolean;
   session: Session | null;
@@ -19,12 +22,18 @@ interface AuthState {
   updateName: (name: string) => Promise<string | null>;
 }
 
-const Ctx = createContext<AuthState>({ enabled: false, loading: false, session: null, email: null, name: null, role: null, signIn: async () => null, signOut: async () => undefined, updateName: async () => null });
+const Ctx = createContext<AuthState>({ enabled: false, loading: false, guest: false, enterGuest: () => undefined, session: null, email: null, name: null, role: null, signIn: async () => null, signOut: async () => undefined, updateName: async () => null });
+
+const GUEST_KEY = 'alutim-guest';
+const readGuest = (): boolean => { try { return sessionStorage.getItem(GUEST_KEY) === '1'; } catch { return false; } };
+const writeGuest = (on: boolean) => { try { if (on) sessionStorage.setItem(GUEST_KEY, '1'); else sessionStorage.removeItem(GUEST_KEY); } catch { /* bez trajnog čuvanja */ } };
 
 /** Stanje prijave: sačuvana sesija se čita pri pokretanju i prati se promena (prijava, odjava, istek). */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(authEnabled);
+  // gost važi do zatvaranja prozora (sessionStorage), pa se pri sledećem pokretanju traži prijava
+  const [guest, setGuest] = useState(readGuest);
 
   useEffect(() => {
     if (!supabase) return;
@@ -44,10 +53,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const enterGuest = useCallback(() => { writeGuest(true); setGuest(true); }, []);
+
   const signOut = useCallback(async () => {
-    if (supabase) await supabase.auth.signOut();
+    writeGuest(false);
+    setGuest(false);
+    if (supabase && !guest) {
+      try { await supabase.auth.signOut(); } catch { /* bez interneta se sesija ipak briše lokalno */ }
+    }
     setSession(null);
-  }, []);
+  }, [guest]);
 
   const updateName = useCallback(async (name: string): Promise<string | null> => {
     if (!supabase) return 'Prijava nije podešena.';
@@ -60,8 +75,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthState>(() => {
     const meta = (session?.user.user_metadata ?? {}) as { full_name?: string; name?: string };
     const role = (session?.user.app_metadata as { role?: string } | undefined)?.role ?? null;
-    return { enabled: authEnabled, loading, session, email: session?.user.email ?? null, name: (meta.full_name ?? meta.name ?? '').trim() || null, role, signIn, signOut, updateName };
-  }, [loading, session, signIn, signOut, updateName]);
+    return { enabled: authEnabled, loading, guest: guest && !session, enterGuest, session, email: session?.user.email ?? null, name: (meta.full_name ?? meta.name ?? '').trim() || null, role, signIn, signOut, updateName };
+  }, [loading, guest, enterGuest, session, signIn, signOut, updateName]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

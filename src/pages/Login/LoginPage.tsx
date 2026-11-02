@@ -1,18 +1,27 @@
-import { Eye, EyeOff, Loader2, LogIn } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import { Eye, EyeOff, Loader2, LogIn, WifiOff } from 'lucide-react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LogoMark } from '../../components/layout/Logo';
 import { useAuth } from '../../services/auth';
 
 /** Prijava: samo email i lozinka (nalozi se prave u Supabase-u; nema samostalne registracije). */
 export default function LoginPage() {
-  const { enabled, signIn } = useAuth();
+  const { enabled, signIn, enterGuest } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [show, setShow] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [online, setOnline] = useState(() => navigator.onLine);
+  const [netFail, setNetFail] = useState(false);
+  useEffect(() => {
+    const on = () => setOnline(true); const off = () => setOnline(false);
+    window.addEventListener('online', on); window.addEventListener('offline', off);
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
+  }, []);
+  // ulaz bez prijave nudi se samo kad nema veze (ili server ne odgovara): sa internetom se prijava traži uvek
+  const offline = enabled && (!online || netFail);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -22,6 +31,7 @@ export default function LoginPage() {
     setError(null);
     const err = await signIn(email, password);
     setBusy(false);
+    setNetFail(err !== null && err.startsWith('Nema veze'));
     if (err) { setError(err); setPassword(''); }
   };
 
@@ -68,6 +78,12 @@ export default function LoginPage() {
           <button type="submit" className="btn btn-primary w-full !py-3 text-[15px]" disabled={busy || !enabled} data-testid="login-submit">
             {busy ? <Loader2 size={18} className="animate-spin" /> : <LogIn size={18} />}{busy ? 'Prijavljivanje…' : 'Prijavi se'}
           </button>
+          {offline && (
+            <div className="mt-4 pt-4 border-t border-line" data-testid="guest-box">
+              <button type="button" className="btn w-full" onClick={enterGuest} data-testid="btn-guest"><WifiOff size={17} />Nastavi bez interneta (gost)</button>
+              <p className="text-[12px] text-muted text-center mt-2">Radi se sa podacima sačuvanim u ovom pregledaču. Prijava se traži pri sledećem pokretanju.</p>
+            </div>
+          )}
           <p className="text-[12px] text-muted text-center mt-4">Nalog dobijate od administratora.</p>
         </form>
       </div>

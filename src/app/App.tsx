@@ -32,7 +32,7 @@ export default function App() {
 
   // prijava je uključena (Supabase podešen): bez sesije se vidi samo stranica za prijavu, na istoj adresi
   if (auth.enabled && auth.loading) return <div className="h-full grid place-items-center text-muted" data-testid="loading">Provera prijave...</div>;
-  if (auth.enabled && !auth.session) return <LoginPage />;
+  if (auth.enabled && !auth.session && !auth.guest) return <LoginPage />;
   if (!auth.enabled && pathname === '/prijava') return <LoginPage />;
 
   if (!ready) {

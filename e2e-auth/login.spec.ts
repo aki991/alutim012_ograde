@@ -55,3 +55,31 @@ test('pogrešna lozinka, previše pokušaja, pa uspešna prijava, ostaje posle o
   await page.reload();
   await expect(page.getByTestId('login-form')).toBeVisible();
 });
+
+test('bez interneta: ulaz kao gost; sa internetom dugme za gosta se ne nudi', async ({ page, context }) => {
+  await page.goto('/materijali');
+  await expect(page.getByTestId('login-form')).toBeVisible();
+  await expect(page.getByTestId('guest-box')).toHaveCount(0);
+
+  await context.setOffline(true);
+  await expect(page.getByTestId('btn-guest')).toBeVisible();
+  await page.getByTestId('btn-guest').click();
+  await expect(page.getByRole('heading', { name: 'Materijali i cene' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Korisnički meni' })).toContainText('G');
+
+  // gost ostaje posle osvežavanja; meni nudi izlaz, a Podešavanja ne traže nalog
+  await page.getByRole('button', { name: 'Korisnički meni' }).click();
+  await expect(page.getByTestId('user-name')).toHaveText('Gost');
+  await page.keyboard.press('Escape');
+  await context.setOffline(false);
+  await page.reload();
+  await page.getByRole('link', { name: 'Podešavanja' }).first().click();
+  await expect(page.getByTestId('account-name')).toHaveCount(0);
+  await expect(page.getByTestId('set-company')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Korisnički meni' }).click();
+  await page.getByTestId('btn-logout').click();
+  await expect(page.getByTestId('login-form')).toBeVisible();
+  await context.setOffline(false);
+  await expect(page.getByTestId('guest-box')).toHaveCount(0);
+});
