@@ -22,6 +22,19 @@ npm run test:e2e     # E2E testovi (Playwright; sam pravi build i podiže previe
 Stek: React 19, TypeScript, Vite, Tailwind CSS 4, Zustand, React Router, lucide-react, idb (IndexedDB),
 pdfmake (PDF sa fontom Roboto), Three.js + React Three Fiber + Drei (3D, učitava se na zahtev), Vitest, Playwright.
 
+## Prijava (Supabase) i Vercel
+
+Prijava koristi Supabase Auth (email + lozinka). Dok nisu podešene dve promenljive okruženja, aplikacija radi bez prijave.
+
+1. **Ključevi:** u Supabase-u, Project Settings → API, kopirajte *Project URL* i *anon public* ključ.
+   Lokalno ih upišite u `.env.local` (vidi `.env.example`), a na Vercel-u u Project → Settings → Environment Variables
+   (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`), pa uradite Redeploy.
+2. **Nalozi:** Authentication → Users → Add user (email + lozinka, štiklirati „Auto Confirm User").
+3. **Zabrana samostalne registracije:** Authentication → Sign In / Providers → isključiti „Allow new users to sign up".
+   Anon ključ je javan, pa bi inače svako mogao da napravi nalog.
+4. `vercel.json` preusmerava sve adrese na `index.html` (React Router).
+5. Test prijave sa lažnim Supabase serverom: `npm run test:e2e:auth`.
+
 ## Pregled funkcionalnosti
 
 - **Početna** — hero, 4 funkcionalne kartice, 6 popularnih modela (klik otvara novi projekat sa modelom),

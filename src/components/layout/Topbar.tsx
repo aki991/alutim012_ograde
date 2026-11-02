@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppStore, useCurrentProject } from '../../store/useAppStore';
 import { PdfPreviewModal } from '../editor/PdfPreviewModal';
+import { useAuth } from '../../services/auth';
 
 function useOutside(ref: React.RefObject<HTMLElement | null>, close: () => void) {
   useEffect(() => {
@@ -22,6 +23,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
   const current = useCurrentProject();
   const [bell, setBell] = useState(false);
   const [pdfOpen, setPdfOpen] = useState(false);
+  const auth = useAuth();
   const [user, setUser] = useState(false);
   const bellRef = useRef<HTMLDivElement>(null);
   const userRef = useRef<HTMLDivElement>(null);
@@ -61,9 +63,10 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
           </button>
           {user && (
             <div className="absolute right-0 mt-2 w-[220px] card p-2 z-50" role="menu">
-              <div className="px-3 py-2 text-sm"><div className="font-semibold">{settings.userName}</div><div className="text-muted text-xs">{settings.companyName}</div></div>
+              <div className="px-3 py-2 text-sm"><div className="font-semibold">{settings.userName}</div><div className="text-muted text-xs">{settings.companyName}</div>{auth.email && <div className="text-muted text-xs truncate" data-testid="user-email">{auth.email}</div>}</div>
               <button className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-sm" onClick={() => { setUser(false); navigate('/podesavanja'); }}>Podešavanja</button>
               <button className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-sm" onClick={() => { setUser(false); navigate('/pomoc'); }}>Pomoć</button>
+              {auth.enabled && <button className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-sm text-[#b42318]" data-testid="btn-logout" onClick={() => { setUser(false); void auth.signOut(); }}>Odjavi se</button>}
             </div>
           )}
         </div>

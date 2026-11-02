@@ -732,3 +732,12 @@ test('materijali: klik na materijal sa crtežom otvara crtež ispod reda; ostali
   await page.getByTestId('material-row').first().click();
   await expect(page.getByTestId('profile-drawing')).toHaveCount(0);
 });
+
+test('stranica za prijavu: bez podešenog Supabase-a kaže da prijava nije podešena i pušta dalje', async ({ page }) => {
+  await page.goto('/prijava');
+  await expect(page.getByTestId('login-form')).toBeVisible();
+  await expect(page.getByTestId('login-disabled')).toContainText('VITE_SUPABASE_URL');
+  await expect(page.getByTestId('login-submit')).toBeDisabled();
+  await page.getByRole('button', { name: 'Nastavi bez prijave' }).click();
+  await expect(page.getByTestId('hero')).toBeVisible();
+});

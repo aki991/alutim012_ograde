@@ -6,6 +6,7 @@ import CustomersPage from '../pages/Customers/CustomersPage';
 import DashboardPage from '../pages/Dashboard/DashboardPage';
 import EditorPage from '../pages/Editor/EditorPage';
 import HelpPage from '../pages/Settings/HelpPage';
+import LoginPage from '../pages/Login/LoginPage';
 import MaterialsPage from '../pages/Materials/MaterialsPage';
 import ModelsPage from '../pages/Models/ModelsPage';
 import ProductionPage from '../pages/Production/ProductionPage';
@@ -13,6 +14,7 @@ import ProjectsPage from '../pages/Projects/ProjectsPage';
 import QuotesPage from '../pages/Quotes/QuotesPage';
 import ReportsPage from '../pages/Reports/ReportsPage';
 import SettingsPage from '../pages/Settings/SettingsPage';
+import { useAuth } from '../services/auth';
 import { startAutosave } from '../services/persistence';
 import { useAppStore } from '../store/useAppStore';
 
@@ -21,11 +23,17 @@ export default function App() {
   const loadError = useAppStore((s) => s.loadError);
   const [menu, setMenu] = useState(false);
   const { pathname } = useLocation();
+  const auth = useAuth();
 
   useEffect(() => {
     void useAppStore.getState().init().then(() => startAutosave());
   }, []);
   useEffect(() => setMenu(false), [pathname]);
+
+  // prijava je uključena (Supabase podešen): bez sesije se vidi samo stranica za prijavu, na istoj adresi
+  if (auth.enabled && auth.loading) return <div className="h-full grid place-items-center text-muted" data-testid="loading">Provera prijave...</div>;
+  if (auth.enabled && !auth.session) return <LoginPage />;
+  if (!auth.enabled && pathname === '/prijava') return <LoginPage />;
 
   if (!ready) {
     return <div className="h-full grid place-items-center text-muted" data-testid="loading">Učitavanje aplikacije...</div>;
@@ -58,6 +66,7 @@ export default function App() {
             <Route path="/izvestaji" element={<ReportsPage />} />
             <Route path="/podesavanja" element={<SettingsPage />} />
             <Route path="/pomoc" element={<HelpPage />} />
+            <Route path="/prijava" element={<Navigate to="/" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
