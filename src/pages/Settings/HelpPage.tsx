@@ -99,6 +99,15 @@ const TOPICS: Topic[] = [
     ],
   },
   {
+    title: 'Desktop aplikacija',
+    items: [
+      <>Aplikacija se instalira na računar iz Chrome-a ili Edge-a: otvorite sajt i kliknite ikonicu <b>Instaliraj</b> na desnom kraju adresne trake (ili meni ⋮ → <b>Instaliraj ALU TIM 012</b>). Dobija se ikonica na desktopu i u Start meniju, a aplikacija se otvara u svom prozoru, bez adresne trake.</>,
+      <>Instalirana aplikacija je ista kao na sajtu i koristi iste podatke ovog pregledača. Nova verzija se preuzima sama kad postoji internet; primenjuje se pri sledećem otvaranju.</>,
+      <>Bez interneta aplikacija se otvara i radi sa sačuvanim podacima (crtanje, kalkulacija, PDF). Prijava na nalog traži internet.</>,
+      <>Deinstalacija: u prozoru aplikacije meni ⋯ → <b>Deinstaliraj</b>, ili kroz Windows podešavanja → Aplikacije.</>,
+    ],
+  },
+  {
     title: 'Podešavanja i podaci',
     items: [
       <>Podrazumevana kalkulacija (zarada, popust, PDV, rad i montaža) važi samo za projekte koji se naprave posle izmene; postojeći projekti zadržavaju svoja podešavanja.</>,

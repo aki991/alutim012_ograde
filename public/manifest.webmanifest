@@ -1,0 +1,20 @@
+{
+  "name": "ALU TIM 012 — Projektovanje ograda i kapija",
+  "short_name": "ALU TIM 012",
+  "description": "Projektovanje aluminijumskih ograda i kapija, kalkulacija i ponude.",
+  "lang": "sr-Latn",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#f6f4f3",
+  "theme_color": "#7a0d14",
+  "categories": ["business", "productivity"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
