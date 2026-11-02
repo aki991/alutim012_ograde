@@ -28,15 +28,8 @@ export default function LoginPage() {
   return (
     <div className="min-h-full brand-bg grid place-items-center px-4 py-10" data-testid="login-page">
       <div className="w-full max-w-[420px]">
-        <div className="flex items-center justify-center gap-3 mb-7 text-white">
-          <LogoMark size={46} />
-          <div className="leading-none">
-            <div className="text-[28px] font-extrabold tracking-wide">ALU <span className="text-[#ff3b41]">TIM</span></div>
-            <div className="mt-1.5 flex items-center gap-2">
-              <span className="h-[2px] w-6 bg-[#d71920]" />
-              <span className="text-[14px] font-bold tracking-[0.2em] text-[#ff3b41]">012</span>
-            </div>
-          </div>
+        <div className="flex justify-center mb-7">
+          <LogoMark size={150} />
         </div>
 
         <form className="card p-7 shadow-2xl" onSubmit={(e) => void submit(e)} noValidate data-testid="login-form">
