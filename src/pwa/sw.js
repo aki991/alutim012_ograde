@@ -4,7 +4,10 @@ const CACHE = `alutim-${VERSION}`;
 
 // instalacija: unapred čuva celu aplikaciju (i delove koji se učitavaju naknadno: 3D, PDF), da radi bez interneta
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => Promise.all(PRECACHE.map((url) => c.add(url).catch(() => undefined)))));
+  // skipWaiting: nova verzija se aktivira odmah, bez čekanja da se zatvore svi prozori stare (inače ostaju stare ikonice i fajlovi)
+  event.waitUntil(
+    caches.open(CACHE).then((c) => Promise.all(PRECACHE.map((url) => c.add(url).catch(() => undefined)))).then(() => self.skipWaiting()),
+  );
 });
 
 // aktivacija: briše keš starih verzija; nova verzija preuzima tek kad se zatvore svi prozori stare
@@ -21,6 +24,19 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   // samo GET zahtevi ka samoj aplikaciji; Supabase i ostali spoljni servisi idu direktno na mrežu
   if (req.method !== 'GET' || url.origin !== self.location.origin) return;
+
+  // manifest i ikonice imaju stalna imena (bez heša), pa uvek prvo mreža: izmena logotipa mora odmah da se vidi pri instalaciji
+  if (url.pathname === '/manifest.webmanifest' || url.pathname.startsWith('/icons/') || url.pathname.startsWith('/favicon')) {
+    event.respondWith(
+      fetch(req)
+        .then((res) => {
+          if (res.ok) { const copy = res.clone(); void caches.open(CACHE).then((c) => c.put(req, copy)); }
+          return res;
+        })
+        .catch(() => caches.match(req, { ignoreVary: true }).then((r) => r ?? Response.error())),
+    );
+    return;
+  }
 
   if (req.mode === 'navigate') {
     // stranice: prvo mreža (uvek najnovija verzija kad ima interneta), bez mreže sačuvana aplikacija

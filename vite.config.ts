@@ -21,7 +21,10 @@ function serviceWorker(): Plugin {
     apply: 'build',
     generateBundle(_, bundle) {
       const files = ['/index.html', ...publicFiles(), ...Object.keys(bundle).map((f) => '/' + f)].filter((f) => f !== '/sw.js');
-      const version = createHash('sha256').update(files.sort().join('\n')).digest('hex').slice(0, 12);
+      // verzija zavisi i od sadržaja fajlova iz public/ (ikonice imaju stalna imena, pa bi se promena logotipa inače ne primetila)
+      const hash = createHash('sha256').update(files.sort().join('\n'));
+      for (const f of publicFiles()) hash.update(readFileSync(join('public', f)));
+      const version = hash.digest('hex').slice(0, 12);
       const source = `const PRECACHE = ${JSON.stringify(files)};\nconst VERSION = '${version}';\n${readFileSync('src/pwa/sw.js', 'utf8')}`;
       this.emitFile({ type: 'asset', fileName: 'sw.js', source });
     },
