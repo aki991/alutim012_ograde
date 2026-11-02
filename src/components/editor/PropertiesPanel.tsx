@@ -1,0 +1,279 @@
+import { AlertTriangle, ArrowLeft, ArrowRight, Copy, Trash2, Calculator } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { autoFillToFixedTotal, indexOfItem, setAllColors, setAllHeights, setOuterWidth } from '../../domain/geometry/operations';
+import { computeInfill } from '../../domain/geometry/infill';
+import { MAX_TURN_DEG } from '../../domain/geometry/plan';
+import { cornerInfo } from '../../domain/geometry/corner';
+import { computeLayout, outerWidthMm, postHalfSum, totalStatus } from '../../domain/geometry/layout';
+import {
+  AUTOMATION_LABELS, FENCE_MODEL_LIST, FENCE_MODELS, HINGE_LABELS, LOCK_LABELS, MOUNTING_LABELS, POST_LABELS, POST_SIZES, maxRods, rodCountFor,
+} from '../../domain/models/catalog';
+import { PLINTH_DEFAULT_MM, type FenceModelId, type Gate, type Project } from '../../domain/models/types';
+import { computePrice } from '../../domain/pricing/calc';
+import { LIMITS, heightRangeFor, widthRangeFor } from '../../domain/validation/limits';
+import { useAppStore } from '../../store/useAppStore';
+import { itemLabel } from '../../utils/labels';
+import { fmtMm, fmtMoney, fmtNum } from '../../utils/units';
+import { ColorField, NumberField, SegmentedField, SelectField, TextField, ToggleField } from '../forms/Fields';
+import { ConfirmDialog } from '../ui/Modal';
+
+function Section({ title, children, testId }: { title: string; children: React.ReactNode; testId?: string }) {
+  return (
+    <section className="card p-4" data-testid={testId}>
+      <h3 className="font-bold text-[15px] mb-1.5">{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+function Banner({ tone, children }: { tone: 'red' | 'amber' | 'blue'; children: React.ReactNode }) {
+  const c = { red: 'bg-[#fef3f2] text-[#b42318] border-[#fecdca]', amber: 'bg-[#fffaeb] text-[#93370d] border-[#fedf89]', blue: 'bg-primary-50 text-primary-600 border-red-200' }[tone];
+  return <div role={tone === 'red' ? 'alert' : 'status'} className={`flex gap-2 items-start text-[13px] rounded-lg border px-3 py-2 my-2 ${c}`}><AlertTriangle size={15} className="mt-0.5 shrink-0" /><div>{children}</div></div>;
+}
+
+/* ---------- Osnovne karakteristike projekta ---------- */
+function ProjectBasics({ project }: { project: Project }) {
+  const { mutate, setNotice } = useAppStore.getState();
+  const notice = useAppStore((s) => s.editor.notice);
+  const layout = computeLayout(project);
+  const status = totalStatus(project);
+  const s = project.settings;
+  const advanced = useAppStore((st) => Boolean(st.settings.advancedLengths));
+  const [confirmClear, setConfirmClear] = useState(false);
+  const firstHeight = project.items[0]?.heightMm ?? s.defaultHeightMm;
+
+  const doFill = () => {
+    const res = autoFillToFixedTotal(project);
+    mutate(() => res.project);
+    setNotice(res.reason ?? (res.appliedMm !== 0 ? `Raspoređeno ${fmtMm(Math.abs(res.appliedMm))} između segmenata ograde (kapije nisu menjane).` : null));
+  };
+
+  return (
+    <Section title="Osnovne karakteristike" testId="panel-basics">
+      <TextField label="Naziv projekta" value={project.name} testId="project-name" onChange={(v) => mutate((p) => ({ ...p, name: v, updatedAt: new Date().toISOString() }), 'name')} />
+      {advanced && (
+        <>
+      <SegmentedField label="Ukupna dužina" testId="total-mode" value={s.totalMode} options={[{ value: 'auto', label: 'Automatska' }, { value: 'fixed', label: 'Fiksna' }]}
+        onChange={(v) => mutate((p) => ({ ...p, settings: { ...p.settings, totalMode: v, fixedTotalMm: v === 'fixed' && p.settings.totalMode === 'auto' ? layout.totalModularMm || p.settings.fixedTotalMm : p.settings.fixedTotalMm } }))} />
+      {s.totalMode === 'fixed' ? (
+        <>
+          <NumberField label="Zadata dužina" testId="fixed-total" value={s.fixedTotalMm} range={LIMITS.fixedTotal} onCommit={(v) => mutate((p) => ({ ...p, settings: { ...p.settings, fixedTotalMm: v } }), 'fixed')} />
+          {status.state === 'over' && <Banner tone="red"><b>Prekoračenje za {fmtMm(status.diffMm)}.</b> Elementi ({fmtMm(layout.totalModularMm)}) premašuju zadatu dužinu ({fmtMm(s.fixedTotalMm)}). Smanjite elemente ili ih rasporedite automatski.</Banner>}
+          {status.state === 'under' && <Banner tone="amber">Slobodan prostor: <b>{fmtMm(status.diffMm)}</b> do zadate dužine. Možete ga ostaviti ili automatski rasporediti.</Banner>}
+          {status.state === 'ok' && <Banner tone="blue">Raspored tačno popunjava zadatu dužinu.</Banner>}
+          <SelectField label="Raspodela" value={s.fillStrategy} testId="fill-strategy" options={[{ value: 'proportional', label: 'Proporcionalno širini' }, { value: 'even', label: 'Ravnomerno' }]} onChange={(v) => mutate((p) => ({ ...p, settings: { ...p.settings, fillStrategy: v } }))} />
+          <div className="flex gap-2 mt-1">
+            <button className="btn btn-sm btn-primary flex-1" data-testid="btn-autofill" disabled={status.state === 'ok'} onClick={doFill}>Automatski rasporedi</button>
+            <button className="btn btn-sm flex-1" data-testid="btn-leave-free" disabled={status.state !== 'under'} onClick={() => setNotice(`Ostavljen slobodan prostor od ${fmtMm((status as { diffMm: number }).diffMm)}.`)}>Ostavi slobodan prostor</button>
+          </div>
+        </>
+      ) : null}
+        </>
+      )}
+      {notice && <Banner tone={notice.startsWith('Nije') ? 'red' : 'blue'}>{notice}</Banner>}
+
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[13px] my-2 py-2 border-y border-line" data-testid="length-summary">
+        <span className="text-muted">Ukupna dužina</span><b className="text-right tabular-nums" data-testid="total-length">{fmtMm(layout.occupiedMm)}</b>
+        {advanced && (
+          <>
+            <span className="text-muted">Modularna dužina (osa–osa)</span><b className="text-right tabular-nums" data-testid="total-modular">{fmtMm(layout.totalModularMm)}</b>
+            <span className="text-muted">Zbir svetlih otvora</span><b className="text-right tabular-nums">{fmtMm(layout.totalClearMm)}</b>
+          </>
+        )}
+        <span className="text-muted">Broj polja</span><b className="text-right" data-testid="count-items">{project.items.length}</b>
+        <span className="text-muted">Stubova (zajedničkih)</span><b className="text-right" data-testid="count-posts">{layout.postCount} ({layout.sharedPostCount})</b>
+      </div>
+
+      <NumberField label="Visina (svi)" value={firstHeight} range={LIMITS.fenceHeight} testId="all-height" onCommit={(v) => mutate((p) => setAllHeights(p, v), 'allh')} />
+      <ColorField label="Boja (sve)" value={s.defaultColor} testId="all-color" onChange={(c) => mutate((p) => setAllColors(p, c))} />
+      <button className="btn btn-sm btn-danger mt-2" disabled={project.items.length === 0} data-testid="btn-clear" onClick={() => setConfirmClear(true)}><Trash2 size={14} />Obriši sve elemente</button>
+      {confirmClear && <ConfirmDialog title="Brisanje svih elemenata" danger confirmLabel="Obriši sve" message={`Biće obrisano svih ${project.items.length} elemenata. Radnju možete poništiti sa Ctrl+Z.`} onCancel={() => setConfirmClear(false)} onConfirm={() => { mutate((p) => ({ ...p, items: [], posts: [], updatedAt: new Date().toISOString() })); setConfirmClear(false); }} />}
+    </Section>
+  );
+}
+
+/* ---------- Model (padajući meni; menja se za sve elemente) ---------- */
+function ModelSelect({ value, onChange }: { value: FenceModelId; onChange: (m: FenceModelId) => void }) {
+  return (
+    <SelectField stacked label="Model (menja se na svim elementima)" testId="field-model" value={value} options={FENCE_MODEL_LIST.map((m) => ({ value: m.id, label: m.name }))} onChange={onChange} />
+  );
+}
+
+/* ---------- Izabrani element ---------- */
+function ItemPanel({ project, id }: { project: Project; id: string }) {
+  const st = useAppStore.getState();
+  const index = indexOfItem(project, id);
+  const it = project.items[index];
+  const layout = useMemo(() => computeLayout(project), [project]);
+  if (!it) return null;
+  const li = layout.items[index];
+  const label = itemLabel(project.items, index);
+  const wRange = widthRangeFor(it);
+  const half = postHalfSum(project, index);
+
+  const common = (
+    <>
+      <NumberField label="Širina" testId="field-width" value={Math.round(outerWidthMm(project, index))} range={{ min: Math.round(wRange.min + half), max: Math.round(wRange.max + half) }} onCommit={(v) => st.mutate((p) => setOuterWidth(p, id, v), `w:${id}`)} />
+      <NumberField label="Visina" testId="field-height" value={it.heightMm} range={heightRangeFor(it)} onCommit={(v) => st.patchItem(id, { heightMm: v }, 'h')} />
+    </>
+  );
+
+  let body: React.ReactNode;
+  if (it.kind === 'opening' && it.bendDeg !== undefined) {
+    const info = cornerInfo(project, index);
+    body = (
+      <>
+        <NumberField label="Ugao savijanja" testId="field-bend" unit="°" step={5} value={it.bendDeg} range={{ min: -MAX_TURN_DEG, max: MAX_TURN_DEG }}
+          onCommit={(v) => st.patchItem(id, { bendDeg: v === 0 ? 5 : v }, 'bend')} />
+        <div className="flex gap-1.5 pb-1.5 flex-wrap">
+          {[-90, -45, 45, 90].map((a) => <button key={a} className={`btn btn-sm ${it.bendDeg === a ? 'btn-primary' : ''}`} data-testid={`bend-${a}`} onClick={() => st.patchItem(id, { bendDeg: a })}>{a > 0 ? '+' : ''}{a}°</button>)}
+        </div>
+        <NumberField label="Razmak za savijanje" testId="field-width" value={it.widthMm} range={wRange} onCommit={(v) => st.patchItem(id, { widthMm: v }, 'w')} />
+        {!info && <Banner tone="amber">Uz ugaoni spoj treba da stoji ograda sa prečkama (npr. „Srebrni stubovi — crne prečke"); inače nema šta da se savije.</Banner>}
+      </>
+    );
+  } else if (it.kind === 'opening') {
+    body = common;
+  } else if (it.kind === 'fence') {
+    const def = FENCE_MODELS[it.modelId];
+    const count = computeInfill(it.modelId, li.clearWidth, it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount).bars.filter((b: { tone: string }) => b.tone === 'main').length;
+    body = (
+      <>
+        {common}
+        <ModelSelect value={it.modelId} onChange={(m) => st.setItemModel(id, m)} />
+        <ColorField stacked value={it.color} testId="field-color" onChange={(c) => st.setItemColor(id, c)} />
+        {def.hasBars && (
+          <>
+            <NumberField label={def.barLabel} testId="field-bar" value={it.params.barSizeMm} range={LIMITS.barSize} onCommit={(v) => st.patchItemParams(id, { barSizeMm: v }, 'bar')} />
+            {def.rods ? (
+              <NumberField label="Broj prečki" testId="field-rods" unit="kom" step={1} value={rodCountFor(it.modelId, it.params, it.heightMm) ?? def.rods.default}
+                range={{ min: def.rods.min, max: maxRods(it.modelId, it.heightMm) }} onCommit={(v) => st.patchItemParams(id, { barCount: v }, 'rods')}
+                hint={`Razmak ${Math.round((it.heightMm - 200) / (rodCountFor(it.modelId, it.params, it.heightMm) ?? def.rods.default))} mm`} />
+            ) : (
+              <NumberField label={def.gapLabel} testId="field-gap" value={it.params.gapMm} range={LIMITS.gap} onCommit={(v) => st.patchItemParams(id, { gapMm: v }, 'gap')} hint={`Profila: ${count}`} />
+            )}
+          </>
+        )}
+        {def.style !== 'rods' && def.style !== 'glass_rail' && (
+          <NumberField label="Debljina rama" value={it.params.frameMm} range={LIMITS.frame} onCommit={(v) => st.patchItemParams(id, { frameMm: v }, 'frame')} />
+        )}
+      </>
+    );
+  } else {
+    const g: Gate = it;
+    const swing = g.gateType !== 'sliding';
+    body = (
+      <>
+        {common}
+        <ModelSelect value={g.infillModelId} onChange={(m) => st.setItemModel(id, m)} />
+        <ColorField stacked value={g.color} testId="field-color" onChange={(c) => st.setItemColor(id, c)} />
+        <SegmentedField label={g.gateType === 'sliding' ? 'Smer klizanja' : 'Strana šarki'} testId="field-opening" value={g.opening} options={[{ value: 'left', label: 'Levo' }, { value: 'right', label: 'Desno' }]} onChange={(v) => st.patchItem(id, { opening: v })} />
+        {swing && g.gateType !== 'double' && <></>}
+        {swing && <SegmentedField label="Otvaranje" testId="field-swing" value={g.swing} options={[{ value: 'inward', label: 'Unutra' }, { value: 'outward', label: 'Spolja' }]} onChange={(v) => st.patchItem(id, { swing: v })} />}
+        <SelectField label="Brava" value={g.lock} options={Object.entries(LOCK_LABELS).map(([value, label]) => ({ value: value as Gate['lock'], label }))} onChange={(v) => st.patchItem(id, { lock: v })} />
+        {swing && <SelectField label="Šarke" value={g.hinge} options={Object.entries(HINGE_LABELS).map(([value, label]) => ({ value: value as Gate['hinge'], label }))} onChange={(v) => st.patchItem(id, { hinge: v })} />}
+        <ToggleField label="Automatika" testId="field-automation" checked={g.automation} onLabel="Da (motor)" offLabel="Ne" onChange={(v) => st.patchItem(id, { automation: v })} />
+        {g.automation && <SelectField label="Tip automatike" value={g.automationType} options={Object.entries(AUTOMATION_LABELS).map(([value, label]) => ({ value: value as Gate['automationType'], label }))} onChange={(v) => st.patchItem(id, { automationType: v })} />}
+        {g.gateType === 'double' && (
+          <>
+            <ToggleField label="Različita krila" checked={g.unequalLeaves} onChange={(v) => st.patchItem(id, { unequalLeaves: v, leftLeafMm: v ? Math.round((g.widthMm - 20) / 2) : 0 })} />
+            {g.unequalLeaves ? (
+              <NumberField label="Levo krilo" value={g.leftLeafMm} range={{ min: 500, max: Math.max(600, g.widthMm - 520) }} onCommit={(v) => st.patchItem(id, { leftLeafMm: v }, 'leaf')} hint={`Desno krilo: ${fmtMm(Math.max(0, li.clearWidth - 20 - g.leftLeafMm))}`} />
+            ) : (
+              <div className="text-[12.5px] text-muted pb-1">Oba krila iste širine: {fmtMm((li.clearWidth - 20) / 2)}.</div>
+            )}
+          </>
+        )}
+        {g.gateType === 'sliding' && (
+          <>
+            <ToggleField label="Prostor za povlačenje" checked={g.availableSpaceMm !== undefined} onLabel="Zadat" offLabel="Nije zadat" testId="field-space-known" onChange={(v) => st.patchItem(id, { availableSpaceMm: v ? Math.round(li.clearWidth) : undefined })} />
+            {g.availableSpaceMm !== undefined && (
+              <NumberField label="Raspoloživ prostor" testId="field-space" value={g.availableSpaceMm} range={{ min: 100, max: 20000 }} onCommit={(v) => st.patchItem(id, { availableSpaceMm: v }, 'space')}
+                hint={g.availableSpaceMm < li.clearWidth ? <span className="text-[#b42318]">Nedovoljno: za demonstracioni hod potrebno je ≈ {fmtMm(li.clearWidth)}. Orijentaciona provera, nije sertifikovana.</span> : `Dovoljno za demonstracioni hod od ${fmtMm(li.clearWidth)}.`} />
+            )}
+          </>
+        )}
+        <NumberField label="Debljina rama" value={g.params.frameMm} range={LIMITS.frame} onCommit={(v) => st.patchItemParams(id, { frameMm: v }, 'frame')} />
+      </>
+    );
+  }
+
+  return (
+    <Section title={`Odabran element: ${label}`} testId="panel-item">
+      <div className="flex flex-wrap gap-1.5 mb-2" data-testid="item-actions">
+        <button className="btn btn-sm" data-testid="btn-move-left" disabled={index === 0} onClick={() => st.moveSelected(-1)}><ArrowLeft size={14} />Pomeri levo</button>
+        <button className="btn btn-sm" data-testid="btn-move-right" disabled={index === project.items.length - 1} onClick={() => st.moveSelected(1)}>Pomeri desno<ArrowRight size={14} /></button>
+        <button className="btn btn-sm" data-testid="btn-duplicate" onClick={st.duplicateSelected}><Copy size={14} />Dupliraj</button>
+        <button className="btn btn-sm btn-danger" data-testid="btn-delete" onClick={st.deleteSelected}><Trash2 size={14} />Obriši</button>
+      </div>
+      {body}
+    </Section>
+  );
+}
+
+/* ---------- Izabrani stub ---------- */
+function PostPanel({ project, id }: { project: Project; id: string }) {
+  const st = useAppStore.getState();
+  const layout = computeLayout(project);
+  const lp = layout.posts.find((p) => p.post.id === id);
+  if (!lp) return null;
+  const p = lp.post;
+  const role = lp.role === 'end' ? 'Krajnji stub' : lp.role === 'gate' ? 'Stub kapije' : 'Međustub (zajednički)';
+  return (
+    <Section title={`Odabran stub: S${lp.index + 1}`} testId="panel-post">
+      <div className="text-[12.5px] text-muted mb-1">{role} · pozicija {fmtMm(lp.x)} · ID {p.id.slice(-6)}</div>
+      {lp.index > 0 && lp.index < project.items.length ? (
+        <div data-testid="post-turn">
+          <NumberField label="Ugao skretanja" testId="field-turn" unit="°" step={5} value={p.turnDeg ?? 0} range={{ min: -MAX_TURN_DEG, max: MAX_TURN_DEG }}
+            onCommit={(v) => st.patchPost(id, { turnDeg: v }, 'turn')}
+            />
+          <div className="flex gap-1.5 pb-1.5 flex-wrap">
+            {[-90, -45, 0, 45, 90].map((a) => <button key={a} className={`btn btn-sm ${(p.turnDeg ?? 0) === a ? 'btn-primary' : ''}`} data-testid={`turn-${a}`} onClick={() => st.patchPost(id, { turnDeg: a })}>{a === 0 ? 'Ravno' : `${a > 0 ? '+' : ''}${a}°`}</button>)}
+          </div>
+        </div>
+      ) : null}
+      <SelectField label="Tip" testId="post-type" value={p.type} options={Object.entries(POST_LABELS).map(([value, label]) => ({ value: value as typeof p.type, label }))} onChange={(v) => st.patchPost(id, { type: v })} />
+      <NumberField label="Širina preseka" value={p.widthMm} range={LIMITS.postWidth} onCommit={(v) => st.patchPost(id, { widthMm: v }, 'pw')} />
+      <div className="flex gap-1.5 pb-1.5">{POST_SIZES.map((s) => <button key={s} className={`btn btn-sm ${p.widthMm === s ? 'btn-primary' : ''}`} onClick={() => st.patchPost(id, { widthMm: s })}>{s}×{s}</button>)}</div>
+      {p.type === 'concrete_plinth' && <NumberField label="Visina podnožja" testId="post-plinth" value={p.plinthMm ?? PLINTH_DEFAULT_MM} range={{ min: 100, max: 1200 }} onCommit={(v) => st.patchPost(id, { plinthMm: v }, 'pp')} />}
+      <NumberField label="Visina" value={p.heightMm} range={LIMITS.postHeight} onCommit={(v) => st.patchPost(id, { heightMm: v }, 'ph')} />
+      <ColorField value={p.color} onChange={(c) => st.patchPost(id, { color: c })} />
+      <SelectField label="Montaža" value={p.mounting} options={Object.entries(MOUNTING_LABELS).map(([value, label]) => ({ value: value as typeof p.mounting, label }))} onChange={(v) => st.patchPost(id, { mounting: v })} />
+    </Section>
+  );
+}
+
+function PriceSummary({ project }: { project: Project }) {
+  const materials = useAppStore((s) => s.materials);
+  const specs = useAppStore((s) => s.settings.modelSpecs);
+  const settings = useAppStore((s) => s.settings);
+  const price = useMemo(() => computePrice(project, materials, specs), [project, materials, specs]);
+  const money = (n: number) => fmtMoney(n, settings.currency, settings.currencyRateToEur);
+  return (
+    <Section title="Kalkulacija cene" testId="panel-price">
+      <dl className="text-sm divide-y divide-line">
+        <div className="flex justify-between py-1.5"><dt>Materijal</dt><dd className="tabular-nums font-semibold">{money(price.materialTotal)}</dd></div>
+        <div className="flex justify-between py-1.5"><dt>Rad</dt><dd className="tabular-nums font-semibold">{money(price.laborTotal)}</dd></div>
+        <div className="flex justify-between py-1.5"><dt>Montaža</dt><dd className="tabular-nums font-semibold">{money(price.installTotal)}</dd></div>
+        <div className="flex justify-between py-1.5 text-[#15803d]"><dt>Popust ({project.settings.pricing.discountPercent}%)</dt><dd className="tabular-nums font-semibold">−{money(price.discountAmount)}</dd></div>
+      </dl>
+      <div className="mt-2 rounded-lg bg-primary-50 px-3 py-2.5 flex justify-between items-baseline">
+        <span className="font-bold">Ukupno</span>
+        <span className="text-right"><span className="text-[19px] font-extrabold tabular-nums" data-testid="price-total">{money(price.grossTotal)}</span><span className="block text-[11px] text-muted">sa PDV-om · ≈ {fmtNum(price.grossTotal / settings.currencyRateToEur, 0)} €</span></span>
+      </div>
+      <button className="btn btn-dark w-full mt-3" data-testid="btn-open-calc" onClick={() => window.dispatchEvent(new CustomEvent('open-calc'))}><Calculator size={16} />Izračunaj cenu</button>
+    </Section>
+  );
+}
+
+export function PropertiesPanel({ project }: { project: Project }) {
+  const selection = useAppStore((s) => s.editor.selection);
+  return (
+    <div className="space-y-4" data-testid="properties">
+      {selection?.type === 'item' && <ItemPanel project={project} id={selection.id} />}
+      {selection?.type === 'post' && <PostPanel project={project} id={selection.id} />}
+      <ProjectBasics project={project} />
+      {project.items.length > 0 && <PriceSummary project={project} />}
+    </div>
+  );
+}

@@ -1,0 +1,10 @@
+﻿Šifra;Naziv;Kategorija;Jedinica;Cena (neto);Otpad %;ID
+DEMO-HP-100;Aluminijumski profil 100×20 (horizontalna letvica);Profili;m;560;6;mat_alu_profil
+DEMO-PP-250;Aluminijumski panel-profil 250×20 (puni panel);Profili;m;1220;5;mat_alu_panel
+DEMO-RH-050;Rukohvat Ø50;Profili;m;1790,50;4;mat_rukohvat
+DEMO-GL-008;Kaljeno staklo 8 mm (mat);Staklo;m2;10400;5;mat_glass
+DEMO-ST-AL;Aluminijumski stub;Stubovi;kom;5450;0;mat_post_alu
+DEMO-ST-BT;Betonski stub;Stubovi;kom;7400;0;mat_post_concrete
+NOVO-PR-080;Aluminijumski profil 80×20 završni;Profili;m;395;4;
+NOVO-KP-001;Kapna lajsna za ogradu;Ostalo;m;260;3;
+NOVO-ST-OB;Obujmica stuba Ø40 (inox);Okovi;kom;145;0;
