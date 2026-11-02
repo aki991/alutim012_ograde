@@ -2,10 +2,35 @@ import { useState } from 'react';
 import { NumberField, SegmentedField, TextField, ToggleField } from '../../components/forms/Fields';
 import { Page, PageHeader } from '../../components/ui/Common';
 import { ConfirmDialog } from '../../components/ui/Modal';
+import { useAuth } from '../../services/auth';
 import { saveNow } from '../../services/persistence';
 import { useAppStore } from '../../store/useAppStore';
 
+/** Ime i prezime prijavljenog korisnika: čuva se u Supabase nalogu i prikazuje u meniju i na avataru. */
+function AccountName() {
+  const auth = useAuth();
+  const [name, setName] = useState(auth.name ?? '');
+  const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const save = async () => {
+    setState('saving');
+    const err = await auth.updateName(name);
+    setState(err ? 'error' : 'saved');
+  };
+  return (
+    <div className="py-1.5">
+      <div className="label mb-1">Ime i prezime ({auth.email})</div>
+      <div className="flex gap-2">
+        <input className="input" value={name} placeholder="npr. Andreja Milenković" data-testid="account-name" onChange={(e) => { setName(e.target.value); setState('idle'); }} onKeyDown={(e) => { if (e.key === 'Enter') void save(); }} />
+        <button className="btn" data-testid="account-name-save" disabled={state === 'saving' || name.trim() === (auth.name ?? '')} onClick={() => void save()}>{state === 'saving' ? 'Čuvanje…' : 'Sačuvaj'}</button>
+      </div>
+      {state === 'saved' && <div className="text-[12px] text-[#15803d] mt-1" role="status">Ime je sačuvano u nalogu.</div>}
+      {state === 'error' && <div className="text-[12px] text-[#b42318] mt-1" role="alert">Ime nije sačuvano. Pokušajte ponovo.</div>}
+    </div>
+  );
+}
+
 export default function SettingsPage() {
+  const auth = useAuth();
   const settings = useAppStore((s) => s.settings);
   const update = useAppStore((s) => s.updateSettings);
   const resetDemo = useAppStore((s) => s.resetDemo);
@@ -21,7 +46,7 @@ export default function SettingsPage() {
         <section className="card p-5">
           <h2 className="font-bold mb-2">Firma i korisnik</h2>
           <TextField label="Naziv firme" testId="set-company" value={settings.companyName} onChange={(v) => update({ companyName: v })} />
-          <TextField label="Korisnik" value={settings.userName} onChange={(v) => update({ userName: v })} />
+          {auth.enabled ? <AccountName /> : <TextField label="Korisnik" value={settings.userName} onChange={(v) => update({ userName: v })} />}
           <SegmentedField label="Valuta" value={settings.currency === 'EUR' ? 'EUR' : 'RSD'} options={[{ value: 'RSD', label: 'RSD' }, { value: 'EUR', label: 'EUR' }]} onChange={(v) => update({ currency: v })} />
           <NumberField label="Kurs (RSD za 1 €)" unit="RSD" value={settings.currencyRateToEur} range={{ min: 1, max: 1000 }} integer={false} step={0.1} onCommit={(v) => update({ currencyRateToEur: v })} />
         </section>

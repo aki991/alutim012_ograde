@@ -35,8 +35,21 @@ test('pogrešna lozinka, previše pokušaja, pa uspešna prijava, ostaje posle o
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Materijali i cene' })).toBeVisible();
 
+  // nalog bez imena: inicijali i ime iz emaila, uloga iz naloga
   await page.getByRole('button', { name: 'Korisnički meni' }).click();
   await expect(page.getByTestId('user-email')).toHaveText('radnik@alutim.rs');
+  await expect(page.getByTestId('user-name')).toHaveText('radnik');
+  await expect(page.getByTestId('user-role')).toHaveText('Administrator');
+  await expect(page.getByRole('button', { name: 'Korisnički meni' })).toContainText('RA');
+  // ime i prezime se upisuje u nalog (Podešavanja) i menja avatar
+  await page.goto('/podesavanja');
+  await expect(page.getByTestId('account-name')).toBeVisible();
+  await page.getByTestId('account-name').fill('Petar Petrović');
+  await page.getByTestId('account-name-save').click();
+  await expect(page.getByText('Ime je sačuvano u nalogu.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Korisnički meni' })).toContainText('PP');
+  await page.getByRole('button', { name: 'Korisnički meni' }).click();
+  await expect(page.getByTestId('user-name')).toHaveText('Petar Petrović');
   await page.getByTestId('btn-logout').click();
   await expect(page.getByTestId('login-form')).toBeVisible();
   await page.reload();

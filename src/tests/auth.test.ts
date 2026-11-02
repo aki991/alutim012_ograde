@@ -11,3 +11,14 @@ describe('poruke o greškama prijave', () => {
     expect(loginErrorMessage(null)).toBe('Prijava nije uspela. Pokušajte ponovo.');
   });
 });
+
+import { initialsOf } from '../utils/units';
+describe('inicijali', () => {
+  it('ime i prezime → dva slova; jedna reč ili email → prva dva slova bez brojeva', () => {
+    expect(initialsOf('Andreja Milenković')).toBe('AM');
+    expect(initialsOf('nikola đorđević')).toBe('NĐ');
+    expect(initialsOf('andrejamilenkovic991')).toBe('AN');
+    expect(initialsOf('andreja.milenkovic')).toBe('AM');
+    expect(initialsOf('')).toBe('');
+  });
+});

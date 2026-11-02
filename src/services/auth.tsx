@@ -9,11 +9,17 @@ interface AuthState {
   loading: boolean;
   session: Session | null;
   email: string | null;
+  /** ime i prezime iz naloga (user_metadata.full_name); null ako nije zadato */
+  name: string | null;
+  /** uloga iz naloga (app_metadata.role), npr. admin */
+  role: string | null;
   signIn: (email: string, password: string) => Promise<string | null>;
   signOut: () => Promise<void>;
+  /** upisuje ime i prezime u nalog; vraća poruku o grešci ili null */
+  updateName: (name: string) => Promise<string | null>;
 }
 
-const Ctx = createContext<AuthState>({ enabled: false, loading: false, session: null, email: null, signIn: async () => null, signOut: async () => undefined });
+const Ctx = createContext<AuthState>({ enabled: false, loading: false, session: null, email: null, name: null, role: null, signIn: async () => null, signOut: async () => undefined, updateName: async () => null });
 
 /** Stanje prijave: sačuvana sesija se čita pri pokretanju i prati se promena (prijava, odjava, istek). */
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -43,7 +49,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(null);
   }, []);
 
-  const value = useMemo<AuthState>(() => ({ enabled: authEnabled, loading, session, email: session?.user.email ?? null, signIn, signOut }), [loading, session, signIn, signOut]);
+  const updateName = useCallback(async (name: string): Promise<string | null> => {
+    if (!supabase) return 'Prijava nije podešena.';
+    const { data, error } = await supabase.auth.updateUser({ data: { full_name: name.trim() } });
+    if (error) return 'Ime nije sačuvano. Pokušajte ponovo.';
+    if (data.user) setSession((cur) => (cur ? { ...cur, user: data.user } : cur));
+    return null;
+  }, []);
+
+  const value = useMemo<AuthState>(() => {
+    const meta = (session?.user.user_metadata ?? {}) as { full_name?: string; name?: string };
+    const role = (session?.user.app_metadata as { role?: string } | undefined)?.role ?? null;
+    return { enabled: authEnabled, loading, session, email: session?.user.email ?? null, name: (meta.full_name ?? meta.name ?? '').trim() || null, role, signIn, signOut, updateName };
+  }, [loading, session, signIn, signOut, updateName]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

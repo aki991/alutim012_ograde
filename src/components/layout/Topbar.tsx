@@ -1,9 +1,10 @@
-import { Bell, ChevronDown, FileDown, Menu, Calculator } from 'lucide-react';
+import { Bell, Building2, ChevronDown, CircleHelp, FileDown, LogOut, Menu, Calculator, Settings } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppStore, useCurrentProject } from '../../store/useAppStore';
 import { PdfPreviewModal } from '../editor/PdfPreviewModal';
 import { useAuth } from '../../services/auth';
+import { initialsOf } from '../../utils/units';
 
 function useOutside(ref: React.RefObject<HTMLElement | null>, close: () => void) {
   useEffect(() => {
@@ -30,7 +31,9 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
   useOutside(bellRef, () => setBell(false));
   useOutside(userRef, () => setUser(false));
 
-  const initials = settings.userName.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+  // prijavljen korisnik: ime iz naloga, a ako ga nema deo emaila; bez prijave ostaje lokalno ime iz podešavanja
+  const displayName = auth.enabled ? (auth.name ?? auth.email?.split('@')[0] ?? settings.userName) : settings.userName;
+  const initials = initialsOf(displayName);
 
   return (
     <header className="h-[69px] shrink-0 brand-bg text-white border-b border-black/20 flex items-center gap-3 px-4 lg:px-6">
@@ -62,11 +65,27 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
             <ChevronDown size={16} className="text-white/80 hidden sm:block" />
           </button>
           {user && (
-            <div className="absolute right-0 mt-2 w-[220px] card p-2 z-50" role="menu">
-              <div className="px-3 py-2 text-sm"><div className="font-semibold">{settings.userName}</div><div className="text-muted text-xs">{settings.companyName}</div>{auth.email && <div className="text-muted text-xs truncate" data-testid="user-email">{auth.email}</div>}</div>
-              <button className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-sm" onClick={() => { setUser(false); navigate('/podesavanja'); }}>Podešavanja</button>
-              <button className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-sm" onClick={() => { setUser(false); navigate('/pomoc'); }}>Pomoć</button>
-              {auth.enabled && <button className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-sm text-[#b42318]" data-testid="btn-logout" onClick={() => { setUser(false); void auth.signOut(); }}>Odjavi se</button>}
+            <div className="absolute right-0 mt-2 w-[264px] card overflow-hidden z-50 text-ink shadow-xl" role="menu" data-testid="user-menu">
+              <div className="flex items-center gap-3 px-4 py-3.5 bg-gradient-to-br from-[#fff7e0] to-[#fdf0f0] border-b border-line">
+                <span className="w-11 h-11 shrink-0 rounded-full bg-accent text-brand-black grid place-items-center text-[15px] font-bold shadow-sm">{initials || 'ND'}</span>
+                <div className="min-w-0">
+                  <div className="font-semibold text-[15px] leading-tight truncate" data-testid="user-name">{displayName}</div>
+                  {auth.email && <div className="text-[12.5px] text-slate-600 truncate mt-0.5" data-testid="user-email" title={auth.email}>{auth.email}</div>}
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5">
+                    {auth.role && <span className="pill !py-0 !px-2 !text-[11px] bg-[#fde4e4] text-[#b4141b]" data-testid="user-role">{auth.role === 'admin' ? 'Administrator' : auth.role}</span>}
+                    <span className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-semibold tracking-wide uppercase text-slate-500"><Building2 size={11} />{settings.companyName}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="p-1.5">
+                <button className="w-full flex items-center gap-2.5 h-9 px-3 rounded-lg hover:bg-slate-100 text-sm text-slate-700" role="menuitem" onClick={() => { setUser(false); navigate('/podesavanja'); }}><Settings size={16} className="text-slate-500" />Podešavanja</button>
+                <button className="w-full flex items-center gap-2.5 h-9 px-3 rounded-lg hover:bg-slate-100 text-sm text-slate-700" role="menuitem" onClick={() => { setUser(false); navigate('/pomoc'); }}><CircleHelp size={16} className="text-slate-500" />Pomoć</button>
+              </div>
+              {auth.enabled && (
+                <div className="p-1.5 border-t border-line">
+                  <button className="w-full flex items-center gap-2.5 h-9 px-3 rounded-lg hover:bg-[#fef3f2] text-sm font-medium text-[#b42318]" role="menuitem" data-testid="btn-logout" onClick={() => { setUser(false); void auth.signOut(); }}><LogOut size={16} />Odjavi se</button>
+                </div>
+              )}
             </div>
           )}
         </div>
