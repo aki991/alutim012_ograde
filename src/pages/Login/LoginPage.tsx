@@ -26,7 +26,7 @@ export default function LoginPage() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (busy) return;
-    if (!email.trim() || !password) { setError('Unesite email i lozinku.'); return; }
+    if (!email.trim() || !password) { setError('Unesite e-mail ili korisničko ime i lozinku.'); return; }
     setBusy(true);
     setError(null);
     const err = await signIn(email, password);
@@ -54,9 +54,9 @@ export default function LoginPage() {
           )}
 
           <label className="grid gap-1 mb-3">
-            <span className="label">Email</span>
+            <span className="label">E-mail ili korisničko ime</span>
             <input
-              className="input !py-2.5" type="email" name="email" autoComplete="username" inputMode="email" autoFocus
+              className="input !py-2.5" type="text" name="email" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} autoFocus
               value={email} onChange={(e) => setEmail(e.target.value)} disabled={!enabled} aria-invalid={Boolean(error)} data-testid="login-email"
             />
           </label>

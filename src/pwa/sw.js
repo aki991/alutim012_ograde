@@ -24,6 +24,8 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   // samo GET zahtevi ka samoj aplikaciji; Supabase i ostali spoljni servisi idu direktno na mrežu
   if (req.method !== 'GET' || url.origin !== self.location.origin) return;
+  // serverske funkcije (spisak korisnika i slično) uvek idu na mrežu, nikad iz keša
+  if (url.pathname.startsWith('/api/')) return;
 
   // manifest i ikonice imaju stalna imena (bez heša), pa uvek prvo mreža: izmena logotipa mora odmah da se vidi pri instalaciji
   if (url.pathname === '/manifest.webmanifest' || url.pathname.startsWith('/icons/') || url.pathname.startsWith('/favicon')) {

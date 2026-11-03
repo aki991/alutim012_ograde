@@ -10,7 +10,7 @@ test('bez prijave se vidi samo stranica za prijavu, na istoj adresi', async ({ p
 test('pogrešna lozinka, previše pokušaja, pa uspešna prijava, ostaje posle osvežavanja, odjava', async ({ page }) => {
   await page.goto('/materijali');
   await page.getByTestId('login-submit').click();
-  await expect(page.getByTestId('login-error')).toContainText('Unesite email i lozinku');
+  await expect(page.getByTestId('login-error')).toContainText('Unesite e-mail ili korisničko ime i lozinku');
 
   await page.getByTestId('login-email').fill('radnik@alutim.rs');
   await page.getByTestId('login-password').fill('pogresna');

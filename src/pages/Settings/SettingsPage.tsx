@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { NumberField, SegmentedField, TextField, ToggleField } from '../../components/forms/Fields';
 import { Page, PageHeader } from '../../components/ui/Common';
+import { UsersAdmin } from '../../components/settings/UsersAdmin';
 import { ConfirmDialog } from '../../components/ui/Modal';
 import { useAuth } from '../../services/auth';
 import { saveNow } from '../../services/persistence';
@@ -18,7 +19,7 @@ function AccountName() {
   };
   return (
     <div className="py-1.5">
-      <div className="label mb-1">Ime i prezime ({auth.email})</div>
+      <div className="label mb-1">Ime i prezime ({auth.login})</div>
       <div className="flex gap-2">
         <input className="input" value={name} placeholder="npr. Andreja Milenković" data-testid="account-name" onChange={(e) => { setName(e.target.value); setState('idle'); }} onKeyDown={(e) => { if (e.key === 'Enter') void save(); }} />
         <button className="btn" data-testid="account-name-save" disabled={state === 'saving' || name.trim() === (auth.name ?? '')} onClick={() => void save()}>{state === 'saving' ? 'Čuvanje…' : 'Sačuvaj'}</button>
@@ -69,6 +70,7 @@ export default function SettingsPage() {
           <NumberField label="Rad po m²" unit="RSD/m²" value={pr.laborPerM2Rsd} range={{ min: 0, max: 100000 }} allowZero onCommit={(v) => setPr({ laborPerM2Rsd: v })} />
           <NumberField label="Montaža po m" unit="RSD/m" value={pr.installPerMeterRsd} range={{ min: 0, max: 100000 }} allowZero onCommit={(v) => setPr({ installPerMeterRsd: v })} />
         </section>
+        {auth.enabled && !auth.guest && auth.role === 'admin' && <UsersAdmin />}
         <section className="card p-5 lg:col-span-2">
           <h2 className="font-bold mb-1">Lokalni podaci</h2>
           <div className="flex flex-wrap gap-2">

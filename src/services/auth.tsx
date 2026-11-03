@@ -1,5 +1,6 @@
 import type { Session } from '@supabase/supabase-js';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { displayLogin, toLoginEmail } from './loginName';
 import { authEnabled, loginErrorMessage, supabase } from './supabase';
 
 interface AuthState {
@@ -12,6 +13,10 @@ interface AuthState {
   loading: boolean;
   session: Session | null;
   email: string | null;
+  /** ono čime se korisnik prijavljuje: korisničko ime ili e-mail */
+  login: string | null;
+  /** pristupni token za pozive serverskih funkcija (samo administrator) */
+  getToken: () => Promise<string | null>;
   /** ime i prezime iz naloga (user_metadata.full_name); null ako nije zadato */
   name: string | null;
   /** uloga iz naloga (app_metadata.role), npr. admin */
@@ -22,7 +27,7 @@ interface AuthState {
   updateName: (name: string) => Promise<string | null>;
 }
 
-const Ctx = createContext<AuthState>({ enabled: false, loading: false, guest: false, enterGuest: () => undefined, session: null, email: null, name: null, role: null, signIn: async () => null, signOut: async () => undefined, updateName: async () => null });
+const Ctx = createContext<AuthState>({ enabled: false, loading: false, guest: false, enterGuest: () => undefined, session: null, email: null, login: null, getToken: async () => null, name: null, role: null, signIn: async () => null, signOut: async () => undefined, updateName: async () => null });
 
 const GUEST_KEY = 'alutim-guest';
 const readGuest = (): boolean => { try { return sessionStorage.getItem(GUEST_KEY) === '1'; } catch { return false; } };
@@ -46,7 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = useCallback(async (email: string, password: string): Promise<string | null> => {
     if (!supabase) return 'Prijava nije podešena.';
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      const { error } = await supabase.auth.signInWithPassword({ email: toLoginEmail(email), password });
       return error ? loginErrorMessage(error) : null;
     } catch (e) {
       return loginErrorMessage(e as Error);
@@ -72,11 +77,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return null;
   }, []);
 
+  const getToken = useCallback(async (): Promise<string | null> => (supabase ? (await supabase.auth.getSession()).data.session?.access_token ?? null : null), []);
+
   const value = useMemo<AuthState>(() => {
     const meta = (session?.user.user_metadata ?? {}) as { full_name?: string; name?: string };
     const role = (session?.user.app_metadata as { role?: string } | undefined)?.role ?? null;
-    return { enabled: authEnabled, loading, guest: guest && !session, enterGuest, session, email: session?.user.email ?? null, name: (meta.full_name ?? meta.name ?? '').trim() || null, role, signIn, signOut, updateName };
-  }, [loading, guest, enterGuest, session, signIn, signOut, updateName]);
+    return { enabled: authEnabled, loading, guest: guest && !session, enterGuest, session, email: session?.user.email ?? null, login: displayLogin(session?.user.email), getToken, name: (meta.full_name ?? meta.name ?? '').trim() || null, role, signIn, signOut, updateName };
+  }, [loading, guest, enterGuest, session, signIn, signOut, updateName, getToken]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

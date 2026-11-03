@@ -25,7 +25,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
   useOutside(userRef, () => setUser(false));
 
   // prijavljen korisnik: ime iz naloga, a ako ga nema deo emaila; bez prijave ostaje lokalno ime iz podešavanja
-  const displayName = auth.guest ? 'Gost' : auth.enabled ? (auth.name ?? auth.email?.split('@')[0] ?? settings.userName) : settings.userName;
+  const displayName = auth.guest ? 'Gost' : auth.enabled ? (auth.name ?? auth.login?.split('@')[0] ?? settings.userName) : settings.userName;
   const initials = initialsOf(displayName);
 
   return (
@@ -54,7 +54,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
                 <span className="w-11 h-11 shrink-0 rounded-full bg-accent text-brand-black grid place-items-center text-[15px] font-bold shadow-sm">{initials || 'ND'}</span>
                 <div className="min-w-0">
                   <div className="font-semibold text-[15px] leading-tight truncate" data-testid="user-name">{displayName}</div>
-                  {auth.email && <div className="text-[12.5px] text-slate-600 truncate mt-0.5" data-testid="user-email" title={auth.email}>{auth.email}</div>}
+                  {auth.login && <div className="text-[12.5px] text-slate-600 truncate mt-0.5" data-testid="user-email" title={auth.login}>{auth.login}</div>}
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5">
                     {auth.role && <span className="pill !py-0 !px-2 !text-[11px] bg-[#fde4e4] text-[#b4141b]" data-testid="user-role">{auth.role === 'admin' ? 'Administrator' : auth.role}</span>}
                     <span className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-semibold tracking-wide uppercase text-slate-500"><Building2 size={11} />{settings.companyName}</span>
