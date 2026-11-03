@@ -1,9 +1,12 @@
-import { Bell, Building2, ChevronDown, CircleHelp, LogOut, Menu, Settings } from 'lucide-react';
+import { Bell, Building2, ChevronDown, CircleHelp, FileText, LogOut, Menu, Settings } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
 import { useAuth } from '../../services/auth';
 import { initialsOf } from '../../utils/units';
+import { useFieldSpecs } from '../../hooks/useFieldSpecs';
+import { fmtDateTime, positionsLabel, SPEC_STATUS_LABELS, type FieldSpec } from '../../services/fieldSpecs';
+import { FieldSpecModal, specAmount } from '../notifications/FieldSpecModal';
 
 function useOutside(ref: React.RefObject<HTMLElement | null>, close: () => void) {
   useEffect(() => {
@@ -19,6 +22,8 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
   const [bell, setBell] = useState(false);
   const auth = useAuth();
   const [user, setUser] = useState(false);
+  const specs = useFieldSpecs();
+  const [openSpec, setOpenSpec] = useState<FieldSpec | null>(null);
   const bellRef = useRef<HTMLDivElement>(null);
   const userRef = useRef<HTMLDivElement>(null);
   useOutside(bellRef, () => setBell(false));
@@ -29,16 +34,44 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
   const initials = initialsOf(displayName);
 
   return (
+    <>
     <header className="h-[69px] shrink-0 brand-bg text-white border-b border-black/20 flex items-center gap-3 px-4 lg:px-6">
       <span className="lg:hidden"><button className="btn btn-icon !text-ink" aria-label="Otvori meni" onClick={onMenu}><Menu size={20} /></button></span>
       <div className="ml-auto flex items-center gap-2">
         <div className="relative" ref={bellRef}>
-          <button className="btn btn-icon !border-transparent !bg-transparent !text-white hover:!bg-white/10 relative" aria-label="Obaveštenja" onClick={() => { setBell((b) => !b); setUser(false); }}>
+          <button className="btn btn-icon !border-transparent !bg-transparent !text-white hover:!bg-white/10 relative" aria-label={specs.unread > 0 ? `Obaveštenja (${specs.unread} nepročitano)` : 'Obaveštenja'} onClick={() => { setBell((b) => !b); setUser(false); if (!bell) void specs.reload(); }}>
             <Bell size={20} />
+            {specs.unread > 0 && <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-accent text-brand-black text-[11px] font-bold grid place-items-center leading-none" data-testid="bell-badge">{specs.unread > 9 ? '9+' : specs.unread}</span>}
           </button>
           {bell && (
-            <div className="absolute right-0 mt-2 w-[320px] card p-3 z-50" role="menu">
-              <div className="px-2 py-3 text-sm text-center text-slate-600" data-testid="bell-empty">Nema obaveštenja.</div>
+            <div className="absolute right-0 mt-2 w-[360px] max-w-[calc(100vw-24px)] card p-2 z-50 text-ink" role="menu" data-testid="bell-menu">
+              {!specs.enabled || specs.items.length === 0 ? (
+                <div className="px-2 py-3 text-sm text-center text-slate-600" data-testid="bell-empty">{specs.error && specs.enabled ? 'Provera obaveštenja nije uspela. Pokušajte kasnije.' : 'Nema obaveštenja.'}</div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between px-2 pb-1.5 pt-1">
+                    <span className="text-[12px] font-semibold uppercase tracking-wide text-slate-500">Specifikacije sa terena</span>
+                    {specs.unread > 0 && <button className="whitespace-nowrap font-medium text-primary hover:underline" style={{ fontSize: 12 }} data-testid="bell-mark-all" onClick={specs.markAllSeen}>Označi sve kao pročitano</button>}
+                  </div>
+                  <ul className="max-h-[360px] overflow-y-auto scroll-thin" data-testid="bell-list">
+                    {specs.items.map((s) => {
+                      const isNew = !specs.seen.has(s.id);
+                      return (
+                        <li key={s.id}>
+                          <button className={`w-full text-left flex gap-2.5 px-2 py-2 rounded-lg hover:bg-slate-100 ${isNew ? 'bg-[#fff7e0]' : ''}`} data-testid="bell-item" data-unread={isNew} onClick={() => { specs.markSeen([s.id]); setOpenSpec(s); setBell(false); }}>
+                            <span className="mt-0.5 shrink-0 w-8 h-8 rounded-full bg-primary-50 text-primary grid place-items-center"><FileText size={16} /></span>
+                            <span className="min-w-0 flex-1">
+                              <span className="flex items-center gap-1.5"><span className={`truncate text-[13.5px] ${isNew ? 'font-bold' : 'font-semibold'}`}>{s.customerName || 'Specifikacija bez naziva kupca'}</span>{isNew && <span className="shrink-0 w-2 h-2 rounded-full bg-primary" aria-label="Novo" />}</span>
+                              <span className="block text-[12px] text-slate-600 truncate">{s.technician ? `${s.technician} · ` : ''}{positionsLabel(s.positionCount)} · {specAmount(s)}{s.hasUnpriced ? ' + bez cene' : ''}</span>
+                              <span className="block text-[11.5px] text-muted">{fmtDateTime(s.createdAt)} · {SPEC_STATUS_LABELS[s.status] ?? s.status}</span>
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -75,5 +108,8 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
         </div>
       </div>
     </header>
+    {/* izvan zaglavlja: prozor ne sme da nasledi belu boju teksta iz zaglavlja */}
+    {openSpec && <FieldSpecModal spec={openSpec} onClose={() => setOpenSpec(null)} />}
+    </>
   );
 }

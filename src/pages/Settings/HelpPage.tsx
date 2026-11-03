@@ -134,6 +134,7 @@ const TOPICS: Topic[] = [
       <>Prijava: u prvo polje se upisuje <b>e-mail ili korisničko ime</b>. Administrator u <b>Podešavanja → Korisnici</b> pravi naloge (korisničko ime ili e-mail, ime i prezime, lozinka od najmanje 8 znakova), vidi spisak, menja naloge (ime, prijava, nova lozinka, uloga) i briše ih; novi korisnik se odmah prijavljuje tim podacima i nema ovlašćenja administratora. Ne možete obrisati sebe ni poslednjeg administratora. Podešavanje servera: <code>docs/korisnici.md</code>.</>,
       <>Podrazumevana kalkulacija (zarada, popust, PDV, rad i montaža) važi samo za projekte koji se naprave posle izmene; postojeći projekti zadržavaju svoja podešavanja.</>,
       <>Podaci (projekti, kupci, cenovnik, podešavanja) čuvaju se u IndexedDB bazi ovog pregledača. Nema servera ni naloga.</>,
+      <><b>Zvončić</b> u zaglavlju prikazuje specifikacije koje su radnici sa terena poslali iz aplikacije za stolare: broj nepročitanih na zvončiću, a klik na stavku otvara specifikaciju (PDF) sa dugmetom <b>Preuzmi PDF</b>. Proverava se na svakih minut dok je prozor otvoren. Detalji: <code>docs/specifikacije-sa-terena.md</code>.</>,
       <>Statistika na nadzornoj tabli računa se iz lokalno sačuvanih podataka; vrednost ponuda je zbir ukupnih iznosa sa PDV-om za projekte u statusu „Ponuda".</>,
     ],
   },
