@@ -4,18 +4,25 @@ import { computeInfill } from '../domain/geometry/infill';
 import { updatePost } from '../domain/geometry/operations';
 import { createFence, createGate, createProject } from '../domain/models/factories';
 import { FENCE_MODELS } from '../domain/models/catalog';
-import { catalogPostSize, isTarabicaPost, postCaps, tarabicaLayout, tarabicaPostLines } from '../domain/models/tarabica';
+import { catalogPostSize, isTarabicaPost, postCaps, tarabicaClearWidth, tarabicaLayout, tarabicaPostLines } from '../domain/models/tarabica';
 import { buildBom } from '../domain/pricing/calc';
 import { buildCuttingList } from '../domain/pricing/cutting';
 import { buildWorkOrder } from '../domain/pricing/workorder';
 
-const fence = () => createFence({ modelId: 'tarabica', widthMm: 2000, heightMm: 1600 });
+const fence = () => createFence({ modelId: 'picket_wide', widthMm: 2000, heightMm: 1600 });
 const qty = (bom: ReturnType<typeof buildBom>, materialId: string) => bom.find((l) => l.materialId === materialId)?.geometricQty ?? 0;
 
 describe('model tarabica: raspored polja', () => {
   it('podrazumevane mere: tarabica 80, razmak 20, prepust 30', () => {
-    expect(FENCE_MODELS.tarabica.defaults).toEqual({ barSizeMm: 80, gapMm: 20, frameMm: 30 });
-    expect(FENCE_MODELS.tarabica.defaultColor).toBe('RAL 9016');
+    expect(FENCE_MODELS.picket_wide.defaults).toEqual({ barSizeMm: 80, gapMm: 20, frameMm: 30 });
+    expect(FENCE_MODELS.picket_wide.defaultColor).toBe('RAL 9016');
+  });
+
+  it('podrazumevano polje: svetli otvor 640 × 1200 mm sa 6 tarabica', () => {
+    expect(FENCE_MODELS.picket_wide.defaultSize).toEqual({ clearWidthMm: 640, heightMm: 1200 });
+    expect(tarabicaClearWidth(6, 80, 20, 30)).toBe(640);
+    expect(tarabicaLayout(640, 1200, 80, 20, 30)).toMatchObject({ count: 6, gapMm: 20, startMm: 30 });
+    expect(tarabicaLayout(tarabicaClearWidth(9, 80, 20, 30), 1200, 80, 20, 30).count).toBe(9);
   });
 
   it('krajnje tarabice su tačno za prepust od ivice polja, a razmak se ravnomerno koriguje', () => {
@@ -37,7 +44,7 @@ describe('model tarabica: raspored polja', () => {
   });
 
   it('geometrija: dve spojne cevi 30 × 30 preko celog polja i tarabice sa zaobljenim vrhom', () => {
-    const geo = computeInfill('tarabica', 1900, 1600, 30, 80, 20);
+    const geo = computeInfill('picket_wide', 1900, 1600, 30, 80, 20);
     const rails = geo.bars.filter((b) => b.tone === 'rail');
     const slats = geo.bars.filter((b) => b.tone === 'main');
     expect(geo.frame).toBe(0);
@@ -101,7 +108,7 @@ describe('model tarabica: sastavnica', () => {
     expect(tarabicaPostLines({ widthMm: 100, heightMm: 1800, capTop: 'rosette', capBottom: 'flat' }).map((l) => l.materialId)).toEqual(['mat_ek_ktf10010020', 'mat_ek_k100008', 'mat_ek_k100014']);
     const p = createProject('Mešano', [fence(), createFence({ modelId: 'h_narrow' })]);
     expect(p.posts.map((post, i) => isTarabicaPost(p.items, post, i))).toEqual([true, true, false]);
-    const g = createProject('Kapija', [createGate('pedestrian', { infillModelId: 'tarabica' })]);
+    const g = createProject('Kapija', [createGate('pedestrian', { infillModelId: 'picket_wide' })]);
     expect(isTarabicaPost(g.items, g.posts[0], 0)).toBe(true);
     expect(isTarabicaPost(g.items, { type: 'concrete' }, 0)).toBe(false); // betonski stub ostaje običan
   });

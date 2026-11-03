@@ -9,7 +9,7 @@ import {
   AUTOMATION_LABELS, FENCE_MODEL_LIST, FENCE_MODELS, HINGE_LABELS, LOCK_LABELS, MOUNTING_LABELS, POST_LABELS, POST_SIZES, maxRods, rodCountFor,
 } from '../../domain/models/catalog';
 import { PLINTH_DEFAULT_MM, type FenceModelId, type Gate, type LayoutItem, type PostCap, type Project } from '../../domain/models/types';
-import { CAP_LABELS, catalogPostSize, isTarabicaPost, postCaps, TARABICA, tarabicaLayout } from '../../domain/models/tarabica';
+import { CAP_LABELS, catalogPostSize, isTarabicaPost, postCaps, TARABICA, tarabicaClearWidth, tarabicaLayout } from '../../domain/models/tarabica';
 import { computePrice } from '../../domain/pricing/calc';
 import { LIMITS, heightRangeFor, widthRangeFor } from '../../domain/validation/limits';
 import { useAppStore } from '../../store/useAppStore';
@@ -140,6 +140,11 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
     const def = FENCE_MODELS[it.modelId];
     const count = computeInfill(it.modelId, li.clearWidth, it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount).bars.filter((b: { tone: string }) => b.tone === 'main').length;
     const tl = def.style === 'tarabica' ? tarabicaLayout(li.clearWidth, it.heightMm, it.params.barSizeMm, it.params.gapMm, it.params.frameMm) : null;
+    const slatCountRange = (() => {
+      const per = it.params.barSizeMm + it.params.gapMm;
+      const fit = (outer: number) => (outer - 2 * half - 2 * it.params.frameMm + it.params.gapMm) / per;
+      return { min: Math.max(1, Math.ceil(fit(wRange.min + half) - 1e-9)), max: Math.max(1, Math.floor(fit(wRange.max + half) + 1e-9)) };
+    })();
     body = (
       <>
         {common}
@@ -148,6 +153,11 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
         {def.hasBars && (
           <>
             <NumberField label={def.barLabel} testId="field-bar" value={it.params.barSizeMm} range={LIMITS.barSize} onCommit={(v) => st.patchItemParams(id, { barSizeMm: v }, 'bar')} />
+            {tl && (
+              <NumberField label="Broj tarabica" testId="field-slat-count" unit="kom" step={1} value={tl.count} range={slatCountRange}
+                onCommit={(n) => st.mutate((p) => setOuterWidth(p, id, tarabicaClearWidth(n, it.params.barSizeMm, it.params.gapMm, it.params.frameMm) + 2 * half), `w:${id}`)}
+                hint="Menja širinu polja tako da n tarabica stane sa zadatim razmakom i prepustom" />
+            )}
             {def.rods ? (
               <NumberField label="Broj prečki" testId="field-rods" unit="kom" step={1} value={rodCountFor(it.modelId, it.params, it.heightMm) ?? def.rods.default}
                 range={{ min: def.rods.min, max: maxRods(it.modelId, it.heightMm) }} onCommit={(v) => st.patchItemParams(id, { barCount: v }, 'rods')}

@@ -38,6 +38,8 @@ export interface FenceModelDef {
   gapLabel: string;
   /** naziv polja „debljina rama“ kad model ima drugačije značenje te mere (tarabica: prepust spojnih cevi) */
   frameLabel?: string;
+  /** veličina polja pri dodavanju (svetli otvor između stubova i visina), ako se razlikuje od opšte (tarabica: 6 tarabica, 640 × 1200 mm) */
+  defaultSize?: { clearWidthMm: number; heightMm: number };
   hasBars: boolean;
   /** Materijali u cenovniku */
   /** modeli sa prečkama: dozvoljen broj prečki (standardni broj je podrazumevan) */
@@ -114,9 +116,10 @@ const MODEL_LIST: FenceModelDef[] = [
     materialId: 'mat_alu_vertical', railMaterialId: 'mat_alu_frame', parts: { main: 'Vertikalna letvica 140×20', rail: 'Poprečna prečka' },
   }),
   model({
-    id: 'picket_wide', name: 'Bela — široke vertikalne letvice', description: 'Široke letvice sa zaobljenim vrhovima', infill: 'Široke vertikalne letvice, zaobljeni vrhovi', material: 'Aluminijum',
-    image: '13', style: 'picket', defaultColor: 'RAL 9016', defaults: { barSizeMm: 220, gapMm: 40, frameMm: 30 }, barLabel: 'Širina letvice', gapLabel: 'Razmak letvica', hasBars: true,
-    materialId: 'mat_alu_picket', railMaterialId: 'mat_alu_frame', parts: { main: 'Letvica 220×20 (zaobljena)', rail: 'Poprečni nosač' },
+    id: 'picket_wide', name: 'Bela — široke vertikalne letvice', description: 'Tarabica: letvice 80×20 sa čepom, spojene cevima 30×30', infill: 'Vertikalne tarabice 80×20 sa čepom na vrhu', material: 'Aluminijum',
+    image: '13', style: 'tarabica', defaultColor: 'RAL 9016', defaults: { barSizeMm: 80, gapMm: 20, frameMm: 30 }, barLabel: 'Širina tarabice', gapLabel: 'Razmak između tarabica', frameLabel: 'Prepust cevi 30×30', hasBars: true,
+    defaultSize: { clearWidthMm: 640, heightMm: 1200 },
+    materialId: 'mat_ek_kv000007', railMaterialId: 'mat_ek_ktwm3899', parts: { main: 'Tarabica 80×20 (kvadratna cev)', rail: 'Spojna cev 30×30' },
   }),
   model({
     id: 'h_wide', name: 'Antracit — široke horizontalne letvice', description: 'Široke ravne letvice sa razmakom', infill: 'Široke horizontalne letvice', material: 'Aluminijum',
@@ -127,11 +130,6 @@ const MODEL_LIST: FenceModelDef[] = [
     id: 'glass_inox', name: 'Inox i staklo', description: 'Staklena ispuna sa inox rukohvatom', infill: 'Staklo sa inox rukohvatom i nosačima', material: 'Kaljeno staklo / inox',
     image: '15', style: 'glass_rail', defaultColor: 'INOX', defaults: { barSizeMm: 0, gapMm: 0, frameMm: 0 }, barLabel: '', gapLabel: '', hasBars: false,
     materialId: 'mat_glass', railMaterialId: 'mat_rukohvat', parts: { main: 'Staklo 8 mm', rail: 'Rukohvat Ø50 (inox)' },
-  }),
-  model({
-    id: 'tarabica', name: 'Bela — tarabica (široke vertikalne letvice)', description: 'Letvice 80×20 sa čepom, spojene cevima 30×30', infill: 'Vertikalne tarabice 80×20 sa čepom na vrhu', material: 'Aluminijum',
-    image: '16', style: 'tarabica', defaultColor: 'RAL 9016', defaults: { barSizeMm: 80, gapMm: 20, frameMm: 30 }, barLabel: 'Širina tarabice', gapLabel: 'Razmak između tarabica', frameLabel: 'Prepust cevi 30×30', hasBars: true,
-    materialId: 'mat_ek_kv000007', railMaterialId: 'mat_ek_ktwm3899', parts: { main: 'Tarabica 80×20 (kvadratna cev)', rail: 'Spojna cev 30×30' },
   }),
 ];
 
@@ -165,7 +163,7 @@ export const MODEL_CONSTRUCTION: Partial<Record<FenceModelId, ModelConstruction>
   panel_lines: { vertical: VERTICAL_UMASK, horizontal: HORIZONTAL_BY_MODEL },
   h_white: { vertical: VERTICAL_UMASK, horizontal: HORIZONTAL_BY_MODEL },
   louver_light: { vertical: 'U profil 60×28', horizontal: 'Kutijasti profil 80×20' },
-  tarabica: {
+  picket_wide: {
     vertical: 'Kvadratna cev 30×30 (dve spojne cevi, vire po 30 mm sa obe strane); stub 80×80 ili 100×100',
     horizontal: 'Kvadratna cev 80×20 (tarabica) + čep tarabice pun 80×20',
     note: 'Prema opisu proizvoda; razmak između tarabica 20 mm. Kape stubova: ravna, pismo ili rozetna iz kataloga Ekoluka Key.',
@@ -243,7 +241,7 @@ const PANEL_ART = panelMeta as Record<string, PanelArtMeta>;
  */
 export function panelArt(modelId: FenceModelId, color: string): (PanelArtMeta & { id: string; vertical: boolean }) | null {
   const def = FENCE_MODELS[modelId];
-  if (color !== def.defaultColor) return null;
+  if (color !== def.defaultColor || def.style === 'tarabica') return null; // tarabica se uvek crta parametarski (razmak i prepust)
   const meta = PANEL_ART[def.image];
   return meta ? { ...meta, id: def.image, vertical: def.style === 'picket' || def.style === 'framed_vertical' } : null;
 }
@@ -352,7 +350,7 @@ export const DEFAULT_MODEL_ID: FenceModelId = 'h_narrow';
 
 /** Stari modeli (šema v1/v2) → najbliži novi model; koristi se pri migraciji i uvozu starih JSON fajlova. */
 export const LEGACY_MODEL_MAP: Record<string, FenceModelId> = {
-  horizontal: 'h_narrow', solid: 'panel_lines', vertical: 'v_framed', lamele: 'louver_dark', decor: 'panel_lines', glass: 'glass_inox',
+  tarabica: 'picket_wide', horizontal: 'h_narrow', solid: 'panel_lines', vertical: 'v_framed', lamele: 'louver_dark', decor: 'panel_lines', glass: 'glass_inox',
 };
 
 export const GATE_LABELS: Record<GateType, string> = {

@@ -45,7 +45,7 @@ export function createSeedProjects(): Project[] {
     14, 'P-2026-004', 'nacrt',
   );
   const ilic = dated(
-    createProject('Ograda sa zaobljenim letvicama', [createFence({ widthMm: 2000, modelId: 'picket_wide' }), createFence({ widthMm: 2000, modelId: 'picket_wide' }), createGate('single', { widthMm: 1500, infillModelId: 'picket_wide' })], 'cust_ilic'),
+    createProject('Ograda sa zaobljenim letvicama', [createFence({ widthMm: 2000, modelId: 'picket_narrow' }), createFence({ widthMm: 2000, modelId: 'picket_narrow' }), createGate('single', { widthMm: 1500, infillModelId: 'picket_narrow' })], 'cust_ilic'),
     20, 'P-2026-005', 'zavrseno',
   );
   const nikolic = dated(

@@ -6,7 +6,7 @@ export const SCHEMA_VERSION = 3;
 export type ProjectStatus = 'nacrt' | 'ponuda' | 'u_izradi' | 'zavrseno';
 export type FenceModelId =
   | 'h_narrow' | 'h_boards' | 'h_combo' | 'rail_black' | 'panel_lines' | 'rail_inox' | 'picket_narrow' | 'louver_light'
-  | 'louver_dark' | 'picket_brown' | 'h_white' | 'v_framed' | 'picket_wide' | 'h_wide' | 'glass_inox' | 'tarabica';
+  | 'louver_dark' | 'picket_brown' | 'h_white' | 'v_framed' | 'picket_wide' | 'h_wide' | 'glass_inox';
 export type GateType = 'pedestrian' | 'sliding' | 'double' | 'single';
 export type OpeningSide = 'left' | 'right';
 export type SwingDirection = 'inward' | 'outward';

@@ -1,16 +1,19 @@
-# Model „Bela — tarabica (široke vertikalne letvice)"
+# Model „Bela — široke vertikalne letvice" (tarabica)
 
-Ograda sa širokim belim vertikalnim letvicama (tarabicama). Mere i šifre su iz kataloga **Ekoluka Key — aluminijumski profili za ograde** (strane 9 i 21), a opis konstrukcije iz naloga: letvica je kvadratna cev 80×20 sa čepom tarabice na vrhu, razmak 20 mm, dve spojne cevi 30×30 vire po 30 mm sa obe strane.
+Ovo je postojeći model 13 (nije dodat novi model); „Bela — uske vertikalne letvice" je ostala kakva je bila. Ograda sa belim vertikalnim letvicama (tarabicama); slika modela i kartica su ostale iste, a crtež, mere i sastavnica prate opis ispod. Stari projekti sa ovim modelom dobijaju nove podrazumevane mere (80 / 20 / 30 mm). Mere i šifre su iz kataloga **Ekoluka Key — aluminijumski profili za ograde** (strane 9 i 21), a opis konstrukcije iz naloga: letvica je kvadratna cev 80×20 sa čepom tarabice na vrhu, razmak 20 mm, dve spojne cevi 30×30 vire po 30 mm sa obe strane.
 
 ## Šta se zadaje u aplikaciji
 
 | Polje (panel izabranog elementa) | Podrazumevano | Značenje |
 |---|---|---|
+| Broj tarabica | 6 | menja širinu polja tako da n tarabica stane sa zadatim razmakom i prepustom |
 | Širina tarabice | 80 mm | cev 80×20, vidi se šira strana |
 | Razmak između tarabica | 20 mm | najmanji razmak; stvarni razmak je ispod polja („Tarabica: 17, stvarni razmak 23,8 mm") |
 | Prepust cevi 30×30 | 30 mm | koliko spojna cev viri iza krajnje tarabice sa svake strane |
 
 Broj tarabica je najveći broj koji staje: `n·80 + (n−1)·razmak ≤ svetli otvor − 2·prepust`. Ostatak se ravnomerno deli na sve razmake, tako da krajnje tarabice ostaju tačno na zadatom prepustu (razmak je zato jednak ili nešto veći od zadatog). Za razmak tačno 20 mm menja se širina polja.
+
+Pri dodavanju polje ima svetli otvor **640 × 1200 mm** sa **6 tarabica** (6·80 + 5·20 + 2·30 = 640); širina koju prikazuje panel je 840 mm jer uključuje stubove 100×100.
 
 ## Stubovi i kape
 

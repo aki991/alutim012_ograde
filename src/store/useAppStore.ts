@@ -3,9 +3,10 @@ import { SEED_MATERIALS } from '../data/materials';
 import { createSeedData } from '../data/seed';
 import { loadAll, saveAll, wipeAll } from '../db';
 import {
-  changeColor, changeModelAll, duplicateItem, insertItem, moveItemBy, removeItem, setOuterWidth, withConcretePosts, updateItem, updateItemParams, updatePost,
+  changeColor, changeModelAll, duplicateItem, indexOfItem, insertItem, moveItemBy, removeItem, setOuterWidth, withConcretePosts, updateItem, updateItemParams, updatePost,
 } from '../domain/geometry/operations';
-import { DEFAULT_MODEL_ID, TERRACE_NO_GATES, isTerraceModel } from '../domain/models/catalog';
+import { postHalfSum } from '../domain/geometry/layout';
+import { DEFAULT_MODEL_ID, FENCE_MODELS, TERRACE_NO_GATES, isTerraceModel } from '../domain/models/catalog';
 import { createFence, createGate, createCorner, createOpening, createProject, nowIso } from '../domain/models/factories';
 import { emptyHistory, recordChange, redo as redoH, undo as undoH, type History } from '../domain/models/history';
 import type {
@@ -290,15 +291,21 @@ export const useAppStore = create<AppState>((set, get) => {
     addElement(spec, index) {
       const cur = currentProject();
       if (!cur) return null;
-      const height = cur.settings.defaultHeightMm;
       const modelId = get().editor.activeModelId;
+      const fenceDef = spec.kind === 'fence' && spec.modelId ? FENCE_MODELS[spec.modelId] : undefined;
+      const height = fenceDef?.defaultSize?.heightMm ?? cur.settings.defaultHeightMm;
       if (spec.kind === 'gate' && isTerraceModel(spec.modelId ?? modelId)) { get().setNotice(TERRACE_NO_GATES); return null; }
       let item: LayoutItem;
       if (spec.kind === 'fence') item = createFence({ modelId: spec.modelId, heightMm: height });
       else if (spec.kind === 'gate') item = createGate(spec.gateType, { heightMm: height, infillModelId: spec.modelId ?? modelId });
       else if (spec.kind === 'corner') item = createCorner({ heightMm: height });
       else item = createOpening({ heightMm: height });
-      get().mutate((p) => { const q = insertItem(p, item, index ?? p.items.length); return setOuterWidth(spec.kind === 'gate' && spec.concrete ? withConcretePosts(q, item.id) : q, item.id, item.widthMm); });
+      get().mutate((p) => {
+        const q = insertItem(p, item, index ?? p.items.length);
+        // model sa zadatom veličinom (tarabica): zadaje se svetli otvor, pa je spoljna širina otvor + stubovi
+        const outer = fenceDef?.defaultSize ? fenceDef.defaultSize.clearWidthMm + 2 * postHalfSum(q, indexOfItem(q, item.id)) : item.widthMm;
+        return setOuterWidth(spec.kind === 'gate' && spec.concrete ? withConcretePosts(q, item.id) : q, item.id, outer);
+      });
       set((s) => ({ editor: { ...s.editor, selection: { type: 'item', id: item.id }, multi: [] } }));
       return item.id;
     },

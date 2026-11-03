@@ -1,12 +1,12 @@
 import type { FenceModelId, LayoutItem, Post, PostCap } from './types';
 
 /**
- * Model „Bela — tarabica": široke vertikalne letvice od kvadratne cevi 80 × 20 sa čepom tarabice na vrhu, spojene sa dve
+ * Model „Bela — široke vertikalne letvice" (tarabica): široke vertikalne letvice od kvadratne cevi 80 × 20 sa čepom tarabice na vrhu, spojene sa dve
  * kvadratne cevi 30 × 30 (gore i dole) koje vire sa obe strane. Mere i šifre su iz kataloga Ekoluka Key (aluminijumski
  * profili za ograde), a razmak 20 mm i prepust 30 mm iz opisa proizvoda. Visina čepa i položaj spojnih cevi su radne
  * pretpostavke (nisu u katalogu) i menjaju se u specifikaciji modela.
  */
-export const TARABICA_MODEL: FenceModelId = 'tarabica';
+export const TARABICA_MODEL: FenceModelId = 'picket_wide';
 
 export const TARABICA = {
   slatWidthMm: 80,
@@ -22,6 +22,9 @@ export const TARABICA = {
 } as const;
 
 export const isTarabicaModel = (id: FenceModelId | undefined): boolean => id === TARABICA_MODEL;
+
+/** Svetli otvor polja u kome staje tačno n tarabica sa zadatim razmakom i prepustom. */
+export const tarabicaClearWidth = (n: number, barSizeMm: number, gapMm: number, overhangMm: number): number => n * barSizeMm + Math.max(0, n - 1) * gapMm + 2 * overhangMm;
 
 export interface TarabicaLayout {
   /** broj tarabica koje staju */

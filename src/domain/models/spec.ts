@@ -183,7 +183,7 @@ export function defaultSpec(modelId: FenceModelId): SpecPart[] {
   const framed = def.style !== 'rods' && def.style !== 'glass_rail';
   if (modelId === 'rail_black') return railBlackSpec();
   if (modelId === 'louver_light') return louverLightSpec();
-  if (modelId === 'tarabica') return tarabicaSpec();
+  if (modelId === 'picket_wide') return tarabicaSpec();
   if (framed) {
     parts.push(part({ name: 'Ram — vertikalni', materialId: 'mat_alu_frame', group: 'Ramovi', qty: '2', lengthMm: 'H' }));
     parts.push(part({ name: 'Ram — horizontalni', materialId: 'mat_alu_frame', group: 'Ramovi', qty: '2', lengthMm: 'W' }));
