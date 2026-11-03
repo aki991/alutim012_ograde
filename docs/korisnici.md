@@ -4,7 +4,7 @@
 
 - **Prijava:** prvo polje prima **e-mail ili korisničko ime** (npr. `petar.petrovic`), pa lozinku.
 - **Korisničko ime** Supabase Auth ne poznaje (traži e-mail), pa se čuva kao e-mail sa izmišljenom adresom: `petar.petrovic@alutim012.local`. Aplikacija to radi sama pri prijavi i prikazu; korisnik i administrator vide samo `petar.petrovic`.
-- **Administrator** (uloga `admin`) u **Podešavanjima → Korisnici** vidi spisak naloga i pravi nove (korisničko ime ili e-mail, ime i prezime, lozinka od najmanje 8 znakova). Novi korisnik odmah može da se prijavi tim podacima.
+- **Administrator** (uloga `admin`) u **Podešavanjima → Korisnici** vidi spisak naloga, pravi nove, menja ih i briše (korisničko ime ili e-mail, ime i prezime, lozinka od najmanje 8 znakova). Novi korisnik odmah može da se prijavi tim podacima.
 - **Ostali korisnici** nemaju ulogu (prazno): ne vide odeljak Korisnici.
 - Nalozi se prave na serveru (`api/users.ts`), jer to traži tajni `service_role` ključ koji ne sme u pregledač. Funkcija proverava da je pozivalac prijavljen i da ima ulogu `admin` (iz njegovog tokena), pa tek onda radi.
 
@@ -30,6 +30,7 @@
 ## Ograničenja
 
 - Lokalno (`npm run dev`) serverske funkcije ne rade, pa odeljak Korisnici prikazuje grešku; radi na Vercel-u (ili uz `vercel dev`).
-- Za sada nema brisanja korisnika, promene lozinke ni dodele uloge iz aplikacije: to se radi u Supabase-u (Authentication → Users, ili SQL kao gore).
+- **Izmena** (dugme „Izmeni"): ime i prezime, korisničko ime ili e-mail, nova lozinka (prazno = ostaje ista) i uloga administratora. **Brisanje** traži potvrdu. Zaštite: administrator ne može da obriše sebe, sebi oduzme ulogu ni promeni sopstvenu prijavu (lozinku može), a poslednji administrator se ne može obrisati ni degradirati.
+- Brisanjem naloga korisnik više ne može da se prijavi, ali projekti i kupci u njegovom pregledaču ostaju tamo.
 - Korisničko ime: 3–32 znaka, mala slova, brojevi, tačka, crtica i donja crta.
 - Podaci (projekti, kupci, cenovnik) i dalje žive u pregledaču; nalog samo kontroliše ulaz u aplikaciju.
