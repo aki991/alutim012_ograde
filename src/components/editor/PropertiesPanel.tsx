@@ -8,7 +8,8 @@ import { computeLayout, outerWidthMm, postHalfSum, totalStatus } from '../../dom
 import {
   AUTOMATION_LABELS, FENCE_MODEL_LIST, FENCE_MODELS, HINGE_LABELS, LOCK_LABELS, MOUNTING_LABELS, POST_LABELS, POST_SIZES, maxRods, rodCountFor,
 } from '../../domain/models/catalog';
-import { PLINTH_DEFAULT_MM, type FenceModelId, type Gate, type LayoutItem, type Project } from '../../domain/models/types';
+import { PLINTH_DEFAULT_MM, type FenceModelId, type Gate, type LayoutItem, type PostCap, type Project } from '../../domain/models/types';
+import { CAP_LABELS, catalogPostSize, isTarabicaPost, postCaps, TARABICA, tarabicaLayout } from '../../domain/models/tarabica';
 import { computePrice } from '../../domain/pricing/calc';
 import { LIMITS, heightRangeFor, widthRangeFor } from '../../domain/validation/limits';
 import { useAppStore } from '../../store/useAppStore';
@@ -138,6 +139,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
   } else if (it.kind === 'fence') {
     const def = FENCE_MODELS[it.modelId];
     const count = computeInfill(it.modelId, li.clearWidth, it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount).bars.filter((b: { tone: string }) => b.tone === 'main').length;
+    const tl = def.style === 'tarabica' ? tarabicaLayout(li.clearWidth, it.heightMm, it.params.barSizeMm, it.params.gapMm, it.params.frameMm) : null;
     body = (
       <>
         {common}
@@ -151,12 +153,14 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
                 range={{ min: def.rods.min, max: maxRods(it.modelId, it.heightMm) }} onCommit={(v) => st.patchItemParams(id, { barCount: v }, 'rods')}
                 hint={`Razmak ${Math.round((it.heightMm - 200) / (rodCountFor(it.modelId, it.params, it.heightMm) ?? def.rods.default))} mm`} />
             ) : (
-              <NumberField label={def.gapLabel} testId="field-gap" value={it.params.gapMm} range={LIMITS.gap} onCommit={(v) => st.patchItemParams(id, { gapMm: v }, 'gap')} hint={`Profila: ${count}`} />
+              <NumberField label={def.gapLabel} testId="field-gap" value={it.params.gapMm} range={LIMITS.gap} onCommit={(v) => st.patchItemParams(id, { gapMm: v }, 'gap')} hint={tl ? `Tarabica: ${count}, stvarni razmak ${fmtNum(tl.gapMm, 1)} mm` : `Profila: ${count}`} />
             )}
           </>
         )}
         {def.style !== 'rods' && def.style !== 'glass_rail' && (
-          <NumberField label="Debljina rama" value={it.params.frameMm} range={LIMITS.frame} onCommit={(v) => st.patchItemParams(id, { frameMm: v }, 'frame')} />
+          <NumberField label={def.frameLabel ?? 'Debljina rama'} testId={def.style === 'tarabica' ? 'field-overhang' : undefined} value={it.params.frameMm}
+            range={def.style === 'tarabica' ? { min: 0, max: TARABICA.maxOverhangMm } : LIMITS.frame} onCommit={(v) => st.patchItemParams(id, { frameMm: v }, 'frame')}
+            hint={def.style === 'tarabica' ? 'Koliko cev 30×30 viri iza krajnje tarabice sa svake strane' : undefined} />
         )}
       </>
     );
@@ -245,6 +249,8 @@ function MultiPanel({ project, ids }: { project: Project; ids: string[] }) {
 }
 
 /* ---------- Izabrani stub ---------- */
+const CAP_OPTIONS = (Object.entries(CAP_LABELS) as [PostCap, string][]).map(([value, label]) => ({ value, label }));
+
 function PostPanel({ project, id }: { project: Project; id: string }) {
   const st = useAppStore.getState();
   const layout = computeLayout(project);
@@ -271,6 +277,15 @@ function PostPanel({ project, id }: { project: Project; id: string }) {
       {p.type === 'concrete_plinth' && <NumberField label="Visina podnožja" testId="post-plinth" value={p.plinthMm ?? PLINTH_DEFAULT_MM} range={{ min: 100, max: 1200 }} onCommit={(v) => st.patchPost(id, { plinthMm: v }, 'pp')} />}
       <NumberField label="Visina" value={p.heightMm} range={LIMITS.postHeight} onCommit={(v) => st.patchPost(id, { heightMm: v }, 'ph')} />
       <ColorField value={p.color} onChange={(c) => st.patchPost(id, { color: c })} />
+      {isTarabicaPost(project.items, p, lp.index) && (
+        <div data-testid="post-caps">
+          <SelectField label="Kapa na vrhu" testId="post-cap-top" value={postCaps(p).top} options={CAP_OPTIONS} onChange={(v) => st.patchPost(id, { capTop: v })} />
+          <SelectField label="Kapa u dnu" testId="post-cap-bottom" value={postCaps(p).bottom} options={CAP_OPTIONS} onChange={(v) => st.patchPost(id, { capBottom: v })} />
+          <div className="text-[12px] text-muted pb-1.5" data-testid="post-cap-note">
+            Stub {catalogPostSize(p.widthMm)}×{catalogPostSize(p.widthMm)} (kvadratna cev). Kape i rozetne u katalogu postoje za 80×80 i 100×100 mm{p.widthMm !== 80 && p.widthMm !== 100 ? `; za širinu ${p.widthMm} mm obračunava se najbliža veličina` : ''}.
+          </div>
+        </div>
+      )}
       <SelectField label="Montaža" value={p.mounting} options={Object.entries(MOUNTING_LABELS).map(([value, label]) => ({ value: value as typeof p.mounting, label }))} onChange={(v) => st.patchPost(id, { mounting: v })} />
     </Section>
   );

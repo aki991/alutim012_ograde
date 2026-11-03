@@ -6,7 +6,7 @@ export const SCHEMA_VERSION = 3;
 export type ProjectStatus = 'nacrt' | 'ponuda' | 'u_izradi' | 'zavrseno';
 export type FenceModelId =
   | 'h_narrow' | 'h_boards' | 'h_combo' | 'rail_black' | 'panel_lines' | 'rail_inox' | 'picket_narrow' | 'louver_light'
-  | 'louver_dark' | 'picket_brown' | 'h_white' | 'v_framed' | 'picket_wide' | 'h_wide' | 'glass_inox';
+  | 'louver_dark' | 'picket_brown' | 'h_white' | 'v_framed' | 'picket_wide' | 'h_wide' | 'glass_inox' | 'tarabica';
 export type GateType = 'pedestrian' | 'sliding' | 'double' | 'single';
 export type OpeningSide = 'left' | 'right';
 export type SwingDirection = 'inward' | 'outward';
@@ -21,7 +21,7 @@ export interface FenceParams {
   barSizeMm: Mm;
   /** Razmak između profila, mm */
   gapMm: Mm;
-  /** Debljina ramova, mm */
+  /** Debljina ramova, mm (kod modela „tarabica“: prepust spojnih cevi 30 × 30 sa svake strane) */
   frameMm: Mm;
   /** Broj prečki (samo modeli sa prečkama, npr. „Srebrni stubovi — crne prečke"); bez vrednosti važi standard modela */
   barCount?: number;
@@ -95,7 +95,12 @@ export interface Post {
   turnDeg?: number;
   /** Okrugli (cevni) stub, npr. srebrni stubovi uz modele sa rukohvatom */
   round?: boolean;
+  /** Kapa na vrhu i u dnu stuba uz model „tarabica“ (katalog Ekoluka Key); bez izbora: ravna kapa gore, dole bez kape */
+  capTop?: PostCap;
+  capBottom?: PostCap;
 }
+
+export type PostCap = 'none' | 'flat' | 'pyramid' | 'rosette';
 
 /** Koliko stub viri iznad najviše susedne ispune. */
 export const POST_EXTRA_MM = 200;

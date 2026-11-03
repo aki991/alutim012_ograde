@@ -207,7 +207,7 @@ function ParamPanel({ modelId, widthMm, heightMm, params, color }: PanelProps) {
     const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(rotX, 0, 0));
     m.compose(new THREE.Vector3(cx, cy, z), q, new THREE.Vector3(s(b.w), s(b.h), depth));
   };
-  const picket = def.style === 'picket';
+  const picket = def.style === 'picket' || def.style === 'tarabica';
 
   return (
     <group>

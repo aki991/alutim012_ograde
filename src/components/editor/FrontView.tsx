@@ -2,7 +2,8 @@ import { memo } from 'react';
 import { computeLayout } from '../../domain/geometry/layout';
 import { cornerInfo, isCorner } from '../../domain/geometry/corner';
 import { colorHex, GATE_LABELS, leftPostShared, postDrawnByItems, rodCountFor } from '../../domain/models/catalog';
-import type { Post, Project } from '../../domain/models/types';
+import { isTarabicaPost, postCaps } from '../../domain/models/tarabica';
+import type { Post, PostCap, Project } from '../../domain/models/types';
 import { fmtMm } from '../../utils/units';
 import { itemLabel } from '../../utils/labels';
 import { InfillArt, SvgDefs } from '../fences/InfillArt';
@@ -68,7 +69,23 @@ export function fitScale(project: Project, containerW: number, containerH: numbe
   return Math.min(0.5, Math.max(0.02, Math.min(sw, sh)));
 }
 
-function PostArt({ post, x, groundY, hex }: { post: Post; x: number; groundY: number; hex: string }) {
+/** Kapa stuba iz kataloga (ravna, pismo, rozetna), nacrtana od zadate ivice naviše. */
+function CapArt({ kind, x, w, base, hex }: { kind: PostCap; x: number; w: number; base: number; hex: string }) {
+  if (kind === 'none') return null;
+  const line = { stroke: '#000', strokeOpacity: 0.3, strokeWidth: 3 };
+  if (kind === 'pyramid') return <polygon points={`${x - w / 2 - 6},${base} ${x + w / 2 + 6},${base} ${x},${base - w * 0.3}`} fill={hex} {...line} />;
+  if (kind === 'rosette') {
+    return (
+      <g>
+        <rect x={x - w / 2 - 22} y={base - 20} width={w + 44} height={20} rx={4} fill={hex} {...line} />
+        <rect x={x - w / 2 - 8} y={base - 38} width={w + 16} height={18} rx={3} fill={hex} {...line} />
+      </g>
+    );
+  }
+  return <rect x={x - w / 2 - 6} y={base - 22} width={w + 12} height={22} fill={hex} {...line} />;
+}
+
+function PostArt({ post, x, groundY, hex, caps }: { post: Post; x: number; groundY: number; hex: string; caps?: { top: PostCap; bottom: PostCap } }) {
   const w = post.widthMm;
   const top = groundY - post.heightMm;
   const left = x - w / 2;
@@ -91,8 +108,14 @@ function PostArt({ post, x, groundY, hex }: { post: Post; x: number; groundY: nu
     );
   }
   if (!isMasonry && post.type !== 'decorative') {
-    // aluminijumski stub i stub kapije: ravna pravougaona površina u boji stuba, bez kape, senčenja i ivice
-    return <rect x={left} y={top} width={w} height={post.heightMm} fill={body} />;
+    // aluminijumski stub i stub kapije: ravna pravougaona površina u boji stuba, bez senčenja i ivice (uz tarabicu sa izabranim kapama)
+    return (
+      <g>
+        <rect x={left} y={top} width={w} height={post.heightMm} fill={body} />
+        {caps && <CapArt kind={caps.top} x={x} w={w} base={top} hex={body} />}
+        {caps && <CapArt kind={caps.bottom} x={x} w={w} base={groundY} hex={body} />}
+      </g>
+    );
   }
   return (
     <g>
@@ -266,7 +289,7 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
               <text x={lp.x} y={groundY - lp.post.heightMm - 200 + 90} textAnchor="middle" fontSize={78} fontWeight="700" fill="#fff">{lp.post.turnDeg! > 0 ? '↱' : '↰'} {Math.abs(lp.post.turnDeg!)}°</text>
             </g>
           )}
-          {!postDrawnByItems(project.items, lp.index) && <PostArt post={lp.post} x={lp.x} groundY={groundY} hex={colorHex(lp.post.color)} />}
+          {!postDrawnByItems(project.items, lp.index) && <PostArt post={lp.post} x={lp.x} groundY={groundY} hex={colorHex(lp.post.color)} caps={isTarabicaPost(project.items, lp.post, lp.index) ? postCaps(lp.post) : undefined} />}
           {interactive && <rect
             x={lp.x - lp.post.widthMm / 2 - 10 * px} y={groundY - lp.post.heightMm - 70} width={lp.post.widthMm + 20 * px} height={lp.post.heightMm + 70}
             fill="transparent" data-hit="post" data-id={lp.post.id} style={{ cursor: 'pointer' }}

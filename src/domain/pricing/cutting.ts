@@ -1,10 +1,11 @@
 import { outerWidthMm } from '../geometry/layout';
 import type { AppSettings, Material, Project } from '../models/types';
-import type { ModelSpecs } from '../models/spec';
+import { materialName, type ModelSpecs } from '../models/spec';
 import { itemLabel } from '../../utils/labels';
 import { buildCutList, describeItem } from './production';
 import { FILL_PROFILES, GUIDE_PROFILES, buildLouver08Sheet, louver08Panels } from './louverSpec';
 import { buildRail04Sheet, rail04Posts, rail04Runs } from './railSpec';
+import { isTarabicaPost, tarabicaPostLines } from '../models/tarabica';
 
 /** Krojna lista: raspored komada profila na nabavne šipke (širina reza testere uračunata), sa ostatkom po šipki. */
 
@@ -127,6 +128,15 @@ function collectPieces(project: Project, specs: ModelSpecs | undefined, material
     const pos = elementPos(c.index);
     for (let i = 0; i < c.qty; i++) add(c.profile, { lengthMm: c.lengthMm, pos, part: c.part });
   }
+
+  // stubovi uz tarabicu: cev stuba (80 × 80 ili 100 × 100) se seče iz šipke po visini stuba
+  project.posts.forEach((p, i) => {
+    if (!isTarabicaPost(project.items, p, i)) return;
+    const tube = tarabicaPostLines(p)[0];
+    const key = `S${i + 1}`;
+    positions.set(key, { key, label: `Stub ${key}`, detail: `${tube.label} · visina ${Math.round(p.heightMm)} mm` });
+    add(materialName(materials, tube.materialId), { lengthMm: Math.round(p.heightMm), pos: key, part: 'Stub' });
+  });
 
   // model 04: stubovi, rukohvat i prečke (nizovi polja se seku u najdužim komadima)
   const rail = buildRail04Sheet(project, specs);

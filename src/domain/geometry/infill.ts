@@ -1,4 +1,5 @@
 import { FENCE_MODELS, panelPeriodMm, rodCountFor } from '../models/catalog';
+import { TARABICA, tarabicaLayout } from '../models/tarabica';
 import type { FenceModelId } from '../models/types';
 
 /** Broj horizontalnih letvica koje staju u visinu: n·bar + (n−1)·gap ≤ H */
@@ -37,7 +38,7 @@ const HANDRAIL_MM = 60;
  */
 export function computeInfill(modelId: FenceModelId, widthMm: number, heightMm: number, frameMm: number, barSizeMm: number, gapMm: number, barCount?: number): InfillGeometry {
   const style = FENCE_MODELS[modelId].style;
-  const f = style === 'rods' || style === 'glass_rail' ? 0 : Math.min(frameMm, widthMm / 3, heightMm / 3);
+  const f = style === 'rods' || style === 'glass_rail' || style === 'tarabica' ? 0 : Math.min(frameMm, widthMm / 3, heightMm / 3);
   const inner = { x: f, y: f, w: Math.max(0, widthMm - 2 * f), h: Math.max(0, heightMm - 2 * f) };
   const bars: InfillBar[] = [];
   let vertical = false;
@@ -97,6 +98,13 @@ export function computeInfill(modelId: FenceModelId, widthMm: number, heightMm: 
     const used = n * barSizeMm + Math.max(0, n - 1) * gapMm;
     const start = inner.x + (inner.w - used) / 2;
     for (let i = 0; i < n; i++) bars.push({ x: start + i * (barSizeMm + gapMm), y: inner.y, w: barSizeMm, h: inner.h, tone: 'main', round: true });
+  } else if (style === 'tarabica') {
+    // dve spojne cevi 30 × 30 preko cele širine (viri iza krajnjih tarabica) i vertikalne tarabice sa čepom na vrhu
+    vertical = true;
+    const t = tarabicaLayout(widthMm, heightMm, barSizeMm, gapMm, frameMm);
+    hBar(t.railTopMm, TARABICA.railMm, 'rail');
+    hBar(t.railBottomMm, TARABICA.railMm, 'rail');
+    for (let i = 0; i < t.count; i++) bars.push({ x: t.startMm + i * (barSizeMm + t.gapMm), y: 0, w: barSizeMm, h: heightMm, tone: 'main', round: true });
   } else if (style === 'framed_vertical') {
     vertical = true;
     const H = inner.h;

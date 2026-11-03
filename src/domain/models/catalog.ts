@@ -19,7 +19,7 @@ export const RAL_COLORS: RalColor[] = [
 export const colorHex = (key: string): string => (key.startsWith('#') ? key : RAL_COLORS.find((c) => c.key === key)?.hex ?? '#383E42');
 
 /** Način crtanja ispune; isti opis koriste 2D, 3D i kalkulacija (vidi domain/geometry/infill.ts). */
-export type InfillStyle = 'hbars' | 'louver' | 'combo' | 'framed_vertical' | 'picket' | 'panel_lines' | 'rods' | 'glass_rail';
+export type InfillStyle = 'hbars' | 'louver' | 'combo' | 'framed_vertical' | 'picket' | 'tarabica' | 'panel_lines' | 'rods' | 'glass_rail';
 
 export interface FenceModelDef {
   id: FenceModelId;
@@ -36,6 +36,8 @@ export interface FenceModelDef {
   defaults: FenceParams;
   barLabel: string;
   gapLabel: string;
+  /** naziv polja „debljina rama“ kad model ima drugačije značenje te mere (tarabica: prepust spojnih cevi) */
+  frameLabel?: string;
   hasBars: boolean;
   /** Materijali u cenovniku */
   /** modeli sa prečkama: dozvoljen broj prečki (standardni broj je podrazumevan) */
@@ -126,6 +128,11 @@ const MODEL_LIST: FenceModelDef[] = [
     image: '15', style: 'glass_rail', defaultColor: 'INOX', defaults: { barSizeMm: 0, gapMm: 0, frameMm: 0 }, barLabel: '', gapLabel: '', hasBars: false,
     materialId: 'mat_glass', railMaterialId: 'mat_rukohvat', parts: { main: 'Staklo 8 mm', rail: 'Rukohvat Ø50 (inox)' },
   }),
+  model({
+    id: 'tarabica', name: 'Bela — tarabica (široke vertikalne letvice)', description: 'Letvice 80×20 sa čepom, spojene cevima 30×30', infill: 'Vertikalne tarabice 80×20 sa čepom na vrhu', material: 'Aluminijum',
+    image: '16', style: 'tarabica', defaultColor: 'RAL 9016', defaults: { barSizeMm: 80, gapMm: 20, frameMm: 30 }, barLabel: 'Širina tarabice', gapLabel: 'Razmak između tarabica', frameLabel: 'Prepust cevi 30×30', hasBars: true,
+    materialId: 'mat_ek_kv000007', railMaterialId: 'mat_ek_ktwm3899', parts: { main: 'Tarabica 80×20 (kvadratna cev)', rail: 'Spojna cev 30×30' },
+  }),
 ];
 
 export const FENCE_MODELS = Object.fromEntries(MODEL_LIST.map((m) => [m.id, m])) as Record<FenceModelId, FenceModelDef>;
@@ -158,6 +165,11 @@ export const MODEL_CONSTRUCTION: Partial<Record<FenceModelId, ModelConstruction>
   panel_lines: { vertical: VERTICAL_UMASK, horizontal: HORIZONTAL_BY_MODEL },
   h_white: { vertical: VERTICAL_UMASK, horizontal: HORIZONTAL_BY_MODEL },
   louver_light: { vertical: 'U profil 60×28', horizontal: 'Kutijasti profil 80×20' },
+  tarabica: {
+    vertical: 'Kvadratna cev 30×30 (dve spojne cevi, vire po 30 mm sa obe strane); stub 80×80 ili 100×100',
+    horizontal: 'Kvadratna cev 80×20 (tarabica) + čep tarabice pun 80×20',
+    note: 'Prema opisu proizvoda; razmak između tarabica 20 mm. Kape stubova: ravna, pismo ili rozetna iz kataloga Ekoluka Key.',
+  },
   louver_dark: {
     vertical: 'U profil 60×28',
     horizontal: 'Kutijasti profil 80×20; uzorak tamnosive žaluzine sa Z profilom: U profil 60×28 i Z profil',

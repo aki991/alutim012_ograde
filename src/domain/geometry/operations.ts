@@ -147,7 +147,7 @@ function withConcreteWidth(x: Post, patch: Partial<Post>): Post {
 
 export function updatePost(p: Project, id: string, patch: Partial<Post>): Project {
   // samo promena ugla skretanja ne znači da je stub ručno prilagođen (automatika tipa i visine ostaje)
-  const turnOnly = Object.keys(patch).every((k) => k === 'turnDeg');
+  const turnOnly = Object.keys(patch).every((k) => k === 'turnDeg' || k === 'capTop' || k === 'capBottom');
   const posts = p.posts.map((x) => (x.id === id ? { ...withConcreteWidth(x, patch), ...patch, ...(turnOnly ? {} : { custom: true }), ...(patch.heightMm !== undefined ? { heightCustom: true } : {}) } : x));
   return touch(applyPostRoles({ ...p, posts }));
 }

@@ -4,6 +4,7 @@ import { CALC_RULES } from './rules';
 import { evaluateSpec, hasCustomSpec, specFor, specVars, type ModelSpecs } from '../models/spec';
 import { buildLouver08Sheet, FILL_PROFILES, GUIDE_PROFILES, isLouver08, louverSpecOf } from './louverSpec';
 import { buildRail04Sheet, isRail04, RAIL04 } from './railSpec';
+import { isTarabicaPost, tarabicaPostLines } from '../models/tarabica';
 
 /* ---------- Osnovne geometrijske funkcije ---------- */
 
@@ -98,7 +99,12 @@ export function buildBom(project: Project, materials: Material[], specs?: ModelS
     }
   }
   const railPosts = new Set(hasCustomSpec('rail_black', specs) ? [] : project.posts.map((_, i) => i).filter((i) => [project.items[i - 1], project.items[i]].some((x) => x && isRail04(x))));
-  project.posts.forEach((p, i) => { if (!railPosts.has(i)) add('Stubovi', POST_MATERIAL[p.type], 1); });
+  project.posts.forEach((p, i) => {
+    if (railPosts.has(i)) return;
+    // stub uz tarabicu: kvadratna cev 80 × 80 ili 100 × 100 po dužini stuba i izabrane kape iz kataloga
+    if (isTarabicaPost(project.items, p, i)) { for (const l of tarabicaPostLines(p)) add('Stubovi', l.materialId, l.qty); return; }
+    add('Stubovi', POST_MATERIAL[p.type], 1);
+  });
   {
     // model 04: srebrni stubovi Ø40, rukohvat Ø50, prečke Ø16 u prolaznim nosačima (planerska izvedba, neprekinuti komadi po nizu)
     const sheet = buildRail04Sheet(project, specs);

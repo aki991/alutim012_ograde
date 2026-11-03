@@ -183,6 +183,7 @@ export function defaultSpec(modelId: FenceModelId): SpecPart[] {
   const framed = def.style !== 'rods' && def.style !== 'glass_rail';
   if (modelId === 'rail_black') return railBlackSpec();
   if (modelId === 'louver_light') return louverLightSpec();
+  if (modelId === 'tarabica') return tarabicaSpec();
   if (framed) {
     parts.push(part({ name: 'Ram — vertikalni', materialId: 'mat_alu_frame', group: 'Ramovi', qty: '2', lengthMm: 'H' }));
     parts.push(part({ name: 'Ram — horizontalni', materialId: 'mat_alu_frame', group: 'Ramovi', qty: '2', lengthMm: 'W' }));
@@ -214,6 +215,16 @@ function railBlackSpec(): SpecPart[] {
     part({ name: 'Završetak rukohvata (PEGA ECO 46)', materialId: 'mat_pega_eco_46', group: 'Nosači i spojnice', qty: '2' }),
     part({ name: 'Završetak prečke (PEGA SKS 51/2)', materialId: 'mat_pega_sks_51_2', group: 'Nosači i spojnice', qty: '2*N' }),
     part({ name: 'Vijci i stezni elementi', materialId: 'mat_screw', group: 'Vijci', qty: '2+2*N' }),
+  ];
+}
+
+/** Tarabica po polju: cevi 80 × 20 sa čepom, dve spojne cevi 30 × 30. Stubovi i njihove kape su deo stubova projekta. */
+function tarabicaSpec(): SpecPart[] {
+  return [
+    part({ name: 'Tarabica — kvadratna cev 80 × 20', materialId: 'mat_ek_kv000007', group: 'Profili ispune', qty: 'N', lengthMm: 'MAINLEN-40', note: 'dužina = visina polja − 40 mm (čep tarabice); katalog KTWM3865' }),
+    part({ name: 'Čep tarabice pun 80 × 20 (K100018)', materialId: 'mat_ek_k100018', group: 'Nosači i spojnice', qty: 'N' }),
+    part({ name: 'Spojna cev 30 × 30 (gore i dole)', materialId: 'mat_ek_ktwm3899', group: 'Profili ispune', qty: 'R', lengthMm: 'RAILLEN', note: 'dužina = svetli otvor; cevi se oslanjaju na stubove' }),
+    part({ name: 'Vijci (tarabica na spojnu cev)', materialId: 'mat_screw', group: 'Vijci', qty: '2*N' }),
   ];
 }
 

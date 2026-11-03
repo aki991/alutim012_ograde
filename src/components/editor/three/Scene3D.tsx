@@ -17,6 +17,7 @@ import { fmtMm } from '../../../utils/units';
 import { GateMesh } from './GateMesh';
 import { PanelBody } from './PanelBody';
 import { PostMesh } from './PostMesh';
+import { isTarabicaPost, postCaps } from '../../../domain/models/tarabica';
 import { computePlan, type Plan } from '../../../domain/geometry/plan';
 import { cornerInfo, isCorner, postRailInfo, type CornerInfo } from '../../../domain/geometry/corner';
 import { leftPostShared, postDrawnByItems } from '../../../domain/models/catalog';
@@ -348,7 +349,7 @@ function SceneContent(p: ContentProps) {
         })}
         {layout.posts.map((lp) => (
           <group key={lp.post.id} position={[s(plan.posts[lp.index].at.x), 0, s(plan.posts[lp.index].at.z)]} rotation={[0, -plan.posts[lp.index].heading, 0]}>
-            <PostMesh post={lp.post} rails={postDrawnByItems(project.items, lp.index) ? postRailInfo(project, lp.index) : null} />
+            <PostMesh post={lp.post} rails={postDrawnByItems(project.items, lp.index) ? postRailInfo(project, lp.index) : null} caps={isTarabicaPost(project.items, lp.post, lp.index) ? postCaps(lp.post) : undefined} />
             <Hit x={0} w={s(lp.post.widthMm) + 0.1} h={s(lp.post.heightMm) + 0.1} depth={s(lp.post.widthMm) + 0.2} pick={{ kind: 'post', id: lp.post.id }} />
           </group>
         ))}

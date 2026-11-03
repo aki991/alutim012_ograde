@@ -271,9 +271,9 @@ test('„Uredi" otvara izmenu podataka projekta; kapija sa betonskim stubom se d
 });
 
 const TERRACE = ['rail_black', 'rail_inox', 'glass_inox'];
-const ALL_MODELS = ['h_narrow', 'h_boards', 'h_combo', 'rail_black', 'panel_lines', 'rail_inox', 'picket_narrow', 'louver_light', 'louver_dark', 'picket_brown', 'h_white', 'v_framed', 'picket_wide', 'h_wide', 'glass_inox'];
+const ALL_MODELS = ['h_narrow', 'h_boards', 'h_combo', 'rail_black', 'panel_lines', 'rail_inox', 'picket_narrow', 'louver_light', 'louver_dark', 'picket_brown', 'h_white', 'v_framed', 'picket_wide', 'tarabica', 'h_wide', 'glass_inox'];
 
-test('svih 15 modela: ograda i kapija se crtaju u 2D i 3D bez grešaka', async ({ page }) => {
+test('svih 16 modela: ograda i kapija se crtaju u 2D i 3D bez grešaka', async ({ page }) => {
   const errors = trackErrors(page);
   await page.goto('/');
   await page.getByTestId('hero-new').first().click();
@@ -290,7 +290,7 @@ test('svih 15 modela: ograda i kapija se crtaju u 2D i 3D bez grešaka', async (
     await page.getByTestId('field-model').selectOption(id);
     await expect(page.getByTestId('field-model')).toHaveValue(id);
   }
-  await expect(page.getByTestId('count-items')).toHaveText('16');
+  await expect(page.getByTestId('count-items')).toHaveText('17');
   // kapija u 3D se učitava iz GLB modela izabranog dizajna (14 = Antracit široke letvice, klizna)
   const glb = page.waitForResponse((r) => /14-klizna.*\.glb/.test(r.url()) && r.ok());
   await page.getByTestId('tab-three').click();
@@ -685,8 +685,8 @@ test('materijali: uvoz PDF cenovnika dobavljača kao tabele, sa pregledom', asyn
   await page.getByTestId('import-file').setInputFiles(SUPPLIER_PDF);
   await expect(page.getByTestId('import-preview')).toBeVisible({ timeout: 30000 });
   await expect(page.getByTestId('import-summary')).toContainText('novih materijala');
-  await expect(page.getByTestId('import-counts')).toContainText('Novi: 67');
-  await expect(page.getByTestId('import-counts')).toContainText('Menja se: 5');
+  await expect(page.getByTestId('import-counts')).toContainText('Novi: 60');
+  await expect(page.getByTestId('import-counts')).toContainText('Menja se: 12');
   await expect(page.getByTestId('import-big')).toBeVisible();
   await expect(page.getByTestId('import-row-changed').first()).toContainText('po metru');
   await page.getByTestId('import-cancel').click();
@@ -943,4 +943,49 @@ test('ograde za terase: bez kapija i kataloga stubova; model se ne menja dok ima
   await expect(page.getByTestId('panel-basics')).toContainText('ograde za terase nemaju kapije');
   await expect(page.getByTestId('field-model')).not.toHaveValue('rail_black');
   await expect(page.getByTestId('count-items')).toHaveText(items!);
+});
+
+test('model tarabica: razmak i prepust se menjaju, stub ima izbor kapa, sastavnica sadrži cevi i kape iz kataloga', async ({ page }) => {
+  const errors = trackErrors(page);
+  await page.goto('/');
+  await page.getByTestId('hero-new').first().click();
+  await page.getByTestId('catalog-model').selectOption('tarabica');
+  for (let i = 0; i < 2; i++) await page.getByTestId('cat-fence-add').click();
+  await page.locator('[data-hit="item"]').first().click();
+
+  // podrazumevane mere iz opisa proizvoda: tarabica 80, razmak 20, prepust cevi 30×30 30 mm
+  await expect(page.getByTestId('field-bar')).toHaveValue('80');
+  await expect(page.getByTestId('field-gap')).toHaveValue('20');
+  await expect(page.getByTestId('field-overhang')).toHaveValue('30');
+  const slatCount = async () => page.locator('[data-item-art] path[fill-rule], [data-item-art] path').count();
+  const before = await slatCount();
+  await page.getByTestId('field-gap').fill('50');
+  await expect.poll(slatCount).toBeLessThan(before);
+  await page.getByTestId('field-gap').fill('20');
+  await page.getByTestId('field-overhang').fill('60');
+  await expect(page.getByTestId('panel-item')).toContainText('Prepust cevi 30×30');
+  await page.getByTestId('field-overhang').fill('30');
+
+  // stub: kape na vrhu i u dnu iz kataloga (80×80 i 100×100)
+  await page.locator('[data-hit="post"]').nth(1).click();
+  await expect(page.getByTestId('post-caps')).toBeVisible();
+  await expect(page.getByTestId('post-cap-top')).toHaveValue('flat');
+  await expect(page.getByTestId('post-cap-bottom')).toHaveValue('none');
+  await page.getByTestId('post-cap-top').selectOption('pyramid');
+  await page.getByTestId('post-cap-bottom').selectOption('rosette');
+  await expect(page.getByTestId('post-cap-note')).toContainText('100×100');
+  await page.getByRole('button', { name: '80×80' }).click();
+  await expect(page.getByTestId('post-cap-note')).toContainText('80×80');
+
+  // sastavnica: cevi i kape iz kataloga
+  await page.getByTestId('btn-open-calc').click();
+  const bom = page.getByTestId('calc-bom');
+  for (const sku of ['KV000007', 'K100018', 'KTWM3899', 'KTF10010020', 'KTF808030', 'K100010', 'K100007', 'K100014']) await expect(bom).toContainText(sku);
+  await page.getByTestId('calc-close').click();
+
+  // 3D: kape se crtaju bez grešaka
+  await page.getByTestId('tab-three').click();
+  await expect(page.getByTestId('three-canvas')).toBeVisible();
+  await page.waitForTimeout(600);
+  expect(errors).toEqual([]);
 });
