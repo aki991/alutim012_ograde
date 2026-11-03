@@ -71,7 +71,8 @@ test.describe('prazan projekat (D1/D2)', () => {
     await expect(page.getByTestId('empty-state')).toContainText('Dodajte element iz kataloga da započnete projekat');
     await expect(page.getByTestId('count-posts')).toHaveText('0 (0)');
     await expect(page.getByTestId('panel-price')).toHaveCount(0);
-    await page.getByTestId('btn-calc').click();
+    // prazan projekat nema panel cene ni dugmad; obračun se otvara događajem (npr. sa Početne)
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('open-calc')));
     await expect(page.getByTestId('calc-empty')).toBeVisible();
     await expect(page.getByTestId('calc-total')).toContainText('0 RSD');
     await page.getByTestId('calc-close').click();
@@ -365,7 +366,7 @@ test.describe('raspored (D3, D4, D5)', () => {
     test(`kalkulacija: ukupni iznosi vidljivi bez horizontalnog skrola (${w}×${h})`, async ({ page }) => {
       await page.setViewportSize({ width: w, height: h });
       await openDemo(page);
-      await page.getByTestId('btn-calc').click();
+      await page.getByTestId('btn-open-calc').click();
       const dlg = page.getByRole('dialog');
       await expect(dlg).toBeVisible();
       const db = (await dlg.boundingBox())!;
@@ -380,13 +381,13 @@ test.describe('raspored (D3, D4, D5)', () => {
       // fokus ulazi u dijalog, Escape zatvara i vraća fokus na dugme
       await page.keyboard.press('Escape');
       await expect(dlg).toHaveCount(0);
-      await expect(page.getByTestId('btn-calc')).toBeFocused();
+      await expect(page.getByTestId('btn-open-calc')).toBeFocused();
     });
   }
 
   test('promena marže u uvećanje menja ukupan iznos (formule sačuvane)', async ({ page }) => {
     await openDemo(page);
-    await page.getByTestId('btn-calc').click();
+    await page.getByTestId('btn-open-calc').click();
     const margin = num(await page.getByTestId('calc-total').textContent());
     await page.getByTestId('profit-mode').getByRole('radio', { name: 'Uvećanje' }).click();
     await expect.poll(async () => num(await page.getByTestId('calc-total').textContent())).toBeLessThan(margin);

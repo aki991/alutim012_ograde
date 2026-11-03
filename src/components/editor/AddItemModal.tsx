@@ -2,7 +2,7 @@ import { ChevronRight } from 'lucide-react';
 import { ElementThumb, type ThumbKind } from './Catalog';
 import { useState } from 'react';
 import { applyPostType, insertItem, setOuterWidth, withConcretePosts } from '../../domain/geometry/operations';
-import { FENCE_MODEL_LIST, FENCE_MODELS, GATE_DEFAULT_WIDTH, GATE_LABELS } from '../../domain/models/catalog';
+import { FENCE_MODEL_LIST, FENCE_MODELS, GATE_DEFAULT_WIDTH, GATE_LABELS, isTerraceModel } from '../../domain/models/catalog';
 import { createCorner, createFence, createGate, createOpening } from '../../domain/models/factories';
 import type { FenceModelId, GateType, LayoutItem, Project } from '../../domain/models/types';
 import { heightRangeFor, validateRange, widthRangeFor } from '../../domain/validation/limits';
@@ -47,7 +47,7 @@ export function AddItemModal({ project, onClose }: { project: Project; onClose: 
     return (
       <Modal title="Dodaj element" width={460} onClose={onClose}>
         <ul className="grid gap-1.5" data-testid="add-menu">
-          {KINDS.map((k) => (
+          {KINDS.filter((k) => !k.gate || !isTerraceModel(activeModel)).map((k) => (
             <li key={k.id}>
               <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-line bg-white hover:bg-[#fdf0f0] hover:border-primary text-left" data-testid={`add-kind-${k.id}`} onClick={() => pick(k)}>
                 <span className="shrink-0 overflow-hidden rounded-lg" style={{ width: 90, height: 71 }}>
@@ -76,12 +76,13 @@ export function AddItemModal({ project, onClose }: { project: Project; onClose: 
   const add = () => {
     if (!ok) return;
     const item = buildItem(kind, model, Math.round(Number(width)), Math.round(Number(height)), Number(bend));
+    const postChoice = kind.fence && isTerraceModel(model) ? 'auto' : post; // stubovi ograde za terasu su deo ograde
     const st = useAppStore.getState();
     if (kind.fence || kind.gate) st.setActiveModel(model);
     st.mutate((p) => {
       let q = insertItem(p, item, p.items.length);
       if (kind.concrete) q = withConcretePosts(q, item.id);
-      else if (post !== 'auto') q = applyPostType(q, post, q.posts[q.posts.length - 1].id);
+      else if (postChoice !== 'auto') q = applyPostType(q, postChoice, q.posts[q.posts.length - 1].id);
       return setOuterWidth(q, item.id, item.widthMm);
     });
     st.select({ type: 'item', id: item.id });
@@ -99,7 +100,7 @@ export function AddItemModal({ project, onClose }: { project: Project; onClose: 
         {(kind.fence || kind.gate) && (
           <label className="grid gap-1"><span className="label">Model ispune</span>
             <select className="input" data-testid="add-model" value={model} onChange={(e) => setModel(e.target.value as FenceModelId)}>
-              {FENCE_MODEL_LIST.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              {FENCE_MODEL_LIST.filter((m) => !kind.gate || !isTerraceModel(m.id)).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
           </label>
         )}
@@ -118,7 +119,7 @@ export function AddItemModal({ project, onClose }: { project: Project; onClose: 
           <input className="input tabular-nums" type="number" data-testid="add-height" value={height} onChange={(e) => setHeight(e.target.value)} aria-invalid={!hCheck.ok} />
           {!hCheck.ok && <span className="text-[13px] text-[#b42318]" role="alert">{hCheck.message}</span>}
         </label>
-        {!kind.concrete && (
+        {!kind.concrete && !(kind.fence && isTerraceModel(model)) && (
         <div className="grid gap-1"><span className="label">Tip novog krajnjeg stuba</span>
           <div className="flex gap-1.5">
             {([['auto', 'Kao ostali'], ['concrete', 'Betonski'], ['aluminium', 'Aluminijumski']] as const).map(([v, label]) => (

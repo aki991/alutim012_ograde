@@ -46,6 +46,10 @@ export default function SettingsPage() {
         <section className="card p-5">
           <h2 className="font-bold mb-2">Firma i korisnik</h2>
           <TextField label="Naziv firme" testId="set-company" value={settings.companyName} onChange={(v) => update({ companyName: v })} />
+          <TextField label="Adresa" testId="set-company-address" value={settings.companyInfo?.address ?? ''} onChange={(v) => update({ companyInfo: { ...settings.companyInfo, address: v } })} />
+          <TextField label="Telefon" testId="set-company-phone" value={settings.companyInfo?.phone ?? ''} onChange={(v) => update({ companyInfo: { ...settings.companyInfo, phone: v } })} />
+          <TextField label="Email firme" testId="set-company-email" value={settings.companyInfo?.email ?? ''} onChange={(v) => update({ companyInfo: { ...settings.companyInfo, email: v } })} />
+          <TextField label="PIB" testId="set-company-pib" value={settings.companyInfo?.pib ?? ''} onChange={(v) => update({ companyInfo: { ...settings.companyInfo, pib: v } })} />
           {auth.enabled && !auth.guest ? <AccountName /> : <TextField label="Korisnik" value={settings.userName} onChange={(v) => update({ userName: v })} />}
           <SegmentedField label="Valuta" value={settings.currency === 'EUR' ? 'EUR' : 'RSD'} options={[{ value: 'RSD', label: 'RSD' }, { value: 'EUR', label: 'EUR' }]} onChange={(v) => update({ currency: v })} />
           <NumberField label="Kurs (RSD za 1 €)" unit="RSD" value={settings.currencyRateToEur} range={{ min: 1, max: 1000 }} integer={false} step={0.1} onCommit={(v) => update({ currencyRateToEur: v })} />

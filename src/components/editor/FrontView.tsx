@@ -25,6 +25,8 @@ export interface FrontViewProps {
   options?: Partial<FrontViewOptions>;
   selectedId?: string | null;
   selectedType?: 'item' | 'post' | null;
+  /** više izabranih elemenata (Ctrl+klik, okvir): svaki dobija okvir; ako je prazno, važi samo izabrani element */
+  selectedIds?: string[];
   dimmedId?: string | null;
   /** indeks stuba (0..n) gde će element biti ubačen */
   dropIndex?: number | null;
@@ -142,7 +144,7 @@ function DimLine({ x1, x2, y, text, sub, fs, scale, edit }: { x1: number; x2: nu
  * Detaljan pogled spreda. Crtež nastaje programski iz podataka projekta — svaki element je zaseban SVG objekat.
  * Svi tekstovi i linije se skaliraju prema `scale` tako da ostanu čitljivi pri zumiranju.
  */
-function FrontViewBase({ project, scale, options, selectedId, selectedType, dimmedId, dropIndex, dropLabel, className, interactive, compact }: FrontViewProps) {
+function FrontViewBase({ project, scale, options, selectedId, selectedType, selectedIds, dimmedId, dropIndex, dropLabel, className, interactive, compact }: FrontViewProps) {
   const opts: FrontViewOptions = {
     showDimensions: options?.showDimensions ?? project.settings.showDimensions,
     showGrid: options?.showGrid ?? project.settings.showGrid,
@@ -287,7 +289,14 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, dimm
       })}
 
       {/* selekcija */}
-      {selectedType === 'item' && selectedId && (() => {
+      {selectedIds && selectedIds.length > 1 && layout.items.filter((l) => selectedIds.includes(l.item.id)).map((li) => {
+        const y = groundY - li.item.heightMm - li.plinthMm;
+        const w = li.axisEnd - li.axisStart;
+        return (
+          <rect key={`ms-${li.item.id}`} data-testid="multi-outline" data-id={li.item.id} x={li.axisStart + Math.min(4 * px, w / 4)} y={y - 8 * px} width={Math.max(1, w - Math.min(8 * px, w / 2))} height={li.item.heightMm + li.plinthMm + 16 * px} rx={6 * px} fill="#d71920" fillOpacity="0.1" stroke="#d71920" strokeWidth={3 * px} pointerEvents="none" />
+        );
+      })}
+      {selectedType === 'item' && selectedId && !(selectedIds && selectedIds.length > 1) && (() => {
         const li = layout.items.find((l) => l.item.id === selectedId);
         if (!li) return null;
         const y = groundY - li.item.heightMm - li.plinthMm;

@@ -32,6 +32,8 @@ export const isRail04 = (it: { kind: string; modelId?: string }): boolean => it.
 
 export interface Rail04Panel {
   name: string;
+  /** redni broj elementa u projektu (od 0) */
+  index: number;
   /** razmak osa stubova (modul) */
   axisMm: number;
   heightMm: number;
@@ -71,7 +73,7 @@ export function rail04Panels(project: Project): Rail04Panel[] {
     const f = it as FenceSection;
     const geo = computeInfill(f.modelId, li.clearWidth, f.heightMm, f.params.frameMm, f.params.barSizeMm, f.params.gapMm, f.params.barCount);
     const rods = geo.bars.filter((b) => b.tone === 'main').map((b) => Math.round(f.heightMm - (b.y + b.h / 2))).sort((a, b) => a - b);
-    out.push({ name: itemLabel(project.items, li.index), axisMm: li.axisEnd - li.axisStart, heightMm: f.heightMm, rodHeightsMm: rods });
+    out.push({ name: itemLabel(project.items, li.index), index: li.index, axisMm: li.axisEnd - li.axisStart, heightMm: f.heightMm, rodHeightsMm: rods });
   }
   return out;
 }
@@ -117,7 +119,7 @@ export function rail04Runs(project: Project): Rail04Run[] {
     const f = li.item as FenceSection;
     const geo = computeInfill(f.modelId, li.clearWidth, f.heightMm, f.params.frameMm, f.params.barSizeMm, f.params.gapMm, f.params.barCount);
     const rods = geo.bars.filter((b) => b.tone === 'main').map((b) => Math.round(f.heightMm - (b.y + b.h / 2))).sort((a, b) => a - b);
-    const panel: Rail04Panel = { name: itemLabel(project.items, li.index), axisMm: li.axisEnd - li.axisStart, heightMm: f.heightMm, rodHeightsMm: rods };
+    const panel: Rail04Panel = { name: itemLabel(project.items, li.index), index: li.index, axisMm: li.axisEnd - li.axisStart, heightMm: f.heightMm, rodHeightsMm: rods };
     const adjacent = current && (current.last === li.index - 1 || (pending && current.last === pending.index - 1 && pending.index === li.index - 1));
     const same = Boolean(adjacent) && current!.panels[0].heightMm === panel.heightMm && current!.panels[0].rodHeightsMm.join() === rods.join();
     if (!same) { flush(); pending = null; }

@@ -144,12 +144,12 @@ export function SegmentedField<T extends string>({ label, value, options, onChan
 /** Izbor boje kružićima (RAL boje): izabrana je uokvirena, a naziv boje se vidi kad se zadrži miš. */
 export function ColorField({ label = 'Boja', value, onChange, testId }: { label?: string; value: string; onChange: (key: string) => void; testId?: string; stacked?: boolean }) {
   const cur = RAL_COLORS.find((c) => c.key === value);
-  const options = cur ? RAL_COLORS : [{ key: value, name: value, hex: value.startsWith('#') ? value : '#383E42' }, ...RAL_COLORS];
+  const options = cur || value === '' ? RAL_COLORS : [{ key: value, name: value, hex: value.startsWith('#') ? value : '#383E42' }, ...RAL_COLORS];
   return (
     <div className="py-1.5">
       <div className="flex items-baseline justify-between gap-2 mb-1.5">
         <span className="label">{label}</span>
-        <span className="text-[12px] text-slate-600 tabular-nums" data-testid={testId ? `${testId}-value` : undefined}>{value}</span>
+        <span className="text-[12px] text-slate-600 tabular-nums" data-testid={testId ? `${testId}-value` : undefined}>{value || 'različite boje'}</span>
       </div>
       <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={label} data-testid={testId}>
         {options.map((c) => {

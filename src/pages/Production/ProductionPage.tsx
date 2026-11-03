@@ -1,6 +1,8 @@
-import { FileDown, FileSpreadsheet } from 'lucide-react';
+import { ClipboardList, FileDown, FileSpreadsheet } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { FrontView } from '../../components/editor/FrontView';
+import { PdfPreviewModal } from '../../components/editor/PdfPreviewModal';
+import { CutlistSection } from '../../components/production/CutlistSection';
 import { NumberField, SelectField, TextField, ToggleField } from '../../components/forms/Fields';
 import { EmptyState, Page, PageHeader } from '../../components/ui/Common';
 import { STATUS_LABELS } from '../../domain/models/catalog';
@@ -31,6 +33,7 @@ export default function ProductionPage() {
   const rail = useMemo(() => (project ? buildRail04Sheet(project, specs) : null), [project, specs]);
   const louver = useMemo(() => (project ? buildLouver08Sheet(project, specs) : null), [project, specs]);
   const [busy, setBusy] = useState(false);
+  const [orderOpen, setOrderOpen] = useState(false);
 
   if (!project) return <Page><PageHeader title="Proizvodnja" /><EmptyState title="Nema projekata" text="Napravite projekat da biste dobili proizvodnu specifikaciju." /></Page>;
   const layout = computeLayout(project);
@@ -72,12 +75,13 @@ export default function ProductionPage() {
     <Page>
       <PageHeader title="Proizvodnja" subtitle="Osnovna proizvodna specifikacija za izabrani projekat" actions={
         <>
+          <button className="btn" data-testid="prod-workorder" onClick={() => setOrderOpen(true)}><ClipboardList size={17} />Radni nalog</button>
           <button className="btn" data-testid="prod-csv" onClick={csv}><FileSpreadsheet size={17} />CSV lista materijala</button>
           <button className="btn btn-primary" data-testid="prod-pdf" disabled={busy} onClick={async () => { setBusy(true); try { await downloadProductionPdf(project, customer, settings); } finally { setBusy(false); } }}><FileDown size={17} />PDF specifikacija</button>
         </>
       } />
       <div role="note" className="rounded-lg bg-[#fffaeb] text-[#93370d] border border-[#fedf89] px-4 py-2.5 text-[13px] mb-4">
-        <b>Okvirna geometrijska specifikacija.</b> Nije finalna proizvodna dokumentacija i ne sadrži optimizaciju sečenja. Stvarne mere zavise od sistema profila i procedura proizvođača.
+        <b>Okvirna geometrijska specifikacija.</b> Nije finalna proizvodna dokumentacija; raspored komada na šipke je u krojnoj listi ispod. Stvarne mere zavise od sistema profila i procedura proizvođača.
       </div>
       <div className="card p-4 mb-5 grid gap-x-6 sm:grid-cols-3">
         <SelectField label="Projekat" value={project.id} options={projects.map((p) => ({ value: p.id, label: p.name }))} onChange={setId} />
@@ -101,6 +105,8 @@ export default function ProductionPage() {
           <p className="text-sm text-slate-600">{project.notes || '—'}</p>
         </section>
       </div>
+      <CutlistSection project={project} customer={customer} materials={materials} />
+      {orderOpen && <PdfPreviewModal kind="workorder" project={project} customer={customer} materials={materials} settings={settings} onClose={() => setOrderOpen(false)} />}
       <section className="card p-4 mt-5 overflow-x-auto">
         <h2 className="font-bold mb-2">Delovi (okvirno)</h2>
         <table className="w-full min-w-[640px]" data-testid="cut-table"><thead><tr><th className="th">Element</th><th className="th">Deo</th><th className="th">Profil</th><th className="th text-right">Dužina (mm)</th><th className="th text-right">Komada</th><th className="th">Napomena</th></tr></thead>

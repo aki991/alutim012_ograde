@@ -208,6 +208,10 @@ export interface AppSettings {
   /** izmenjene specifikacije modela (delovi sa formulama); model bez zapisa koristi podrazumevanu */
   modelSpecs?: Record<string, import('./spec').SpecPart[]>;
   companyName: string;
+  /** podaci firme za zaglavlja dokumenata (krojna lista); prazna polja se ne prikazuju */
+  companyInfo?: { address?: string; phone?: string; email?: string; pib?: string };
+  /** nabavna dužina šipke i širina reza testere za krojnu listu (mm); bez vrednosti važi 6000 / 3 */
+  cutting?: { stockMm: number; kerfMm: number };
   currency: string;
   currencyRateToEur: number;
   userName: string;

@@ -65,9 +65,10 @@ export function EditorCanvas({ project, svgRef, areaRef, drag, onBeginDrag, regi
   const view = useAppStore((s) => s.editor.view);
   const zoom = useAppStore((s) => s.editor.zoom);
   const selection = useAppStore((s) => s.editor.selection);
+  const multi = useAppStore((s) => s.editor.multi);
   const canUndo = useAppStore((s) => s.editor.history.past.length > 0);
   const canRedo = useAppStore((s) => s.editor.history.future.length > 0);
-  const { setView, setZoom, select, undo, redo, mutate } = useAppStore.getState();
+  const { setView, setZoom, select, toggleItem, selectItems, undo, redo, mutate } = useAppStore.getState();
   const [autoFit, setAutoFit] = useState(true);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const optionsRef = useRef<HTMLSpanElement>(null);
@@ -91,6 +92,17 @@ export function EditorCanvas({ project, svgRef, areaRef, drag, onBeginDrag, regi
   const activeModelId = useAppStore((s) => s.editor.activeModelId);
   const panRef = useRef<{ x: number; y: number; sl: number; st: number; moved: boolean } | null>(null);
   const justPanned = useRef(false);
+  // okvir za izbor više polja (koordinate ekrana) i taster Razmaknica (pomeranje prikaza levim tasterom)
+  const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const spaceDown = useRef(false);
+  useEffect(() => {
+    const typing = (t: EventTarget | null) => t instanceof HTMLElement && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+    const down = (e: KeyboardEvent) => { if (e.code === 'Space' && !typing(e.target)) spaceDown.current = true; };
+    const up = (e: KeyboardEvent) => { if (e.code === 'Space') spaceDown.current = false; };
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
+  }, []);
 
   const s = project.settings;
   const scale = zoom * BASE;
@@ -160,14 +172,27 @@ export function EditorCanvas({ project, svgRef, areaRef, drag, onBeginDrag, regi
   }, [areaRef, view, tracing]);
 
   const onPointerDown = (e: React.PointerEvent) => {
+    justPanned.current = false;
     const t = e.target as Element;
     const hit = t.closest('[data-hit]') as SVGElement | null;
     if (hit && e.button === 0) {
       const id = hit.getAttribute('data-id')!;
       if (hit.getAttribute('data-hit') === 'item') {
+        const idx = project.items.findIndex((i) => i.id === id);
+        if (e.ctrlKey || e.metaKey) {
+          // Ctrl+klik: dodaje polje u izbor ili ga izbacuje; bez prevlačenja
+          toggleItem(id);
+          window.dispatchEvent(new CustomEvent('open-props'));
+          return;
+        }
+        if (e.shiftKey && selection?.type === 'item') {
+          // Shift+klik: sva polja od izabranog do kliknutog
+          const from = project.items.findIndex((i) => i.id === selection.id);
+          const [a, b] = from <= idx ? [from, idx] : [idx, from];
+          if (from >= 0) { selectItems(project.items.slice(a, b + 1).map((i) => i.id)); window.dispatchEvent(new CustomEvent('open-props')); return; }
+        }
         select({ type: 'item', id });
         window.dispatchEvent(new CustomEvent('open-props'));
-        const idx = project.items.findIndex((i) => i.id === id);
         onBeginDrag({ kind: 'move', id, label: `${idx + 1}. element · ${Math.round(outerWidthMm(project, idx))} mm` }, e);
       } else {
         select({ type: 'post', id });
@@ -175,7 +200,38 @@ export function EditorCanvas({ project, svgRef, areaRef, drag, onBeginDrag, regi
       }
       return;
     }
-    // pan: samo na pozadini, samo mišem (na dodir radi prirodno skrolovanje)
+    // levi taster na pozadini 2D prikaza crta okvir za izbor polja; Ctrl dodaje na postojeći izbor
+    if (e.pointerType === 'mouse' && e.button === 0 && view !== 'top' && !spaceDown.current && areaRef.current) {
+      const x0 = e.clientX;
+      const y0 = e.clientY;
+      const add = e.ctrlKey || e.metaKey;
+      let active = false;
+      const rectOf = (ev: PointerEvent) => ({ x0, y0, x1: ev.clientX, y1: ev.clientY });
+      const move = (ev: PointerEvent) => {
+        if (!active && Math.abs(ev.clientX - x0) + Math.abs(ev.clientY - y0) > 4) active = true;
+        if (active) setMarquee(rectOf(ev));
+      };
+      const up = (ev: PointerEvent) => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        setMarquee(null);
+        if (!active) return; // običan klik: ponaša se kao klik na pozadinu
+        justPanned.current = true; // posle okvira sledi klik koji ne sme da poništi izbor
+        const r = rectOf(ev);
+        const l = Math.min(r.x0, r.x1); const rt = Math.max(r.x0, r.x1); const t = Math.min(r.y0, r.y1); const b = Math.max(r.y0, r.y1);
+        const ids: string[] = [];
+        areaRef.current?.querySelectorAll('[data-hit="item"]').forEach((el) => {
+          const bb = el.getBoundingClientRect();
+          if (bb.right >= l && bb.left <= rt && bb.bottom >= t && bb.top <= b) ids.push(el.getAttribute('data-id')!);
+        });
+        if (ids.length) { selectItems(ids, add); window.dispatchEvent(new CustomEvent('open-props')); }
+        else if (!add) select(null);
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+      return;
+    }
+    // pan: srednji taster, Razmaknica + levi taster (ili levi taster u pogledu odozgo); na dodir radi prirodno skrolovanje
     if (e.pointerType === 'mouse' && (e.button === 0 || e.button === 1) && areaRef.current) {
       const a = areaRef.current;
       panRef.current = { x: e.clientX, y: e.clientY, sl: a.scrollLeft, st: a.scrollTop, moved: false };
@@ -237,7 +293,7 @@ export function EditorCanvas({ project, svgRef, areaRef, drag, onBeginDrag, regi
     <div
       ref={areaRef}
       data-testid="canvas-area"
-      className={`relative overflow-auto scroll-thin bg-white ${paneHeight} cursor-grab active:cursor-grabbing`}
+      className={`relative overflow-auto scroll-thin bg-white ${paneHeight} ${view === 'top' ? 'cursor-grab active:cursor-grabbing' : 'cursor-crosshair'}`}
       onPointerDownCapture={(e) => { downOnHit.current = Boolean((e.target as Element).closest('[data-hit]')); }}
       onPointerDown={onPointerDown}
       onClick={onClickBackground}
@@ -254,6 +310,7 @@ export function EditorCanvas({ project, svgRef, areaRef, drag, onBeginDrag, regi
               scale={scale}
               selectedId={selection?.id ?? null}
               selectedType={selection?.type ?? null}
+              selectedIds={multi}
               dimmedId={dimmedId}
               dropIndex={dragging?.indicatorPost ?? null}
               dropLabel={dropLabel}
@@ -263,6 +320,9 @@ export function EditorCanvas({ project, svgRef, areaRef, drag, onBeginDrag, regi
           </div>
         )}
       </div>
+      {marquee && (
+        <div data-testid="marquee" className="fixed z-40 pointer-events-none border border-primary bg-primary/10 rounded-sm" style={{ left: Math.min(marquee.x0, marquee.x1), top: Math.min(marquee.y0, marquee.y1), width: Math.abs(marquee.x1 - marquee.x0), height: Math.abs(marquee.y1 - marquee.y0) }} />
+      )}
       {empty && (
         <div className="absolute inset-0 grid place-items-center pointer-events-none" data-testid="empty-state">
           <div className="text-center max-w-[360px] px-4 py-5 rounded-2xl bg-white/90 border border-dashed border-slate-300">

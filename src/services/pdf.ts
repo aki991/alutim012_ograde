@@ -12,7 +12,7 @@ import { downloadBlob, frontViewPng, safeFilename } from './exports';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 let pdfMakePromise: Promise<any> | null = null;
 
-async function getPdfMake(): Promise<any> {
+export async function getPdfMake(): Promise<any> {
   if (!pdfMakePromise) {
     pdfMakePromise = (async () => {
       const [pm, vfs] = await Promise.all([import('pdfmake/build/pdfmake'), import('pdfmake/build/vfs_fonts')]);
@@ -41,7 +41,7 @@ const tableLayout = {
 const th = (t: string, align: 'left' | 'right' | 'center' = 'left') => ({ text: t, bold: true, fontSize: 8.5, color: MUTED, alignment: align });
 const td = (t: string | number, align: 'left' | 'right' | 'center' = 'left', extra: object = {}) => ({ text: String(t), fontSize: 9, alignment: align, ...extra });
 
-async function renderBlob(pdfMake: any, def: any): Promise<Blob> {
+export async function renderBlob(pdfMake: any, def: any): Promise<Blob> {
   return pdfMake.createPdf(def).getBlob();
 }
 

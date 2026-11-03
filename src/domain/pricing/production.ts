@@ -10,6 +10,10 @@ import { isRail04 } from './railSpec';
 
 export interface CutRow {
   element: string;
+  /** redni broj elementa u projektu (od 0) */
+  index: number;
+  /** staklo/ispuna: nije šipkasti profil, pa ne ulazi u krojnu listu šipki */
+  glass?: boolean;
   part: string;
   profile: string;
   lengthMm: number;
@@ -34,7 +38,7 @@ export function buildCutList(project: Project, specs?: ModelSpecs, materials?: M
     const vars = specVars({ modelId, widthMm: li.clearWidth, heightMm: it.heightMm, axisMm: li.axisEnd - li.axisStart, params: it.params, doubleGate: it.kind === 'gate' && it.gateType === 'double' });
     const geo = computeInfill(modelId, li.clearWidth, it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount);
     if (geo.glass) {
-      rows.push({ element: name, part: 'Staklo', profile: FENCE_MODELS[modelId].parts.main, lengthMm: Math.round(geo.glass.w), qty: 1, note: `${Math.round(geo.glass.w)} × ${Math.round(geo.glass.h)} mm` });
+      rows.push({ element: name, index: li.index, glass: true, part: 'Staklo', profile: FENCE_MODELS[modelId].parts.main, lengthMm: Math.round(geo.glass.w), qty: 1, note: `${Math.round(geo.glass.w)} × ${Math.round(geo.glass.h)} mm` });
     }
     const group = new Map<string, CutRow>();
     for (const ev of evaluateSpec(specFor(modelId, specs), vars)) {
@@ -46,7 +50,7 @@ export function buildCutList(project: Project, specs?: ModelSpecs, materials?: M
       const key = `${ev.part.name}|${len}`;
       const cur = group.get(key);
       if (cur) cur.qty += qty;
-      else group.set(key, { element: name, part: ev.part.name, profile, lengthMm: len, qty, note: ev.part.note });
+      else group.set(key, { element: name, index: li.index, part: ev.part.name, profile, lengthMm: len, qty, note: ev.part.note });
     }
     rows.push(...group.values());
   }

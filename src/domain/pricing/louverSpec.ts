@@ -52,6 +52,8 @@ export const louverSpecOf = (project: Pick<Project, 'louverSpec'>): LouverSpec =
 
 export interface Louver08Panel {
   name: string;
+  /** redni broj elementa u projektu (od 0) */
+  index: number;
   /** spoljna širina i visina panela (svetli otvor između stubova × visina) */
   widthMm: number;
   heightMm: number;
@@ -100,6 +102,7 @@ export function louver08Panels(project: Project): Louver08Panel[] {
     const count = geo.bars.filter((b) => b.tone === 'main').length;
     out.push({
       name: itemLabel(project.items, li.index),
+      index: li.index,
       widthMm: Math.round(li.clearWidth),
       heightMm: f.heightMm,
       count,

@@ -1,8 +1,7 @@
-import { Bell, Building2, ChevronDown, CircleHelp, FileDown, LogOut, Menu, Calculator, Settings } from 'lucide-react';
+import { Bell, Building2, ChevronDown, CircleHelp, LogOut, Menu, Settings } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { useAppStore, useCurrentProject } from '../../store/useAppStore';
-import { PdfPreviewModal } from '../editor/PdfPreviewModal';
+import { useNavigate } from 'react-router-dom';
+import { useAppStore } from '../../store/useAppStore';
 import { useAuth } from '../../services/auth';
 import { initialsOf } from '../../utils/units';
 
@@ -16,14 +15,8 @@ function useOutside(ref: React.RefObject<HTMLElement | null>, close: () => void)
 
 export function Topbar({ onMenu }: { onMenu: () => void }) {
   const navigate = useNavigate();
-  const { pathname } = useLocation();
-  const inEditor = pathname.startsWith('/editor');
-  const customers = useAppStore((s) => s.customers);
-  const materials = useAppStore((s) => s.materials);
   const settings = useAppStore((s) => s.settings);
-  const current = useCurrentProject();
   const [bell, setBell] = useState(false);
-  const [pdfOpen, setPdfOpen] = useState(false);
   const auth = useAuth();
   const [user, setUser] = useState(false);
   const bellRef = useRef<HTMLDivElement>(null);
@@ -39,15 +32,6 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
     <header className="h-[69px] shrink-0 brand-bg text-white border-b border-black/20 flex items-center gap-3 px-4 lg:px-6">
       <span className="lg:hidden"><button className="btn btn-icon !text-ink" aria-label="Otvori meni" onClick={onMenu}><Menu size={20} /></button></span>
       <div className="ml-auto flex items-center gap-2">
-        {inEditor && current ? (
-          <>
-            <span className="hidden md:inline-flex">
-              <button className="btn" data-testid="btn-pdf" onClick={() => setPdfOpen(true)}><FileDown size={17} />PDF ponuda</button>
-            </span>
-            <button className="btn btn-accent" data-testid="btn-calc" onClick={() => window.dispatchEvent(new CustomEvent('open-calc'))}><Calculator size={17} /><span className="hidden sm:inline">Izračunaj cenu</span></button>
-          </>
-        ) : null}
-
         <div className="relative" ref={bellRef}>
           <button className="btn btn-icon !border-transparent !bg-transparent !text-white hover:!bg-white/10 relative" aria-label="Obaveštenja" onClick={() => { setBell((b) => !b); setUser(false); }}>
             <Bell size={20} />
@@ -90,7 +74,6 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
           )}
         </div>
       </div>
-      {pdfOpen && current && <PdfPreviewModal project={current} customer={customers.find((c) => c.id === current.customerId) ?? null} materials={materials} settings={settings} onClose={() => setPdfOpen(false)} />}
     </header>
   );
 }

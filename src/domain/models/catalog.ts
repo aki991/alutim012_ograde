@@ -132,6 +132,41 @@ export const FENCE_MODELS = Object.fromEntries(MODEL_LIST.map((m) => [m.id, m]))
 
 export const FENCE_MODEL_LIST = MODEL_LIST;
 
+/** Ograde za terase (rukohvat sa prečkama ili staklom): nemaju kapije ni zasebne stubove iz kataloga; stubovi su deo same ograde. */
+export const TERRACE_MODELS: readonly FenceModelId[] = ['rail_black', 'rail_inox', 'glass_inox'];
+export const isTerraceModel = (id: FenceModelId): boolean => TERRACE_MODELS.includes(id);
+export const TERRACE_NO_GATES = 'Ograde za terase nemaju kapije.';
+
+/**
+ * Od čega se ograda pravi (profili): podatak radnika ALU TIM-a prema fotografijama uzoraka. NIJE potvrđeno u cenovniku ni
+ * u specifikaciji modela (šifre, debljina zida, spojevi); služi kao dokumentacija i podsetnik pri izradi.
+ */
+export interface ModelConstruction {
+  /** vertikalni profili (stubovi/vođice sa strane polja) */
+  vertical: string;
+  /** horizontalni profili ispune */
+  horizontal: string;
+  note?: string;
+}
+
+const HORIZONTAL_BY_MODEL = 'zavisno od modela: 80×20, 20×20, 40×20 ili 60×20, ili kombinacija više profila (npr. 80×20 + 20×20)';
+const VERTICAL_UMASK = 'U profil sa maskom 25×30 ili U profil 25×20';
+
+export const MODEL_CONSTRUCTION: Partial<Record<FenceModelId, ModelConstruction>> = {
+  h_narrow: { vertical: VERTICAL_UMASK, horizontal: HORIZONTAL_BY_MODEL },
+  h_combo: { vertical: VERTICAL_UMASK, horizontal: HORIZONTAL_BY_MODEL, note: 'Široke i uske letvice naizmenično: po radniku kombinacija više profila.' },
+  panel_lines: { vertical: VERTICAL_UMASK, horizontal: HORIZONTAL_BY_MODEL },
+  h_white: { vertical: VERTICAL_UMASK, horizontal: HORIZONTAL_BY_MODEL },
+  louver_light: { vertical: 'U profil 60×28', horizontal: 'Kutijasti profil 80×20' },
+  louver_dark: {
+    vertical: 'U profil 60×28',
+    horizontal: 'Kutijasti profil 80×20; uzorak tamnosive žaluzine sa Z profilom: U profil 60×28 i Z profil',
+    note: 'Za tamnosivu žaluzinu postoje dva podatka (Z profil i U 25×30 / 25×20); razjasniti sa radnikom (docs/konstrukcija-modela.md).',
+  },
+};
+
+export const constructionOf = (id: FenceModelId): ModelConstruction | undefined => MODEL_CONSTRUCTION[id];
+
 /** Najveći broj prečki koji staje u visinu: prečke su na korak od dna, a poslednja je 200 mm ispod vrha. */
 export function maxRods(modelId: FenceModelId, heightMm: number): number {
   const r = FENCE_MODELS[modelId].rods;

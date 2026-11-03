@@ -120,7 +120,7 @@ test('glavni scenario: projektovanje, kalkulacija, čuvanje, izvoz', async ({ pa
   await expect(page.getByTestId('field-color-value')).toHaveText('RAL 5011');
 
   // 12–14. kalkulacija i izmena cene materijala
-  await page.getByTestId('btn-calc').click();
+  await page.getByTestId('btn-open-calc').click();
   const total1 = num(await page.getByTestId('calc-total').textContent());
   expect(total1).toBeGreaterThan(0);
   await page.getByTestId('price-input-mat_alu_profil').fill('5000');
@@ -270,6 +270,7 @@ test('„Uredi" otvara izmenu podataka projekta; kapija sa betonskim stubom se d
   await expect(page.getByTestId('count-items')).toHaveText('2');
 });
 
+const TERRACE = ['rail_black', 'rail_inox', 'glass_inox'];
 const ALL_MODELS = ['h_narrow', 'h_boards', 'h_combo', 'rail_black', 'panel_lines', 'rail_inox', 'picket_narrow', 'louver_light', 'louver_dark', 'picket_brown', 'h_white', 'v_framed', 'picket_wide', 'h_wide', 'glass_inox'];
 
 test('svih 15 modela: ograda i kapija se crtaju u 2D i 3D bez grešaka', async ({ page }) => {
@@ -282,14 +283,16 @@ test('svih 15 modela: ograda i kapija se crtaju u 2D i 3D bez grešaka', async (
     await page.getByTestId('catalog-model').selectOption(id);
     await page.getByTestId('cat-fence-add').click();
   }
+  // ograde za terase nemaju kapije: kapija se dodaje tek sa modelom koji je dozvoljava
+  await page.getByTestId('catalog-model').selectOption('h_narrow');
   await page.getByTestId('cat-gate-sliding-add').click();
-  for (const id of ALL_MODELS) {
+  for (const id of ALL_MODELS.filter((m) => !TERRACE.includes(m))) {
     await page.getByTestId('field-model').selectOption(id);
     await expect(page.getByTestId('field-model')).toHaveValue(id);
   }
   await expect(page.getByTestId('count-items')).toHaveText('16');
-  // kapija u 3D se učitava iz GLB modela izabranog dizajna (15 = Inox i staklo, klizna)
-  const glb = page.waitForResponse((r) => /15-klizna.*\.glb/.test(r.url()) && r.ok());
+  // kapija u 3D se učitava iz GLB modela izabranog dizajna (14 = Antracit široke letvice, klizna)
+  const glb = page.waitForResponse((r) => /14-klizna.*\.glb/.test(r.url()) && r.ok());
   await page.getByTestId('tab-three').click();
   await expect(page.getByTestId('three-canvas')).toBeVisible();
   const res = await glb;
@@ -521,6 +524,12 @@ test('PDF ponuda: prvo pregled, tek onda čuvanje', async ({ page }) => {
   await page.goto('/');
   await page.getByTestId('hero-new').first().click();
   await page.getByTestId('cat-fence-add').click();
+  // dugmad su u panelu: PDF ponuda ispod sekcije Kalkulacija cene, a u zaglavlju ih nema
+  const priceBox = (await page.getByTestId('panel-price').boundingBox())!;
+  const pdfBox = (await page.getByTestId('btn-pdf').boundingBox())!;
+  expect(pdfBox.y).toBeGreaterThanOrEqual(priceBox.y + priceBox.height);
+  await expect(page.locator('header').getByTestId('btn-pdf')).toHaveCount(0);
+  await expect(page.locator('header').getByRole('button', { name: /Izračunaj cenu/ })).toHaveCount(0);
   await page.getByTestId('btn-pdf').click();
   await expect(page.getByTestId('pdf-preview')).toBeVisible();
   await expect(page.getByTestId('pdf-frame')).toBeVisible({ timeout: 15000 });
@@ -744,4 +753,194 @@ test('stranica za prijavu: bez podešenog Supabase-a kaže da prijava nije pode�
   await expect(page.getByTestId('login-submit')).toBeDisabled();
   await page.getByRole('button', { name: 'Nastavi bez prijave' }).click();
   await expect(page.getByTestId('hero')).toBeVisible();
+});
+
+test('krojna lista: dugme u panelu daje PDF za ogradu, a Proizvodnja prikazuje šipke i menja se sa dužinom šipke i testerom', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('recent-row').filter({ hasText: 'Petrović' }).getByRole('link').click();
+  await expect(page.getByTestId('count-items')).toHaveText('5');
+
+  // dugme je ispod PDF ponude; pregled pa čuvanje kao krojna-lista_*.pdf
+  const pdfBox = (await page.getByTestId('btn-pdf').boundingBox())!;
+  const cutBox = (await page.getByTestId('btn-cutlist').boundingBox())!;
+  expect(cutBox.y).toBeGreaterThan(pdfBox.y);
+  await page.getByTestId('btn-cutlist').click();
+  await expect(page.getByRole('dialog')).toContainText('Pregled krojne liste');
+  await expect(page.getByTestId('pdf-frame')).toBeVisible({ timeout: 30000 });
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.getByTestId('pdf-save').click()]);
+  expect(dl.suggestedFilename()).toMatch(/^krojna-lista_.*\.pdf$/);
+  const bytes = fs.readFileSync((await dl.path())!);
+  expect(bytes.subarray(0, 5).toString()).toBe('%PDF-');
+  expect(bytes.length).toBeGreaterThan(30000);
+  await page.getByTestId('pdf-close').click();
+
+  // Proizvodnja: zbirovi, legenda pozicija i šipke
+  await page.goto('/proizvodnja');
+  await page.getByRole('combobox').first().selectOption({ label: 'Porodična kuća Petrović' });
+  const cut = page.getByTestId('cutlist');
+  await expect(cut).toBeVisible();
+  await expect(cut.getByTestId('cutlist-profile').first()).toBeVisible();
+  await expect(cut.getByTestId('cutlist-legend')).toContainText('Klizna kapija');
+  const bars = async () => num(await cut.getByTestId('cutlist-bars').textContent());
+  const before = await bars();
+  expect(before).toBeGreaterThan(0);
+  // istovetne šipke se grupišu („Šipke 1–14 × 14")
+  await expect(cut.getByTestId('cutlist-bar-count').first()).toContainText('×');
+  // kraća šipka traži više šipki
+  const stock = cut.getByTestId('cut-stock');
+  await stock.fill('2500');
+  await expect.poll(bars).toBeGreaterThan(before);
+  await expect(cut.getByTestId('cutlist-pdf')).toBeEnabled();
+});
+
+test('radni nalog: dugme u panelu i na strani Proizvodnja daje PDF sa elementima i stubovima', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('recent-row').filter({ hasText: 'Petrović' }).getByRole('link').click();
+  await expect(page.getByTestId('count-items')).toHaveText('5');
+  const cutBox = (await page.getByTestId('btn-cutlist').boundingBox())!;
+  const orderBox = (await page.getByTestId('btn-workorder').boundingBox())!;
+  expect(orderBox.y).toBeGreaterThan(cutBox.y);
+  await page.getByTestId('btn-workorder').click();
+  await expect(page.getByRole('dialog')).toContainText('Pregled radnog naloga');
+  await expect(page.getByTestId('pdf-frame')).toBeVisible({ timeout: 30000 });
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.getByTestId('pdf-save').click()]);
+  expect(dl.suggestedFilename()).toMatch(/^radni-nalog_.*\.pdf$/);
+  const bytes = fs.readFileSync((await dl.path())!);
+  expect(bytes.subarray(0, 5).toString()).toBe('%PDF-');
+  expect(bytes.length).toBeGreaterThan(30000);
+  await page.getByTestId('pdf-close').click();
+
+  await page.goto('/proizvodnja');
+  await page.getByRole('combobox').first().selectOption({ label: 'Porodična kuća Petrović' });
+  await page.getByTestId('prod-workorder').click();
+  await expect(page.getByRole('dialog')).toContainText('Pregled radnog naloga');
+  await expect(page.getByTestId('pdf-frame')).toBeVisible({ timeout: 30000 });
+});
+
+test('izbor više polja: Ctrl+klik, Shift+klik i okvir; visina i boja odjednom, brisanje i poništavanje', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('recent-row').filter({ hasText: 'Petrović' }).getByRole('link').click();
+  await expect(page.getByTestId('count-items')).toHaveText('5');
+  const hits = page.locator('[data-hit="item"]');
+
+  // običan klik bira jedno polje; Ctrl+klik dodaje drugo i treće
+  await hits.nth(0).click();
+  await expect(page.getByTestId('panel-item')).toBeVisible();
+  await hits.nth(1).click({ modifiers: ['Control'] });
+  await expect(page.getByTestId('panel-multi')).toContainText('Izabrano polja: 2');
+  await expect(page.getByTestId('multi-outline')).toHaveCount(2);
+  await hits.nth(4).click({ modifiers: ['Control'] });
+  await expect(page.getByTestId('panel-multi')).toContainText('Izabrano polja: 3');
+  // Ctrl+klik na izabrano polje ga izbacuje
+  await hits.nth(4).click({ modifiers: ['Control'] });
+  await expect(page.getByTestId('panel-multi')).toContainText('Izabrano polja: 2');
+  // Ctrl+klik na jedno preostalo vraća pojedinačni izbor
+  await hits.nth(1).click({ modifiers: ['Control'] });
+  await expect(page.getByTestId('panel-multi')).toHaveCount(0);
+  await expect(page.getByTestId('panel-item')).toContainText('Ograda 1');
+
+  // Shift+klik: niz od prvog do trećeg polja
+  await hits.nth(2).click({ modifiers: ['Shift'] });
+  await expect(page.getByTestId('panel-multi')).toContainText('Izabrano polja: 3');
+
+  // visina svih izabranih odjednom (jedan korak poništavanja)
+  await page.getByTestId('multi-height').fill('1400');
+  await expect(page.getByTestId('multi-height')).toHaveValue('1400');
+  await hits.nth(3).click();
+  await expect(page.getByTestId('field-height')).not.toHaveValue('1400'); // četvrto polje nije menjano
+  await hits.nth(1).click();
+  await expect(page.getByTestId('field-height')).toHaveValue('1400');
+  await hits.nth(2).click();
+  await expect(page.getByTestId('field-height')).toHaveValue('1400');
+  await page.getByTestId('btn-undo').click();
+  await hits.nth(1).click();
+  await expect(page.getByTestId('field-height')).not.toHaveValue('1400');
+
+  // okvir: prevlačenje po pozadini levim tasterom bira polja koja dodiruje; Esc poništava
+  const b0 = (await hits.nth(0).boundingBox())!;
+  const b1 = (await hits.nth(1).boundingBox())!;
+  const area = (await page.getByTestId('canvas-area').boundingBox())!;
+  await page.mouse.move(Math.max(area.x + 6, b0.x - 20), Math.max(area.y + 6, b0.y - 25));
+  await page.mouse.down();
+  await page.mouse.move(b1.x + b1.width / 2, b1.y + b1.height / 2, { steps: 8 });
+  await expect(page.getByTestId('marquee')).toBeVisible();
+  await page.mouse.up();
+  await expect(page.getByTestId('panel-multi')).toContainText('Izabrano polja: 2');
+  await expect(page.getByTestId('marquee')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('panel-multi')).toHaveCount(0);
+
+  // brisanje izabranih polja
+  await hits.nth(0).click();
+  await hits.nth(1).click({ modifiers: ['Control'] });
+  await page.getByTestId('multi-delete').click();
+  await expect(page.getByTestId('count-items')).toHaveText('3');
+  await page.getByTestId('btn-undo').click();
+  await expect(page.getByTestId('count-items')).toHaveText('5');
+});
+
+test('modeli: kartice navode profile (vertikale i horizontale) po podacima radnika', async ({ page }) => {
+  await page.goto('/modeli');
+  await expect(page.getByTestId('construction-vertical-louver_light')).toHaveText('U profil 60×28');
+  await expect(page.getByTestId('construction-horizontal-louver_light')).toHaveText('Kutijasti profil 80×20');
+  await expect(page.getByTestId('construction-vertical-h_narrow')).toContainText('U profil sa maskom 25×30');
+  await expect(page.getByTestId('construction-horizontal-h_white')).toContainText('20×20');
+  await expect(page.getByTestId('construction-note-louver_dark')).toContainText('Z profil');
+  await expect(page.getByTestId('construction-note-louver_dark')).toContainText('nije potvrđen');
+  // modeli bez podatka radnika nemaju red sa profilima
+  await expect(page.getByTestId('construction-vertical-glass_inox')).toHaveCount(0);
+});
+
+test('modeli: dugmad „Koristi model" i „Specifikacija" su na istoj visini u svim karticama istog reda', async ({ page }) => {
+  await page.goto('/modeli');
+  const ys = async (testId: (id: string) => string) => {
+    const ids = ['h_narrow', 'h_boards', 'h_combo'];
+    const out: number[] = [];
+    for (const id of ids) out.push((await page.getByTestId(testId(id)).boundingBox())!.y);
+    return out;
+  };
+  const use = await ys((id) => `use-model-${id}`);
+  const spec = await ys((id) => `spec-model-${id}`);
+  expect(Math.max(...use) - Math.min(...use)).toBeLessThan(1);
+  expect(Math.max(...spec) - Math.min(...spec)).toBeLessThan(1);
+  // i na kraju kartice: dno dugmeta je uz dno kartice
+  const card = (await page.getByTestId('model-card-h_boards').boundingBox())!;
+  const btn = (await page.getByTestId('use-model-h_boards').boundingBox())!;
+  expect(card.y + card.height - (btn.y + btn.height)).toBeLessThan(24);
+});
+
+
+test('ograde za terase: bez kapija i kataloga stubova; model se ne menja dok ima kapija', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('hero-new').first().click();
+  for (const id of TERRACE) {
+    await page.getByTestId('catalog-model').selectOption(id);
+    await expect(page.getByTestId('cat-fence')).toBeVisible();
+    await expect(page.getByTestId('cat-opening')).toBeVisible();
+    for (const g of ['pedestrian', 'sliding', 'double', 'single', 'concrete']) await expect(page.getByTestId(`cat-gate-${g}`)).toHaveCount(0);
+    await expect(page.getByTestId('catalog-terrace-note')).toBeVisible();
+    await page.getByTestId('catalog-show-all').click();
+    await expect(page.getByTestId('cat-corner')).toBeVisible(); // ugaoni spoj ostaje
+    await expect(page.getByTestId('cat-post-aluminium')).toHaveCount(0);
+    await expect(page.getByTestId('cat-post-concrete')).toHaveCount(0);
+    await page.getByTestId('catalog-show-all').click();
+  }
+  // dugme +: nema kapija ni izbora tipa stuba
+  await page.getByTestId('cat-fence-add').click();
+  await page.getByTestId('add-end').click();
+  await expect(page.getByTestId('add-kind-fence')).toBeVisible();
+  for (const g of ['pedestrian', 'single', 'double', 'sliding', 'concrete']) await expect(page.getByTestId(`add-kind-${g}`)).toHaveCount(0);
+  await page.getByTestId('add-kind-fence').click();
+  await expect(page.getByTestId('add-post-concrete')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+
+  // model sa kapijama (nije za terasu): kapije ostaju, a promena na model za terasu se odbija sa porukom
+  await page.getByTestId('catalog-model').selectOption('h_narrow');
+  await expect(page.getByTestId('cat-gate-sliding')).toBeVisible();
+  await page.getByTestId('cat-gate-sliding-add').click();
+  const items = await page.getByTestId('count-items').textContent();
+  await page.getByTestId('field-model').selectOption('rail_black');
+  await expect(page.getByTestId('panel-basics')).toContainText('ograde za terase nemaju kapije');
+  await expect(page.getByTestId('field-model')).not.toHaveValue('rail_black');
+  await expect(page.getByTestId('count-items')).toHaveText(items!);
 });

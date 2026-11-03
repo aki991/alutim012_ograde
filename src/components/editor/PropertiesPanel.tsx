@@ -1,6 +1,6 @@
-import { AlertTriangle, ArrowLeft, ArrowRight, Copy, Trash2, Calculator } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ArrowRight, Copy, Trash2, Calculator, FileDown, Scissors, ClipboardList } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { autoFillToFixedTotal, indexOfItem, setAllColors, setAllHeights, setOuterWidth } from '../../domain/geometry/operations';
+import { autoFillToFixedTotal, changeColor, indexOfItem, setAllColors, setAllHeights, setOuterWidth, updateItem } from '../../domain/geometry/operations';
 import { computeInfill } from '../../domain/geometry/infill';
 import { MAX_TURN_DEG } from '../../domain/geometry/plan';
 import { cornerInfo } from '../../domain/geometry/corner';
@@ -8,7 +8,7 @@ import { computeLayout, outerWidthMm, postHalfSum, totalStatus } from '../../dom
 import {
   AUTOMATION_LABELS, FENCE_MODEL_LIST, FENCE_MODELS, HINGE_LABELS, LOCK_LABELS, MOUNTING_LABELS, POST_LABELS, POST_SIZES, maxRods, rodCountFor,
 } from '../../domain/models/catalog';
-import { PLINTH_DEFAULT_MM, type FenceModelId, type Gate, type Project } from '../../domain/models/types';
+import { PLINTH_DEFAULT_MM, type FenceModelId, type Gate, type LayoutItem, type Project } from '../../domain/models/types';
 import { computePrice } from '../../domain/pricing/calc';
 import { LIMITS, heightRangeFor, widthRangeFor } from '../../domain/validation/limits';
 import { useAppStore } from '../../store/useAppStore';
@@ -16,6 +16,7 @@ import { itemLabel } from '../../utils/labels';
 import { fmtMm, fmtMoney, fmtNum } from '../../utils/units';
 import { ColorField, NumberField, SegmentedField, SelectField, TextField, ToggleField } from '../forms/Fields';
 import { ConfirmDialog } from '../ui/Modal';
+import { PdfPreviewModal } from './PdfPreviewModal';
 
 function Section({ title, children, testId }: { title: string; children: React.ReactNode; testId?: string }) {
   return (
@@ -211,6 +212,38 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
   );
 }
 
+/* ---------- Više izabranih polja ---------- */
+function MultiPanel({ project, ids }: { project: Project; ids: string[] }) {
+  const st = useAppStore.getState();
+  const items = ids.map((id) => project.items.find((i) => i.id === id)).filter((i): i is LayoutItem => Boolean(i));
+  if (items.length < 2) return null;
+  // visina mora da važi za svako izabrano polje (presek dozvoljenih opsega)
+  const ranges = items.map((i) => heightRangeFor(i));
+  const range = { min: Math.max(...ranges.map((r) => r.min)), max: Math.min(...ranges.map((r) => r.max)) };
+  const heights = [...new Set(items.map((i) => i.heightMm))];
+  const colorable = items.filter((i) => i.kind !== 'opening');
+  const colors = [...new Set(colorable.map((i) => i.color))];
+  const sorted = [...items].sort((a, b) => indexOfItem(project, a.id) - indexOfItem(project, b.id));
+  return (
+    <Section title={`Izabrano polja: ${items.length}`} testId="panel-multi">
+      <div className="flex flex-wrap gap-1.5 mb-2" data-testid="multi-labels">
+        {sorted.map((it) => <span key={it.id} className="pill !py-0.5 !px-2 !text-[12px] bg-primary-50 text-primary-600">{itemLabel(project.items, indexOfItem(project, it.id))}</span>)}
+      </div>
+      <NumberField label="Visina (izabrana)" testId="multi-height" value={heights[0]} range={range}
+        hint={heights.length > 1 ? `Sada različite visine: ${heights.map((h) => fmtMm(h)).join(', ')}` : undefined}
+        onCommit={(v) => st.mutate((p) => ids.reduce((q, id) => updateItem(q, id, { heightMm: v }), p), 'multi-h')} />
+      {colorable.length > 0 && (
+        <ColorField stacked label="Boja (izabrana)" testId="multi-color" value={colors.length === 1 ? colors[0] : ''} onChange={(c) => st.mutate((p) => ids.reduce((q, id) => changeColor(q, id, c), p))} />
+      )}
+      <div className="flex flex-wrap gap-1.5 mt-2">
+        <button className="btn btn-sm" data-testid="multi-clear" onClick={() => st.select(null)}>Poništi izbor</button>
+        <button className="btn btn-sm btn-danger" data-testid="multi-delete" onClick={st.deleteSelected}><Trash2 size={14} />Obriši izabrana</button>
+      </div>
+      <p className="text-[12px] text-muted mt-2">Ctrl+klik dodaje ili izbacuje polje, Shift+klik bira niz polja, a prevlačenje po pozadini crta okvir za izbor.</p>
+    </Section>
+  );
+}
+
 /* ---------- Izabrani stub ---------- */
 function PostPanel({ project, id }: { project: Project; id: string }) {
   const st = useAppStore.getState();
@@ -247,9 +280,15 @@ function PriceSummary({ project }: { project: Project }) {
   const materials = useAppStore((s) => s.materials);
   const specs = useAppStore((s) => s.settings.modelSpecs);
   const settings = useAppStore((s) => s.settings);
+  const customers = useAppStore((s) => s.customers);
+  const [pdfOpen, setPdfOpen] = useState(false);
+  const [cutOpen, setCutOpen] = useState(false);
+  const [orderOpen, setOrderOpen] = useState(false);
+  const customer = customers.find((c) => c.id === project.customerId) ?? null;
   const price = useMemo(() => computePrice(project, materials, specs), [project, materials, specs]);
   const money = (n: number) => fmtMoney(n, settings.currency, settings.currencyRateToEur);
   return (
+    <>
     <Section title="Kalkulacija cene" testId="panel-price">
       <dl className="text-sm divide-y divide-line">
         <div className="flex justify-between py-1.5"><dt>Materijal</dt><dd className="tabular-nums font-semibold">{money(price.materialTotal)}</dd></div>
@@ -263,14 +302,23 @@ function PriceSummary({ project }: { project: Project }) {
       </div>
       <button className="btn btn-dark w-full mt-3" data-testid="btn-open-calc" onClick={() => window.dispatchEvent(new CustomEvent('open-calc'))}><Calculator size={16} />Izračunaj cenu</button>
     </Section>
+    <button className="btn w-full" data-testid="btn-pdf" onClick={() => setPdfOpen(true)}><FileDown size={16} />PDF ponuda</button>
+    <button className="btn w-full" data-testid="btn-cutlist" onClick={() => setCutOpen(true)}><Scissors size={16} />Krojna lista</button>
+    <button className="btn w-full" data-testid="btn-workorder" onClick={() => setOrderOpen(true)}><ClipboardList size={16} />Radni nalog</button>
+    {pdfOpen && <PdfPreviewModal project={project} customer={customer} materials={materials} settings={settings} onClose={() => setPdfOpen(false)} />}
+    {orderOpen && <PdfPreviewModal kind="workorder" project={project} customer={customer} materials={materials} settings={settings} onClose={() => setOrderOpen(false)} />}
+    {cutOpen && <PdfPreviewModal kind="cutlist" project={project} customer={customer} materials={materials} settings={settings} onClose={() => setCutOpen(false)} />}
+    </>
   );
 }
 
 export function PropertiesPanel({ project }: { project: Project }) {
   const selection = useAppStore((s) => s.editor.selection);
+  const multi = useAppStore((s) => s.editor.multi);
   return (
     <div className="space-y-4" data-testid="properties">
-      {selection?.type === 'item' && <ItemPanel project={project} id={selection.id} />}
+      {selection?.type === 'item' && multi.length > 1 && <MultiPanel project={project} ids={multi} />}
+      {selection?.type === 'item' && multi.length < 2 && <ItemPanel project={project} id={selection.id} />}
       {selection?.type === 'post' && <PostPanel project={project} id={selection.id} />}
       <ProjectBasics project={project} />
       {project.items.length > 0 && <PriceSummary project={project} />}

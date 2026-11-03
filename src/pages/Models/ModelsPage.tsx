@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { SpecEditor } from '../../components/models/SpecEditor';
 import { ModelThumb, Page, PageHeader } from '../../components/ui/Common';
 import { Modal } from '../../components/ui/Modal';
-import { FENCE_MODEL_LIST } from '../../domain/models/catalog';
+import { FENCE_MODEL_LIST, constructionOf } from '../../domain/models/catalog';
 import type { FenceModelId } from '../../domain/models/types';
 import { useAppStore } from '../../store/useAppStore';
 import { itemLabel } from '../../utils/labels';
@@ -49,8 +49,19 @@ export default function ModelsPage() {
               <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[13px] mt-3">
                 <dt className="text-muted">Tip ispune</dt><dd>{m.infill}</dd>
                 <dt className="text-muted">Materijal</dt><dd>{m.material}</dd>
+                {constructionOf(m.id) && (
+                  <>
+                    <dt className="text-muted">Vertikale</dt><dd data-testid={`construction-vertical-${m.id}`}>{constructionOf(m.id)!.vertical}</dd>
+                    <dt className="text-muted">Horizontale</dt><dd data-testid={`construction-horizontal-${m.id}`}>{constructionOf(m.id)!.horizontal}</dd>
+                  </>
+                )}
               </dl>
-              <div className="flex flex-wrap gap-2 mt-4">
+              {constructionOf(m.id) && (
+                <p className="text-[12px] text-muted mt-2" data-testid={`construction-note-${m.id}`}>
+                  Podatak radnika prema uzorcima, nije potvrđen u cenovniku.{constructionOf(m.id)!.note ? ` ${constructionOf(m.id)!.note}` : ''}
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2 mt-auto pt-4">
                 <button className="btn btn-primary" data-testid={`use-model-${m.id}`} onClick={() => useModel(m.id)}>Koristi model</button>
                 <button className="btn" data-testid={`spec-model-${m.id}`} onClick={() => setSpecFor(m.id)}><ListChecks size={16} />Specifikacija{modelSpecs?.[m.id] ? ' (izmenjena)' : ''}</button>
               </div>

@@ -6,9 +6,14 @@ import { buildQuotePdfBlob } from '../../services/pdf';
 import { Modal } from '../ui/Modal';
 
 /** Pregled ponude pre čuvanja: PDF se prvo prikaže, a tek „Sačuvaj PDF" ga preuzima. */
-export function PdfPreviewModal({ project, customer, materials, settings, onClose }: {
+export function PdfPreviewModal({ project, customer, materials, settings, onClose, kind = 'quote' }: {
   project: Project; customer: Customer | null; materials: Material[]; settings: AppSettings; onClose: () => void;
+  /** vrsta dokumenta: ponuda (podrazumevano) ili krojna lista */
+  kind?: 'quote' | 'cutlist' | 'workorder';
 }) {
+  const cutlist = kind === 'cutlist';
+  const workorder = kind === 'workorder';
+  const docName = workorder ? 'radnog naloga' : cutlist ? 'krojne liste' : 'ponude';
   const [blob, setBlob] = useState<Blob | null>(null);
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -16,7 +21,7 @@ export function PdfPreviewModal({ project, customer, materials, settings, onClos
   useEffect(() => {
     let alive = true;
     let objectUrl: string | null = null;
-    buildQuotePdfBlob(project, customer, materials, settings)
+    (workorder ? import('../../services/pdfWorkorder').then((m) => m.buildWorkorderPdfBlob(project, customer, materials, settings)) : cutlist ? import('../../services/pdfCutlist').then((m) => m.buildCutlistPdfBlob(project, customer, materials, settings)) : buildQuotePdfBlob(project, customer, materials, settings))
       .then((b) => {
         if (!alive) return;
         objectUrl = URL.createObjectURL(b);
@@ -28,11 +33,11 @@ export function PdfPreviewModal({ project, customer, materials, settings, onClos
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const save = () => { if (blob) downloadBlob(blob, `ponuda_${safeFilename(project.quoteNo || project.name)}.pdf`); };
+  const save = () => { if (blob) downloadBlob(blob, workorder ? `radni-nalog_${safeFilename(project.name)}.pdf` : cutlist ? `krojna-lista_${safeFilename(project.name)}.pdf` : `ponuda_${safeFilename(project.quoteNo || project.name)}.pdf`); };
 
   return (
     <Modal
-      title={`Pregled ponude${project.quoteNo ? ` ${project.quoteNo}` : ''}`}
+      title={workorder ? 'Pregled radnog naloga' : cutlist ? 'Pregled krojne liste' : `Pregled ponude${project.quoteNo ? ` ${project.quoteNo}` : ''}`}
       width={900}
       onClose={onClose}
       footer={
@@ -46,9 +51,9 @@ export function PdfPreviewModal({ project, customer, materials, settings, onClos
         {error ? (
           <div className="h-full grid place-items-center text-sm text-[#b42318] p-4" role="alert">{error}</div>
         ) : url ? (
-          <iframe title="Pregled ponude" src={url} className="w-full h-full border-0" data-testid="pdf-frame" />
+          <iframe title={workorder ? 'Pregled radnog naloga' : cutlist ? 'Pregled krojne liste' : 'Pregled ponude'} src={url} className="w-full h-full border-0" data-testid="pdf-frame" />
         ) : (
-          <div className="h-full grid place-items-center text-sm text-muted"><span className="inline-flex items-center gap-2"><Loader2 size={16} className="animate-spin" />Priprema ponude…</span></div>
+          <div className="h-full grid place-items-center text-sm text-muted"><span className="inline-flex items-center gap-2"><Loader2 size={16} className="animate-spin" />Priprema {docName}…</span></div>
         )}
       </div>
     </Modal>

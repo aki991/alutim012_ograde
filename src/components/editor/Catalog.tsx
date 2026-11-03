@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronUp, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { FENCE_MODEL_LIST, FENCE_MODELS, GATE_LABELS, POST_LABELS } from '../../domain/models/catalog';
+import { FENCE_MODEL_LIST, FENCE_MODELS, GATE_LABELS, POST_LABELS, isTerraceModel } from '../../domain/models/catalog';
 import { createFence, createGate, createOpening, createProject } from '../../domain/models/factories';
 import { applyPostType } from '../../domain/geometry/operations';
 import type { FenceModelId, GateType, PostType, Project } from '../../domain/models/types';
@@ -121,6 +121,7 @@ export function Catalog({ onBeginDrag }: { onBeginDrag: (source: DragSource, e: 
   const selection = useAppStore((s) => s.editor.selection);
   const [showAll, setShowAll] = useState(false);
   const def = FENCE_MODELS[model];
+  const terrace = isTerraceModel(model); // ograda za terasu: bez kapija i bez kataloga stubova
 
   const startDrag = (spec: NewElementSpec, label: string) => (e: React.PointerEvent) => onBeginDrag({ kind: 'new', spec, label }, e);
   const changeModel = (m: FenceModelId) => {
@@ -144,7 +145,7 @@ export function Catalog({ onBeginDrag }: { onBeginDrag: (source: DragSource, e: 
       </div>
       <div className="flex flex-wrap gap-3" data-testid="catalog-items">
         <CatalogCard testId="cat-fence" title="Ograda" subtitle={def.name} thumb={<ElementThumb kind="fence" model={model} />} onAdd={() => addElement({ kind: 'fence', modelId: model })} onDragStart={startDrag({ kind: 'fence', modelId: model }, `Ograda — ${def.name}`)} />
-        {GATE_CARDS.map((g) => {
+        {!terrace && GATE_CARDS.map((g) => {
           const spec: NewElementSpec = { kind: 'gate', gateType: g.type, modelId: model, concrete: g.concrete };
           return (
             <CatalogCard
@@ -156,19 +157,24 @@ export function Catalog({ onBeginDrag }: { onBeginDrag: (source: DragSource, e: 
         })}
         <CatalogCard testId="cat-opening" title="Prazan otvor" subtitle="Slobodan prostor bez ispune" thumb={<ElementThumb kind="opening" model={model} />} onAdd={() => addElement({ kind: 'opening' })} onDragStart={startDrag({ kind: 'opening' }, 'Prazan otvor')} />
       </div>
+      {terrace && <p className="text-[12.5px] text-muted mt-3" data-testid="catalog-terrace-note">Ograda za terasu nema kapije ni zasebne stubove: stubovi su deo ograde.</p>}
       {showAll && (
         <div data-testid="catalog-all">
           <h3 className="font-semibold text-[14px] mt-4 mb-2">Uglovi</h3>
           <div className="flex flex-wrap gap-3">
             <CatalogCard testId="cat-corner" title="Ugaoni spoj" subtitle="Prečke i rukohvat se savijaju između dva stuba" thumb={<CornerThumb />} onAdd={() => addElement({ kind: 'corner' })} onDragStart={startDrag({ kind: 'corner' }, 'Ugaoni spoj')} />
           </div>
-          <h3 className="font-semibold text-[14px] mt-4 mb-2">Stubovi</h3>
-          <div className="flex flex-wrap gap-3">
-            {POST_TYPES.map((t) => (
-              <PostCard key={t.type} type={t.type} subtitle={t.subtitle} hasSelection={selection?.type === 'post'}
-                onApply={() => mutate((p) => applyPostType(p, t.type, selection?.type === 'post' ? selection.id : undefined))} />
-            ))}
-          </div>
+          {!terrace && (
+            <>
+              <h3 className="font-semibold text-[14px] mt-4 mb-2">Stubovi</h3>
+              <div className="flex flex-wrap gap-3">
+                {POST_TYPES.map((t) => (
+                  <PostCard key={t.type} type={t.type} subtitle={t.subtitle} hasSelection={selection?.type === 'post'}
+                    onApply={() => mutate((p) => applyPostType(p, t.type, selection?.type === 'post' ? selection.id : undefined))} />
+                ))}
+              </div>
+            </>
+          )}
         </div>
       )}
     </section>

@@ -59,12 +59,14 @@ const TOPICS: Topic[] = [
       <>Dvokrilnoj kapiji možete da zadate nejednaka krila; prikazuje se i širina desnog krila.</>,
       <>Klizna kapija traži slobodan prostor za povlačenje; ako ga nema, javlja se upozorenje sa potrebnom dužinom (orijentaciona provera).</>,
       <>U 3D prikazu kapije se otvaraju i zatvaraju, što ne utiče na cenu.</>,
+      <><b>Ograde za terase</b> (Srebrni stubovi — crne prečke, Inox — horizontalne prečke, Inox i staklo) nemaju kapije ni zasebne stubove iz kataloga (betonski, dekorativni, stub kapije): njihovi stubovi su deo ograde. Model za terasu se ne može izabrati dok u projektu ima kapija.</>,
     ],
   },
   {
     title: 'Prikaz i prečice',
     items: [
-      <>Pozadina 2D crteža služi za pomeranje prikaza; <b>Ctrl + točkić</b> zumira.</>,
+      <><b>Izbor više polja:</b> Ctrl+klik dodaje polje u izbor ili ga izbacuje, Shift+klik bira sva polja od izabranog do kliknutog, a prevlačenje levim tasterom po pozadini crteža crta okvir i bira polja koja on dodiruje (Ctrl uz okvir dodaje na postojeći izbor). Za izabrana polja se visina i boja menjaju odjednom, a mogu se i obrisati; Esc poništava izbor.</>,
+      <>Pomeranje prikaza 2D crteža: srednji taster miša ili Razmaknica + prevlačenje; <b>Ctrl + točkić</b> zumira.</>,
       <>3D prikaz: levo dugme — orbit, desno — pomeranje, točkić — zoom. U režimu <b>Uređivanje</b> prevlačite elemente i ručke.</>,
       <>Prečice: <b>Delete</b> briše, <b>Ctrl+Z</b> / <b>Ctrl+Shift+Z</b> poništava i ponavlja, <b>Esc</b> poništava selekciju.</>,
       <>Kote i oznake elemenata su podrazumevano isključene: uključite ih u opcijama prikaza (dugme sa klizačima iznad crteža), gde je i izvoz u SVG. Dugme <b>Sačuvaj</b> je uz dugmad za zoom. Projekti se pretražuju na strani <b>Projekti</b>.</>
@@ -74,8 +76,27 @@ const TOPICS: Topic[] = [
     title: 'Model i specifikacija',
     items: [
       <>Na strani <b>Modeli ograda</b>, <b>Koristi model</b> primenjuje model, a <b>Specifikacija</b> otvara spisak elemenata modela koji ulaze u krojnu listu i cenu.</>,
+      <>Na kartici modela (strana <b>Modeli ograda</b>) pišu <b>vertikalni i horizontalni profili</b> od kojih se model pravi (podatak radnika prema uzorcima; nije potvrđen u cenovniku). Sav sadržaj i otvorena pitanja su u dokumentaciji <code>docs/konstrukcija-modela.md</code>.</>,
       <>U specifikaciji dodajete i brišete elemente; količina i dužina reza su formule (+ − × / zagrade, ceil, floor, round, min, max, abs). Promenljive su navedene u prozoru, npr. N, W, H.</>,
       <>Dok specifikacija modela 04 i 08 nije sačuvana, važi njihova detaljna sastavnica; čuvanjem se prelazi na obračun po polju. „Vrati podrazumevanu" briše izmenu.</>,
+    ],
+  },
+  {
+    title: 'Krojna lista',
+    items: [
+      <>Dugme <b>Krojna lista</b> u panelu desno (ispod <b>PDF ponude</b>) otvara pregled krojne liste izabranog projekta, a <b>Sačuvaj PDF</b> je preuzima. Ista lista je na strani <b>Proizvodnja</b>, gde se vidi i na ekranu.</>,
+      <>Svi komadi profila se raspoređuju na nabavne šipke: dužina šipke i širina testere (rez) zadaju se na strani Proizvodnja (podrazumevano 6000 i 3 mm). Svaki rez troši širinu testere; šrafirani deo šipke je ostatak.</>,
+      <>Svaki komad je u boji svoje <b>pozicije</b> (elementa projekta: ograda, kapija…), sa dužinom u mm; oznaka P1, P2… ispod komada se čita iz legende na vrhu. Šipke sa istim rasporedom se spajaju u jednu liniju („Šipke 1–14 × 14"). Ispod svakog profila je zbirni spisak: dužina, komada i pozicije.</>,
+      <>Zaglavlje sadrži logotip, naziv i podatke firme (adresa, telefon, email, PIB se unose u <b>Podešavanjima → Firma i korisnik</b>), kupca, status, broj ponude i datum. Na dnu su napomene i mesta za potpis.</>,
+      <>Staklo, stubovi iz cenovnika (kom), okovi i delovi bez dužine reza nisu u krojnoj listi. Rezovi su ravni (90°). Modeli 04 i 08 koriste svoje planske mere (vidi napomene na listi).</>,
+    ],
+  },
+  {
+    title: 'Radni nalog',
+    items: [
+      <>Dugme <b>Radni nalog</b> (u panelu desno, ispod Krojne liste, i na strani <b>Proizvodnja</b>) otvara pregled naloga za majstora koji sklapa ogradu; <b>Sačuvaj PDF</b> ga preuzima.</>,
+      <>Na vrhu je shema ograde u bojama pozicija (P1, P2… iste kao na krojnoj listi, S1, S2… su stubovi), sa ukupnom dužinom. Zatim sledi kartica za svaki element: delovi sa dužinom i brojem komada, podaci (mere, boja, okov kapije) i kontrolne tačke za čekiranje.</>,
+      <>Na kraju su tabela stubova (položaj, tip, presek, visina, montaža), okovi i sitan materijal za ceo projekat, napomene projekta i mesta za potpise (nalog izdao, majstor, kontrola, datum). Rok i ime majstora se upisuju rukom u zaglavlju.</>,
     ],
   },
   {

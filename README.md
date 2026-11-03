@@ -71,6 +71,7 @@ ista selekcija, isti panel parametara, ista kalkulacija). Nema CDN-a, HDRI-ja ni
   pun panel sa srebrnim linijama, vertikalne letvice sa zaobljenim vrhovima (uske, braon, široke), žaluzine (svetlosiva, antracit, bela), vertikalna ispuna u ramu,
   inox + staklo. Svaki model ima sliku za katalog i sopstvenu parametarsku ispunu (isti geometrijski opis za 2D, 3D i kalkulaciju). Isti modeli važe i za sve četiri vrste kapija.
   Stari modeli (horizontal, solid, vertical, lamele, decor, glass) su uklonjeni; postojeći projekti i JSON uvozi se migriraju (šema v3) na najbliži novi model; širine i visine ostaju.
+  Od kojih profila se modeli prave (vertikale i horizontale prema podacima radnika, sa uzorcima i otvorenim pitanjima) piše u `docs/konstrukcija-modela.md` i na karticama na strani Modeli ograda.
   Ograničenja: slike u katalogu su vizuelne rekonstrukcije (ne fotografije); 2D/3D crtež je parametarska aproksimacija bez teksture drveta; model 15 (inox i staklo) je pretpostavka prema delimično vidljivom uzorku; 4 tipa stubova (kape, montažni detalji); različite visine; prazan otvor ostaje otvor.
 - **3D modeli kapija (paket „ALU TIM 60 modela kapija", `src/assets/gates3d/*.glb`, 15 dizajna × 4 vrste):** krilo kapije u 3D uzima se iz GLB modela
   (okvir, ispuna, šarke, kvaka, točkići) i prilagođava merama projekta u `three/gateGlb.ts`: okviri i prečke se rastežu, letvice i prečke se dodaju ili uklanjaju u celim
