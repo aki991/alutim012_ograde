@@ -41,11 +41,11 @@ function Hinges({ x, y, w, h, side }: { x: number; y: number; w: number; h: numb
   );
 }
 
-function Leaf({ gate, x, y, w, h, hex, uid, withHandle, handleSide }: { gate: Gate; x: number; y: number; w: number; h: number; hex: string; uid: string; withHandle: boolean; handleSide: 'left' | 'right' }) {
+function Leaf({ gate, x, y, w, h, hex, uid, withHandle, handleSide, edge }: { gate: Gate; x: number; y: number; w: number; h: number; hex: string; uid: string; withHandle: boolean; handleSide: 'left' | 'right'; edge?: [number, number] }) {
   const hxPos = handleSide === 'left' ? x + gate.params.frameMm + 50 : x + w - gate.params.frameMm - 80;
   return (
     <g>
-      <InfillArt modelId={gate.infillModelId} x={x} y={y} w={w} h={h} frame={gate.params.frameMm} barSize={gate.params.barSizeMm} gap={gate.params.gapMm} hex={hex} colorKey={gate.color} uid={uid} />
+      <InfillArt modelId={gate.infillModelId} x={x} y={y} w={w} h={h} frame={gate.params.frameMm} barSize={gate.params.barSizeMm} gap={gate.params.gapMm} lift={gate.params.liftMm} edgeOverhang={edge} hex={hex} colorKey={gate.color} uid={uid} />
       {withHandle && (
         <g>
           <rect x={hxPos} y={y + h * 0.5 - 220} width={22} height={440} rx="8" fill="#d8dee6" stroke="#6b7380" strokeWidth="3" />
@@ -99,8 +99,8 @@ export function GateArt({ gate, x, y, w, h, hex, px, realistic }: Props & { real
     const rightW = total - gapC - leftW;
     return (
       <g>
-        <Leaf gate={gate} x={x} y={y} w={leftW} h={h} hex={hex} uid={`${gate.id}-l`} withHandle={false} handleSide="right" />
-        <Leaf gate={gate} x={x + leftW + gapC} y={y} w={rightW} h={h} hex={hex} uid={`${gate.id}-r`} withHandle={false} handleSide="left" />
+        <Leaf gate={gate} x={x} y={y} w={leftW} h={h} hex={hex} uid={`${gate.id}-l`} withHandle={false} handleSide="right" edge={[gate.params.frameMm, 0]} />
+        <Leaf gate={gate} x={x + leftW + gapC} y={y} w={rightW} h={h} hex={hex} uid={`${gate.id}-r`} withHandle={false} handleSide="left" edge={[0, gate.params.frameMm]} />
         {!realistic && <SwingMark x={x} y={y} w={leftW} h={h} hingeSide="left" px={px} />}
         {!realistic && <SwingMark x={x + leftW + gapC} y={y} w={rightW} h={h} hingeSide="right" px={px} />}
         <Hinges x={x} y={y} w={leftW} h={h} side="left" />

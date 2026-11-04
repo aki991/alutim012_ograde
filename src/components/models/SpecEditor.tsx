@@ -19,7 +19,7 @@ export function SpecEditor({ modelId, onClose }: { modelId: FenceModelId; onClos
   const [parts, setParts] = useState<SpecPart[]>(() => (saved ?? defaultSpec(modelId)).map((p) => ({ ...p })));
   const [sample, setSample] = useState({ w: 2000, h: 1600 });
   const custom = hasCustomSpec(modelId, settings.modelSpecs);
-  const dedicated = modelId === 'rail_black' || modelId === 'louver_light';
+  const dedicated = modelId === 'rail_black' || modelId === 'louver_light' || modelId === 'rail_inox';
 
   const vars = useMemo(
     () => specVars({ modelId, widthMm: sample.w, heightMm: sample.h, axisMm: sample.w + 100, params: def.defaults }),

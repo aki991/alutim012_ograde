@@ -12,8 +12,14 @@ export const TARABICA = {
   slatWidthMm: 80,
   slatThicknessMm: 20,
   railMm: 30,
-  /** koliko čep tarabice viri iznad cevi (pretpostavka: polukružni čep 80 mm) */
-  capHeightMm: 40,
+  /** čep tarabice (K100018): kupola je polu-elipsa visine 0,425 × širina (prema fotografiji iz kataloga), ispod nje okovratnik */
+  domeRatio: 0.425,
+  collarMm: 6,
+  /** okovratnik čepa je sa svake strane toliko širi od cevi */
+  collarExtraMm: 2,
+  /** tarabice nisu na podu nego podignute (podrazumevano za visinu čepa) */
+  defaultLiftMm: 40,
+  maxLiftMm: 300,
   /** osa spojne cevi od vrha, odnosno dna polja */
   railFromEndMm: 200,
   defaultGapMm: 20,
@@ -25,6 +31,10 @@ export const isTarabicaModel = (id: FenceModelId | undefined): boolean => id ===
 
 /** Svetli otvor polja u kome staje tačno n tarabica sa zadatim razmakom i prepustom. */
 export const tarabicaClearWidth = (n: number, barSizeMm: number, gapMm: number, overhangMm: number): number => n * barSizeMm + Math.max(0, n - 1) * gapMm + 2 * overhangMm;
+
+/** Visina kupole čepa i ukupna visina čepa (kupola + okovratnik) za zadatu širinu tarabice. */
+export const tarabicaDomeMm = (barSizeMm: number): number => Math.round(barSizeMm * TARABICA.domeRatio);
+export const tarabicaCapHeight = (barSizeMm: number): number => tarabicaDomeMm(barSizeMm) + TARABICA.collarMm;
 
 export interface TarabicaLayout {
   /** broj tarabica koje staju */
@@ -38,20 +48,27 @@ export interface TarabicaLayout {
   railBottomMm: number;
   /** dužina jedne spojne cevi (celo polje: cevi se oslanjaju na stubove) */
   railLenMm: number;
+  /** razmak od poda do donjeg kraja tarabica i visina tarabice od vrha polja do donjeg kraja (kupola + cev) */
+  liftMm: number;
+  slatLenMm: number;
 }
 
 /**
  * Raspored jednog polja. Spojne cevi su duge koliko i svetli otvor, a prva i poslednja tarabica su od ivice polja udaljene
- * tačno za prepust (cevi vire), pa se zadati razmak ravnomerno koriguje da cela širina bude popunjena.
+ * tačno za prepust (cevi vire), pa se zadati razmak ravnomerno koriguje da cela širina bude popunjena. Prepust levo i desno
+ * može da se razlikuje: krilo dvokrilne kapije ga nema uz sredinu, da razmak između krila ne bude veći od razmaka tarabica.
  */
-export function tarabicaLayout(widthMm: number, heightMm: number, barSizeMm: number, gapMm: number, overhangMm: number): TarabicaLayout {
+export function tarabicaLayout(widthMm: number, heightMm: number, barSizeMm: number, gapMm: number, overhangMm: number, liftMm: number = TARABICA.defaultLiftMm, overhangRightMm: number = overhangMm): TarabicaLayout {
   const bar = Math.max(1, barSizeMm);
-  const o = Math.min(Math.max(0, overhangMm), Math.max(0, widthMm / 3));
-  const avail = Math.max(0, widthMm - 2 * o);
+  const side = (v: number) => Math.min(Math.max(0, v), Math.max(0, widthMm / 3));
+  const o = side(overhangMm);
+  const oRight = side(overhangRightMm);
+  const avail = Math.max(0, widthMm - o - oRight);
   const count = avail < bar ? 0 : Math.max(1, Math.floor((avail + gapMm) / (bar + gapMm)));
   const gap = count > 1 ? (avail - count * bar) / (count - 1) : gapMm;
   const startMm = count > 1 ? o : o + (avail - bar) / 2;
   const off = Math.min(TARABICA.railFromEndMm, heightMm * 0.25);
+  const lift = Math.min(Math.max(0, liftMm), TARABICA.maxLiftMm, heightMm / 3);
   return {
     count,
     gapMm: gap,
@@ -59,6 +76,8 @@ export function tarabicaLayout(widthMm: number, heightMm: number, barSizeMm: num
     railTopMm: off - TARABICA.railMm / 2,
     railBottomMm: heightMm - off - TARABICA.railMm / 2,
     railLenMm: widthMm,
+    liftMm: lift,
+    slatLenMm: heightMm - lift,
   };
 }
 
@@ -87,13 +106,30 @@ const CAP_MATERIAL: Record<Exclude<PostCap, 'none'>, Record<80 | 100, string>> =
 /** Cev za stub: kvadratna cev 80 × 80 × 3 mm ili 100 × 100 × 2 mm (katalog, strana 9). */
 const POST_TUBE: Record<80 | 100, string> = { 80: 'mat_ek_ktf808030', 100: 'mat_ek_ktf10010020' };
 
+/** Stepenik kape: telo od donje širine ka gornjoj (kvadratni presek), visine h; slaže se od ivice stuba naviše. */
+export interface CapTier { bottomW: number; topW: number; h: number }
+
+/**
+ * Oblik kape iz kataloga za stub širine w (mm), od ivice stuba naviše: ravna kapa (ploča), kapa pismo (podnožje i četvorostrana
+ * piramida) i rozetna (široka ploča sa kosim ivicama i povišenim vratom). Isti stepenici se crtaju u 2D i 3D.
+ */
+export function capTiers(kind: PostCap, w: number): CapTier[] {
+  if (kind === 'flat') return [{ bottomW: w + 10, topW: w + 8, h: 8 }];
+  if (kind === 'pyramid') return [{ bottomW: w + 8, topW: w + 8, h: 10 }, { bottomW: w + 8, topW: Math.max(6, w * 0.08), h: Math.round(w * 0.32) }];
+  if (kind === 'rosette') return [{ bottomW: w + 36, topW: w + 26, h: 12 }, { bottomW: w + 16, topW: w + 10, h: 14 }];
+  return [];
+}
+
+/** Na vrhu stuba su kapa pismo, kapa ravna ili bez kape (rozetna ide samo u dno). */
+export const TOP_CAPS: PostCap[] = ['none', 'flat', 'pyramid'];
+
 export const DEFAULT_CAP_TOP: PostCap = 'flat';
 export const DEFAULT_CAP_BOTTOM: PostCap = 'none';
 
 /** Kape stuba uz tarabicu (bez izbora važi ravna kapa na vrhu i bez kape u dnu). */
 export const postCaps = (post: Pick<Post, 'capTop' | 'capBottom'>): { top: PostCap; bottom: PostCap } => ({
-  top: post.capTop ?? DEFAULT_CAP_TOP,
-  bottom: post.capBottom ?? DEFAULT_CAP_BOTTOM,
+  top: post.capTop && TOP_CAPS.includes(post.capTop) ? post.capTop : DEFAULT_CAP_TOP,
+  bottom: post.capBottom === 'rosette' ? 'rosette' : DEFAULT_CAP_BOTTOM,
 });
 
 type ModelItem = Pick<LayoutItem, 'kind'> & { modelId?: FenceModelId; infillModelId?: FenceModelId };

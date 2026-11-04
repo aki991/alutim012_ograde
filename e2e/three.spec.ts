@@ -250,6 +250,8 @@ test.describe('3D prikaz', () => {
     // kapija: izaberi kliznu, otvori, proveri procenat i cenu
     await page.getByTestId('tab-split').click();
     await page.waitForFunction(() => Boolean(window.__aluTest));
+    await page.getByTestId('cam-fit').click(); // kadar iz celog prikaza je sačuvan, a podeljen ekran je uži: uklopi ga
+    await page.waitForTimeout(300);
     const gateIds = (await itemIds(page)).filter((i) => i.startsWith('gate_'));
     expect(gateIds).toHaveLength(2);
     // klik na stvarni objekat u 3D; tražimo kliznu kapiju

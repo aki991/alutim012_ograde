@@ -170,8 +170,8 @@ describe('kalkulacija', () => {
     const posts = bom.filter((l) => l.group === 'Stubovi').reduce((s, l) => s + l.purchaseQty, 0);
     expect(posts).toBe(6);
     const wider = updateItem(p, p.items[0].id, { widthMm: 3000 });
-    const a = bom.find((l) => l.materialId === 'mat_alu_profil')!;
-    const b = buildBom(wider, SEED_MATERIALS).find((l) => l.materialId === 'mat_alu_profil')!;
+    const a = bom.find((l) => l.materialId === 'mat_kv_20x20')!;
+    const b = buildBom(wider, SEED_MATERIALS).find((l) => l.materialId === 'mat_kv_20x20')!;
     expect(b.geometricQty).toBeGreaterThan(a.geometricQty);
     expect(a.purchaseQty).toBeGreaterThan(a.geometricQty); // otpad
   });
@@ -179,7 +179,7 @@ describe('kalkulacija', () => {
   it('promena cene materijala menja ukupnu cenu', () => {
     const p = demo();
     const base = computePrice(p, SEED_MATERIALS);
-    const mats = SEED_MATERIALS.map((m) => (m.id === 'mat_alu_profil' ? { ...m, unitPrice: m.unitPrice * 2 } : m));
+    const mats = SEED_MATERIALS.map((m) => (m.id === 'mat_kv_20x20' ? { ...m, unitPrice: (m.unitPrice || 100) * 2 } : { ...m, unitPrice: m.id === 'mat_kv_20x20' ? 100 : m.unitPrice }));
     expect(computePrice(p, mats).grossTotal).toBeGreaterThan(base.grossTotal);
   });
 

@@ -1,10 +1,10 @@
 import { useMemo } from 'react';
-import { computeLayout, outerWidthMm } from '../../domain/geometry/layout';
+import { computeLayout, isSpacer, outerWidthMm } from '../../domain/geometry/layout';
 import { FENCE_MODELS, GATE_LABELS, MOUNTING_LABELS, POST_LABELS } from '../../domain/models/catalog';
 import type { Project } from '../../domain/models/types';
 import { buildBom } from '../../domain/pricing/calc';
 import { useAppStore } from '../../store/useAppStore';
-import { itemLabel } from '../../utils/labels';
+import { itemLabel, itemNumber } from '../../utils/labels';
 import { fmtMoney, fmtNum } from '../../utils/units';
 
 export function DimensionsTable({ project }: { project: Project }) {
@@ -19,9 +19,9 @@ export function DimensionsTable({ project }: { project: Project }) {
           <tr><th className="th">#</th><th className="th">Element</th><th className="th">Model</th><th className="th text-right">Dužina</th>{advanced && <><th className="th text-right">Modul (osa–osa)</th><th className="th text-right">Svetli otvor</th></>}<th className="th text-right">Visina</th></tr>
         </thead>
         <tbody>
-          {layout.items.map((li) => (
+          {layout.items.filter((li) => !isSpacer(li.item)).map((li) => (
             <tr key={li.item.id} className={`cursor-pointer hover:bg-slate-50 ${selection?.id === li.item.id ? 'bg-primary-50' : ''}`} onClick={() => select({ type: 'item', id: li.item.id })}>
-              <td className="td">{li.index + 1}</td>
+              <td className="td">{itemNumber(project.items, li.index)}</td>
               <td className="td font-medium">{itemLabel(project.items, li.index)}</td>
               <td className="td text-slate-600">{li.item.kind === 'fence' ? FENCE_MODELS[li.item.modelId].name : li.item.kind === 'gate' ? `${GATE_LABELS[li.item.gateType]} · ${FENCE_MODELS[li.item.infillModelId].name}` : 'Prazan otvor'}</td>
               <td className="td text-right tabular-nums">{fmtNum(outerWidthMm(project, li.index), 0)} mm</td>
@@ -46,7 +46,7 @@ export function DimensionsTable({ project }: { project: Project }) {
       <table className="w-full min-w-[640px]">
         <thead><tr><th className="th">Stub</th><th className="th">Uloga</th><th className="th">Tip</th><th className="th text-right">Pozicija (osa)</th><th className="th text-right">Presek</th><th className="th">Montaža</th></tr></thead>
         <tbody>
-          {layout.posts.map((lp) => (
+          {layout.posts.filter((lp) => !lp.hidden).map((lp) => (
             <tr key={lp.post.id} className={`cursor-pointer hover:bg-slate-50 ${selection?.id === lp.post.id ? 'bg-primary-50' : ''}`} onClick={() => select({ type: 'post', id: lp.post.id })}>
               <td className="td">S{lp.index + 1}</td>
               <td className="td">{lp.role === 'end' ? 'Krajnji' : lp.role === 'gate' ? 'Stub kapije' : 'Međustub'}</td>

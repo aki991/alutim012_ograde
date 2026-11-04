@@ -1,4 +1,4 @@
-import { plinthBetween } from '../geometry/layout';
+import { isSpacer, itemPlinthMm } from '../geometry/layout';
 import { uid } from '../../utils/id';
 import { DEFAULT_MODEL_ID, FENCE_MODELS, GATE_DEFAULT_WIDTH, postStyleFor } from './catalog';
 import {
@@ -128,8 +128,65 @@ export function createProject(name = 'Novi projekat', items: LayoutItem[] = [], 
   return applyPostRoles(p);
 }
 
+export const SPACER_DEFAULT_MM = 150;
+/** Podrazumevani razmak između stuba ograde i stuba kapije (mm) */
+export const OWN_POSTS_GAP_MM = 40;
+
+export function createSpacer(widthMm: number = SPACER_DEFAULT_MM): Opening {
+  return { kind: 'opening', id: uid('spacer'), widthMm, heightMm: 1, spacer: true };
+}
+
+const ownsPosts = (it: LayoutItem | undefined): boolean => it?.kind === 'gate' && Boolean(it.ownPosts);
+const isGate = (it: LayoutItem | undefined): boolean => it?.kind === 'gate';
+
+/**
+ * Da li između dva elementa treba dva stuba. Kapija sa svojim stubovima ima svoj stub prema ogradi i prema kapiji koja takođe ima svoje;
+ * kapija bez svojih stubova se „hvata" za stub susednog elementa (stub ograde ili stub susedne kapije), pa je tada jedan zajednički stub.
+ */
+const needsTwoPosts = (a: LayoutItem | undefined, b: LayoutItem | undefined): boolean =>
+  (ownsPosts(a) && (!isGate(b) || ownsPosts(b))) || (ownsPosts(b) && (!isGate(a) || ownsPosts(a)));
+
+/**
+ * Kapija sa svojim stubovima: između nje i susednog elementa su dva stuba (stub ograde i stub kapije). Dva stuba su razdvojena
+ * razmaknikom (opening sa `spacer`) širine jednake rastojanju njihovih osa. Razmaknici se sami dodaju uz kapije koje to traže i
+ * uklanjaju kad više nisu potrebni (zajedno sa stubom sa desne strane), pa broj stubova ostaje broj elemenata + 1.
+ */
+export function syncSpacers(project: Project): Project {
+  const { items, posts } = project;
+  if (items.length === 0 || posts.length !== items.length + 1) return project;
+  const outItems: LayoutItem[] = [];
+  const outPosts: Post[] = [posts[0]];
+  let changed = false;
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    const prev = outItems[outItems.length - 1];
+    if (isSpacer(it)) {
+      const next = items[i + 1];
+      const needed = prev && !isSpacer(prev) && next && !isSpacer(next) && needsTwoPosts(prev, next);
+      if (needed) { outItems.push(it); outPosts.push(posts[i + 1]); continue; }
+      changed = true;
+      // ostaje stub strane koja ima svoj stub (ograda ili kapija sa svojim stubovima); kapija bez svojih stubova uzima taj stub
+      const leftOk = !(isGate(prev) && !ownsPosts(prev));
+      const rightOk = !(isGate(next) && !ownsPosts(next));
+      if (!(leftOk || !rightOk)) outPosts[outPosts.length - 1] = posts[i + 1];
+      continue;
+    }
+    if (prev && !isSpacer(prev) && needsTwoPosts(prev, it)) {
+      // novi stub pripada elementu desno: izgled preuzima od njegovog drugog stuba (stub ograde je isti kao ostali stubovi ograde)
+      const model = posts[i + 1] ?? outPosts[outPosts.length - 1];
+      outItems.push(createSpacer());
+      outPosts.push({ ...model, id: uid('post'), turnDeg: undefined, heightCustom: undefined });
+      changed = true;
+    }
+    outItems.push(it);
+    outPosts.push(posts[i + 1]);
+  }
+  return changed ? { ...project, items: outItems, posts: outPosts } : project;
+}
+
 /** Postavlja tip stuba "kapija" uz kapije, ako ga korisnik nije ručno menjao. */
-export function applyPostRoles(project: Project): Project {
+export function applyPostRoles(input: Project): Project {
+  const project = syncSpacers(input);
   const posts = project.posts.map((post, i) => {
     const left = project.items[i - 1];
     const right = project.items[i];
@@ -143,15 +200,27 @@ export function applyPostRoles(project: Project): Project {
       : null;
     const color = post.custom || !style ? post.color : style.color;
     const round = post.custom || !style ? post.round : style.round || undefined;
-    const adjacentPlinth = (idx: number) => (project.items[idx]?.kind === 'fence' ? plinthBetween(project.posts[idx], project.posts[idx + 1]) : 0);
+    const adjacentPlinth = (idx: number) => itemPlinthMm(project.items[idx], project.posts[idx], project.posts[idx + 1]);
     // ugaoni spoj nema svoju visinu: stub prati susednu ogradu
-    const heightOf = (it: LayoutItem | undefined, idx: number) => (it && !(it.kind === 'opening' && it.bendDeg !== undefined) ? it.heightMm + adjacentPlinth(idx) : null);
+    const heightOf = (it: LayoutItem | undefined, idx: number) => (it && !isSpacer(it) && !(it.kind === 'opening' && it.bendDeg !== undefined) ? it.heightMm + adjacentPlinth(idx) : null);
     const adjacent = [heightOf(left, i - 1), heightOf(right, i)].filter((x): x is number => x !== null);
-    const extra = type === 'concrete' || type === 'concrete_plinth' ? POST_EXTRA_CONCRETE_MM : (!post.custom && style?.extraRatio != null ? Math.round(style.extraRatio * Math.max(...adjacent, 0)) : POST_EXTRA_MM);
-    const heightMm = post.heightCustom || adjacent.length === 0 ? post.heightMm : Math.max(...adjacent) + extra;
+    const extra = type === 'concrete' || type === 'concrete_plinth' ? POST_EXTRA_CONCRETE_MM : (!post.custom && style?.extraRatio != null ? Math.round(style.extraRatio * Math.max(...adjacent, 0)) : (style?.extraMm ?? POST_EXTRA_MM));
+    // visina stuba se meri od nivoa podnožja susednih ograda (kao visina polja), pa ne zavisi od visine podnožja; stvarna dužina stuba se računa u rasporedu
+    const plinthsAround = [i - 1, i].filter((idx) => project.items[idx] && !isSpacer(project.items[idx])).map(adjacentPlinth);
+    const level = plinthsAround.length ? Math.max(...plinthsAround) : 0;
+    const heightMm = post.heightCustom || adjacent.length === 0 ? post.heightMm : Math.max(...adjacent) - level + extra;
     return type === post.type && widthMm === post.widthMm && heightMm === post.heightMm && color === post.color && round === post.round ? post : { ...post, type, widthMm, heightMm, color, round };
   });
-  return { ...project, posts };
+  // razmaknik je širine rastojanja osa dva stuba između kojih stoji
+  const items = project.items.map((it, k) => {
+    if (!isSpacer(it)) return it;
+    // rastojanje osa dva stuba: njihova polovina širina i razmak koji zadaje kapija
+    const gate = [project.items[k - 1], project.items[k + 1]].find((x) => x?.kind === 'gate' && x.ownPosts);
+    const gap = gate?.kind === 'gate' ? (gate.postGapMm ?? OWN_POSTS_GAP_MM) : OWN_POSTS_GAP_MM;
+    const w = ((posts[k]?.widthMm ?? 0) + (posts[k + 1]?.widthMm ?? 0)) / 2 + gap;
+    return w > gap && w !== it.widthMm ? { ...it, widthMm: w } : it;
+  });
+  return { ...project, items, posts };
 }
 
 /** Početni demonstracioni projekat „Porodična kuća Petrović". */

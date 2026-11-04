@@ -4,13 +4,22 @@ import { create } from 'zustand';
  * Stanje PRIKAZA (nikad se ne upisuje u projekat, istoriju ni IndexedDB):
  * režim 3D uređivanja, otvorenost kapija, zone otvaranja i sačuvane kamere po projektu.
  */
+import type { GroundKind } from '../components/editor/three/groundTextures';
+
 export type CameraPreset = 'iso' | 'front' | 'top' | 'side';
+
+const GROUND_KEY = 'alu-tim.ground3d';
+const readGround = (): GroundKind => {
+  try { const v = localStorage.getItem(GROUND_KEY); return v === 'grass' || v === 'tiles' ? v : 'concrete'; } catch { return 'concrete'; }
+};
 
 export interface CameraPose { position: [number, number, number]; target: [number, number, number] }
 
 interface ViewState {
   mode: 'view' | 'edit';
   showZones: boolean;
+  /** podloga 3D prikaza: beton, trava ili pločice (pamti se u pregledaču) */
+  ground: GroundKind;
   /** trenutni procenat otvaranja po ID-ju kapije (0–1) */
   gateOpen: Record<string, number>;
   /** ciljni procenat; razlika ka gateOpen pokreće animaciju */
@@ -20,6 +29,7 @@ interface ViewState {
 
   setMode: (m: 'view' | 'edit') => void;
   setShowZones: (v: boolean) => void;
+  setGround: (g: GroundKind) => void;
   openGate: (id: string) => void;
   closeGate: (id: string) => void;
   pauseGate: (id: string) => void;
@@ -39,6 +49,7 @@ const clamp01 = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v))
 export const useViewStore = create<ViewState>((set, get) => ({
   mode: 'view',
   showZones: true,
+  ground: readGround(),
   gateOpen: {},
   gateTarget: {},
   cameras: {},
@@ -46,6 +57,7 @@ export const useViewStore = create<ViewState>((set, get) => ({
 
   setMode: (mode) => set({ mode }),
   setShowZones: (showZones) => set({ showZones }),
+  setGround: (ground) => { try { localStorage.setItem(GROUND_KEY, ground); } catch { /* privatni režim: bez pamćenja */ } set({ ground }); },
   openGate: (id) => set((s) => ({ gateTarget: { ...s.gateTarget, [id]: 1 } })),
   closeGate: (id) => set((s) => ({ gateTarget: { ...s.gateTarget, [id]: 0 } })),
   pauseGate: (id) => set((s) => ({ gateTarget: { ...s.gateTarget, [id]: s.gateOpen[id] ?? 0 } })),

@@ -1,7 +1,8 @@
-import { outerWidthMm } from '../geometry/layout';
+import { buildRl10Sheet } from './rl10Spec';
+import { computeLayout, outerWidthMm } from '../geometry/layout';
 import type { AppSettings, Material, Project } from '../models/types';
 import { materialName, type ModelSpecs } from '../models/spec';
-import { itemLabel } from '../../utils/labels';
+import { itemLabel, itemNumber } from '../../utils/labels';
 import { buildCutList, describeItem } from './production';
 import { FILL_PROFILES, GUIDE_PROFILES, buildLouver08Sheet, louver08Panels } from './louverSpec';
 import { buildRail04Sheet, rail04Posts, rail04Runs } from './railSpec';
@@ -102,7 +103,7 @@ export function groupBars(bars: CutBar[]): BarGroup[] {
 
 interface RawGroup { profile: string; pieces: CutPiece[] }
 
-const posKey = (a: number, b: number): string => (a === b ? String(a + 1) : `${a + 1}–${b + 1}`);
+const posKey = (items: Project['items'], a: number, b: number): string => (a === b ? String(itemNumber(items, a)) : `${itemNumber(items, a)}–${itemNumber(items, b)}`);
 
 /** Svi šipkasti komadi projekta, grupisani po profilu, sa pozicijama (elementima) kojima pripadaju. */
 function collectPieces(project: Project, specs: ModelSpecs | undefined, materials: Material[]): { groups: RawGroup[]; positions: CutPosition[] } {
@@ -114,7 +115,7 @@ function collectPieces(project: Project, specs: ModelSpecs | undefined, material
     groups.set(profile, list);
   };
   const elementPos = (index: number) => {
-    const key = String(index + 1);
+    const key = String(itemNumber(project.items, index));
     if (!positions.has(key)) {
       const it = project.items[index];
       positions.set(key, { key, label: itemLabel(project.items, index), detail: `${describeItem(project, index)} · ${Math.round(outerWidthMm(project, index))} × ${Math.round(it.heightMm)} mm` });
@@ -130,13 +131,43 @@ function collectPieces(project: Project, specs: ModelSpecs | undefined, material
   }
 
   // stubovi uz tarabicu: cev stuba (80 × 80 ili 100 × 100) se seče iz šipke po visini stuba
+  const laid = computeLayout(project);
   project.posts.forEach((p, i) => {
-    if (!isTarabicaPost(project.items, p, i)) return;
-    const tube = tarabicaPostLines(p)[0];
+    if (laid.posts[i]?.hidden || !isTarabicaPost(project.items, p, i)) return;
+    const post = { ...p, heightMm: laid.posts[i]?.lengthMm ?? p.heightMm };
+    const tube = tarabicaPostLines(post)[0];
     const key = `S${i + 1}`;
-    positions.set(key, { key, label: `Stub ${key}`, detail: `${tube.label} · visina ${Math.round(p.heightMm)} mm` });
-    add(materialName(materials, tube.materialId), { lengthMm: Math.round(p.heightMm), pos: key, part: 'Stub' });
+    positions.set(key, { key, label: `Stub ${key}`, detail: `${tube.label} · visina ${Math.round(post.heightMm)} mm` });
+    add(materialName(materials, tube.materialId), { lengthMm: Math.round(post.heightMm), pos: key, part: 'Stub' });
   });
+
+  // model 06 (RL10): stubovi i lajsne po visini stuba, rukohvat i prečke po nizovima polja istog nagiba
+  const rl10 = buildRl10Sheet(project, specs);
+  if (rl10) {
+    for (const p of rl10.posts) {
+      const key = p.name.replace('Stub ', '');
+      positions.set(key, { key, label: p.name, detail: `Stub P-1054 Ø40 · dužina ${p.tubeMm} mm` });
+      add(materialName(materials, 'mat_bts_p1054'), { lengthMm: p.tubeMm, pos: key, part: 'Stub' });
+      add(materialName(materials, 'mat_bts_pal2647'), { lengthMm: p.tubeMm, pos: key, part: 'Lajsna' });
+    }
+    for (const run of rl10.runs) {
+      const key = posKey(project.items, run.firstIndex, run.lastIndex);
+      if (!positions.has(key)) {
+        const first = run.names[0];
+        const last = run.names[run.names.length - 1];
+        positions.set(key, { key, label: run.firstIndex === run.lastIndex ? first : `${first} – ${last}`, detail: `Niz polja · rukohvat ${Math.round(run.railLenMm)} mm${run.slopeDeg ? ` · nagib ${run.slopeDeg}°` : ''}` });
+      }
+      for (const len of run.railPieces) add(materialName(materials, 'mat_bts_p1033'), { lengthMm: len, pos: key, part: 'Rukohvat' });
+      for (const len of run.rodPieces) for (let r = 0; r < run.rodHeightsMm.length; r++) add(materialName(materials, 'mat_bts_p1146'), { lengthMm: len, pos: key, part: 'Prečka' });
+    }
+    // uglovi uz stepenište: pravo parče rukohvata između kugli i kratki ravni delovi prečki uz kuglu
+    for (const c of rl10.corners.filter((x) => x.slopeBall)) {
+      const key = `U${c.postName}`;
+      positions.set(key, { key, label: `Ugao na stubu ${c.postName}`, detail: `Pravo parče rukohvata ${c.railPieceMm} mm između kugli AK-5020K, skretanje ${Math.abs(c.turnDeg)}°` });
+      add(materialName(materials, 'mat_bts_p1033'), { lengthMm: c.railPieceMm, pos: key, part: 'Rukohvat — parče' });
+      for (let r = 0; r < c.rods; r++) add(materialName(materials, 'mat_bts_p1146'), { lengthMm: c.rodPieceMm, pos: key, part: 'Prečka — parče' });
+    }
+  }
 
   // model 04: stubovi, rukohvat i prečke (nizovi polja se seku u najdužim komadima)
   const rail = buildRail04Sheet(project, specs);
@@ -147,7 +178,7 @@ function collectPieces(project: Project, specs: ModelSpecs | undefined, material
       add('Stub Ø40 — PEGA 06', { lengthMm: Math.round(p.heightMm), pos: key, part: 'Stub' });
     }
     for (const run of rail04Runs(project)) {
-      const key = posKey(run.firstIndex, run.lastIndex);
+      const key = posKey(project.items, run.firstIndex, run.lastIndex);
       if (!positions.has(key)) {
         const first = itemLabel(project.items, run.firstIndex);
         const last = itemLabel(project.items, run.lastIndex);

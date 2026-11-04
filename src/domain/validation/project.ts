@@ -33,6 +33,23 @@ export function migrateProject(p: Project): Project {
       }),
     };
   }
+  // uske horizontalne letvice su sada kvadratne cevi 20 × 20 u U profilima 25 × 20: stare početne mere (80 / 30 / 40) se menjaju
+  const oldHn = (p: { barSizeMm: number; gapMm: number; frameMm: number }) => p.barSizeMm === 80 && p.gapMm === 30 && p.frameMm === 40;
+  if (out.items.some((it) => (it.kind === 'fence' && it.modelId === 'h_narrow' && oldHn(it.params)) || (it.kind === 'gate' && it.infillModelId === 'h_narrow' && oldHn(it.params)))) {
+    const nu = FENCE_MODELS.h_narrow.defaults;
+    out = {
+      ...out,
+      items: out.items.map((it) => {
+        if (it.kind === 'fence' && it.modelId === 'h_narrow' && oldHn(it.params)) return { ...it, materialId: FENCE_MODELS.h_narrow.materialId, params: { ...it.params, ...nu } };
+        if (it.kind === 'gate' && it.infillModelId === 'h_narrow' && oldHn(it.params)) return { ...it, params: { ...it.params, ...nu } };
+        return it;
+      }),
+    };
+  }
+  // model 06 je sistem RL10: prečke Ø16 (umesto ranijih Ø30) i izbor broja prečki
+  if (out.items.some((it) => it.kind === 'fence' && it.modelId === 'rail_inox' && it.params.barSizeMm === 30 && it.params.barCount === undefined)) {
+    out = { ...out, items: out.items.map((it) => (it.kind === 'fence' && it.modelId === 'rail_inox' && it.params.barSizeMm === 30 && it.params.barCount === undefined ? { ...it, materialId: FENCE_MODELS.rail_inox.materialId, params: { ...it.params, barSizeMm: 16, barCount: 4 } } : it)) };
+  }
   return applyPostRoles(out); // visine stubova prate susedne elemente
 }
 

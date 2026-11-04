@@ -7,6 +7,7 @@ export const RAL_COLORS: RalColor[] = [
   { key: 'RAL 7016', name: 'Antracit siva', hex: '#383E42' },
   { key: 'RAL 9005', name: 'Duboka crna', hex: '#1B1B1D' },
   { key: 'RAL 9016', name: 'Saobraćajna bela', hex: '#F1F0EA' },
+  { key: 'BELA', name: 'Bela (čista)', hex: '#FFFFFF' },
   { key: 'RAL 7035', name: 'Svetlo siva', hex: '#C5C7C4' },
   { key: 'RAL 8017', name: 'Čokoladno braon', hex: '#45322E' },
   { key: 'RAL 6005', name: 'Mahovinasto zelena', hex: '#2F4538' },
@@ -18,8 +19,19 @@ export const RAL_COLORS: RalColor[] = [
 
 export const colorHex = (key: string): string => (key.startsWith('#') ? key : RAL_COLORS.find((c) => c.key === key)?.hex ?? '#383E42');
 
+/** Svetla boja (bela, svetlosiva): na beloj pozadini se ne vidi, pa editor tada koristi sivu pozadinu. */
+export function isLightColor(key: string): boolean {
+  const m = /^#([0-9a-f]{6})$/i.exec(colorHex(key));
+  if (!m) return false;
+  const n = parseInt(m[1], 16);
+  return (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255 > 0.8;
+}
+
+/** Da li projekat ima bar jedno polje ili kapiju svetle boje (tada je pozadina u editoru siva). */
+export const hasLightFence = (items: ReadonlyArray<{ kind: string; color?: string }>): boolean => items.some((i) => i.kind !== 'opening' && i.color !== undefined && isLightColor(i.color));
+
 /** Način crtanja ispune; isti opis koriste 2D, 3D i kalkulacija (vidi domain/geometry/infill.ts). */
-export type InfillStyle = 'hbars' | 'louver' | 'combo' | 'framed_vertical' | 'picket' | 'tarabica' | 'panel_lines' | 'rods' | 'glass_rail';
+export type InfillStyle = 'tubes' | 'hbars' | 'louver' | 'combo' | 'framed_vertical' | 'picket' | 'tarabica' | 'panel_lines' | 'rods' | 'glass_rail';
 
 export interface FenceModelDef {
   id: FenceModelId;
@@ -38,8 +50,10 @@ export interface FenceModelDef {
   gapLabel: string;
   /** naziv polja „debljina rama“ kad model ima drugačije značenje te mere (tarabica: prepust spojnih cevi) */
   frameLabel?: string;
-  /** veličina polja pri dodavanju (svetli otvor između stubova i visina), ako se razlikuje od opšte (tarabica: 6 tarabica, 640 × 1200 mm) */
-  defaultSize?: { clearWidthMm: number; heightMm: number };
+  /** veličina polja pri dodavanju (spoljna širina kao u panelu i visina), ako se razlikuje od opšte (tarabica: 1000 × 1000 mm) */
+  defaultSize?: { widthMm: number; heightMm: number };
+  /** koliko stub viri iznad ograde pri dodavanju (bez vrednosti: opšte pravilo); tarabica: 0, stub je visine ograde */
+  postExtraMm?: number;
   hasBars: boolean;
   /** Materijali u cenovniku */
   /** modeli sa prečkama: dozvoljen broj prečki (standardni broj je podrazumevan) */
@@ -55,9 +69,9 @@ const model = (d: Omit<FenceModelDef, 'shortName'>): FenceModelDef => ({ shortNa
 
 const MODEL_LIST: FenceModelDef[] = [
   model({
-    id: 'h_narrow', name: 'Crna — uske horizontalne letvice', description: 'Uske ravne letvice sa tankim razmakom', infill: 'Uske horizontalne letvice', material: 'Aluminijum',
-    image: '01', style: 'hbars', defaultColor: 'RAL 9005', defaults: { barSizeMm: 80, gapMm: 30, frameMm: 40 }, barLabel: 'Visina letvice', gapLabel: 'Razmak letvica', hasBars: true,
-    materialId: 'mat_alu_profil', parts: { main: 'Profil 80×20 (uska letvica)' },
+    id: 'h_narrow', name: 'Crna — uske horizontalne letvice', description: 'Kvadratne cevi 20×20 u bočnim U profilima 25×20', infill: 'Kvadratne cevi 20×20 u U profilima 25×20', material: 'Aluminijum',
+    image: '01', style: 'tubes', defaultColor: 'RAL 9005', defaults: { barSizeMm: 20, gapMm: 6, frameMm: 20 }, barLabel: 'Visina kvadratne cevi', gapLabel: 'Razmak cevi', frameLabel: 'Širina U profila', hasBars: true,
+    materialId: 'mat_kv_20x20', railMaterialId: 'mat_u_25x20', parts: { main: 'Kvadratna cev 20×20', rail: 'U profil 25×20' },
   }),
   model({
     id: 'h_boards', name: 'Braon — široke horizontalne daske', description: 'Široke daske u izgledu drveta', infill: 'Široke horizontalne daske', material: 'Aluminijum sa dekorom drveta',
@@ -82,8 +96,9 @@ const MODEL_LIST: FenceModelDef[] = [
   }),
   model({
     id: 'rail_inox', name: 'Inox — horizontalne prečke', description: 'Inox rukohvat i okrugle prečke', infill: 'Inox rukohvat i okrugle prečke', material: 'Nerđajući čelik',
-    image: '06', style: 'rods', defaultColor: 'INOX', defaults: { barSizeMm: 30, gapMm: 400, frameMm: 0 }, barLabel: 'Debljina prečke', gapLabel: 'Razmak prečki', hasBars: true,
-    materialId: 'mat_inox_cev', railMaterialId: 'mat_rukohvat', parts: { main: 'Prečka Ø30 (inox)', rail: 'Rukohvat Ø50 (inox)' },
+    image: '06', style: 'rods', defaultColor: 'INOX', defaults: { barSizeMm: 16, gapMm: 400, frameMm: 0, barCount: 4 }, barLabel: 'Prečnik prečke (P-1146)', gapLabel: 'Razmak prečki', hasBars: true,
+    rods: { min: 1, max: 10, default: 4 }, defaultSize: { widthMm: 1000, heightMm: 1000 },
+    materialId: 'mat_bts_p1146', railMaterialId: 'mat_bts_p1033', parts: { main: 'Prečka Ø16 (P-1146)', rail: 'Rukohvat Ø50 (P-1033)' },
   }),
   model({
     id: 'picket_narrow', name: 'Bela — uske vertikalne letvice', description: 'Uske letvice sa zaobljenim vrhovima', infill: 'Uske vertikalne letvice, zaobljeni vrhovi', material: 'Aluminijum',
@@ -117,8 +132,9 @@ const MODEL_LIST: FenceModelDef[] = [
   }),
   model({
     id: 'picket_wide', name: 'Bela — široke vertikalne letvice', description: 'Tarabica: letvice 80×20 sa čepom, spojene cevima 30×30', infill: 'Vertikalne tarabice 80×20 sa čepom na vrhu', material: 'Aluminijum',
-    image: '13', style: 'tarabica', defaultColor: 'RAL 9016', defaults: { barSizeMm: 80, gapMm: 20, frameMm: 30 }, barLabel: 'Širina tarabice', gapLabel: 'Razmak između tarabica', frameLabel: 'Prepust cevi 30×30', hasBars: true,
-    defaultSize: { clearWidthMm: 640, heightMm: 1200 },
+    image: '13', style: 'tarabica', defaultColor: 'BELA', defaults: { barSizeMm: 80, gapMm: 20, frameMm: 30, liftMm: 40 }, barLabel: 'Širina tarabice', gapLabel: 'Razmak između tarabica', frameLabel: 'Prepust cevi 30×30', hasBars: true,
+    defaultSize: { widthMm: 1000, heightMm: 1000 },
+    postExtraMm: 0,
     materialId: 'mat_ek_kv000007', railMaterialId: 'mat_ek_ktwm3899', parts: { main: 'Tarabica 80×20 (kvadratna cev)', rail: 'Spojna cev 30×30' },
   }),
   model({
@@ -158,7 +174,7 @@ const HORIZONTAL_BY_MODEL = 'zavisno od modela: 80×20, 20×20, 40×20 ili 60×2
 const VERTICAL_UMASK = 'U profil sa maskom 25×30 ili U profil 25×20';
 
 export const MODEL_CONSTRUCTION: Partial<Record<FenceModelId, ModelConstruction>> = {
-  h_narrow: { vertical: VERTICAL_UMASK, horizontal: HORIZONTAL_BY_MODEL },
+  h_narrow: { vertical: 'U profil 25×20×1,35 mm (dve bočne vođice, otvorene ka ispuni)', horizontal: 'Kvadratna cev 20×20×1 mm', note: 'Krajevi cevi ulaze u kanal U profila; mere zidova su usvojene i menjaju se u panelu.' },
   h_combo: { vertical: VERTICAL_UMASK, horizontal: HORIZONTAL_BY_MODEL, note: 'Široke i uske letvice naizmenično: po radniku kombinacija više profila.' },
   panel_lines: { vertical: VERTICAL_UMASK, horizontal: HORIZONTAL_BY_MODEL },
   h_white: { vertical: VERTICAL_UMASK, horizontal: HORIZONTAL_BY_MODEL },
@@ -196,7 +212,7 @@ export function rodCountFor(modelId: FenceModelId, params: { barCount?: number }
  */
 export function panelPeriodMm(modelId: FenceModelId, p: { barSizeMm: number; gapMm: number } = FENCE_MODELS[modelId].defaults): number | null {
   const style = FENCE_MODELS[modelId].style;
-  if (style === 'hbars' || style === 'louver' || style === 'panel_lines') return p.barSizeMm + p.gapMm;
+  if (style === 'tubes' || style === 'hbars' || style === 'louver' || style === 'panel_lines') return p.barSizeMm + p.gapMm;
   if (style === 'combo') return p.barSizeMm + Math.max(15, Math.round(p.barSizeMm * 0.18)) + 2 * p.gapMm;
   return null;
 }
@@ -207,6 +223,8 @@ const INOX_POST_MODELS: FenceModelId[] = ['rail_black', 'rail_inox', 'glass_inox
 export interface PostStyle {
   color: string;
   round: boolean;
+  /** koliko stub viri iznad ispune (mm) po modelu; undefined = opšte pravilo */
+  extraMm?: number;
   /** koliko stub viri iznad ispune (udeo visine); null = podrazumevano */
   extraRatio: number | null;
 }
@@ -219,7 +237,7 @@ export function postStyleFor(modelId: FenceModelId, color: string, isGate: boole
   if (INOX_POST_MODELS.includes(modelId)) return { color: 'INOX', round: !isGate, extraRatio: isGate ? null : 0 };
   const art = panelArt(modelId, color);
   if (art) return { color: art.postHex ?? colorHex(color), round: false, extraRatio: art.postTopRatio };
-  return { color: color === 'DEKOR ORAH' ? 'RAL 8017' : color, round: false, extraRatio: null };
+  return { color: color === 'DEKOR ORAH' ? 'RAL 8017' : color, round: false, extraRatio: null, extraMm: FENCE_MODELS[modelId].postExtraMm };
 }
 /** Podaci o slici polja modela (izdvojenoj iz slike u katalogu): odnos strana, boja i visina stubova. */
 export interface PanelArtMeta {
@@ -241,7 +259,7 @@ const PANEL_ART = panelMeta as Record<string, PanelArtMeta>;
  */
 export function panelArt(modelId: FenceModelId, color: string): (PanelArtMeta & { id: string; vertical: boolean }) | null {
   const def = FENCE_MODELS[modelId];
-  if (color !== def.defaultColor || def.style === 'tarabica') return null; // tarabica se uvek crta parametarski (razmak i prepust)
+  if (color !== def.defaultColor || def.style === 'tarabica' || def.style === 'tubes') return null; // tarabica i cevi u U profilima se uvek crtaju parametarski (razmak, prepust, dimenzije)
   const meta = PANEL_ART[def.image];
   return meta ? { ...meta, id: def.image, vertical: def.style === 'picket' || def.style === 'framed_vertical' } : null;
 }
@@ -282,7 +300,6 @@ export interface RailArt {
 }
 const RAIL_ART: Record<string, RailArt> = {
   '04': { cL: 77, cR: 482, a: 21, postPx: 28, imgW: 560, imgH: 471, top: 7, bands: { railBot: 28, neckBot: 48, rodTop: 124, rodBottom: 421, midTop: 222, midBottom: 321, rodHalf: 10, plateTop: 446, fixedMmPerPx: 70 / 21 } },
-  '06': { cL: 57.5, cR: 502, a: 25, postPx: 27, imgW: 560, imgH: 456 },
   '15': { cL: 43, cR: 517, a: 40, postPx: 31, imgW: 560, imgH: 476 },
 };
 /** Širina cevnog stuba na crtežu (mm): stub Ø40 iz specifikacije */
@@ -347,6 +364,15 @@ export function panelTiles(art: { aspect: number; vertical: boolean }, widthMm: 
 }
 
 export const DEFAULT_MODEL_ID: FenceModelId = 'h_narrow';
+
+/** Model ograde koji projekat već ima (prvo polje ili kapija); null za projekat bez elemenata. Katalog i dodavanje nude taj model. */
+export function projectModelId(items: ReadonlyArray<{ kind: string; modelId?: FenceModelId; infillModelId?: FenceModelId }>): FenceModelId | null {
+  for (const it of items) {
+    if (it.kind === 'fence' && it.modelId) return it.modelId;
+    if (it.kind === 'gate' && it.infillModelId) return it.infillModelId;
+  }
+  return null;
+}
 
 /** Stari modeli (šema v1/v2) → najbliži novi model; koristi se pri migraciji i uvozu starih JSON fajlova. */
 export const LEGACY_MODEL_MAP: Record<string, FenceModelId> = {

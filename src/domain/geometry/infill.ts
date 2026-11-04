@@ -1,3 +1,4 @@
+import { isRl10Model, rl10Geometry } from '../models/rl10';
 import { FENCE_MODELS, panelPeriodMm, rodCountFor } from '../models/catalog';
 import { TARABICA, tarabicaLayout } from '../models/tarabica';
 import type { FenceModelId } from '../models/types';
@@ -36,10 +37,12 @@ const HANDRAIL_MM = 60;
  * Zajednički geometrijski opis ispune jednog polja. Isti opis koriste 2D (SVG), 3D (Three.js) i kalkulacija,
  * pa su broj i položaj letvica uvek usklađeni. Koordinate su u mm, y raste naniže od gornje ivice polja.
  */
-export function computeInfill(modelId: FenceModelId, widthMm: number, heightMm: number, frameMm: number, barSizeMm: number, gapMm: number, barCount?: number): InfillGeometry {
+export function computeInfill(modelId: FenceModelId, widthMm: number, heightMm: number, frameMm: number, barSizeMm: number, gapMm: number, barCount?: number, liftMm?: number, overhangRightMm?: number): InfillGeometry {
   const style = FENCE_MODELS[modelId].style;
+  // cevi u U profilima: U profili su samo sa strane (bez gornjeg i donjeg ramena), pa je unutrašnja površina umanjena po širini
+  const tubes = style === 'tubes';
   const f = style === 'rods' || style === 'glass_rail' || style === 'tarabica' ? 0 : Math.min(frameMm, widthMm / 3, heightMm / 3);
-  const inner = { x: f, y: f, w: Math.max(0, widthMm - 2 * f), h: Math.max(0, heightMm - 2 * f) };
+  const inner = tubes ? { x: f, y: 0, w: Math.max(0, widthMm - 2 * f), h: heightMm } : { x: f, y: f, w: Math.max(0, widthMm - 2 * f), h: Math.max(0, heightMm - 2 * f) };
   const bars: InfillBar[] = [];
   let vertical = false;
   let glass: InfillGeometry['glass'] = null;
@@ -48,7 +51,7 @@ export function computeInfill(modelId: FenceModelId, widthMm: number, heightMm: 
   // horizontalne letvice: stalan period (letvica + razmak), slaže se od tla naviše; veća visina = više letvica,
   // a letvice susednih polja različite visine leže u istim linijama. Svaki period počinje i završava pola razmaka.
   const H = heightMm;
-  if (style === 'hbars' || style === 'louver') {
+  if (style === 'tubes' || style === 'hbars' || style === 'louver') {
     const P = barSizeMm + gapMm;
     const n = barSizeMm > 0 ? Math.max(0, Math.floor(H / P)) : 0;
     for (let i = 0; i < n; i++) hBar(H - i * P - gapMm / 2 - barSizeMm - inner.y, barSizeMm);
@@ -68,6 +71,11 @@ export function computeInfill(modelId: FenceModelId, widthMm: number, heightMm: 
     const k = barSizeMm > 0 ? Math.max(0, Math.floor(H / P)) : 0;
     for (let i = 0; i < k; i++) hBar(H - i * P - gapMm / 2 - barSizeMm - inner.y, barSizeMm);
     for (let i = 1; i < k; i++) hBar(H - i * P - gapMm / 2 - inner.y, gapMm, 'accent');
+  } else if (style === 'rods' && isRl10Model(modelId)) {
+    // RL10: rukohvat Ø50 na vrhu, prečke ravnomerno između najniže i najviše (mere sistema; broj prečki zadaje korisnik)
+    const g = rl10Geometry(heightMm, { barSizeMm, gapMm, frameMm, barCount });
+    hBar(0, g.dims.railDiaMm, 'rail');
+    for (const rh of g.rodHeightsMm) hBar(heightMm - rh - g.rodDiaMm / 2 - inner.y, g.rodDiaMm);
   } else if (style === 'rods') {
     const rail = 70; // rukohvat (ploča) preko vrha
     if (inner.h > rail) {
@@ -101,10 +109,10 @@ export function computeInfill(modelId: FenceModelId, widthMm: number, heightMm: 
   } else if (style === 'tarabica') {
     // dve spojne cevi 30 × 30 preko cele širine (viri iza krajnjih tarabica) i vertikalne tarabice sa čepom na vrhu
     vertical = true;
-    const t = tarabicaLayout(widthMm, heightMm, barSizeMm, gapMm, frameMm);
+    const t = tarabicaLayout(widthMm, heightMm, barSizeMm, gapMm, frameMm, liftMm, overhangRightMm);
     hBar(t.railTopMm, TARABICA.railMm, 'rail');
     hBar(t.railBottomMm, TARABICA.railMm, 'rail');
-    for (let i = 0; i < t.count; i++) bars.push({ x: t.startMm + i * (barSizeMm + t.gapMm), y: 0, w: barSizeMm, h: heightMm, tone: 'main', round: true });
+    for (let i = 0; i < t.count; i++) bars.push({ x: t.startMm + i * (barSizeMm + t.gapMm), y: 0, w: barSizeMm, h: t.slatLenMm, tone: 'main', round: true });
   } else if (style === 'framed_vertical') {
     vertical = true;
     const H = inner.h;

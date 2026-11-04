@@ -1,11 +1,11 @@
-import logoUrl from '../assets/logo.png';
 import { STATUS_LABELS } from '../domain/models/catalog';
 import type { AppSettings, Customer, Material, Project } from '../domain/models/types';
 import { cutOptions } from '../domain/pricing/cutting';
 import { buildWorkOrder, type WorkElement } from '../domain/pricing/workorder';
 import { fmtDate, fmtNum } from '../utils/units';
 import { positionColors } from './cutlistSvg';
-import { BRAND_RED, INK, LINE, MUTED, docHeader, fmtMm, svgToPng, toDataUrl } from './pdfCutlist';
+import { BRAND_RED, INK, LINE, MUTED, docHeader, fmtMm, svgToPng } from './pdfCutlist';
+import { loadHeaderLogos } from './pdfHeader';
 import { downloadBlob, safeFilename } from './exports';
 import { getPdfMake, renderBlob } from './pdf';
 import { schemaSvg } from './workorderSvg';
@@ -37,7 +37,7 @@ export async function buildWorkorderPdfBlob(project: Project, customer: Customer
   const pdfMake = await getPdfMake();
   const wo = buildWorkOrder(project, settings.modelSpecs, materials, cutOptions(settings));
   const colors = positionColors(wo.cutting.positions);
-  const logo = await toDataUrl(logoUrl);
+  const logos = await loadHeaderLogos();
   const info = settings.companyInfo ?? {};
   const contact = [info.address, info.phone, info.email, info.pib ? `PIB: ${info.pib}` : ''].filter(Boolean).join('  ·  ');
   const schema = schemaSvg(project, wo.positionOfItem, colors);
@@ -45,7 +45,7 @@ export async function buildWorkorderPdfBlob(project: Project, customer: Customer
   const schemaW = 786;
   const schemaH = (schema.height / schema.width) * schemaW;
 
-  const header = docHeader('RADNI NALOG', `Ponuda: ${project.quoteNo || '—'}  ·  ${fmtDate(new Date().toISOString())}`, settings.companyName, contact, logo);
+  const header = docHeader('RADNI NALOG', `Ponuda: ${project.quoteNo || '—'}  ·  ${fmtDate(new Date().toISOString())}`, settings.companyName, contact, logos);
   const stripe: any = { canvas: [{ type: 'rect', x: 0, y: 0, w: 786, h: 3, color: BRAND_RED }], margin: [0, 0, 0, 8] };
 
   const cell = (l: string, ...v: any[]) => ({ stack: [label(l), ...v] });

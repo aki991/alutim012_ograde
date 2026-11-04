@@ -1,15 +1,20 @@
 import { AlertTriangle, ArrowLeft, ArrowRight, Copy, Trash2, Calculator, FileDown, Scissors, ClipboardList } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { autoFillToFixedTotal, changeColor, indexOfItem, setAllColors, setAllHeights, setOuterWidth, updateItem } from '../../domain/geometry/operations';
+import { autoFillToFixedTotal, changeColor, indexOfItem, resetPostHeights, setAllColors, setAllGatesOwnPosts, setAllPlinths, setRl10Params, resetRl10Params, setTubesParams, resetTubesParams, setPlinthWidth, setAllHeights, setOuterWidth, updateItem, updatePost } from '../../domain/geometry/operations';
 import { computeInfill } from '../../domain/geometry/infill';
 import { MAX_TURN_DEG } from '../../domain/geometry/plan';
 import { cornerInfo } from '../../domain/geometry/corner';
-import { computeLayout, outerWidthMm, postHalfSum, totalStatus } from '../../domain/geometry/layout';
+import { computeLayout, isSpacer, outerWidthMm, postHalfSum, totalStatus } from '../../domain/geometry/layout';
 import {
-  AUTOMATION_LABELS, FENCE_MODEL_LIST, FENCE_MODELS, HINGE_LABELS, LOCK_LABELS, MOUNTING_LABELS, POST_LABELS, POST_SIZES, maxRods, rodCountFor,
+  AUTOMATION_LABELS, FENCE_MODEL_LIST, FENCE_MODELS, HINGE_LABELS, LOCK_LABELS, MOUNTING_LABELS, POST_LABELS, POST_SIZES, isTerraceModel, maxRods, rodCountFor,
 } from '../../domain/models/catalog';
-import { PLINTH_DEFAULT_MM, type FenceModelId, type Gate, type LayoutItem, type PostCap, type Project } from '../../domain/models/types';
-import { CAP_LABELS, catalogPostSize, isTarabicaPost, postCaps, TARABICA, tarabicaClearWidth, tarabicaLayout } from '../../domain/models/tarabica';
+import { MAX_FIELDS, STAIR_DEFAULT_RISE_MM, STAIR_MAX_DEG, STAIR_MIN_DEG, recommendedStairPosts, slopeOf, stairGroupAt } from '../../domain/geometry/stair';
+import { clearStair, makeStair, setStairGroup, stairOuterRunMm, type StairPatch } from '../../domain/geometry/stairOps';
+import { OWN_POSTS_GAP_MM } from '../../domain/models/factories';
+import { PLINTH_DEFAULT_MM, type FenceModelId, type FenceParams, type Gate, type LayoutItem, type Project } from '../../domain/models/types';
+import { RL10_LABELS, RL10_LIMITS, isRl10Model, rl10Dims, type Rl10Dims } from '../../domain/models/rl10';
+import { TUBES_LABELS, TUBES_LIMITS, isTubesModel, tubesDims, type TubesDims } from '../../domain/models/tubes';
+import { CAP_LABELS, catalogPostSize, isTarabicaPost, postCaps, TARABICA, TOP_CAPS, tarabicaClearWidth, tarabicaLayout } from '../../domain/models/tarabica';
 import { computePrice } from '../../domain/pricing/calc';
 import { LIMITS, heightRangeFor, widthRangeFor } from '../../domain/validation/limits';
 import { useAppStore } from '../../store/useAppStore';
@@ -31,6 +36,55 @@ function Section({ title, children, testId }: { title: string; children: React.R
 function Banner({ tone, children }: { tone: 'red' | 'amber' | 'blue'; children: React.ReactNode }) {
   const c = { red: 'bg-[#fef3f2] text-[#b42318] border-[#fecdca]', amber: 'bg-[#fffaeb] text-[#93370d] border-[#fedf89]', blue: 'bg-primary-50 text-primary-600 border-red-200' }[tone];
   return <div role={tone === 'red' ? 'alert' : 'status'} className={`flex gap-2 items-start text-[13px] rounded-lg border px-3 py-2 my-2 ${c}`}><AlertTriangle size={15} className="mt-0.5 shrink-0" /><div>{children}</div></div>;
+}
+
+/** Dubina i zidovi kvadratne cevi i U profila (važe za sva polja i kapije modela uskih letvica); visina cevi, razmak i širina U su gore. */
+function TubesParts({ params }: { params: FenceParams }) {
+  const [open, setOpen] = useState(false);
+  const d = tubesDims(params);
+  const { mutate } = useAppStore.getState();
+  const keys = Object.keys(TUBES_LABELS) as (keyof TubesDims)[];
+  return (
+    <div className="mt-2 rounded-lg border border-line" data-testid="tubes-parts">
+      <button className="w-full flex items-center justify-between px-3 py-2 text-[13.5px] font-semibold" aria-expanded={open} onClick={() => setOpen((o) => !o)} data-testid="tubes-parts-toggle">
+        Dimenzije cevi i U profila<span className="text-muted text-[12px] font-normal">{open ? 'Sakrij' : 'Prikaži'}</span>
+      </button>
+      {open && (
+        <div className="px-3 pb-2">
+          <p className="text-[12px] text-muted mb-1">Kvadratna cev 20 × 20 × 1 u U profilima 25 × 20 × 1,35 (podatak radnika). Zidovi i zazor su usvojeni; važe za sva polja i kapije ovog modela.</p>
+          {keys.map((k) => (
+            <NumberField key={k} label={TUBES_LABELS[k]} testId={`tubes-${k}`} value={d[k]} range={TUBES_LIMITS[k]} integer={k === 'tubeDepthMm' || k === 'uDepthMm'} step={k === 'uWallMm' || k === 'tubeWallMm' || k === 'endClearMm' ? 0.05 : 1}
+              onCommit={(v) => mutate((p) => setTubesParams(p, { hn: { [k]: v } }), `hn-${k}`)} />
+          ))}
+          <button className="btn btn-sm mt-1" data-testid="tubes-reset" onClick={() => mutate((p) => resetTubesParams(p))}>Vrati podrazumevane mere</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Mere delova sistema RL10 (važe za celu ogradu): rukohvat, stub, veza, prsten, stopa, nosači i prečke. */
+function Rl10Parts({ params }: { params: FenceParams }) {
+  const [open, setOpen] = useState(false);
+  const d = rl10Dims(params);
+  const { mutate } = useAppStore.getState();
+  const keys = Object.keys(RL10_LABELS) as (keyof Rl10Dims)[];
+  return (
+    <div className="mt-2 rounded-lg border border-line" data-testid="rl10-parts">
+      <button className="w-full flex items-center justify-between px-3 py-2 text-[13.5px] font-semibold" aria-expanded={open} onClick={() => setOpen((o) => !o)} data-testid="rl10-parts-toggle">
+        Delovi sistema RL10 (mere)<span className="text-muted text-[12px] font-normal">{open ? 'Sakrij' : 'Prikaži'}</span>
+      </button>
+      {open && (
+        <div className="px-3 pb-2">
+          <p className="text-[12px] text-muted mb-1">Mere važe za celu ogradu. Šifre su iz kataloga BTS (RL10); mere su planerske i mogu se prilagoditi.</p>
+          {keys.map((k) => (
+            <NumberField key={k} label={RL10_LABELS[k]} testId={`rl10-${k}`} value={d[k]} range={RL10_LIMITS[k]} onCommit={(v) => mutate((p) => setRl10Params(p, { rl10: { [k]: v } }), `rl10-${k}`)} />
+          ))}
+          <button className="btn btn-sm mt-1" data-testid="rl10-reset" onClick={() => mutate((p) => resetRl10Params(p))}>Vrati podrazumevane mere</button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /* ---------- Osnovne karakteristike projekta ---------- */
@@ -82,12 +136,18 @@ function ProjectBasics({ project }: { project: Project }) {
             <span className="text-muted">Zbir svetlih otvora</span><b className="text-right tabular-nums">{fmtMm(layout.totalClearMm)}</b>
           </>
         )}
-        <span className="text-muted">Broj polja</span><b className="text-right" data-testid="count-items">{project.items.length}</b>
+        <span className="text-muted">Broj polja</span><b className="text-right" data-testid="count-items">{project.items.filter((i) => !isSpacer(i)).length}</b>
         <span className="text-muted">Stubova (zajedničkih)</span><b className="text-right" data-testid="count-posts">{layout.postCount} ({layout.sharedPostCount})</b>
       </div>
 
       <NumberField label="Visina (svi)" value={firstHeight} range={LIMITS.fenceHeight} testId="all-height" onCommit={(v) => mutate((p) => setAllHeights(p, v), 'allh')} />
       <ColorField label="Boja (sve)" value={s.defaultColor} testId="all-color" onChange={(c) => mutate((p) => setAllColors(p, c))} />
+      {project.items.some((i) => i.kind === 'fence') && (
+        <ToggleField label="Podnožje ograda" testId="field-all-plinth" checked={project.items.every((i) => i.kind !== 'fence' || (i.plinthMm ?? 0) > 0)} onLabel="Sve ograde na podnožju" offLabel="Bez podnožja" onChange={(v) => mutate((p) => setAllPlinths(p, v))} />
+      )}
+      {project.items.some((i) => i.kind === 'gate') && (
+        <ToggleField label="Stubovi kapija" testId="field-all-gates-own-posts" checked={project.items.every((i) => i.kind !== 'gate' || Boolean(i.ownPosts))} onLabel="Sve kapije svoje stubove" offLabel="Zajednički stubovi" onChange={(v) => mutate((p) => setAllGatesOwnPosts(p, v))} />
+      )}
       <button className="btn btn-sm btn-danger mt-2" disabled={project.items.length === 0} data-testid="btn-clear" onClick={() => setConfirmClear(true)}><Trash2 size={14} />Obriši sve elemente</button>
       {confirmClear && <ConfirmDialog title="Brisanje svih elemenata" danger confirmLabel="Obriši sve" message={`Biće obrisano svih ${project.items.length} elemenata. Radnju možete poništiti sa Ctrl+Z.`} onCancel={() => setConfirmClear(false)} onConfirm={() => { mutate((p) => ({ ...p, items: [], posts: [], updatedAt: new Date().toISOString() })); setConfirmClear(false); }} />}
     </Section>
@@ -113,10 +173,11 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
   const wRange = widthRangeFor(it);
   const half = postHalfSum(project, index);
 
+  const stairIn = stairGroupAt(project.items, index) !== null;
   const common = (
     <>
-      <NumberField label="Širina" testId="field-width" value={Math.round(outerWidthMm(project, index))} range={{ min: Math.round(wRange.min + half), max: Math.round(wRange.max + half) }} onCommit={(v) => st.mutate((p) => setOuterWidth(p, id, v), `w:${id}`)} />
-      <NumberField label="Visina" testId="field-height" value={it.heightMm} range={heightRangeFor(it)} onCommit={(v) => st.patchItem(id, { heightMm: v }, 'h')} />
+      {!stairIn && <NumberField label="Širina" testId="field-width" value={Math.round(outerWidthMm(project, index))} range={{ min: Math.round(wRange.min + half), max: Math.round(wRange.max + half) }} onCommit={(v) => st.mutate((p) => setOuterWidth(p, id, v), `w:${id}`)} />}
+      <NumberField label="Visina" testId="field-height" value={it.heightMm} range={heightRangeFor(it)} onCommit={(v) => (stairIn ? st.mutate((p) => setStairGroup(p, id, { heightMm: v }), `h:${id}`) : st.patchItem(id, { heightMm: v }, 'h'))} />
     </>
   );
 
@@ -138,7 +199,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
     body = common;
   } else if (it.kind === 'fence') {
     const def = FENCE_MODELS[it.modelId];
-    const count = computeInfill(it.modelId, li.clearWidth, it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount).bars.filter((b: { tone: string }) => b.tone === 'main').length;
+    const count = computeInfill(it.modelId, li.clearWidth, it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount, it.params.liftMm).bars.filter((b: { tone: string }) => b.tone === 'main').length;
     const tl = def.style === 'tarabica' ? tarabicaLayout(li.clearWidth, it.heightMm, it.params.barSizeMm, it.params.gapMm, it.params.frameMm) : null;
     const slatCountRange = (() => {
       const per = it.params.barSizeMm + it.params.gapMm;
@@ -152,7 +213,8 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
         <ColorField stacked value={it.color} testId="field-color" onChange={(c) => st.setItemColor(id, c)} />
         {def.hasBars && (
           <>
-            <NumberField label={def.barLabel} testId="field-bar" value={it.params.barSizeMm} range={LIMITS.barSize} onCommit={(v) => st.patchItemParams(id, { barSizeMm: v }, 'bar')} />
+            <NumberField label={def.barLabel} testId="field-bar" value={it.params.barSizeMm} range={isRl10Model(it.modelId) ? { min: 8, max: 40 } : LIMITS.barSize}
+              onCommit={(v) => (isRl10Model(it.modelId) ? st.mutate((p) => setRl10Params(p, { barSizeMm: v }), 'rl10-bar') : st.patchItemParams(id, { barSizeMm: v }, 'bar'))} />
             {tl && (
               <NumberField label="Broj tarabica" testId="field-slat-count" unit="kom" step={1} value={tl.count} range={slatCountRange}
                 onCommit={(n) => st.mutate((p) => setOuterWidth(p, id, tarabicaClearWidth(n, it.params.barSizeMm, it.params.gapMm, it.params.frameMm) + 2 * half), `w:${id}`)}
@@ -172,6 +234,76 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
             range={def.style === 'tarabica' ? { min: 0, max: TARABICA.maxOverhangMm } : LIMITS.frame} onCommit={(v) => st.patchItemParams(id, { frameMm: v }, 'frame')}
             hint={def.style === 'tarabica' ? 'Koliko cev 30×30 viri iza krajnje tarabice sa svake strane' : undefined} />
         )}
+        <ToggleField label="Betonsko podnožje" testId="field-item-plinth-on" checked={(it.plinthMm ?? 0) > 0} onLabel="Sa podnožjem" offLabel="Bez podnožja" onChange={(v) => st.patchItem(id, v ? { plinthMm: PLINTH_DEFAULT_MM } : { plinthMm: undefined, plinthWidthMm: undefined })} />
+        {(it.plinthMm ?? 0) > 0 && (
+          <NumberField label="Visina podnožja" testId="field-item-plinth" value={it.plinthMm ?? 0} range={{ min: 50, max: 1200 }} onCommit={(v) => st.patchItem(id, { plinthMm: v }, 'plinth')}
+            hint="Ograda i stubovi stoje na podnožju" />
+        )}
+        {(it.plinthMm ?? 0) > 0 && (
+          <NumberField label="Širina podnožja" testId="field-item-plinth-width" value={Math.round(li.plinthX1 - li.plinthX0)} range={{ min: 100, max: Math.round(wRange.max + half) }}
+            onCommit={(v) => st.mutate((p) => setPlinthWidth(p, id, v), `plinthw:${id}`)}
+            hint={it.plinthWidthMm ? 'Kraće od polja: centrirano ispod njega' : 'Podrazumevano: ispod polja i stubova. Šire podnožje širi i ogradu (susedni elementi se pomeraju).'} />
+        )}
+        {isRl10Model(it.modelId) && <Rl10Parts params={it.params} />}
+        {isTubesModel(it.modelId) && <TubesParts params={it.params} />}
+        {isTerraceModel(it.modelId) && (() => {
+          // stepenište: niz polja između stubova; prvi i poslednji stub su na krajevima, stubovi između se dodaju (preporuka: na svaki metar)
+          const grp = stairGroupAt(project.items, index);
+          const on = grp !== null;
+          const rise = grp?.riseMm ?? 0;
+          const outerRun = grp ? stairOuterRunMm(project, id) : 0;
+          const sl = grp ? slopeOf(grp.runMm, grp.riseMm) : null;
+          const fields = grp ? grp.to - grp.from + 1 : 1;
+          const mutateStair = (patch: StairPatch, key: string) => st.mutate((p) => setStairGroup(p, id, patch), `${key}:${id}`);
+          return (
+            <>
+              <ToggleField label="Stepenište" testId="field-stair-on" checked={on} onLabel="Prati stepenice" offLabel="Ravna ograda"
+                onChange={(v) => st.mutate((p) => (v ? makeStair(p, id, index > 0 ? -STAIR_DEFAULT_RISE_MM : STAIR_DEFAULT_RISE_MM) : clearStair(p, id)))} />
+              {grp && sl && (
+                <>
+                  <SegmentedField label="Smer (gledano s leva nadesno)" testId="field-stair-dir" value={rise > 0 ? 'up' : 'down'} options={[{ value: 'up', label: 'Penje se' }, { value: 'down', label: 'Silazi' }]}
+                    onChange={(v) => mutateStair({ riseMm: (v === 'up' ? 1 : -1) * Math.abs(rise) }, 'stair-dir')} />
+                  <NumberField label="Dužina stepeništa" testId="field-stair-run" value={Math.round(outerRun)} range={{ min: 500, max: 20000 }}
+                    onCommit={(v) => mutateStair({ outerRunMm: v }, 'stair-run')}
+                    hint="Ukupno, od spoljne ivice prvog do spoljne ivice poslednjeg stuba" />
+                  <NumberField label="Visinska razlika" testId="field-stair-rise" value={Math.abs(Math.round(rise))} range={{ min: 50, max: 6000 }}
+                    onCommit={(v) => mutateStair({ riseMm: Math.sign(rise || 1) * v }, 'stair-rise')}
+                    hint={`Nagib ${fmtNum(sl.deg, 1)}° · kosa dužina ${fmtMm(Math.round(grp.runMm * sl.factor))}`} />
+                  <NumberField label="Broj stepenika" testId="field-stair-steps" unit="kom" step={1} value={grp.steps} range={{ min: 1, max: 80 }}
+                    onCommit={(v) => mutateStair({ steps: v }, 'stair-steps')}
+                    hint={`Stepenik ${fmtNum(Math.abs(rise) / grp.steps, 0)} mm visine i ${fmtNum(grp.runMm / grp.steps, 0)} mm gazišta`} />
+                  <NumberField label="Broj stubova" testId="field-stair-posts" unit="kom" step={1} value={fields + 1} range={{ min: 2, max: Math.min(MAX_FIELDS, grp.steps + 1) + 1 }}
+                    onCommit={(v) => mutateStair({ fields: v - 1 }, 'stair-posts')}
+                    hint={`Prvi i poslednji stub su na krajevima, ostali po sredini stepenika. Preporuka: na svaki treći stepenik (${recommendedStairPosts(grp.steps) + 2} stubova)${grp.fieldsCustom ? '' : ' — izabrano automatski'}`} />
+                  {/* skretanje ograde u osnovi na kraju i na početku stepeništa: ugao se zadaje na zglobu, a stub je pored njega */}
+                  {([['end', grp.to + 1, 'Skretanje ograde na kraju stepeništa'], ['start', grp.from, 'Skretanje ograde na početku stepeništa']] as const)
+                    .filter(([, pi]) => pi > 0 && pi < project.items.length)
+                    .map(([which, pi, label]) => {
+                      const post = project.posts[pi];
+                      const turn = post?.turnDeg ?? 0;
+                      return (
+                        <div key={which} data-testid={`stair-turn-${which}`}>
+                          <NumberField label={label} testId={`field-stair-turn-${which}`} unit="°" step={5} value={turn} range={{ min: -MAX_TURN_DEG, max: MAX_TURN_DEG }}
+                            onCommit={(v) => st.patchPost(post.id, { turnDeg: v }, 'turn')}
+                            hint={which === 'end' ? 'Ograda posle stepeništa skreće u stranu: rukohvat ima pravo parče između dve kugle, a prečke kolena' : 'Ugao u osnovi na zglobu na početku stepeništa'} />
+                          <div className="flex gap-1.5 pb-1.5 flex-wrap">
+                            {[-90, -45, 0, 45, 90].map((a) => <button key={a} className={`btn btn-sm ${turn === a ? 'btn-primary' : ''}`} data-testid={`stair-turn-${which}-${a}`} onClick={() => st.patchPost(post.id, { turnDeg: a })}>{a === 0 ? 'Ravno' : `${a > 0 ? '+' : ''}${a}°`}</button>)}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  {(sl.deg < STAIR_MIN_DEG || sl.deg > STAIR_MAX_DEG) && (
+                    <Banner tone="amber">Nagib {fmtNum(sl.deg, 1)}° je neuobičajen za stepenište (obično {STAIR_MIN_DEG}–{STAIR_MAX_DEG}°): proverite dužinu i visinsku razliku.</Banner>
+                  )}
+                </>
+              )}
+            </>
+          );
+        })()}
+        {def.style === 'tarabica' && (
+          <NumberField label="Razmak od poda" testId="field-lift" value={it.params.liftMm ?? TARABICA.defaultLiftMm} range={{ min: 0, max: TARABICA.maxLiftMm }} onCommit={(v) => st.patchItemParams(id, { liftMm: v }, 'lift')}
+            hint="Tarabice su podignute od poda (podrazumevano koliko je visina čepa)" />
+        )}
       </>
     );
   } else {
@@ -182,6 +314,8 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
         {common}
         <ModelSelect value={g.infillModelId} onChange={(m) => st.setItemModel(id, m)} />
         <ColorField stacked value={g.color} testId="field-color" onChange={(c) => st.setItemColor(id, c)} />
+        <ToggleField label="Stubovi kapije" testId="field-gate-own-posts" checked={Boolean(g.ownPosts)} onLabel="Svoji stubovi" offLabel="Zajednički stub" onChange={(v) => st.patchItem(id, { ownPosts: v })} />
+        {g.ownPosts && <NumberField label="Razmak stubova" testId="field-gate-post-gap" value={g.postGapMm ?? OWN_POSTS_GAP_MM} range={{ min: 0, max: 500 }} onCommit={(v) => st.patchItem(id, { postGapMm: v }, 'postgap')} hint="Razmak između stuba ograde i stuba kapije" />}
         <SegmentedField label={g.gateType === 'sliding' ? 'Smer klizanja' : 'Strana šarki'} testId="field-opening" value={g.opening} options={[{ value: 'left', label: 'Levo' }, { value: 'right', label: 'Desno' }]} onChange={(v) => st.patchItem(id, { opening: v })} />
         {swing && g.gateType !== 'double' && <></>}
         {swing && <SegmentedField label="Otvaranje" testId="field-swing" value={g.swing} options={[{ value: 'inward', label: 'Unutra' }, { value: 'outward', label: 'Spolja' }]} onChange={(v) => st.patchItem(id, { swing: v })} />}
@@ -259,18 +393,39 @@ function MultiPanel({ project, ids }: { project: Project; ids: string[] }) {
 }
 
 /* ---------- Izabrani stub ---------- */
-const CAP_OPTIONS = (Object.entries(CAP_LABELS) as [PostCap, string][]).map(([value, label]) => ({ value, label }));
+/** Izmene stuba važe za sve stubove dok korisnik ne isključi prekidač; izbor se pamti dok se aplikacija ne osveži. */
+let applyToAllPosts = true;
+
+/** Tipovi stuba koji se biraju ručno (stub kapije i dekorativni stub se ne nude; stub kapije se postavlja sam uz kapiju). */
+const MANUAL_POST_TYPES = ['aluminium', 'concrete', 'concrete_plinth'];
+const TOP_CAP_OPTIONS = TOP_CAPS.map((value) => ({ value, label: CAP_LABELS[value] }));
 
 function PostPanel({ project, id }: { project: Project; id: string }) {
+  const [allPosts, setAllPostsState] = useState(applyToAllPosts);
+  const setAllPosts = (v: boolean) => { applyToAllPosts = v; setAllPostsState(v); };
+  const multiPosts = useAppStore((s) => s.editor.multiPosts);
   const st = useAppStore.getState();
   const layout = computeLayout(project);
   const lp = layout.posts.find((p) => p.post.id === id);
   if (!lp) return null;
   const p = lp.post;
+  const tarabicaPost = isTarabicaPost(project.items, p, lp.index);
+  // izmene važe za izabrane stubove (Ctrl+klik), za sve stubove (prekidač) ili samo za ovaj stub
+  const picked = multiPosts.filter((x) => project.posts.some((q) => q.id === x));
+  const targets = picked.length > 1 ? picked : allPosts ? project.posts.map((q) => q.id) : [id];
+  const applyPatch = (patch: Partial<typeof p>, key?: string) => {
+    if (targets.length === 1) st.patchPost(id, patch, key);
+    else st.mutate((pr) => targets.reduce((q, pid) => updatePost(q, pid, patch), pr), key ? `${key}:multi` : null);
+  };
   const role = lp.role === 'end' ? 'Krajnji stub' : lp.role === 'gate' ? 'Stub kapije' : 'Međustub (zajednički)';
   return (
-    <Section title={`Odabran stub: S${lp.index + 1}`} testId="panel-post">
+    <Section title={picked.length > 1 ? `Izabrano stubova: ${picked.length}` : `Odabran stub: S${lp.index + 1}`} testId="panel-post">
       <div className="text-[12.5px] text-muted mb-1">{role} · pozicija {fmtMm(lp.x)} · ID {p.id.slice(-6)}</div>
+      {picked.length > 1 ? (
+        <div className="text-[12.5px] text-muted mb-1" data-testid="post-multi-note">Izmene važe za sve izabrane stubove. Ctrl+klik dodaje ili izbacuje stub, Shift+klik bira niz stubova.</div>
+      ) : (
+        <ToggleField label="Izmene važe za" testId="post-caps-all" checked={allPosts} onLabel="Sve stubove" offLabel="Samo ovaj stub" onChange={setAllPosts} />
+      )}
       {lp.index > 0 && lp.index < project.items.length ? (
         <div data-testid="post-turn">
           <NumberField label="Ugao skretanja" testId="field-turn" unit="°" step={5} value={p.turnDeg ?? 0} range={{ min: -MAX_TURN_DEG, max: MAX_TURN_DEG }}
@@ -281,22 +436,24 @@ function PostPanel({ project, id }: { project: Project; id: string }) {
           </div>
         </div>
       ) : null}
-      <SelectField label="Tip" testId="post-type" value={p.type} options={Object.entries(POST_LABELS).map(([value, label]) => ({ value: value as typeof p.type, label }))} onChange={(v) => st.patchPost(id, { type: v })} />
-      <NumberField label="Širina preseka" value={p.widthMm} range={LIMITS.postWidth} onCommit={(v) => st.patchPost(id, { widthMm: v }, 'pw')} />
-      <div className="flex gap-1.5 pb-1.5">{POST_SIZES.map((s) => <button key={s} className={`btn btn-sm ${p.widthMm === s ? 'btn-primary' : ''}`} onClick={() => st.patchPost(id, { widthMm: s })}>{s}×{s}</button>)}</div>
-      {p.type === 'concrete_plinth' && <NumberField label="Visina podnožja" testId="post-plinth" value={p.plinthMm ?? PLINTH_DEFAULT_MM} range={{ min: 100, max: 1200 }} onCommit={(v) => st.patchPost(id, { plinthMm: v }, 'pp')} />}
-      <NumberField label="Visina" value={p.heightMm} range={LIMITS.postHeight} onCommit={(v) => st.patchPost(id, { heightMm: v }, 'ph')} />
-      <ColorField value={p.color} onChange={(c) => st.patchPost(id, { color: c })} />
-      {isTarabicaPost(project.items, p, lp.index) && (
+      <SelectField label="Tip" testId="post-type" value={p.type} options={(Object.entries(POST_LABELS) as [typeof p.type, string][]).filter(([value]) => MANUAL_POST_TYPES.includes(value) || value === p.type).map(([value, label]) => ({ value, label }))} onChange={(v) => applyPatch({ type: v })} />
+      <NumberField label="Širina preseka" value={p.widthMm} range={LIMITS.postWidth} onCommit={(v) => applyPatch({ widthMm: v }, 'pw')} />
+      <div className="flex gap-1.5 pb-1.5">{POST_SIZES.map((s) => <button key={s} className={`btn btn-sm ${p.widthMm === s ? 'btn-primary' : ''}`} onClick={() => applyPatch({ widthMm: s })}>{s}×{s}</button>)}</div>
+      {p.type === 'concrete_plinth' && <NumberField label="Visina podnožja" testId="post-plinth" value={p.plinthMm ?? PLINTH_DEFAULT_MM} range={{ min: 100, max: 1200 }} onCommit={(v) => applyPatch({ plinthMm: v }, 'pp')} />}
+      <NumberField label="Visina" value={p.heightMm} range={LIMITS.postHeight} onCommit={(v) => applyPatch({ heightMm: v }, 'ph')}
+        hint={`${p.heightCustom ? 'Ručno zadata' : 'Automatska'} visina iznad podnožja ograde (ne zavisi od visine podnožja). Dužina stuba: ${fmtMm(lp.lengthMm)}${lp.baseMm > 0 ? ' (stoji na podnožju)' : ''}`} />
+      {p.heightCustom && <button className="btn btn-sm mb-1.5" data-testid="post-height-auto" onClick={() => st.mutate((pr) => resetPostHeights(pr, targets))}>Vrati automatsku visinu</button>}
+      <ColorField testId="post-color" value={p.color} onChange={(c) => applyPatch({ color: c })} />
+      {tarabicaPost && (
         <div data-testid="post-caps">
-          <SelectField label="Kapa na vrhu" testId="post-cap-top" value={postCaps(p).top} options={CAP_OPTIONS} onChange={(v) => st.patchPost(id, { capTop: v })} />
-          <SelectField label="Kapa u dnu" testId="post-cap-bottom" value={postCaps(p).bottom} options={CAP_OPTIONS} onChange={(v) => st.patchPost(id, { capBottom: v })} />
+          <SelectField label="Kapa na vrhu" testId="post-cap-top" value={postCaps(p).top} options={TOP_CAP_OPTIONS} onChange={(v) => applyPatch({ capTop: v })} />
+          <ToggleField label="Rozetna u dnu" testId="post-cap-bottom" checked={postCaps(p).bottom === 'rosette'} onLabel="Da" offLabel="Ne" onChange={(v) => applyPatch({ capBottom: v ? 'rosette' : 'none' })} />
           <div className="text-[12px] text-muted pb-1.5" data-testid="post-cap-note">
             Stub {catalogPostSize(p.widthMm)}×{catalogPostSize(p.widthMm)} (kvadratna cev). Kape i rozetne u katalogu postoje za 80×80 i 100×100 mm{p.widthMm !== 80 && p.widthMm !== 100 ? `; za širinu ${p.widthMm} mm obračunava se najbliža veličina` : ''}.
           </div>
         </div>
       )}
-      <SelectField label="Montaža" value={p.mounting} options={Object.entries(MOUNTING_LABELS).map(([value, label]) => ({ value: value as typeof p.mounting, label }))} onChange={(v) => st.patchPost(id, { mounting: v })} />
+      <SelectField label="Montaža" value={p.mounting} options={Object.entries(MOUNTING_LABELS).map(([value, label]) => ({ value: value as typeof p.mounting, label }))} onChange={(v) => applyPatch({ mounting: v })} />
     </Section>
   );
 }

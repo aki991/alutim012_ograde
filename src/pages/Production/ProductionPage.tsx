@@ -1,3 +1,4 @@
+import { buildRl10Sheet } from '../../domain/pricing/rl10Spec';
 import { ClipboardList, FileDown, FileSpreadsheet } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { FrontView } from '../../components/editor/FrontView';
@@ -6,7 +7,7 @@ import { CutlistSection } from '../../components/production/CutlistSection';
 import { NumberField, SelectField, TextField, ToggleField } from '../../components/forms/Fields';
 import { EmptyState, Page, PageHeader } from '../../components/ui/Common';
 import { STATUS_LABELS } from '../../domain/models/catalog';
-import { computeLayout } from '../../domain/geometry/layout';
+import { computeLayout, isSpacer } from '../../domain/geometry/layout';
 import type { ProjectStatus } from '../../domain/models/types';
 import { buildBom } from '../../domain/pricing/calc';
 import { buildCutList, buildHardwareList, describeItem } from '../../domain/pricing/production';
@@ -15,7 +16,7 @@ import { buildRail04Sheet } from '../../domain/pricing/railSpec';
 import { downloadCsv, safeFilename } from '../../services/exports';
 import { downloadProductionPdf } from '../../services/pdf';
 import { useAppStore } from '../../store/useAppStore';
-import { itemLabel } from '../../utils/labels';
+import { itemLabel, itemNumber } from '../../utils/labels';
 import { fmtNum } from '../../utils/units';
 
 export default function ProductionPage() {
@@ -31,6 +32,7 @@ export default function ProductionPage() {
   const cuts = useMemo(() => (project ? buildCutList(project, specs, materials) : []), [project, specs, materials]);
   const hw = useMemo(() => (project ? buildHardwareList(project) : []), [project]);
   const rail = useMemo(() => (project ? buildRail04Sheet(project, specs) : null), [project, specs]);
+  const rl10 = useMemo(() => (project ? buildRl10Sheet(project, specs) : null), [project, specs]);
   const louver = useMemo(() => (project ? buildLouver08Sheet(project, specs) : null), [project, specs]);
   const [busy, setBusy] = useState(false);
   const [orderOpen, setOrderOpen] = useState(false);
@@ -56,6 +58,18 @@ export default function ProductionPage() {
       [], ['Raspored na šipke'], ['Profil', 'Komadi (mm)', 'Utrošak na rezove (mm)', 'Ostatak šipke (mm)'],
       ...rail.bars.map((b) => [b.profile, b.pieces, String(b.cutsMm), String(b.leftoverMm)]),
     ], `model04_${safeFilename(project.name)}.csv`);
+  };
+
+  const rl10Csv = () => {
+    if (!rl10) return;
+    downloadCsv([
+      [`Sastavnica — ${rl10.title}`], ['Poz.', 'Deo', 'Kataloška oznaka', 'Količina', 'Napomena'],
+      ...rl10.bom.map((r) => [String(r.pos), r.part, r.code, r.qty, r.note]),
+      [], [`Krojna lista — ${rl10.title} (mm)`], ['Oznaka', 'Deo', 'Profil', 'Komada', 'Dužina komada', 'Ukupna dužina', 'Rez'],
+      ...rl10.cuts.map((c) => [c.mark, c.part, c.profile, String(c.qty), String(c.lengthMm), String(c.totalMm), c.cut]),
+      [], ['Raspored na šipke'], ['Profil', 'Komadi (mm)', 'Utrošak na rezove (mm)', 'Ostatak šipke (mm)'],
+      ...rl10.bars.map((b) => [b.profile, b.pieces, String(b.cutsMm), String(b.leftoverMm)]),
+    ], `model06_rl10_${safeFilename(project.name)}.csv`);
   };
 
   const louverCsv = () => {
@@ -93,7 +107,7 @@ export default function ProductionPage() {
         <section className="card p-4 overflow-x-auto">
           <h2 className="font-bold mb-2">Redosled elemenata</h2>
           <table className="w-full min-w-[480px]"><thead><tr><th className="th">#</th><th className="th">Element</th><th className="th">Model</th><th className="th text-right">Modul</th><th className="th text-right">Svetli otvor</th><th className="th text-right">Visina</th></tr></thead>
-            <tbody>{project.items.map((it, i) => <tr key={it.id}><td className="td">{i + 1}</td><td className="td">{itemLabel(project.items, i)}</td><td className="td text-slate-600">{describeItem(project, i)}</td><td className="td text-right tabular-nums">{fmtNum(it.widthMm, 0)}</td><td className="td text-right tabular-nums">{fmtNum(layout.items[i].clearWidth, 0)}</td><td className="td text-right tabular-nums">{fmtNum(it.heightMm, 0)}</td></tr>)}</tbody></table>
+            <tbody>{project.items.map((it, i) => isSpacer(it) ? null : <tr key={it.id}><td className="td">{itemNumber(project.items, i)}</td><td className="td">{itemLabel(project.items, i)}</td><td className="td text-slate-600">{describeItem(project, i)}</td><td className="td text-right tabular-nums">{fmtNum(it.widthMm, 0)}</td><td className="td text-right tabular-nums">{fmtNum(layout.items[i].clearWidth, 0)}</td><td className="td text-right tabular-nums">{fmtNum(it.heightMm, 0)}</td></tr>)}</tbody></table>
           <p className="text-xs text-muted mt-2">Dimenzije u mm. Stubova: {layout.postCount} kom.</p>
         </section>
         <section className="card p-4 overflow-x-auto">
@@ -132,6 +146,28 @@ export default function ProductionPage() {
           <table className="w-full min-w-[640px] mb-3" data-testid="rail04-bars"><thead><tr><th className="th">Profil</th><th className="th">Komadi (mm)</th><th className="th text-right">Rezovi (mm)</th><th className="th text-right">Ostatak (mm)</th></tr></thead>
             <tbody>{rail.bars.map((b, i) => <tr key={i}><td className="td">{b.profile}</td><td className="td">{b.pieces}</td><td className="td text-right tabular-nums">{fmtNum(b.cutsMm, 0)}</td><td className="td text-right tabular-nums">{fmtNum(b.leftoverMm, 0)}</td></tr>)}</tbody></table>
           <ul className="list-disc pl-5 text-xs text-slate-600 space-y-0.5">{rail.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
+        </section>
+      )}
+      {rl10 && (
+        <section className="card p-4 mt-5 overflow-x-auto" data-testid="rl10-sheet">
+          <div className="flex items-center justify-between gap-3 mb-1">
+            <h2 className="font-bold">{rl10.title}: sastavnica i krojna lista</h2>
+            <button className="btn btn-sm" data-testid="rl10-csv" onClick={rl10Csv}><FileSpreadsheet size={16} />CSV</button>
+          </div>
+          <p className="text-xs text-muted mb-3">
+            {rl10.panels.length} {rl10.panels.length === 1 ? 'polje' : 'polja'}, {rl10.posts.length} stubova, {rl10.runs.length} {rl10.runs.length === 1 ? 'niz' : 'niza'} rukohvata. Mere su planerske (katalog BTS RL10).
+          </p>
+          <h3 className="font-semibold text-sm mb-1">Sastavnica</h3>
+          <table className="w-full min-w-[720px] mb-4" data-testid="rl10-bom"><thead><tr><th className="th">Poz.</th><th className="th">Deo</th><th className="th">Kataloška oznaka</th><th className="th text-right">Količina</th><th className="th">Napomena</th></tr></thead>
+            <tbody>{rl10.bom.map((r) => <tr key={r.pos}><td className="td">{r.pos}</td><td className="td">{r.part}</td><td className="td font-medium">{r.code}</td><td className="td text-right whitespace-nowrap">{r.qty}</td><td className="td text-xs text-muted">{r.note}</td></tr>)}</tbody></table>
+          <h3 className="font-semibold text-sm mb-1">Krojna lista (mm)</h3>
+          <table className="w-full min-w-[720px] mb-2" data-testid="rl10-cuts"><thead><tr><th className="th">Oznaka</th><th className="th">Deo</th><th className="th">Profil</th><th className="th text-right">Komada</th><th className="th text-right">Dužina</th><th className="th text-right">Ukupno</th><th className="th">Rez</th></tr></thead>
+            <tbody>{rl10.cuts.map((c) => <tr key={c.mark}><td className="td font-medium">{c.mark}</td><td className="td">{c.part}</td><td className="td">{c.profile}</td><td className="td text-right">{c.qty}</td><td className="td text-right tabular-nums">{fmtNum(c.lengthMm, 0)}</td><td className="td text-right tabular-nums">{fmtNum(c.totalMm, 0)}</td><td className="td text-xs text-muted">{c.cut}</td></tr>)}</tbody></table>
+          <p className="text-sm mb-4">Zbir glavnih profila: <b>{fmtNum(rl10.mainTotalMm, 0)} mm ({fmtNum(rl10.mainTotalMm / 1000, 2)} m)</b> — to nije dužina gotove ograde.</p>
+          <h3 className="font-semibold text-sm mb-1">Raspored na nabavne šipke</h3>
+          <table className="w-full min-w-[640px] mb-3" data-testid="rl10-bars"><thead><tr><th className="th">Profil</th><th className="th">Komadi (mm)</th><th className="th text-right">Rezovi (mm)</th><th className="th text-right">Ostatak šipke (mm)</th></tr></thead>
+            <tbody>{rl10.bars.map((b, i) => <tr key={i}><td className="td">{b.profile}</td><td className="td">{b.pieces}</td><td className="td text-right tabular-nums">{fmtNum(b.cutsMm, 0)}</td><td className="td text-right tabular-nums">{fmtNum(b.leftoverMm, 0)}</td></tr>)}</tbody></table>
+          <ul className="list-disc pl-5 text-xs text-slate-600 space-y-0.5">{rl10.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
         </section>
       )}
       {louver && (

@@ -1,22 +1,27 @@
 import { ChevronDown, ChevronUp, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { FENCE_MODEL_LIST, FENCE_MODELS, GATE_LABELS, POST_LABELS, isTerraceModel } from '../../domain/models/catalog';
+import { FENCE_MODEL_LIST, FENCE_MODELS, GATE_LABELS, POST_LABELS, isLightColor, isTerraceModel, projectModelId } from '../../domain/models/catalog';
 import { createFence, createGate, createOpening, createProject } from '../../domain/models/factories';
 import { applyPostType } from '../../domain/geometry/operations';
 import type { FenceModelId, GateType, PostType, Project } from '../../domain/models/types';
 import type { DragSource } from '../../hooks/useDragController';
 import { useAppStore, useCurrentProject, type NewElementSpec } from '../../store/useAppStore';
-import { gatePreviewUrl } from '../../assets/gates3d';
-import { ModelThumb } from '../ui/Common';
 import { FrontView, frontViewMetrics } from './FrontView';
 
-function MiniThumb({ project, width = 150 }: { project: Project; width?: number }) {
+/** Sličica je isti crtež kao u 2D prikazu; za svetle (bele) ograde pozadina je siva kao u editoru da se vidi bela boja. */
+function MiniThumb({ project, width = 150, grey = false }: { project: Project; width?: number; grey?: boolean }) {
   const m = frontViewMetrics(project, 1, false, true);
   return (
-    <div className="rounded-lg overflow-hidden border border-line bg-white pointer-events-none" style={{ width, height: 118 }} aria-hidden="true">
-      <FrontView project={project} scale={width / m.vw} compact className="!w-full !h-full" options={{ showDimensions: false, showGrid: false, showLabels: false }} />
+    <div className={`rounded-lg overflow-hidden border border-line pointer-events-none ${grey ? 'bg-[#b3bac3]' : 'bg-white'}`} style={{ width, height: 118 }} aria-hidden="true">
+      <FrontView project={project} scale={width / m.vw} compact greyBackdrop={grey} className="!w-full !h-full" options={{ showDimensions: false, showGrid: false, showLabels: false }} />
     </div>
   );
+}
+
+/** Uzorak polja ograde izabranog modela za sličice: veličina polja modela (tarabica: 6 tarabica), inače 1800 × 1200 mm. */
+function sampleFence(model: FenceModelId) {
+  const size = FENCE_MODELS[model].defaultSize;
+  return createFence({ modelId: model, widthMm: size ? size.widthMm - 100 : 1800, heightMm: size?.heightMm ?? 1200 });
 }
 
 function useMini(build: () => Project, key: string): Project {
@@ -47,13 +52,11 @@ const POST_TYPES: { type: PostType; subtitle: string }[] = [
   { type: 'aluminium', subtitle: 'Standardni stub uz ogradu' },
   { type: 'concrete', subtitle: 'Betonski stub' },
   { type: 'concrete_plinth', subtitle: 'Betonski stub sa podnožjem ispod ograde' },
-  { type: 'decorative', subtitle: 'Stub sa ukrasnom kapom' },
-  { type: 'gate', subtitle: 'Ojačan stub uz kapiju' },
 ];
 
-function CornerThumb() {
+function CornerThumb({ grey = false }: { grey?: boolean }) {
   return (
-    <div className="rounded-lg overflow-hidden border border-line bg-white pointer-events-none grid place-items-center" style={{ width: 150, height: 118 }} aria-hidden="true">
+    <div className={`rounded-lg overflow-hidden border border-line pointer-events-none grid place-items-center ${grey ? 'bg-[#b3bac3]' : 'bg-white'}`} style={{ width: 150, height: 118 }} aria-hidden="true">
       <svg viewBox="0 0 150 118" width="150" height="118">
         <path d="M18 78 H78 L112 38" fill="none" stroke="#1a1a1a" strokeWidth="5" strokeLinejoin="round" />
         <path d="M18 62 H74 L100 30" fill="none" stroke="#1a1a1a" strokeWidth="3" strokeLinejoin="round" opacity="0.55" />
@@ -63,43 +66,32 @@ function CornerThumb() {
   );
 }
 
-function PostCard({ type, subtitle, hasSelection, onApply }: { type: PostType; subtitle: string; hasSelection: boolean; onApply: () => void }) {
+function PostCard({ type, subtitle, model, hasSelection, onApply }: { type: PostType; subtitle: string; model: FenceModelId; hasSelection: boolean; onApply: () => void }) {
   const mini = useMini(() => {
-    const p = applyPostType(createProject('m', [createFence({ widthMm: 1400, heightMm: 1000 })]), type);
+    const p = applyPostType(createProject('m', [sampleFence(model)]), type);
     return { ...p, posts: p.posts.map((x) => (x.type === 'concrete' || x.type === 'concrete_plinth' ? { ...x, widthMm: 220 } : x)) };
-  }, `p-${type}`);
-  return <CatalogCard testId={`cat-post-${type}`} title={POST_LABELS[type]} subtitle={subtitle} thumb={<MiniThumb project={mini} />} onAdd={onApply} addLabel={hasSelection ? 'Primeni na stub' : 'Primeni na sve'} />;
+  }, `p-${type}-${model}`);
+  return <CatalogCard testId={`cat-post-${type}`} title={POST_LABELS[type]} subtitle={subtitle} thumb={<MiniThumb project={mini} grey={isLightColor(FENCE_MODELS[model].defaultColor)} />} onAdd={onApply} addLabel={hasSelection ? 'Primeni na stub' : 'Primeni na sve'} />;
 }
 
-export type ThumbKind = 'fence' | 'opening' | 'corner' | 'concrete' | GateType;
+export type ThumbKind = 'fence' | 'stair' | 'opening' | 'corner' | 'concrete' | GateType;
 
-/** Sličica elementa izabranog modela (ista u katalogu i u prozoru „Dodaj element"), 150 × 118 px. */
+/** Sličica elementa izabranog modela (ista u katalogu i u prozoru „Dodaj element"), 150 × 118 px: isti crtež kao u 2D prikazu. */
 export function ElementThumb({ kind, model }: { kind: ThumbKind; model: FenceModelId }) {
   const def = FENCE_MODELS[model];
-  const openingMini = useMini(() => createProject('m', [createOpening({ widthMm: 1600, heightMm: 1200 })]), 'o');
-  const concreteMini = useMini(() => {
-    const p = createProject('m', [createGate('single', { infillModelId: model })]);
-    return { ...p, posts: p.posts.map((x) => ({ ...x, type: 'concrete' as const, widthMm: 220 })) };
-  }, `c-${model}`);
-  if (kind === 'fence') return <div className="rounded-lg overflow-hidden border border-line bg-white pointer-events-none" style={{ width: 150, height: 118 }} aria-hidden="true"><ModelThumb modelId={model} /></div>;
-  if (kind === 'opening') return <MiniThumb project={openingMini} />;
-  if (kind === 'concrete') return <MiniThumb project={concreteMini} />;
-  if (kind === 'corner') return <CornerThumb />;
-  const url = gatePreviewUrl(def.image, kind);
-  if (url && kind === 'sliding') {
-    // pregled 360 × 207: krilo je na x 6–186, y 60–144; ostatak je šina i pozadina — prikazuje se samo krilo, što veće
-    const k = 150 / 180;
-    return (
-      <div className="rounded-lg overflow-hidden border border-line pointer-events-none relative bg-[#dfe7ef]" style={{ width: 150, height: 118 }} aria-hidden="true">
-        <img src={url} alt="" draggable={false} className="absolute max-w-none" style={{ width: 360 * k, height: 207 * k, left: -6 * k, top: (118 - 84 * k) / 2 - 60 * k }} />
-      </div>
-    );
-  }
-  return (
-    <div className="rounded-lg overflow-hidden border border-line bg-white pointer-events-none grid place-items-center" style={{ width: 150, height: 118 }} aria-hidden="true">
-      {url ? <img src={url} alt="" className="max-w-full max-h-full object-contain" draggable={false} /> : null}
-    </div>
-  );
+  const grey = isLightColor(def.defaultColor);
+  const mini = useMini(() => {
+    if (kind === 'opening') return createProject('m', [createOpening({ widthMm: 1600, heightMm: 1200 })]);
+    if (kind === 'concrete') {
+      const p = createProject('m', [createGate('single', { infillModelId: model })]);
+      return { ...p, posts: p.posts.map((x) => ({ ...x, type: 'concrete' as const, widthMm: 220 })) };
+    }
+    if (kind === 'stair') return createProject('m', [createFence({ modelId: model, widthMm: 2400, heightMm: 800, stair: { riseMm: 700 } })]);
+    if (kind === 'fence' || kind === 'corner') return createProject('m', [sampleFence(model)]);
+    return createProject('m', [createGate(kind, { infillModelId: model })]);
+  }, `t-${kind}-${model}`);
+  if (kind === 'corner') return <CornerThumb grey={grey} />;
+  return <MiniThumb project={mini} grey={grey} />;
 }
 
 const GATE_CARDS: { id: string; type: GateType; concrete?: boolean; title: string; subtitle: string }[] = [
@@ -107,7 +99,6 @@ const GATE_CARDS: { id: string; type: GateType; concrete?: boolean; title: strin
   { id: 'sliding', type: 'sliding', title: GATE_LABELS.sliding, subtitle: 'Otvara se klizanjem u stranu' },
   { id: 'double', type: 'double', title: GATE_LABELS.double, subtitle: 'Dva krila' },
   { id: 'single', type: 'single', title: GATE_LABELS.single, subtitle: 'Jedno krilo' },
-  { id: 'concrete', type: 'single', concrete: true, title: 'Kapija sa betonskim stubom', subtitle: 'Jednokrilna kapija između betonskih stubova' },
 ];
 
 /**
@@ -115,15 +106,32 @@ const GATE_CARDS: { id: string; type: GateType; concrete?: boolean; title: strin
  * Model se bira jednom (menja se na svim elementima projekta), pa nema ni kartica za svaki model ni kategorija.
  */
 export function Catalog({ onBeginDrag }: { onBeginDrag: (source: DragSource, e: { clientX: number; clientY: number }) => void }) {
-  const model = useAppStore((s) => s.editor.activeModelId);
+  const storeModel = useAppStore((s) => s.editor.activeModelId);
   const project = useCurrentProject();
+  const model = (project && projectModelId(project.items)) ?? storeModel; // ograda koju projekat već ima
   const { addElement, mutate } = useAppStore.getState();
   const selection = useAppStore((s) => s.editor.selection);
   const [showAll, setShowAll] = useState(false);
   const def = FENCE_MODELS[model];
   const terrace = isTerraceModel(model); // ograda za terasu: bez kapija i bez kataloga stubova
+  // tarabica: svi stubovi i podnožje su uvek na raspolaganju (betonski stub sa podnožjem, samo podnožje)
+  const postsAlways = !terrace && def.style === 'tarabica';
 
   const startDrag = (spec: NewElementSpec, label: string) => (e: React.PointerEvent) => onBeginDrag({ kind: 'new', spec, label }, e);
+  const postsBlock = !terrace && (
+    <div data-testid="catalog-posts">
+      <h3 className="font-semibold text-[14px] mt-4 mb-2">Stubovi</h3>
+      <div className="flex flex-wrap gap-3">
+        <CatalogCard testId="cat-gate-concrete" title="Kapija sa betonskim stubom" subtitle="Jednokrilna kapija između betonskih stubova" thumb={<ElementThumb kind="concrete" model={model} />}
+          onAdd={() => addElement({ kind: 'gate', gateType: 'single', modelId: model, concrete: true })} onDragStart={startDrag({ kind: 'gate', gateType: 'single', modelId: model, concrete: true }, 'Kapija sa betonskim stubom')} />
+        {POST_TYPES.map((t) => (
+          <PostCard key={t.type} type={t.type} subtitle={t.subtitle} model={model} hasSelection={selection?.type === 'post'}
+            onApply={() => mutate((p) => applyPostType(p, t.type, selection?.type === 'post' ? selection.id : undefined))} />
+        ))}
+      </div>
+    </div>
+  );
+
   const changeModel = (m: FenceModelId) => {
     const st = useAppStore.getState();
     if (project && project.items.length > 0) st.setItemModel('', m); // isti model na celoj ogradi
@@ -155,26 +163,21 @@ export function Catalog({ onBeginDrag }: { onBeginDrag: (source: DragSource, e: 
             />
           );
         })}
+        {terrace && (
+          <CatalogCard testId="cat-stair" title="Stepenište" subtitle="Ograda koja prati stepenice" thumb={<ElementThumb kind="stair" model={model} />}
+            onAdd={() => addElement({ kind: 'fence', modelId: model, stair: true })} onDragStart={startDrag({ kind: 'fence', modelId: model, stair: true }, 'Stepenište')} />
+        )}
         <CatalogCard testId="cat-opening" title="Prazan otvor" subtitle="Slobodan prostor bez ispune" thumb={<ElementThumb kind="opening" model={model} />} onAdd={() => addElement({ kind: 'opening' })} onDragStart={startDrag({ kind: 'opening' }, 'Prazan otvor')} />
       </div>
       {terrace && <p className="text-[12.5px] text-muted mt-3" data-testid="catalog-terrace-note">Ograda za terasu nema kapije ni zasebne stubove: stubovi su deo ograde.</p>}
+      {postsAlways && postsBlock}
       {showAll && (
         <div data-testid="catalog-all">
           <h3 className="font-semibold text-[14px] mt-4 mb-2">Uglovi</h3>
           <div className="flex flex-wrap gap-3">
-            <CatalogCard testId="cat-corner" title="Ugaoni spoj" subtitle="Prečke i rukohvat se savijaju između dva stuba" thumb={<CornerThumb />} onAdd={() => addElement({ kind: 'corner' })} onDragStart={startDrag({ kind: 'corner' }, 'Ugaoni spoj')} />
+            <CatalogCard testId="cat-corner" title="Ugaoni spoj" subtitle="Prečke i rukohvat se savijaju između dva stuba" thumb={<CornerThumb grey={isLightColor(def.defaultColor)} />} onAdd={() => addElement({ kind: 'corner' })} onDragStart={startDrag({ kind: 'corner' }, 'Ugaoni spoj')} />
           </div>
-          {!terrace && (
-            <>
-              <h3 className="font-semibold text-[14px] mt-4 mb-2">Stubovi</h3>
-              <div className="flex flex-wrap gap-3">
-                {POST_TYPES.map((t) => (
-                  <PostCard key={t.type} type={t.type} subtitle={t.subtitle} hasSelection={selection?.type === 'post'}
-                    onApply={() => mutate((p) => applyPostType(p, t.type, selection?.type === 'post' ? selection.id : undefined))} />
-                ))}
-              </div>
-            </>
-          )}
+          {!postsAlways && postsBlock}
         </div>
       )}
     </section>

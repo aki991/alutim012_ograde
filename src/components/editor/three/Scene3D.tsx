@@ -1,12 +1,17 @@
+import { isRl10Model, isRl10Post, rl10Corner, rl10Ends, rl10ItemAt, rl10PostInfo } from '../../../domain/models/rl10';
+import { Rl10CornerMesh, Rl10FieldMesh, Rl10JointMesh, Rl10PostMesh } from './Rl10Mesh';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { Camera, Download, Hand, Lock, MousePointer2, Pause, Play, Square, Layers } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { mmToScene as s, slidingSpaceStatus } from '../../../domain/geometry/gates';
-import { computeLayout, type ProjectLayout } from '../../../domain/geometry/layout';
+import { computeLayout, isSpacer, type LaidOutItem, type ProjectLayout } from '../../../domain/geometry/layout';
+import { stairGroupAt, stairProfile } from '../../../domain/geometry/stair';
+import { LEVEL_DEPTH_MM, levelSlabRects, type Rect } from '../../../domain/geometry/slab';
 import { updateItem } from '../../../domain/geometry/operations';
-import type { Project } from '../../../domain/models/types';
+import type { FenceSection, Project } from '../../../domain/models/types';
+import { computeInfill } from '../../../domain/geometry/infill';
 import { heightRangeFor, widthRangeFor } from '../../../domain/validation/limits';
 import type { DragSource, DragView, DropTarget } from '../../../hooks/useDragController';
 import { useAppStore } from '../../../store/useAppStore';
@@ -18,9 +23,10 @@ import { GateMesh } from './GateMesh';
 import { PanelBody } from './PanelBody';
 import { PostMesh } from './PostMesh';
 import { isTarabicaPost, postCaps } from '../../../domain/models/tarabica';
-import { computePlan, type Plan } from '../../../domain/geometry/plan';
+import { computePlan, longestRunHeading, type Plan } from '../../../domain/geometry/plan';
 import { cornerInfo, isCorner, postRailInfo, type CornerInfo } from '../../../domain/geometry/corner';
-import { leftPostShared, postDrawnByItems } from '../../../domain/models/catalog';
+import { FENCE_MODELS, hasLightFence, leftPostShared, postDrawnByItems } from '../../../domain/models/catalog';
+import { GROUND_LABELS, groundTexture, type GroundKind } from './groundTextures';
 import { boxGeometry, concreteMaterial, hitMaterial } from './materials';
 import { colorHex } from '../../../domain/models/catalog';
 import { metalMaterial } from './materials';
@@ -55,25 +61,87 @@ const lowPower = (): boolean => typeof window !== 'undefined' && (window.matchMe
 /* ---------- pomoćno: granice i kamera ---------- */
 function boundsOf(layout: ProjectLayout, plan?: Plan) {
   const W = Math.max(s(layout.occupiedMm), 1.5);
-  const H = Math.max(s(layout.maxHeightMm), 1.2) + 0.1;
+  const H = Math.max(s(layout.maxTopMm), 1.2) + 0.1;
   // trasa sa skretanjima: širina po x i dubina po z (mm → scena)
   const X = plan ? Math.max(s(plan.maxX - plan.minX) + 0.2, 1.5) : W;
   const Z = plan ? s(plan.maxZ - plan.minZ) + 0.2 : 0;
   return { W, H, X, Z };
 }
 
-function presetPose(preset: CameraPreset | 'fit', layout: ProjectLayout, aspect: number, fov = 45, plan?: Plan) {
+/**
+ * Izometrija: kamera je nisko ispred levog kraja ograde i gleda duž nje (ograda se skraćuje ka desnom kraju), a kadar je uklopljen
+ * tako da ograda ispuni sliku. Za trasu sa skretanjem kamera gleda najduži pravi deo. Daljina i centar se traže iterativno
+ * prema projekciji krajeva stubova.
+ */
+function isometricPose(layout: ProjectLayout, aspect: number, fov: number, plan?: Plan, fill = 0.88) {
+  const cx = layout.totalModularMm / 2;
+  const pts: THREE.Vector3[] = [];
+  const pad = 0.3; // rezerva oko stubova (kape, podnožje, motor kapije)
+  layout.posts.forEach((lp, i) => {
+    const at = plan?.posts[i]?.at ?? { x: lp.x, z: 0 };
+    const x = s(at.x - cx);
+    const z = s(at.z);
+    const top = Math.max(s(lp.topMm + lp.floorMm), s(layout.maxHeightMm) * 0.5);
+    for (const xx of [x - pad, x + pad]) for (const zz of [z - pad, z + pad]) for (const y of [0, top]) pts.push(new THREE.Vector3(xx, y, zz));
+  });
+  if (!pts.length) return { position: new THREE.Vector3(6, 5, 9), target: new THREE.Vector3(0, 0.6, 0) };
+  const box = new THREE.Box3().setFromPoints(pts);
+  const h = plan ? longestRunHeading(plan) : 0;
+  const c = Math.cos(h);
+  const sn = Math.sin(h);
+  const cam = new THREE.PerspectiveCamera(fov, aspect, 0.05, 600);
+  const t = Math.tan((fov * Math.PI) / 360);
+  // kamera sa leve strane (levi kraj bliže); ako deo trase tada ostaje iza kamere, ili je kadar znatno širi, bira se desna strana
+  const attempt = (side: number) => {
+  const base = new THREE.Vector3(0.62 * side, 0.4, 1).normalize();
+  const dir = new THREE.Vector3(base.x * c - base.z * sn, base.y, base.x * sn + base.z * c);
+  const target = box.getCenter(new THREE.Vector3());
+  let dist = 10;
+  for (let it = 0; it < 14; it++) {
+    cam.position.copy(target).addScaledVector(dir, dist);
+    cam.lookAt(target);
+    cam.updateMatrixWorld(true);
+    let x0 = Infinity; let x1 = -Infinity; let y0 = Infinity; let y1 = -Infinity;
+    for (const p of pts) {
+      const v = p.clone().project(cam);
+      x0 = Math.min(x0, v.x); x1 = Math.max(x1, v.x); y0 = Math.min(y0, v.y); y1 = Math.max(y1, v.y);
+    }
+    const right = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 0);
+    const up = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 1);
+    target.addScaledVector(right, ((x0 + x1) / 2) * t * aspect * dist).addScaledVector(up, ((y0 + y1) / 2) * t * dist);
+    dist = Math.max(1.5, dist * Math.max((x1 - x0) / 2, (y1 - y0) / 2) / fill);
+  }
+  const position = target.clone().addScaledVector(dir, dist);
+  cam.position.copy(position);
+  cam.lookAt(target);
+  cam.updateMatrixWorld(true);
+  const inv = cam.matrixWorldInverse.copy(cam.matrixWorld).invert();
+  const valid = pts.every((p) => p.clone().applyMatrix4(inv).z < -0.3);
+  return { position, target, dist, valid };
+  };
+  const left = attempt(-1);
+  const right = attempt(1);
+  const best = !left.valid || (right.valid && left.dist > right.dist * 1.15) ? right : left;
+  return { position: best.position, target: best.target };
+}
+
+/** `fill`: koliki deo slike ispunjava ograda u izometriji (u uređivaču ostaje rezerva, za sliku u dokumentu je veći). */
+export function presetPose(preset: CameraPreset | 'fit', layout: ProjectLayout, aspect: number, fov = 45, plan?: Plan, fill?: number) {
+  if (preset === 'iso' || preset === 'fit') return isometricPose(layout, aspect, fov, plan, fill);
   const { W: W0, H, X, Z } = boundsOf(layout, plan);
   // za trasu sa skretanjima kadar se računa prema većoj dimenziji tlocrta
   const W = plan?.turned ? Math.max(X, Z, 1.5) : W0;
-  const center = new THREE.Vector3(0, H / 2, 0);
+  // ograda se uvek postavlja prema pravoj trasi (prvi deo ostaje na mestu pri skretanju); za skrenutu trasu se kadar pomera na njenu sredinu
+  const center = plan?.turned
+    ? new THREE.Vector3(s((plan.minX + plan.maxX) / 2 - layout.totalModularMm / 2), H / 2, s((plan.minZ + plan.maxZ) / 2))
+    : new THREE.Vector3(0, H / 2, 0);
   const dirs: Record<string, THREE.Vector3> = {
     iso: new THREE.Vector3(0.55, 0.42, 1).normalize(),
     front: new THREE.Vector3(0, 0.12, 1).normalize(),
     top: new THREE.Vector3(0, 1, 0.0001).normalize(),
     side: new THREE.Vector3(1, 0.18, 0).normalize(),
   };
-  const key = preset === 'fit' ? 'iso' : preset;
+  const key = preset;
   const v = (fov * Math.PI) / 180;
   const h = 2 * Math.atan(Math.tan(v / 2) * aspect);
   // „polu-veličine" objekta kako se vidi iz tog pravca (horizontalno × vertikalno na ekranu)
@@ -104,6 +172,8 @@ interface ContentProps {
   apiRef: React.MutableRefObject<SceneApi | null>;
   onContextLost: () => void;
   shadows: boolean;
+  /** samo crtež (za sliku u dokumentu): bez kontrola kamere, pomoćnih linija i veze sa uređivačem */
+  still?: boolean;
 }
 
 function Hit({ x, w, h, depth, pick, handle }: { x: number; w: number; h: number; depth: number; pick: { kind: string; id: string }; handle?: string }) {
@@ -111,11 +181,72 @@ function Hit({ x, w, h, depth, pick, handle }: { x: number; w: number; h: number
 }
 
 /** Postavlja sadržaj elementa (nacrtan u linearnim koordinatama duž trase) na njegovo mesto u tlocrtu. */
-function Frame({ at, heading, axisStart, children }: { at: { x: number; z: number }; heading: number; axisStart: number; children: React.ReactNode }) {
+function Frame({ at, heading, axisStart, floor = 0, tan = 0, children }: { at: { x: number; z: number }; heading: number; axisStart: number; floor?: number; tan?: number; children: React.ReactNode }) {
+  // stepenište: sadržaj se iskosi oko levog stuba (vertikale ostaju vertikalne, horizontalni delovi prate nagib)
+  const shear = useMemo(() => (tan ? new THREE.Matrix4().set(1, 0, 0, 0, tan, 1, 0, -tan * s(axisStart), 0, 0, 1, 0, 0, 0, 0, 1) : null), [tan, axisStart]);
   return (
-    <group position={[s(at.x), 0, s(at.z)]} rotation={[0, -heading, 0]}>
-      <group position={[-s(axisStart), 0, 0]}>{children}</group>
+    <group position={[s(at.x), s(floor), s(at.z)]} rotation={[0, -heading, 0]}>
+      <group position={[-s(axisStart), 0, 0]}>
+        {shear ? <group matrixAutoUpdate={false} matrix={shear}>{children}</group> : children}
+      </group>
     </group>
+  );
+}
+
+const levelMaterial = new THREE.MeshStandardMaterial({ color: '#c9c3b8', roughness: 0.92 });
+
+/** Prečke stub dobijaju razliku do gazišta: stezaljke ostaju na istoj visini u odnosu na liniju nagiba. */
+function withDrop(info: ReturnType<typeof postRailInfo>, dropMm: number) {
+  return info && dropMm > 0 ? { ...info, rodHeightsMm: info.rodHeightsMm.map((h) => h + dropMm) } : info;
+}
+
+/** Rukohvat i prečke stepeništa: prave cevi koje prate nagib (krajevi su kosi, a stubovi uspravni). Koordinate su u osi polja. */
+function SlopedRails({ li, fence }: { li: LaidOutItem; fence: FenceSection }) {
+  const geo = useMemo(() => computeInfill(fence.modelId, li.clearWidth, fence.heightMm, fence.params.frameMm, fence.params.barSizeMm, fence.params.gapMm, fence.params.barCount), [fence, li.clearWidth]);
+  const mat = metalMaterial(colorHex(fence.color));
+  const run = li.axisEnd - li.axisStart;
+  const tan = run > 0 ? (li.floorEnd - li.floorStart) / run : 0;
+  const k = Math.sqrt(1 + tan * tan);
+  const ang = Math.atan(tan);
+  return (
+    <group position={[0, s(li.plinthMm), 0]}>
+      {geo.bars.filter((b) => b.tone === 'rail' || b.tone === 'main').map((b, i) => {
+        // rukohvat i prečke idu neprekinuto od ose do ose (kroz stubove)
+        const cx = (li.axisStart + li.axisEnd) / 2;
+        const cy = fence.heightMm - (b.y + b.h / 2) + (tan * (cx - li.axisStart));
+        return <mesh key={i} geometry={rodGeom} material={mat} position={[s(cx), s(cy), 0]} rotation={[0, 0, ang]} scale={[s(run * k), s(b.h), s(b.h)]} castShadow receiveShadow />;
+      })}
+    </group>
+  );
+}
+
+/** Terasa na višem nivou (ploča do tla) i stepenice ispod stepeništa; dubina je ka unutrašnjoj strani ograde. */
+function LevelMesh({ li, last, steps, slab }: { li: LaidOutItem; /** poslednje polje stepeništa (za ravno polje isto kao li) */ last: LaidOutItem; steps: number; /** delovi ploče ravnog polja (bez stepenica) */ slab: Rect[] }) {
+  const depth = LEVEL_DEPTH_MM / 1000;
+  const zc = -depth / 2 + 0.12;
+  if (li.floorStart === li.floorEnd) {
+    if (li.floorStart <= 0) return null;
+    return (
+      <>
+        {slab.map((r, i) => (
+          <mesh key={i} geometry={boxGeometry} material={levelMaterial} position={[s((r.x0 + r.x1) / 2), s(li.floorStart) / 2, s((r.z0 + r.z1) / 2)]} scale={[s(r.x1 - r.x0), s(li.floorStart), s(r.z1 - r.z0)]} castShadow receiveShadow />
+        ))}
+      </>
+    );
+  }
+  const pts = stairProfile(li.axisStart, last.axisEnd, li.floorStart, last.floorEnd, steps);
+  const treads: { x0: number; x1: number; f: number }[] = [];
+  for (let k = 0; k + 1 < pts.length; k++) {
+    const [xa, fa] = pts[k];
+    const [xb, fb] = pts[k + 1];
+    if (Math.abs(fa - fb) < 1e-6 && Math.abs(xb - xa) > 1e-6 && fa > 0) treads.push({ x0: Math.min(xa, xb), x1: Math.max(xa, xb), f: fa });
+  }
+  return (
+    <>
+      {treads.map((t, i) => (
+        <mesh key={i} geometry={boxGeometry} material={levelMaterial} position={[s((t.x0 + t.x1) / 2), s(t.f) / 2, zc]} scale={[s(t.x1 - t.x0), s(t.f), depth]} castShadow receiveShadow />
+      ))}
+    </>
   );
 }
 
@@ -202,7 +333,7 @@ function SceneBridge({ layout, centerX, apiRef, onContextLost }: { layout: Proje
           if (handle === 'width') mm = { x: li.axisEnd, y: li.item.heightMm * 0.5 + li.plinthMm };
           else if (handle === 'height') mm = { x: (li.axisStart + li.axisEnd) / 2, y: li.item.heightMm + li.plinthMm + 120 };
           else mm = { x: (li.axisStart + li.axisEnd) / 2, y: li.item.heightMm * 0.5 + li.plinthMm };
-        } else if (lp) mm = { x: lp.x, y: lp.post.heightMm * 0.5 };
+        } else if (lp) mm = { x: lp.x, y: lp.floorMm + lp.baseMm + lp.lengthMm * 0.5 };
         if (!mm) return null;
         const v = new THREE.Vector3(mm.x / 1000 - centerX, mm.y / 1000, handle ? 0.25 : 0.2).project(camera);
         const r = gl.domElement.getBoundingClientRect();
@@ -240,10 +371,12 @@ function CameraRig({ layout, projectId, hasItems, plan }: { layout: ProjectLayou
   const initialized = useRef(false);
   const userMoved = useRef(false);
   const prevHas = useRef(hasItems);
+  const lastPreset = useRef<CameraPreset | 'fit'>('iso');
   const request = useViewStore((st) => st.presetRequest);
 
   const apply = useCallback((preset: CameraPreset | 'fit') => {
     if (!controls) return;
+    lastPreset.current = preset;
     const pose = presetPose(preset, layoutRef.current, size.width / Math.max(1, size.height), (camera as THREE.PerspectiveCamera).fov, planRef.current);
     camera.position.copy(pose.position);
     controls.target.copy(pose.target);
@@ -274,6 +407,15 @@ function CameraRig({ layout, projectId, hasItems, plan }: { layout: ProjectLayou
 
   useEffect(() => { if (request) apply(request.preset); }, [request, apply]);
 
+  // izmena veličine prikaza (npr. podeljen ekran): dok kameru niko nije pomerao, kadar se ponovo uklapa u novu veličinu
+  const sizeKey = `${size.width}x${size.height}`;
+  const lastSize = useRef(sizeKey);
+  useEffect(() => {
+    if (lastSize.current === sizeKey) return;
+    lastSize.current = sizeKey;
+    if (initialized.current && !userMoved.current) apply(lastPreset.current);
+  }, [sizeKey, apply]);
+
   useEffect(() => {
     if (!controls) return;
     const start = () => { userMoved.current = true; };
@@ -285,12 +427,13 @@ function CameraRig({ layout, projectId, hasItems, plan }: { layout: ProjectLayou
   return null;
 }
 
-function SceneContent(p: ContentProps) {
+export function SceneContent(p: ContentProps) {
   const { layout, project } = p;
   const showZones = useViewStore((st) => st.showZones);
   const plan = computePlan(project);
-  const cx = s(plan.turned ? (plan.minX + plan.maxX) / 2 : layout.totalModularMm / 2);
-  const cz = plan.turned ? s((plan.minZ + plan.maxZ) / 2) : 0;
+  // sidro scene je sredina PRAVE trase: skretanje na nekom stubu pomera samo deo posle tog stuba, a pogled ostaje isti
+  const cx = s(layout.totalModularMm / 2);
+  const cz = 0;
   const { W, H, X, Z } = boundsOf(layout, plan);
   const key = useRef<THREE.DirectionalLight>(null);
 
@@ -308,34 +451,51 @@ function SceneContent(p: ContentProps) {
   const selPost = p.selectionType === 'post' && p.selectionId ? layout.posts.find((l) => l.post.id === p.selectionId) : undefined;
   const hov = p.hoverId ? hit(p.hoverId) : undefined;
   const dragged = p.draggedId ? hit(p.draggedId) : undefined;
+  const grey = hasLightFence(project.items);
+  const ground = useViewStore((st) => st.ground);
+  const groundTex = useMemo(() => groundTexture(ground), [ground]);
   const dropX = p.dropIndex !== null ? (layout.posts[p.dropIndex]?.x ?? 0) : null;
 
   return (
     <>
-      <color attach="background" args={['#eef2f6']} />
+      <color attach="background" args={[grey ? '#b9c0c9' : '#eef2f6']} />
       <ambientLight intensity={0.55} />
       <hemisphereLight args={['#ffffff', '#c7ced6', 0.55]} />
       <directionalLight ref={key} position={[5, 9, 8]} intensity={2.1} castShadow={p.shadows} shadow-mapSize={[2048, 2048]} shadow-bias={-0.0004} />
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.002, 0]} receiveShadow>
         <planeGeometry args={[400, 400]} />
-        <meshStandardMaterial color="#e3e8ed" roughness={1} />
+        <meshStandardMaterial key={ground} map={groundTex ?? undefined} color={groundTex ? '#ffffff' : grey ? '#a7afb9' : '#e3e8ed'} roughness={1} />
       </mesh>
-      <gridHelper name="ui-helper" args={[120, 120, '#c4ccd5', '#d6dce3']} position={[0, 0.001, 0]} />
+      {ground === 'concrete' && !p.still && <gridHelper name="ui-helper" args={[120, 120, '#c4ccd5', '#d6dce3']} position={[0, 0.001, 0]} />}
 
       <group position={[-cx, 0, -cz]}>
+        {layout.hasLevels && layout.items.map((li) => (isSpacer(li.item) ? null : (
+          <Frame key={`lv-${li.item.id}`} at={plan.items[li.index].start} heading={plan.items[li.index].heading} axisStart={li.axisStart}>
+            {(() => {
+              const grp = stairGroupAt(project.items, li.index);
+              if (li.floorStart !== li.floorEnd && (!grp || grp.from !== li.index)) return null; // stepenici se prave jednom za ceo niz polja
+              // ravni deo: ploča bez prostora stepenica (kad ograda posle stepeništa skrene ka toj strani, ploča ne ulazi u stepenice)
+              const slab = li.floorStart === li.floorEnd ? levelSlabRects(project.items, plan, layout, li.index, (layout.posts[li.index]?.widthMm ?? 0) / 2, (layout.posts[li.index + 1]?.widthMm ?? 0) / 2) : [];
+              return <LevelMesh li={li} last={grp ? layout.items[grp.to] : li} steps={grp?.steps ?? 1} slab={slab} />;
+            })()}
+          </Frame>
+        )))}
         {layout.items.map((li) => {
           const it = li.item;
+          if (isSpacer(it)) return null; // razmaknik između dva stuba kapije
           const mid = s((li.clearStart + li.clearEnd) / 2);
           return (
-            <Frame key={it.id} at={plan.items[li.index].start} heading={plan.items[li.index].heading} axisStart={li.axisStart}>
-              {li.plinthMm > 0 && <mesh geometry={boxGeometry} material={concreteMaterial} position={[mid, s(li.plinthMm) / 2, 0]} scale={[s(li.clearWidth), s(li.plinthMm), 0.2]} castShadow receiveShadow />}
-              {it.kind === 'fence' && (
+            <Frame key={it.id} at={plan.items[li.index].start} heading={plan.items[li.index].heading} axisStart={li.axisStart} floor={li.floorStart} tan={li.axisEnd > li.axisStart && !(it.kind === 'fence' && FENCE_MODELS[it.modelId].style === 'rods') ? (li.floorEnd - li.floorStart) / (li.axisEnd - li.axisStart) : 0}>
+              {li.plinthMm > 0 && <mesh geometry={boxGeometry} material={concreteMaterial} position={[s((li.plinthX0 + li.plinthX1) / 2), s(li.plinthMm) / 2, 0]} scale={[s(li.plinthX1 - li.plinthX0), s(li.plinthMm), 0.2]} castShadow receiveShadow />}
+              {it.kind === 'fence' && isRl10Model(it.modelId) && <Rl10FieldMesh li={li} fence={it} left={rl10Ends(project.items, layout, li.index, project.posts).left} right={rl10Ends(project.items, layout, li.index, project.posts).right} />}
+              {it.kind === 'fence' && !isRl10Model(it.modelId) && li.floorStart !== li.floorEnd && FENCE_MODELS[it.modelId].style === 'rods' && <SlopedRails li={li} fence={it} />}
+              {it.kind === 'fence' && !isRl10Model(it.modelId) && !(li.floorStart !== li.floorEnd && FENCE_MODELS[it.modelId].style === 'rods') && (
                 <group position={[mid, s(li.plinthMm), 0]}>
                   <PanelBody modelId={it.modelId} widthMm={li.clearWidth} heightMm={it.heightMm} params={it.params} color={it.color} axisWidthMm={li.axisEnd - li.axisStart} skipLeftPost={leftPostShared(project.items, li.index)} />
                 </group>
               )}
-              {it.kind === 'gate' && <group position={[0, s(li.plinthMm), 0]}><GateMesh gate={it} li={li} showZones={showZones} /></group>}
+              {it.kind === 'gate' && <group position={[0, s(li.plinthMm), 0]}><GateMesh gate={it} li={li} showZones={showZones && !p.still} /></group>}
               {it.kind === 'opening' && isCorner(it) && (() => {
                 const info = cornerInfo(project, li.index);
                 return info ? <CornerMesh x0={li.axisStart} x1={li.axisEnd} bendDeg={it.bendDeg!} info={info} /> : null;
@@ -347,17 +507,48 @@ function SceneContent(p: ContentProps) {
             </Frame>
           );
         })}
-        {layout.posts.map((lp) => (
-          <group key={lp.post.id} position={[s(plan.posts[lp.index].at.x), 0, s(plan.posts[lp.index].at.z)]} rotation={[0, -plan.posts[lp.index].heading, 0]}>
-            <PostMesh post={lp.post} rails={postDrawnByItems(project.items, lp.index) ? postRailInfo(project, lp.index) : null} caps={isTarabicaPost(project.items, lp.post, lp.index) ? postCaps(lp.post) : undefined} />
-            <Hit x={0} w={s(lp.post.widthMm) + 0.1} h={s(lp.post.heightMm) + 0.1} depth={s(lp.post.widthMm) + 0.2} pick={{ kind: 'post', id: lp.post.id }} />
-          </group>
-        ))}
+        {layout.posts.filter((lp) => !lp.hidden).map((lp) => {
+          const pp = plan.posts[lp.index];
+          const rl = rl10ItemAt(project.items, lp.index);
+          if (rl && rl.kind === 'fence') {
+            const info = rl10PostInfo(project.items, layout, lp.index);
+            const corner = rl10Corner(project.items, layout, project.posts, lp.index);
+            const lineMm = lp.lineMm + lp.levelMm - lp.floorMm - lp.baseMm;
+            return (
+              <group key={lp.post.id}>
+                {/* zglob (ili ugao u osnovi) stoji sam na spoju, u pravcu dolazeće ograde; stub je pored njega, na ravnom delu */}
+                {(info.joint || corner) && (
+                  <group position={[s(pp.at.x), s(lp.floorMm + lp.baseMm), s(pp.at.z)]} rotation={[0, -pp.heading, 0]}>
+                    {corner ? <Rl10CornerMesh heightMm={rl.heightMm} params={rl.params} lineMm={lineMm} joint={info.joint} corner={corner} />
+                      : info.joint && <Rl10JointMesh heightMm={rl.heightMm} params={rl.params} lineMm={lineMm} joint={info.joint} />}
+                  </group>
+                )}
+                <group position={[s(pp.at.x + pp.shift.x), s(lp.floorMm + lp.baseMm), s(pp.at.z + pp.shift.z)]} rotation={[0, -pp.supportHeading, 0]}>
+                  <Rl10PostMesh heightMm={rl.heightMm} params={rl.params} lineMm={lineMm} info={corner ? { tilt: 0, joint: null, adjustable: false } : info} />
+                  <Hit x={0} w={s(lp.post.widthMm) + 0.1} h={s(lp.lengthMm) + 0.1} depth={s(lp.post.widthMm) + 0.2} pick={{ kind: 'post', id: lp.post.id }} />
+                </group>
+                {/* ugao u osnovi: drugi stub je na dolazećoj ogradi, isto toliko od ugla */}
+                {pp.aux && (
+                  <group position={[s(pp.aux.x), s(lp.floorMm + lp.baseMm), s(pp.aux.z)]} rotation={[0, -pp.heading, 0]}>
+                    <Rl10PostMesh heightMm={rl.heightMm} params={rl.params} lineMm={lineMm} info={{ tilt: 0, joint: null, adjustable: false }} />
+                    <Hit x={0} w={s(lp.post.widthMm) + 0.1} h={s(lp.lengthMm) + 0.1} depth={s(lp.post.widthMm) + 0.2} pick={{ kind: 'post', id: lp.post.id }} />
+                  </group>
+                )}
+              </group>
+            );
+          }
+          return (
+            <group key={lp.post.id} position={[s(pp.at.x), s(lp.floorMm + lp.baseMm), s(pp.at.z)]} rotation={[0, -pp.heading, 0]}>
+              {!isRl10Post(project.items, lp.index) && <PostMesh post={{ ...lp.post, heightMm: lp.lengthMm }} onPlinth={lp.baseMm > 0} rails={postDrawnByItems(project.items, lp.index) ? withDrop(postRailInfo(project, lp.index), lp.lineMm - lp.floorMm) : null} caps={isTarabicaPost(project.items, lp.post, lp.index) ? postCaps(lp.post) : undefined} />}
+              <Hit x={0} w={s(lp.post.widthMm) + 0.1} h={s(lp.lengthMm) + 0.1} depth={s(lp.post.widthMm) + 0.2} pick={{ kind: 'post', id: lp.post.id }} />
+            </group>
+          );
+        })}
 
         {/* označavanje: izabrano, hover, prevlačeni element, mesto ubacivanja */}
-        {selItem && <Frame at={plan.items[selItem.index].start} heading={plan.items[selItem.index].heading} axisStart={selItem.axisStart}><Highlight x={s((selItem.axisStart + selItem.axisEnd) / 2)} w={s(selItem.axisEnd - selItem.axisStart)} h={s(selItem.item.heightMm + selItem.plinthMm) + 0.1} color="#d71920" opacity={0.1} /></Frame>}
-        {selPost && <group position={[s(plan.posts[selPost.index].at.x), 0, s(plan.posts[selPost.index].at.z)]} rotation={[0, -plan.posts[selPost.index].heading, 0]}><Highlight x={0} w={s(selPost.post.widthMm) + 0.06} h={s(selPost.post.heightMm) + 0.1} color="#d71920" opacity={0.14} /></group>}
-        {hov && hov.item.id !== p.selectionId && <Frame at={plan.items[hov.index].start} heading={plan.items[hov.index].heading} axisStart={hov.axisStart}><Highlight x={s((hov.axisStart + hov.axisEnd) / 2)} w={s(hov.axisEnd - hov.axisStart)} h={s(hov.item.heightMm + hov.plinthMm) + 0.1} color="#60a5fa" opacity={0.07} lines={false} /></Frame>}
+        {selItem && <Frame at={plan.items[selItem.index].start} heading={plan.items[selItem.index].heading} axisStart={selItem.axisStart} floor={Math.min(selItem.floorStart, selItem.floorEnd)}><Highlight x={s((selItem.axisStart + selItem.axisEnd) / 2)} w={s(selItem.axisEnd - selItem.axisStart)} h={s(selItem.item.heightMm + selItem.plinthMm) + 0.1} color="#d71920" opacity={0.1} /></Frame>}
+        {selPost && <group position={[s(plan.posts[selPost.index].at.x + plan.posts[selPost.index].shift.x), 0, s(plan.posts[selPost.index].at.z + plan.posts[selPost.index].shift.z)]} rotation={[0, -plan.posts[selPost.index].supportHeading, 0]}><Highlight x={0} w={s(selPost.post.widthMm) + 0.06} h={s(selPost.topMm) + 0.1} color="#d71920" opacity={0.14} /></group>}
+        {hov && hov.item.id !== p.selectionId && <Frame at={plan.items[hov.index].start} heading={plan.items[hov.index].heading} axisStart={hov.axisStart} floor={Math.min(hov.floorStart, hov.floorEnd)}><Highlight x={s((hov.axisStart + hov.axisEnd) / 2)} w={s(hov.axisEnd - hov.axisStart)} h={s(hov.item.heightMm + hov.plinthMm) + 0.1} color="#60a5fa" opacity={0.07} lines={false} /></Frame>}
         {dragged && <Frame at={plan.items[dragged.index].start} heading={plan.items[dragged.index].heading} axisStart={dragged.axisStart}><Highlight x={s((dragged.axisStart + dragged.axisEnd) / 2)} w={s(dragged.axisEnd - dragged.axisStart)} h={s(dragged.item.heightMm + dragged.plinthMm) + 0.1} color="#f59e0b" opacity={0.3} /></Frame>}
         {dropX !== null && (
           <group name="ui-helper" position={[s(dropX), 0, 0]}>
@@ -379,10 +570,14 @@ function SceneContent(p: ContentProps) {
         )}
       </group>
 
-      <OrbitControls makeDefault enabled={p.controlsEnabled} enableDamping={false} minDistance={0.6} maxDistance={Math.max(40, W * 3)} maxPolarAngle={Math.PI / 2 - 0.015} />
-      <CameraRig layout={layout} projectId={p.projectId} hasItems={project.items.length > 0} plan={plan} />
-      <Animator />
-      <SceneBridge layout={layout} centerX={cx} apiRef={p.apiRef} onContextLost={p.onContextLost} />
+      {!p.still && (
+        <>
+          <OrbitControls makeDefault enabled={p.controlsEnabled} enableDamping={false} minDistance={0.6} maxDistance={Math.max(40, W * 3)} maxPolarAngle={Math.PI / 2 - 0.015} />
+          <CameraRig layout={layout} projectId={p.projectId} hasItems={project.items.length > 0} plan={plan} />
+          <Animator />
+          <SceneBridge layout={layout} centerX={cx} apiRef={p.apiRef} onContextLost={p.onContextLost} />
+        </>
+      )}
     </>
   );
 }
@@ -429,6 +624,7 @@ function Scene3DInner({ project, drag, onBeginDrag, registerTarget, targetKey, o
   const turned = useMemo(() => computePlan(project).turned, [project]);
   const mode = turned ? 'view' : storedMode;
   const showZones = useViewStore((st) => st.showZones);
+  const ground = useViewStore((st) => st.ground);
   const gateOpen = useViewStore((st) => st.gateOpen);
   const apiRef = useRef<SceneApi | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -585,6 +781,11 @@ function Scene3DInner({ project, drag, onBeginDrag, registerTarget, targetKey, o
         <div data-overlay className="pointer-events-auto inline-flex gap-1 rounded-lg border border-line bg-white/95 p-0.5 shadow-sm">
           <button className={`px-2.5 py-1 text-[13px] rounded-md font-medium inline-flex items-center gap-1 ${showZones ? 'text-primary' : 'text-slate-500'}`} aria-pressed={showZones} data-testid="toggle-zones" title="Prikaži/sakrij zone otvaranja kapija" onClick={() => view.setShowZones(!showZones)}><Layers size={14} />Zone</button>
           <button className="px-2.5 py-1 text-[13px] rounded-md text-slate-600 hover:bg-slate-100 font-medium inline-flex items-center gap-1" data-testid="btn-png" onClick={downloadPng}><Download size={14} />3D slika</button>
+        </div>
+        <div data-overlay className="pointer-events-auto inline-flex gap-0.5 rounded-lg border border-line bg-white/95 p-0.5 shadow-sm" role="radiogroup" aria-label="Podloga">
+          {(Object.keys(GROUND_LABELS) as GroundKind[]).map((g) => (
+            <button key={g} role="radio" aria-checked={ground === g} data-testid={`ground-${g}`} className={`px-2.5 py-1 text-[13px] rounded-md font-medium ${ground === g ? 'bg-primary text-white' : 'text-slate-600 hover:bg-slate-100'}`} onClick={() => view.setGround(g)}>{GROUND_LABELS[g]}</button>
+          ))}
         </div>
       </div>
 

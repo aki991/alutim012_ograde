@@ -1,3 +1,4 @@
+import { isTubesModel } from '../../../domain/models/tubes';
 import { useFrame } from '@react-three/fiber';
 import { Suspense, useLayoutEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
@@ -7,6 +8,7 @@ import type { Gate } from '../../../domain/models/types';
 import { useViewStore } from '../../../store/useViewStore';
 import { GlbBoundary, GlbLeaf } from './GlbLeaf';
 import { PanelBody } from './PanelBody';
+import { isTarabicaModel } from '../../../domain/models/tarabica';
 import { boxGeometry, darkMaterial, steelMaterial } from './materials';
 
 const SLIDE_Z = 0.075; // klizno krilo ide ispred ograde (spolja), da ne prolazi kroz susedne elemente
@@ -65,9 +67,10 @@ export function GateMesh({ gate, li, showZones }: { gate: Gate; li: LaidOutItem;
   /** Rezervni (parametarski) prikaz krila dok se 3D model učitava ili ako učitavanje ne uspe. */
   const legacy = (p: ReturnType<typeof gateLeafPoses>[number], w: number) => (
     <>
-      <PanelBody modelId={gate.infillModelId} widthMm={p.widthMm} heightMm={gate.heightMm} params={gate.params} color={gate.color} />
+      <PanelBody modelId={gate.infillModelId} widthMm={p.widthMm} heightMm={gate.heightMm} params={gate.params} color={gate.color}
+        overhangs={gate.gateType === 'double' ? (p.extendDir === 1 ? [gate.params.frameMm, 0] : [0, gate.params.frameMm]) : undefined} />
       {/* ručka i brava prate krilo (na slobodnoj ivici) */}
-      {!sliding && lockSide === 1 && (
+      {!sliding && (lockSide === 1 || gate.gateType === 'double') && (
         <group position={[p.extendDir * (w / 2 - 0.1), Math.min(1.0, height * 0.55), 0]}>
           <mesh geometry={boxGeometry} material={steelMaterial} scale={[0.022, 0.38, 0.026]} position={[0, 0, 0.034]} castShadow />
           <mesh geometry={boxGeometry} material={steelMaterial} scale={[0.022, 0.38, 0.026]} position={[0, 0, -0.034]} castShadow />
@@ -81,7 +84,6 @@ export function GateMesh({ gate, li, showZones }: { gate: Gate; li: LaidOutItem;
               <cylinderGeometry args={[0.05, 0.05, 0.04, 16]} />
             </mesh>
           ))}
-          <mesh geometry={boxGeometry} material={steelMaterial} scale={[0.02, 0.3, 0.026]} position={[-dir * (w / 2 - 0.12), height * 0.5, 0.034]} />
         </group>
       )}
       {/* šarke */}
@@ -101,11 +103,14 @@ export function GateMesh({ gate, li, showZones }: { gate: Gate; li: LaidOutItem;
           <group key={k} ref={(g) => { outer.current[k] = g; }} position={[s(p.pivotX + p.slideX), 0, sliding ? SLIDE_Z : 0]}>
             <group ref={(g) => { inner.current[k] = g; }}>
               <group position={[p.extendDir * w / 2, 0, 0]}>
-                <GlbBoundary fallback={legacy(p, w)}>
-                  <Suspense fallback={legacy(p, w)}>
-                    <GlbLeaf modelId={gate.infillModelId} gateType={gate.gateType} extendDir={p.extendDir} slideDir={dir} widthMm={p.widthMm} heightMm={gate.heightMm} color={gate.color} />
-                  </Suspense>
-                </GlbBoundary>
+                {/* tarabica nema gotov 3D model kapije (stari model je imao široke letvice): krilo se gradi od istih delova kao ograda */}
+                {isTarabicaModel(gate.infillModelId) || isTubesModel(gate.infillModelId) ? legacy(p, w) : (
+                  <GlbBoundary fallback={legacy(p, w)}>
+                    <Suspense fallback={legacy(p, w)}>
+                      <GlbLeaf modelId={gate.infillModelId} gateType={gate.gateType} extendDir={p.extendDir} slideDir={dir} widthMm={p.widthMm} heightMm={gate.heightMm} color={gate.color} />
+                    </Suspense>
+                  </GlbBoundary>
+                )}
               </group>
             </group>
           </group>

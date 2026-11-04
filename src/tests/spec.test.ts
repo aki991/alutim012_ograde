@@ -42,13 +42,13 @@ describe('specifikacija modela', () => {
   });
 
   it('izmena specifikacije menja krojnu listu i cenu: brisanje i dodavanje elementa', () => {
-    const p = createProject('s', [createFence({ modelId: 'h_narrow', widthMm: 2000, heightMm: 1600 })]);
+    const p = createProject('s', [createFence({ modelId: 'h_boards', widthMm: 2000, heightMm: 1600 })]);
     const base = computePrice(p, SEED_MATERIALS);
     const cutsBase = buildCutList(p);
     expect(cutsBase.some((c) => c.part.startsWith('Ram'))).toBe(true);
-    const parts = defaultSpec('h_narrow');
+    const parts = defaultSpec('h_boards');
     // bez ramova i sa jednim dodatnim profilom 2 × H
-    const custom: ModelSpecs = { h_narrow: [...parts.filter((x) => !x.name.startsWith('Ram')), { id: 'x1', name: 'Dodatni stub-profil', materialId: 'mat_alu_frame', group: 'Ramovi', qty: '2', lengthMm: 'H', enabled: true }] };
+    const custom: ModelSpecs = { h_boards: [...parts.filter((x) => !x.name.startsWith('Ram')), { id: 'x1', name: 'Dodatni stub-profil', materialId: 'mat_alu_frame', group: 'Ramovi', qty: '2', lengthMm: 'H', enabled: true }] };
     const cuts = buildCutList(p, custom);
     expect(cuts.find((c) => c.part === 'Dodatni stub-profil')).toMatchObject({ qty: 2, lengthMm: 1600 });
     expect(cuts.some((c) => c.part === 'Ram — horizontalni')).toBe(false);
@@ -57,13 +57,13 @@ describe('specifikacija modela', () => {
     const frame = buildBom(p, SEED_MATERIALS, custom).find((l) => l.materialId === 'mat_alu_frame')!;
     expect(frame.geometricQty).toBeCloseTo(3.2, 6); // samo dodatni profil 2 × 1,6 m
     // isključen element se ne računa
-    const off: ModelSpecs = { h_narrow: parts.map((x) => ({ ...x, enabled: x.group !== 'Ramovi' })) };
+    const off: ModelSpecs = { h_boards: parts.map((x) => ({ ...x, enabled: x.group !== 'Ramovi' })) };
     expect(buildBom(p, SEED_MATERIALS, off).some((l) => l.group === 'Ramovi')).toBe(false);
   });
 
   it('neispravna formula ne ruši obračun: element daje količinu 0', () => {
-    const p = createProject('s', [createFence({ modelId: 'h_narrow' })]);
-    const bad: ModelSpecs = { h_narrow: [{ id: 'b', name: 'Loš', materialId: 'mat_alu_frame', group: 'Ramovi', qty: 'W+', enabled: true }] };
+    const p = createProject('s', [createFence({ modelId: 'h_boards' })]);
+    const bad: ModelSpecs = { h_boards: [{ id: 'b', name: 'Loš', materialId: 'mat_alu_frame', group: 'Ramovi', qty: 'W+', enabled: true }] };
     expect(buildBom(p, SEED_MATERIALS, bad).filter((l) => l.group !== 'Stubovi' && l.key !== 'extra')).toEqual([]);
   });
 

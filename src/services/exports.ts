@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createElement } from 'react';
 import { FrontView, frontViewMetrics } from '../components/editor/FrontView';
+import { TOP_MARGIN_PX, TopView, topViewLayout } from '../components/editor/TopView';
 import type { Project } from '../domain/models/types';
 import { serializeProject } from '../domain/validation/project';
 
@@ -79,6 +80,27 @@ export async function frontViewPng(project: Project, targetWidthPx = 1400): Prom
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(mm.widthPx);
   canvas.height = Math.round(mm.heightPx);
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  return { dataUrl: canvas.toDataURL('image/png'), width: canvas.width, height: canvas.height };
+}
+
+/** Crtež odozgo (tlocrt trase, najduži pravi deo vodoravno) kao PNG data URL: za ponudu. */
+export async function topViewPng(project: Project, widthPx = 760): Promise<{ dataUrl: string; width: number; height: number }> {
+  const box = topViewLayout(project);
+  const scale = Math.max(0.005, (widthPx - 2 * TOP_MARGIN_PX) / Math.max(1, box.x1 - box.x0));
+  const svg = await inlineSvgImages(renderToStaticMarkup(createElement(TopView, { project, scale })));
+  const m = /<svg[^>]*\swidth="([\d.]+)"[^>]*\sheight="([\d.]+)"/.exec(svg);
+  const w = m ? Number(m[1]) : widthPx;
+  const h = m ? Number(m[2]) : widthPx / 2;
+  const img = new Image();
+  await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = () => rej(new Error('Crtež odozgo nije moguće pretvoriti u sliku.')); img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`; });
+  const k = 2; // dvostruka gustina: tekst ostaje oštar u PDF-u
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(w * k);
+  canvas.height = Math.round(h * k);
   const ctx = canvas.getContext('2d')!;
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);

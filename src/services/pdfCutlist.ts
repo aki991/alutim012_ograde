@@ -1,4 +1,3 @@
-import logoUrl from '../assets/logo.png';
 import { STATUS_LABELS } from '../domain/models/catalog';
 import { buildCuttingList, cutOptions, groupBars, type CuttingList } from '../domain/pricing/cutting';
 import type { AppSettings, Customer, Material, Project } from '../domain/models/types';
@@ -6,24 +5,14 @@ import { fmtDate, fmtNum } from '../utils/units';
 import { barSvg, positionColors } from './cutlistSvg';
 import { downloadBlob, safeFilename } from './exports';
 import { getPdfMake, renderBlob } from './pdf';
+import { AMBER, BRAND_DARK, BRAND_RED, docHeader, loadHeaderLogos, toDataUrl } from './pdfHeader';
+
+export { AMBER, BRAND_DARK, BRAND_RED, docHeader, toDataUrl };
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export const INK = '#1a1a1a';
 export const MUTED = '#64748b';
-export const BRAND_DARK = '#4a0810';
-export const BRAND_RED = '#d71920';
-export const AMBER = '#ffc247';
 export const LINE = '#e2e8f0';
-
-export async function toDataUrl(url: string): Promise<string> {
-  const blob = await (await fetch(url)).blob();
-  return new Promise((res, rej) => {
-    const r = new FileReader();
-    r.onload = () => res(String(r.result));
-    r.onerror = () => rej(new Error('Logotip nije učitan.'));
-    r.readAsDataURL(blob);
-  });
-}
 
 export async function svgToPng(svg: string, w: number, h: number): Promise<string> {
   const img = new Image();
@@ -34,21 +23,6 @@ export async function svgToPng(svg: string, w: number, h: number): Promise<strin
   return canvas.toDataURL('image/png');
 }
 
-/** Zaglavlje dokumenata (krojna lista, radni nalog): tamnocrvena traka sa logotipom, nazivom firme i naslovom. */
-export function docHeader(title: string, subtitle: string, companyName: string, contact: string, logo: string): any {
-  return {
-    table: {
-      widths: [62, '*', 'auto'],
-      body: [[
-        { image: logo, width: 56, margin: [6, 6, 0, 6] },
-        { stack: [{ text: companyName, fontSize: 19, bold: true, color: '#ffffff' }, { text: contact || 'Ograde i kapije po meri', fontSize: 8.5, color: '#e5c9cc', margin: [0, 2, 0, 0] }], margin: [4, 12, 0, 0] },
-        { stack: [{ text: title, fontSize: 22, bold: true, color: AMBER, alignment: 'right' }, { text: subtitle, fontSize: 9, color: '#ffffff', alignment: 'right', margin: [0, 2, 0, 0] }], margin: [0, 10, 12, 0] },
-      ]],
-    },
-    layout: { hLineWidth: () => 0, vLineWidth: () => 0, fillColor: () => BRAND_DARK, paddingLeft: () => 0, paddingRight: () => 0, paddingTop: () => 0, paddingBottom: () => 0 },
-  };
-}
-
 export const fmtMm = (v: number) => `${fmtNum(v, 0)} mm`;
 export const effColor = (pct: number) => (pct >= 85 ? '#15803d' : pct >= 65 ? '#b45309' : BRAND_RED);
 
@@ -57,7 +31,7 @@ export async function buildCutlistPdfBlob(project: Project, customer: Customer |
   const pdfMake = await getPdfMake();
   const cl = list ?? buildCuttingList(project, settings.modelSpecs, materials, cutOptions(settings));
   const colors = positionColors(cl.positions);
-  const logo = await toDataUrl(logoUrl);
+  const logos = await loadHeaderLogos();
   const info = settings.companyInfo ?? {};
   const contact = [info.address, info.phone, info.email, info.pib ? `PIB: ${info.pib}` : ''].filter(Boolean).join('  ·  ');
 
@@ -73,7 +47,7 @@ export async function buildCutlistPdfBlob(project: Project, customer: Customer |
   });
   const infoCell = (label: string, value: string) => ({ stack: [{ text: label, fontSize: 7.5, color: MUTED, bold: true, characterSpacing: 0.5 }, { text: value || '—', fontSize: 10, bold: true, margin: [0, 1, 0, 0] }] });
 
-  const header: any = docHeader('KROJNA LISTA', `Ponuda: ${project.quoteNo || '—'}  ·  ${fmtDate(new Date().toISOString())}`, settings.companyName, contact, logo);
+  const header: any = docHeader('KROJNA LISTA', `Ponuda: ${project.quoteNo || '—'}  ·  ${fmtDate(new Date().toISOString())}`, settings.companyName, contact, logos);
   const stripe: any = { canvas: [{ type: 'rect', x: 0, y: 0, w: 786, h: 3, color: BRAND_RED }], margin: [0, 0, 0, 8] };
 
   const infoRow: any = {

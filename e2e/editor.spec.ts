@@ -123,7 +123,7 @@ test('glavni scenario: projektovanje, kalkulacija, čuvanje, izvoz', async ({ pa
   await page.getByTestId('btn-open-calc').click();
   const total1 = num(await page.getByTestId('calc-total').textContent());
   expect(total1).toBeGreaterThan(0);
-  await page.getByTestId('price-input-mat_alu_profil').fill('5000');
+  await page.getByTestId('price-input-mat_kv_20x20').fill('5000');
   await expect.poll(async () => num(await page.getByTestId('calc-total').textContent())).toBeGreaterThan(total1);
   await page.getByTestId('calc-close').click();
 
@@ -265,6 +265,7 @@ test('„Uredi" otvara izmenu podataka projekta; kapija sa betonskim stubom se d
   await page.getByTestId('edit-quote').fill('P-2026-777');
   await page.getByTestId('project-edit-done').click();
   await expect(page.getByTestId('project-data')).toContainText('P-2026-777');
+  await page.getByTestId('catalog-show-all').click(); // kapija sa betonskim stubom je među stubovima
   await page.getByTestId('cat-gate-concrete-add').click();
   await expect(page.getByTestId('front-view')).toBeVisible();
   await expect(page.getByTestId('count-items')).toHaveText('2');
@@ -278,7 +279,7 @@ test('svih 15 modela: ograda i kapija se crtaju u 2D i 3D bez grešaka', async (
   await page.goto('/');
   await page.getByTestId('hero-new').first().click();
   // katalog nudi samo elemente izabranog modela: ograda, 4 vrste kapija, kapija sa betonskim stubom i prazan otvor
-  for (const id of ['cat-fence', 'cat-gate-pedestrian', 'cat-gate-sliding', 'cat-gate-double', 'cat-gate-single', 'cat-gate-concrete', 'cat-opening']) await expect(page.getByTestId(id)).toBeVisible();
+  for (const id of ['cat-fence', 'cat-gate-pedestrian', 'cat-gate-sliding', 'cat-gate-double', 'cat-gate-single', 'cat-opening']) await expect(page.getByTestId(id)).toBeVisible();
   for (const id of ALL_MODELS) {
     await page.getByTestId('catalog-model').selectOption(id);
     await page.getByTestId('cat-fence-add').click();
@@ -587,7 +588,9 @@ test('katalog: „Prikaži sve" otvara ugaoni spoj i sve vrste stubova', async (
   await page.getByTestId('cat-fence-add').click();
   await expect(page.getByTestId('catalog-all')).toHaveCount(0);
   await page.getByTestId('catalog-show-all').click();
-  for (const t of ['aluminium', 'concrete', 'concrete_plinth', 'decorative', 'gate']) await expect(page.getByTestId(`cat-post-${t}`)).toBeVisible();
+  for (const t of ['aluminium', 'concrete', 'concrete_plinth']) await expect(page.getByTestId(`cat-post-${t}`)).toBeVisible();
+  for (const t of ['decorative', 'gate']) await expect(page.getByTestId(`cat-post-${t}`)).toHaveCount(0); // dekorativni stub i stub kapije se ne nude
+  await expect(page.getByTestId('cat-plinth')).toHaveCount(0); // podnožje se bira na ogradi
   await page.getByTestId('cat-post-concrete-add').click();
   await page.getByTestId('cat-corner-add').click();
   await expect(page.getByTestId('count-items')).toHaveText('2');
@@ -883,7 +886,8 @@ test('modeli: kartice navode profile (vertikale i horizontale) po podacima radni
   await page.goto('/modeli');
   await expect(page.getByTestId('construction-vertical-louver_light')).toHaveText('U profil 60×28');
   await expect(page.getByTestId('construction-horizontal-louver_light')).toHaveText('Kutijasti profil 80×20');
-  await expect(page.getByTestId('construction-vertical-h_narrow')).toContainText('U profil sa maskom 25×30');
+  await expect(page.getByTestId('construction-vertical-h_narrow')).toContainText('U profil 25×20');
+  await expect(page.getByTestId('construction-horizontal-h_narrow')).toContainText('Kvadratna cev 20×20');
   await expect(page.getByTestId('construction-horizontal-h_white')).toContainText('20×20');
   await expect(page.getByTestId('construction-note-louver_dark')).toContainText('Z profil');
   await expect(page.getByTestId('construction-note-louver_dark')).toContainText('nije potvrđen');
@@ -953,17 +957,20 @@ test('model tarabica: razmak i prepust se menjaju, stub ima izbor kapa, sastavni
   for (let i = 0; i < 2; i++) await page.getByTestId('cat-fence-add').click();
   await page.locator('[data-hit="item"]').first().click();
 
-  // pri dodavanju: svetli otvor 640 × 1200 mm sa 6 tarabica (širina polja 840 = otvor + stubovi)
-  await expect(page.getByTestId('field-height')).toHaveValue('1200');
-  await expect(page.getByTestId('field-width')).toHaveValue('840');
-  await expect(page.getByTestId('field-slat-count')).toHaveValue('6');
-  await expect(page.getByTestId('panel-item')).toContainText('stvarni razmak 20,0 mm');
+  // pri dodavanju prvog polja: 1000 × 1000 mm (7 tarabica), a sledeće polje preuzima mere postojećeg
+  await expect(page.getByTestId('field-height')).toHaveValue('1000');
+  await expect(page.getByTestId('field-width')).toHaveValue('1000');
+  await expect(page.getByTestId('field-slat-count')).toHaveValue('7');
+
+  // tarabice su podignute od poda (razmak od poda 40 mm), a bela ograda ima sivu pozadinu radi vidljivosti
+  await expect(page.getByTestId('field-lift')).toHaveValue('40');
+  await expect(page.getByTestId('canvas-area')).toHaveClass(/b3bac3/);
 
   // broj tarabica menja širinu polja
   await page.getByTestId('field-slat-count').fill('8');
   await expect(page.getByTestId('field-width')).toHaveValue('1040');
-  await page.getByTestId('field-slat-count').fill('6');
-  await expect(page.getByTestId('field-width')).toHaveValue('840');
+  await page.getByTestId('field-slat-count').fill('7');
+  await expect(page.getByTestId('field-width')).toHaveValue('940');
 
   // podrazumevane mere iz opisa proizvoda: tarabica 80, razmak 20, prepust cevi 30×30 30 mm
   await expect(page.getByTestId('field-bar')).toHaveValue('80');
@@ -980,11 +987,16 @@ test('model tarabica: razmak i prepust se menjaju, stub ima izbor kapa, sastavni
 
   // stub: kape na vrhu i u dnu iz kataloga (80×80 i 100×100)
   await page.locator('[data-hit="post"]').nth(1).click();
+  // izmene stuba po podrazumevanoj vrednosti važe za sve stubove; ovde se proverava pojedinačni stub
+  await expect(page.getByTestId('post-caps-all')).toHaveAttribute('aria-checked', 'true');
+  await page.getByTestId('post-caps-all').click();
   await expect(page.getByTestId('post-caps')).toBeVisible();
   await expect(page.getByTestId('post-cap-top')).toHaveValue('flat');
-  await expect(page.getByTestId('post-cap-bottom')).toHaveValue('none');
+  await expect(page.getByTestId('post-cap-bottom')).toHaveAttribute('aria-checked', 'false');
+  await expect(page.getByTestId('post-cap-top').locator('option')).toHaveText(['Bez kape', 'Kapa ravna', 'Kapa pismo']); // rozetna ne ide na vrh
   await page.getByTestId('post-cap-top').selectOption('pyramid');
-  await page.getByTestId('post-cap-bottom').selectOption('rosette');
+  await page.getByTestId('post-cap-bottom').click(); // rozetna u dnu
+  await expect(page.getByTestId('post-cap-bottom')).toHaveAttribute('aria-checked', 'true');
   await expect(page.getByTestId('post-cap-note')).toContainText('100×100');
   await page.getByRole('button', { name: '80×80' }).click();
   await expect(page.getByTestId('post-cap-note')).toContainText('80×80');
@@ -995,9 +1007,277 @@ test('model tarabica: razmak i prepust se menjaju, stub ima izbor kapa, sastavni
   for (const sku of ['KV000007', 'K100018', 'KTWM3899', 'KTF10010020', 'KTF808030', 'K100010', 'K100007', 'K100014']) await expect(bom).toContainText(sku);
   await page.getByTestId('calc-close').click();
 
+  // izbor svih stubova uz tarabicu odjednom
+  await page.locator('[data-hit="post"]').nth(0).click();
+  await page.getByTestId('post-caps-all').click();
+  await page.getByTestId('post-cap-top').selectOption('none');
+  await page.locator('[data-hit="post"]').nth(2).click();
+  await expect(page.getByTestId('post-cap-top')).toHaveValue('none');
+
   // 3D: kape se crtaju bez grešaka
   await page.getByTestId('tab-three').click();
   await expect(page.getByTestId('three-canvas')).toBeVisible();
   await page.waitForTimeout(600);
+  expect(errors).toEqual([]);
+});
+
+test('stubovi: Ctrl+klik bira više stubova (boja važi za sve izabrane), katalog i dodavanje nude model projekta', async ({ page }) => {
+  const errors = trackErrors(page);
+  await page.goto('/');
+  await page.getByTestId('hero-new').first().click();
+  await page.getByTestId('catalog-model').selectOption('picket_wide');
+  for (let i = 0; i < 2; i++) await page.getByTestId('cat-fence-add').click();
+
+  // izbor više stubova: Ctrl+klik dodaje, a boja se menja na svim izabranim
+  const posts = page.locator('[data-hit="post"]');
+  await posts.nth(0).click();
+  await posts.nth(2).click({ modifiers: ['Control'] });
+  await expect(page.getByTestId('panel-post')).toContainText('Izabrano stubova: 2');
+  await expect(page.getByTestId('multi-post-outline')).toHaveCount(2);
+  await page.getByTestId('post-color').locator('[data-color="RAL 5011"]').click();
+  await posts.nth(0).click();
+  await expect(page.getByTestId('post-color-value')).toHaveText('RAL 5011');
+  await posts.nth(2).click();
+  await expect(page.getByTestId('post-color-value')).toHaveText('RAL 5011');
+  await posts.nth(1).click();
+  await expect(page.getByTestId('post-color-value')).not.toHaveText('RAL 5011');
+  // prekidač „sve stubove" menja i boju svih
+  await expect(page.getByTestId('post-caps-all')).toHaveAttribute('aria-checked', 'true'); // podrazumevano: sve stubove
+  await page.getByTestId('post-color').locator('[data-color="RAL 8017"]').click();
+  await posts.nth(0).click();
+  await expect(page.getByTestId('post-color-value')).toHaveText('RAL 8017');
+
+  // posle osvežavanja katalog nudi ogradu koju projekat već ima, a dodavanje ne nudi drugi model
+  await page.getByTestId('btn-save').click();
+  await expect(page.getByTestId('btn-save')).toHaveAttribute('data-state', 'saved', { timeout: 8000 });
+  await page.reload();
+  await expect(page.getByTestId('catalog-model')).toHaveValue('picket_wide');
+  await expect(page.getByTestId('cat-fence')).toContainText('široke vertikalne letvice');
+  // sličice su 2D crtež sa sivom pozadinom za belu ogradu; svi stubovi i samo podnožje su uvek u katalogu
+  for (const id of ['cat-fence', 'cat-gate-pedestrian', 'cat-gate-sliding', 'cat-opening', 'cat-post-concrete_plinth']) await expect(page.locator(`[data-testid="${id}"] [class*="b3bac3"]`)).toHaveCount(1);
+  for (const t of ['aluminium', 'concrete', 'concrete_plinth']) await expect(page.getByTestId(`cat-post-${t}`)).toBeVisible();
+  await page.getByTestId('field-all-plinth').click(); // podnožje svih ograda
+  await page.locator('[data-hit="item"]').first().click();
+  await expect(page.getByTestId('field-item-plinth')).toHaveValue('400');
+  // širina podnožja: podrazumevano od ivice do ivice stubova, a može da se zada
+  await expect(page.getByTestId('field-item-plinth-width')).toBeVisible();
+  await page.getByTestId('field-item-plinth-width').fill('1500');
+  await expect(page.getByTestId('field-item-plinth-width')).toHaveValue('1500');
+  await expect(page.getByTestId('field-width')).toHaveValue('1500'); // šire podnožje širi i ogradu
+  await page.getByTestId('field-item-plinth-on').click(); // bez podnožja
+  await expect(page.getByTestId('field-item-plinth')).toHaveCount(0);
+  await expect(page.getByTestId('field-item-plinth-width')).toHaveCount(0);
+  await page.getByTestId('add-end').click({ force: true });
+  await page.getByTestId('add-kind-fence').click();
+  await expect(page.getByTestId('add-form')).toBeVisible();
+  await expect(page.getByTestId('add-model')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('novi elementi preuzimaju mere postojeće ograde; prazan otvor nema stubove; stubovi stoje na podnožju', async ({ page }) => {
+  const errors = trackErrors(page);
+  await page.goto('/');
+  await page.getByTestId('hero-new').first().click();
+  await page.getByTestId('catalog-model').selectOption('picket_wide');
+  await page.getByTestId('cat-fence-add').click();
+  await page.getByTestId('field-height').fill('900');
+  await page.getByTestId('field-width').fill('1400');
+  await page.getByTestId('field-gap').fill('25');
+  // dugme „Dodaj": isto polje (visina, širina, razmak)
+  await page.getByTestId('cat-fence-add').click();
+  await expect(page.getByTestId('field-height')).toHaveValue('900');
+  await expect(page.getByTestId('field-width')).toHaveValue('1400');
+  await expect(page.getByTestId('field-gap')).toHaveValue('25');
+  // kapija ima istu visinu
+  await page.getByTestId('cat-gate-pedestrian-add').click();
+  await expect(page.getByTestId('field-height')).toHaveValue('900');
+  // prozor „Dodaj element" predlaže iste mere
+  await page.getByTestId('add-end').click({ force: true });
+  await page.getByTestId('add-kind-fence').click();
+  await expect(page.getByTestId('add-height')).toHaveValue('900');
+  // širina je spoljna mera poslednje ograde (uz kapiju je stub širi, pa je nekoliko mm veća)
+  const addW = Number(await page.getByTestId('add-width').inputValue());
+  expect(addW).toBeGreaterThanOrEqual(1400);
+  expect(addW).toBeLessThanOrEqual(1420);
+  await page.getByTestId('add-apply').click();
+  // prazan otvor: visina i širina ograde, a na kraju nema svoj stub
+  await page.getByTestId('cat-opening-add').click();
+  await expect(page.getByTestId('field-height')).toHaveValue('900');
+  const openW = Number(await page.getByTestId('field-width').inputValue());
+  expect(openW).toBeGreaterThanOrEqual(1380);
+  expect(openW).toBeLessThanOrEqual(1420);
+  await expect(page.getByTestId('count-items')).toHaveText('5');
+  // ograda, ograda, kapija, ograda, otvor: 6 mesta za stub, ali stub iza otvora se ne postavlja
+  const posts = await page.getByTestId('count-posts').textContent();
+  expect(Number(posts!.trim().split(' ')[0])).toBe(5);
+  expect(errors).toEqual([]);
+});
+
+test('3D: izbor podloge (beton, trava, pločice) se pamti; skretanje ne pomera prvi deo ograde', async ({ page }) => {
+  const errors = trackErrors(page);
+  await page.goto('/');
+  await page.getByTestId('hero-new').first().click();
+  await page.getByTestId('catalog-model').selectOption('picket_wide');
+  for (let i = 0; i < 3; i++) await page.getByTestId('cat-fence-add').click();
+  await page.getByTestId('tab-three').click();
+  await expect(page.getByTestId('three-canvas')).toBeVisible();
+  await expect(page.getByTestId('ground-concrete')).toHaveAttribute('aria-checked', 'true');
+  for (const g of ['grass', 'tiles', 'concrete', 'grass']) {
+    await page.getByTestId(`ground-${g}`).click();
+    await expect(page.getByTestId(`ground-${g}`)).toHaveAttribute('aria-checked', 'true');
+    await page.waitForTimeout(150);
+  }
+  await page.reload();
+  await page.getByTestId('tab-three').click();
+  await expect(page.getByTestId('ground-grass')).toHaveAttribute('aria-checked', 'true');
+  expect(errors).toEqual([]);
+});
+
+test('kapija sa svojim stubovima: stub ograde i stub kapije umesto zajedničkog stuba', async ({ page }) => {
+  const errors = trackErrors(page);
+  await page.goto('/');
+  await page.getByTestId('hero-new').first().click();
+  await page.getByTestId('catalog-model').selectOption('picket_wide');
+  await page.getByTestId('cat-fence-add').click();
+  await page.getByTestId('cat-gate-pedestrian-add').click();
+  await expect(page.getByTestId('count-posts')).toContainText('3');
+  // izabrana je nova kapija: uključi svoje stubove
+  await page.getByTestId('field-gate-own-posts').click();
+  await expect(page.getByTestId('field-gate-own-posts')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByTestId('count-items')).toHaveText('2'); // razmaknik nije element
+  await expect(page.getByTestId('count-posts')).toContainText('4');
+  await expect(page.locator('[data-hit="post"]')).toHaveCount(4);
+  await expect(page.getByTestId('field-gate-post-gap')).toHaveValue('40'); // razmak između stuba ograde i stuba kapije
+  // 3D i pogled odozgo se crtaju bez grešaka
+  await page.getByRole('tab', { name: /Pogled odozgo/ }).click();
+  await expect(page.getByTestId('top-view')).toBeVisible();
+  await page.getByRole('tab', { name: /3D prikaz/ }).click();
+  await expect(page.getByTestId('three-canvas')).toBeVisible();
+  await page.waitForTimeout(500);
+  // novo polje posle kapije: kapija i dalje ima svoje stubove (tri razmaknika nisu potrebna: samo uz kapiju)
+  await page.getByRole('tab', { name: /2D prikaz/ }).click();
+  await page.getByTestId('field-all-gates-own-posts').click();
+  await expect(page.getByTestId('count-posts')).toContainText('3');
+  expect(errors).toEqual([]);
+});
+
+test('pregled dokumenta: dugme otvara pregled preko celog ekrana i vraća ga', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('hero-new').first().click();
+  await page.getByTestId('cat-fence-add').click();
+  await page.getByTestId('btn-workorder').click();
+  await page.getByTestId('pdf-frame').waitFor({ timeout: 30000 });
+  const dlg = page.getByRole('dialog');
+  const vp = page.viewportSize()!;
+  expect((await dlg.boundingBox())!.width).toBeLessThan(vp.width - 10);
+  await page.getByTestId('pdf-fullscreen').click();
+  const full = (await dlg.boundingBox())!;
+  expect(full.width).toBeGreaterThanOrEqual(vp.width - 1);
+  expect(full.height).toBeLessThanOrEqual(vp.height + 1);
+  await expect(page.getByTestId('pdf-save')).toBeVisible();
+  await page.getByTestId('pdf-fullscreen').click();
+  expect((await dlg.boundingBox())!.width).toBeLessThan(vp.width - 10);
+});
+
+test('stepenište: kartica u katalogu za terase, smer, visinska razlika i broj stepenika; crtež spreda i odozgo', async ({ page }) => {
+  const errors = trackErrors(page);
+  await page.goto('/');
+  await page.getByTestId('hero-new').first().click();
+  await page.getByTestId('catalog-model').selectOption('rail_inox');
+  await page.getByTestId('cat-fence-add').click();
+  await page.getByTestId('cat-stair-add').click();
+  // posle terase stepenište silazi; u crtežu su stepenici
+  await expect(page.getByTestId('field-stair-on')).toBeVisible();
+  await expect(page.getByTestId('stair-steps-1')).toBeVisible();
+  await expect(page.getByTestId('level-0')).toBeVisible();
+  await expect(page.getByTestId('field-stair-rise')).toHaveValue(/1[.]?020/);
+  await expect(page.getByTestId('field-stair-steps')).toHaveValue('6');
+  // smer: penje se — terasa je sada na tlu, a deo posle stepeništa gore
+  await page.getByTestId('field-stair-dir').getByRole('radio', { name: 'Penje se' }).click();
+  await expect(page.getByTestId('level-0')).toHaveCount(0);
+  await page.getByTestId('field-stair-steps').fill('7');
+  await page.getByTestId('field-stair-steps').press('Enter');
+  await expect(page.getByTestId('field-stair-steps')).toHaveValue('7');
+  // u pogledu odozgo su gazišta i strelica uz stepenice
+  await page.getByRole('tab', { name: /Pogled odozgo/ }).click();
+  await expect(page.getByTestId('top-stair-1')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('RL10 (inox prečke): svaki deo se crta, broj prečki i mere delova se menjaju za celu ogradu', async ({ page }) => {
+  const errors = trackErrors(page);
+  await page.goto('/');
+  await page.getByTestId('hero-new').first().click();
+  await page.getByTestId('catalog-model').selectOption('rail_inox');
+  await page.getByTestId('cat-fence-add').click();
+  await page.getByTestId('cat-fence-add').click();
+  const fv = page.getByTestId('front-view');
+  await expect(fv.locator('[data-rl10="post"]')).toHaveCount(3);
+  await expect(fv.locator('[data-rl10="field"]')).toHaveCount(2);
+  // broj prečki: 4 nosača po stubu → 6
+  await expect(fv.locator('[data-rl10="post"]').first().locator('circle')).toHaveCount(8);
+  await page.getByTestId('field-rods').fill('6');
+  await page.getByTestId('field-rods').press('Enter');
+  await expect(fv.locator('[data-rl10="post"]').first().locator('circle')).toHaveCount(12);
+  // mere delova
+  await page.getByTestId('rl10-parts-toggle').click();
+  await expect(page.getByTestId('rl10-railDiaMm')).toHaveValue('50');
+  await page.getByTestId('rl10-railDiaMm').fill('42');
+  await page.getByTestId('rl10-railDiaMm').press('Enter');
+  await expect(page.getByTestId('rl10-railDiaMm')).toHaveValue('42');
+  await page.getByTestId('rl10-reset').click();
+  await expect(page.getByTestId('rl10-railDiaMm')).toHaveValue('50');
+  expect(errors).toEqual([]);
+});
+
+test('RL10 stepenište: zglob AK-5020K na spoju, stub na sredini svakog trećeg stepenika, sastavnica sa zglobovima', async ({ page }) => {
+  const errors = trackErrors(page);
+  await page.goto('/');
+  await page.getByTestId('hero-new').first().click();
+  await page.getByTestId('catalog-model').selectOption('rail_inox');
+  await page.getByTestId('cat-fence-add').click();
+  await expect(page.getByTestId('field-width')).toHaveValue('1000');
+  await expect(page.getByTestId('field-height')).toHaveValue('1000');
+  await page.getByTestId('cat-stair-add').click();
+  await page.getByTestId('field-stair-steps').fill('15');
+  await page.getByTestId('field-stair-steps').press('Enter');
+  // 15 stepenika: 4 stuba između + 2 krajnja
+  await expect(page.getByTestId('field-stair-posts')).toHaveValue('6');
+  await expect(page.getByTestId('front-view').getByTestId('rl10-joint')).toHaveCount(1);
+  await page.getByRole('tab', { name: /3D prikaz/ }).click();
+  await expect(page.getByTestId('three-canvas')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('uske horizontalne letvice: cevi u U profilima se crtaju, broj cevi prati razmak, dimenzije se menjaju za ceo model', async ({ page }) => {
+  const errors = trackErrors(page);
+  await page.goto('/');
+  await page.getByTestId('hero-new').first().click();
+  await page.getByTestId('catalog-model').selectOption('h_narrow');
+  await page.getByTestId('cat-fence-add').click();
+  await expect(page.getByTestId('front-view').getByTestId('tubes-art')).toHaveCount(1);
+  await expect(page.getByTestId('field-bar')).toHaveValue('20');
+  await expect(page.getByTestId('field-gap')).toHaveValue('6');
+
+  await expect(page.getByText('Širina U profila')).toBeVisible();
+  const rects0 = await page.getByTestId('front-view').getByTestId('tubes-art').locator('rect').count();
+  // veći razmak: manje cevi
+  await page.getByTestId('field-gap').fill('20');
+  await page.getByTestId('field-gap').press('Enter');
+  const rects1 = await page.getByTestId('front-view').getByTestId('tubes-art').locator('rect').count();
+  expect(rects1).toBeLessThan(rects0);
+  // dimenzije cevi i U profila
+  await page.getByTestId('tubes-parts-toggle').click();
+  await expect(page.getByTestId('tubes-uDepthMm')).toHaveValue('25');
+  await expect(page.getByTestId('tubes-uWallMm')).toHaveValue('1.35');
+  await page.getByTestId('tubes-uDepthMm').fill('30');
+  await page.getByTestId('tubes-uDepthMm').press('Enter');
+  await expect(page.getByTestId('tubes-uDepthMm')).toHaveValue('30');
+  await page.getByTestId('tubes-reset').click();
+  await expect(page.getByTestId('tubes-uDepthMm')).toHaveValue('25');
+  await expect(page.getByTestId('field-gap')).toHaveValue('6');
+  await page.getByRole('tab', { name: /3D prikaz/ }).click();
+  await expect(page.getByTestId('three-canvas')).toBeVisible();
+  await page.waitForTimeout(500);
   expect(errors).toEqual([]);
 });

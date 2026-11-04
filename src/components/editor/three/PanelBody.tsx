@@ -1,6 +1,7 @@
+import { isTubesModel } from '../../../domain/models/tubes';
+import { TubesPanel } from './TubesPanel';
 import { useTexture } from '@react-three/drei';
-import { useThree } from '@react-three/fiber';
-import { Suspense, useLayoutEffect, useMemo, useRef } from 'react';
+import { Suspense, useLayoutEffect, useMemo } from 'react';
 import * as THREE from 'three';
 import { computeInfill, panelRepeat, type InfillBar } from '../../../domain/geometry/infill';
 import { mmToScene as s } from '../../../domain/geometry/gates';
@@ -8,7 +9,9 @@ import { MODEL_IMAGES } from '../../../assets/models';
 import { PANEL_IMAGES } from '../../../assets/panels';
 import { colorHex, FENCE_MODELS, panelArt, panelTiles, railArt, railBands, rodCountFor } from '../../../domain/models/catalog';
 import type { FenceModelId, FenceParams } from '../../../domain/models/types';
+import { Instances } from './Instances';
 import { LouverPanel } from './LouverPanel';
+import { TarabicaPanel } from './TarabicaPanel';
 import { boxGeometry, darkMaterial, glassMaterial, metalMaterial, steelMaterial } from './materials';
 
 export interface PanelProps {
@@ -21,6 +24,8 @@ export interface PanelProps {
   axisWidthMm?: number;
   /** levi stub je zajednički sa prethodnim poljem i već je nacrtan */
   skipLeftPost?: boolean;
+  /** tarabica: prepust levo i desno kad se razlikuje (krilo dvokrilne kapije nema prepust uz sredinu) */
+  overhangs?: [number, number];
 }
 
 const FRAME_DEPTH = 0.04;
@@ -40,23 +45,6 @@ const cylinderGeometry = (() => {
 
 function Box({ pos, size, mat }: { pos: [number, number, number]; size: [number, number, number]; mat: THREE.Material }) {
   return <mesh position={pos} scale={size} geometry={boxGeometry} material={mat} castShadow receiveShadow />;
-}
-
-/** Instancirani delovi: jedan draw call po grupi. Matrice potiču iz zajedničkog opisa ispune (computeInfill). */
-function Instances({ count, build, mat, geometry = boxGeometry }: { count: number; build: (i: number, m: THREE.Matrix4) => void; mat: THREE.Material; geometry?: THREE.BufferGeometry }) {
-  const ref = useRef<THREE.InstancedMesh>(null);
-  const invalidate = useThree((st) => st.invalidate);
-  useLayoutEffect(() => {
-    const mesh = ref.current;
-    if (!mesh) return;
-    const m = new THREE.Matrix4();
-    for (let i = 0; i < count; i++) { build(i, m); mesh.setMatrixAt(i, m); }
-    mesh.instanceMatrix.needsUpdate = true;
-    mesh.computeBoundingSphere();
-    invalidate();
-  });
-  if (count === 0) return null;
-  return <instancedMesh key={count} ref={ref} args={[geometry, mat, count]} castShadow receiveShadow frustumCulled={false} />;
 }
 
 /** Polje po slici modela (ista slika kao u katalogu i 2D prikazu): ravna ploča sa providnim razmacima. */
@@ -151,6 +139,10 @@ function RailArtPanel({ url, rail, axisWidthMm, heightMm, rodCount }: { url: str
 export function PanelBody(props: PanelProps) {
   // model 08: stvarni profili (letvice 80 × 20, U vođice 60 × 28) umesto slike
   if (props.modelId === 'louver_light') return <LouverPanel {...props} />;
+  // uske horizontalne letvice: kvadratne cevi u bočnim U profilima (stvarne dimenzije)
+  if (isTubesModel(props.modelId)) return <TubesPanel {...props} />;
+  // tarabica: stvarni delovi iz kataloga (cevi 80 × 20 sa čepom, spojne cevi 30 × 30, zavrtnji)
+  if (FENCE_MODELS[props.modelId].style === 'tarabica') return <TarabicaPanel {...props} />;
   const rail = railArt(props.modelId, props.color);
   if (rail && MODEL_IMAGES[rail.id] && props.axisWidthMm) {
     return (

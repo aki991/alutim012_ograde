@@ -7,10 +7,10 @@ import { EditorCanvas } from '../../components/editor/EditorCanvas';
 import { PropertiesPanel } from '../../components/editor/PropertiesPanel';
 import { Field, SelectField, TextField } from '../../components/forms/Fields';
 import { Modal } from '../../components/ui/Modal';
-import { STATUS_LABELS } from '../../domain/models/catalog';
+import { STATUS_LABELS, projectModelId } from '../../domain/models/catalog';
+import { newItemFor } from '../../domain/geometry/newItem';
 import { insertItem, moveItem, setOuterWidth, withConcretePosts } from '../../domain/geometry/operations';
-import { createFence, createGate, createCorner, createOpening } from '../../domain/models/factories';
-import type { LayoutItem, ProjectStatus } from '../../domain/models/types';
+import type { ProjectStatus } from '../../domain/models/types';
 import { useDragController, type DragSource, type DropTarget } from '../../hooks/useDragController';
 import { useAppStore, useCurrentProject } from '../../store/useAppStore';
 import { fmtDate } from '../../utils/units';
@@ -82,14 +82,11 @@ function EditorWorkspace({ navigateAway }: { navigateAway: () => void }) {
       }
       const cur = st.projects.find((p) => p.id === st.editor.projectId);
       if (!cur) return;
-      const h = cur.settings.defaultHeightMm;
-      const model = st.editor.activeModelId;
-      let item: LayoutItem;
-      if (source.spec.kind === 'fence') item = createFence({ modelId: source.spec.modelId, heightMm: h });
-      else if (source.spec.kind === 'gate') item = createGate(source.spec.gateType, { heightMm: h, infillModelId: source.spec.modelId ?? model });
-      else if (source.spec.kind === 'corner') item = createCorner({ heightMm: h });
-      else item = createOpening({ heightMm: h });
-      st.mutate((p) => { const q = insertItem(p, item, toIndex); return item.kind === 'opening' && item.bendDeg !== undefined ? q : setOuterWidth(source.spec.kind === 'gate' && source.spec.concrete ? withConcretePosts(q, item.id) : q, item.id, item.widthMm); });
+      const model = projectModelId(cur.items) ?? st.editor.activeModelId;
+      // novi element ima mere i izgled ograde koja je već u projektu
+      const sel = st.editor.selection;
+      const { item, outerWidthMm: outer } = newItemFor(cur, source.spec, model, sel?.type === 'item' ? sel.id : null);
+      st.mutate((p) => { const q = insertItem(p, item, toIndex); return item.kind === 'opening' && item.bendDeg !== undefined ? q : setOuterWidth(source.spec.kind === 'gate' && source.spec.concrete ? withConcretePosts(q, item.id) : q, item.id, outer); });
       st.select({ type: 'item', id: item.id });
     },
   });

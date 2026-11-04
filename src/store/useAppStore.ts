@@ -3,11 +3,12 @@ import { SEED_MATERIALS } from '../data/materials';
 import { createSeedData } from '../data/seed';
 import { loadAll, saveAll, wipeAll } from '../db';
 import {
-  changeColor, changeModelAll, duplicateItem, indexOfItem, insertItem, moveItemBy, removeItem, setOuterWidth, withConcretePosts, updateItem, updateItemParams, updatePost,
+  changeColor, changeModelAll, duplicateItem, insertItem, moveItemBy, setOuterWidth, withConcretePosts, updateItem, updateItemParams, updatePost,
 } from '../domain/geometry/operations';
-import { postHalfSum } from '../domain/geometry/layout';
-import { DEFAULT_MODEL_ID, FENCE_MODELS, TERRACE_NO_GATES, isTerraceModel } from '../domain/models/catalog';
-import { createFence, createGate, createCorner, createOpening, createProject, nowIso } from '../domain/models/factories';
+import { newItemFor } from '../domain/geometry/newItem';
+import { removeStair, setStairGroup } from '../domain/geometry/stairOps';
+import { DEFAULT_MODEL_ID, TERRACE_NO_GATES, isTerraceModel, projectModelId } from '../domain/models/catalog';
+import { createFence, createGate, createProject, nowIso } from '../domain/models/factories';
 import { emptyHistory, recordChange, redo as redoH, undo as undoH, type History } from '../domain/models/history';
 import type {
   AppSettings, Customer, FenceModelId, FenceSection, Gate, GateType, LayoutItem, Material, Post, Project,
@@ -20,7 +21,7 @@ export type Selection = { type: 'item' | 'post'; id: string } | null;
 export type EditorView = 'front' | 'top' | 'three' | 'split' | 'dims' | 'bom' | 'photo';
 
 export type NewElementSpec =
-  | { kind: 'fence'; modelId: FenceModelId }
+  | { kind: 'fence'; modelId: FenceModelId; /** polje stepeništa (samo ograde za terase) */ stair?: boolean }
   | { kind: 'gate'; gateType: GateType; modelId?: FenceModelId; /** kapija između betonskih stubova */ concrete?: boolean }
   | { kind: 'opening' }
   | { kind: 'corner' };
@@ -30,6 +31,8 @@ interface EditorState {
   selection: Selection;
   /** više izabranih polja (Ctrl+klik, okvir): ID-evi svih izabranih elemenata kad ih je dva ili više; inače prazno */
   multi: string[];
+  /** više izabranih stubova (Ctrl+klik): ID-evi svih izabranih stubova kad ih je dva ili više; inače prazno */
+  multiPosts: string[];
   history: History<Project>;
   view: EditorView;
   /** 1 = 100% (0,1 px po mm) */
@@ -67,6 +70,8 @@ interface AppState {
   select: (s: Selection) => void;
   /** Ctrl+klik: dodaje element u izbor ili ga izbacuje iz njega */
   toggleItem: (id: string) => void;
+  togglePost: (id: string) => void;
+  selectPosts: (ids: string[]) => void;
   /** izbor više elemenata odjednom (okvir, Shift+klik); `add` dodaje na postojeći izbor */
   selectItems: (ids: string[], add?: boolean) => void;
   setView: (v: EditorView) => void;
@@ -93,7 +98,7 @@ interface AppState {
 }
 
 const emptyEditor = (): EditorState => ({
-  projectId: null, selection: null, multi: [], history: emptyHistory<Project>(), view: 'front', zoom: 1, activeModelId: DEFAULT_MODEL_ID, notice: null,
+  projectId: null, selection: null, multi: [], multiPosts: [], history: emptyHistory<Project>(), view: 'front', zoom: 1, activeModelId: DEFAULT_MODEL_ID, notice: null,
 });
 
 /** Izbor više polja ostaje samo za elemente koji i dalje postoje; sa manje od dva izabrana nema višestrukog izbora. */
@@ -197,7 +202,7 @@ export const useAppStore = create<AppState>((set, get) => {
     openProject(id) {
       rememberProject(id);
       if (get().editor.projectId === id) return;
-      set((s) => ({ editor: { ...s.editor, projectId: id, selection: null, multi: [], history: emptyHistory<Project>(), notice: null } }));
+      set((s) => ({ editor: { ...s.editor, projectId: id, selection: null, multi: [], multiPosts: [], history: emptyHistory<Project>(), notice: null } }));
     },
 
     patchProject(id, patch) {
@@ -270,12 +275,21 @@ export const useAppStore = create<AppState>((set, get) => {
       set((s) => ({ projects: s.projects.map((p) => (p.id === cur.id ? r.value : p)), editor: { ...s.editor, history: r.history, selection: keepSelection(s.editor.selection, r.value), multi: keepMulti(s.editor.multi, r.value) } }));
     },
 
-    select(selection) { set((s) => ({ editor: { ...s.editor, selection, multi: [] } })); },
+    select(selection) { set((s) => ({ editor: { ...s.editor, selection, multi: [], multiPosts: [] } })); },
+    togglePost(id) {
+      const { selection, multiPosts } = get().editor;
+      const current = multiPosts.length > 1 ? multiPosts : selection?.type === 'post' ? [selection.id] : [];
+      const next = current.includes(id) ? current.filter((x) => x !== id) : [...current, id];
+      set((s) => ({ editor: { ...s.editor, multi: [], multiPosts: next.length > 1 ? next : [], selection: next.length ? { type: 'post', id: next[next.length - 1] } : null } }));
+    },
+    selectPosts(ids) {
+      set((s) => ({ editor: { ...s.editor, multi: [], multiPosts: ids.length > 1 ? ids : [], selection: ids.length ? { type: 'post', id: ids[ids.length - 1] } : null } }));
+    },
     toggleItem(id) {
       const { selection, multi } = get().editor;
       const current = multi.length > 1 ? multi : selection?.type === 'item' ? [selection.id] : [];
       const next = current.includes(id) ? current.filter((x) => x !== id) : [...current, id];
-      set((s) => ({ editor: { ...s.editor, multi: next.length > 1 ? next : [], selection: next.length ? { type: 'item', id: next[next.length - 1] } : null } }));
+      set((s) => ({ editor: { ...s.editor, multi: next.length > 1 ? next : [], multiPosts: [], selection: next.length ? { type: 'item', id: next[next.length - 1] } : null } }));
     },
     selectItems(ids, add = false) {
       const { selection, multi } = get().editor;
@@ -291,20 +305,16 @@ export const useAppStore = create<AppState>((set, get) => {
     addElement(spec, index) {
       const cur = currentProject();
       if (!cur) return null;
-      const modelId = get().editor.activeModelId;
-      const fenceDef = spec.kind === 'fence' && spec.modelId ? FENCE_MODELS[spec.modelId] : undefined;
-      const height = fenceDef?.defaultSize?.heightMm ?? cur.settings.defaultHeightMm;
+      const modelId = projectModelId(cur.items) ?? get().editor.activeModelId; // projekat ima jedan model: novi element je istog modela
       if (spec.kind === 'gate' && isTerraceModel(spec.modelId ?? modelId)) { get().setNotice(TERRACE_NO_GATES); return null; }
-      let item: LayoutItem;
-      if (spec.kind === 'fence') item = createFence({ modelId: spec.modelId, heightMm: height });
-      else if (spec.kind === 'gate') item = createGate(spec.gateType, { heightMm: height, infillModelId: spec.modelId ?? modelId });
-      else if (spec.kind === 'corner') item = createCorner({ heightMm: height });
-      else item = createOpening({ heightMm: height });
+      // novi element ima mere i izgled ograde koja je već u projektu (izabrano polje, inače poslednja ograda)
+      const sel = get().editor.selection;
+      const { item, outerWidthMm: outer } = newItemFor(cur, spec, modelId, sel?.type === 'item' ? sel.id : null);
       get().mutate((p) => {
         const q = insertItem(p, item, index ?? p.items.length);
-        // model sa zadatom veličinom (tarabica): zadaje se svetli otvor, pa je spoljna širina otvor + stubovi
-        const outer = fenceDef?.defaultSize ? fenceDef.defaultSize.clearWidthMm + 2 * postHalfSum(q, indexOfItem(q, item.id)) : item.widthMm;
-        return setOuterWidth(spec.kind === 'gate' && spec.concrete ? withConcretePosts(q, item.id) : q, item.id, outer);
+        const w = setOuterWidth(spec.kind === 'gate' && spec.concrete ? withConcretePosts(q, item.id) : q, item.id, outer);
+        // stepenište: polja sa stubovima između (preporuka: stub na svaki metar)
+        return spec.kind === 'fence' && spec.stair ? setStairGroup(w, item.id, {}) : w;
       });
       set((s) => ({ editor: { ...s.editor, selection: { type: 'item', id: item.id }, multi: [] } }));
       return item.id;
@@ -314,7 +324,8 @@ export const useAppStore = create<AppState>((set, get) => {
       const { selection: sel, multi } = get().editor;
       if (!sel || sel.type !== 'item') return;
       const ids = multi.length > 1 ? multi : [sel.id];
-      get().mutate((p) => ids.reduce((q, id) => removeItem(q, id), p));
+      // stepenište se briše ceo (sva polja između stubova)
+      get().mutate((p) => ids.reduce((q, id) => (q.items.some((x) => x.id === id) ? removeStair(q, id) : q), p));
       set((s) => ({ editor: { ...s.editor, selection: null, multi: [] } }));
     },
 

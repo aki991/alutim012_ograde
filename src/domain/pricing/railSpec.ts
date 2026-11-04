@@ -1,3 +1,4 @@
+import { isStair, itemSlope } from '../geometry/stair';
 import { computeInfill } from '../geometry/infill';
 import { computeLayout } from '../geometry/layout';
 import type { FenceSection, Project } from '../models/types';
@@ -60,6 +61,8 @@ export interface Rail04Run {
   /** broj elemenata (polja i spojeva) u nizu, prvi i poslednji indeks u projektu */
   firstIndex: number;
   lastIndex: number;
+  /** stepenište: nagib niza (stepeni); rukohvat i prečke idu po kosoj dužini i seku se pod uglom */
+  slopeDeg?: number;
 }
 
 export interface Rail04Post { name: string; heightMm: number }
@@ -93,7 +96,7 @@ export function splitLength(lengthMm: number, stockMm: number = RAIL04.stockMm, 
 export function rail04Runs(project: Project): Rail04Run[] {
   const layout = computeLayout(project);
   const runs: Rail04Run[] = [];
-  interface Cur { panels: Rail04Panel[]; first: number; last: number; length: number; bends: { deg: number; atMm: number }[] }
+  interface Cur { panels: Rail04Panel[]; first: number; last: number; length: number; bends: { deg: number; atMm: number }[]; slopeDeg?: number; tan?: number }
   let current: Cur | null = null;
   let pending: { gapMm: number; deg: number; index: number } | null = null;
   const flush = () => {
@@ -105,6 +108,7 @@ export function rail04Runs(project: Project): Rail04Run[] {
     runs.push({
       panels, axisTotalMm, lengthMm, pieceLensMm: pieces, trimmedMm, rodHeightsMm: panels[0].rodHeightsMm, heightMm: panels[0].heightMm,
       postCount: current.last - current.first + 2, bends: current.bends, firstIndex: current.first, lastIndex: current.last,
+      ...(current.slopeDeg ? { slopeDeg: current.slopeDeg } : {}),
     });
     current = null;
   };
@@ -116,10 +120,28 @@ export function rail04Runs(project: Project): Rail04Run[] {
       continue;
     }
     if (!isRail04(li.item)) { flush(); pending = null; continue; }
+    if (current && current.slopeDeg !== undefined && !isStair(li.item)) { flush(); pending = null; }
     const f = li.item as FenceSection;
     const geo = computeInfill(f.modelId, li.clearWidth, f.heightMm, f.params.frameMm, f.params.barSizeMm, f.params.gapMm, f.params.barCount);
     const rods = geo.bars.filter((b) => b.tone === 'main').map((b) => Math.round(f.heightMm - (b.y + b.h / 2))).sort((a, b) => a - b);
     const panel: Rail04Panel = { name: itemLabel(project.items, li.index), index: li.index, axisMm: li.axisEnd - li.axisStart, heightMm: f.heightMm, rodHeightsMm: rods };
+    if (isStair(f)) {
+      // stepenište: zaseban niz (na prelazu na ravan deo cev se seče pod uglom), dužina je kosa dužina polja; uzastopna polja istog
+      // nagiba (stubovi na stepeništu) čine jedan neprekinut niz
+      const sl = itemSlope(li);
+      const sameSlope = current !== null && current.slopeDeg !== undefined && current.last === li.index - 1 && Math.abs((current.tan ?? 0) - sl.tan) < 1e-3
+        && current.panels[0].heightMm === panel.heightMm && current.panels[0].rodHeightsMm.join() === rods.join();
+      pending = null;
+      if (sameSlope && current) {
+        current.panels.push({ ...panel, axisMm: Math.round(panel.axisMm * sl.factor) });
+        current.length += panel.axisMm * sl.factor;
+        current.last = li.index;
+        continue;
+      }
+      flush();
+      current = { panels: [{ ...panel, axisMm: Math.round(panel.axisMm * sl.factor) }], first: li.index, last: li.index, length: panel.axisMm * sl.factor, bends: [], slopeDeg: Math.round(sl.deg), tan: sl.tan };
+      continue;
+    }
     const adjacent = current && (current.last === li.index - 1 || (pending && current.last === pending.index - 1 && pending.index === li.index - 1));
     const same = Boolean(adjacent) && current!.panels[0].heightMm === panel.heightMm && current!.panels[0].rodHeightsMm.join() === rods.join();
     if (!same) { flush(); pending = null; }
@@ -192,15 +214,15 @@ export function planBars(pieces: number[], stockMm = RAIL04.stockMm, kerfMm = RA
   return { bars, leftover: free };
 }
 
-const group = (lengths: number[]): { len: number; qty: number }[] => {
+export const group = (lengths: number[]): { len: number; qty: number }[] => {
   const m = new Map<number, number>();
   for (const l of lengths) m.set(l, (m.get(l) ?? 0) + 1);
   return [...m.entries()].sort((a, b) => b[0] - a[0]).map(([len, qty]) => ({ len, qty }));
 };
 
-const fmtMm = (v: number) => v.toLocaleString('sr-RS');
+export const fmtMm = (v: number) => v.toLocaleString('sr-RS');
 /** „4 kom × 6.000 mm" ili „2 × 6.000 + 1 × 2.040 mm" */
-const describePieces = (lens: number[]): string => {
+export const describePieces = (lens: number[]): string => {
   const g = group(lens);
   if (g.length === 1) return `${g[0].qty} kom × ${fmtMm(g[0].len)} mm`;
   return `${g.map((x) => `${x.qty} × ${fmtMm(x.len)}`).join(' + ')} mm`;
@@ -258,7 +280,7 @@ export function buildRail04Sheet(project: Project, specs?: ModelSpecs): Rail04Sh
     return run.pieceLensMm.map((len) => {
       const here = run.bends.filter((b) => b.atMm >= off && b.atMm < off + len).map((b) => ({ ...b, atMm: b.atMm - off }));
       off += len;
-      return { len, cut: here.length ? bentCut(here) : straight };
+      return { len, cut: run.slopeDeg ? `Oba kraja pod uglom ${run.slopeDeg}° (stepenište)` : here.length ? bentCut(here) : straight };
     });
   };
   emit('S', 'Stub Ø40', 'PEGA 06', stubLens.map((len) => ({ len, cut: straight })));
@@ -295,6 +317,6 @@ export function buildRail04Sheet(project: Project, specs?: ModelSpecs): Rail04Sh
   return { panels, runs, posts, bom, cuts, bars, quantities, mainTotalMm, notes };
 }
 
-function fmtM(mm: number): string {
+export function fmtM(mm: number): string {
   return `${(mm / 1000).toLocaleString('sr-RS', { maximumFractionDigits: 2 })} m`;
 }

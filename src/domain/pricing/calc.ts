@@ -1,3 +1,7 @@
+import { isRl10Post } from '../models/rl10';
+import { buildRl10Sheet, isRl10Item } from './rl10Spec';
+import { itemSlope } from '../geometry/stair';
+import { gateLeafPoses } from '../geometry/gates';
 import { computeLayout, type LaidOutItem } from '../geometry/layout';
 import type { FenceModelId, FenceSection, Gate, Material, PricingSettings, Project } from '../models/types';
 import { CALC_RULES } from './rules';
@@ -72,8 +76,9 @@ export function buildBom(project: Project, materials: Material[], specs?: ModelS
     // modeli 04 i 08 imaju detaljnu sastavnicu dok se njihova specifikacija ne izmeni
     if (isRail04(it) && !hasCustomSpec(modelId, specs)) continue;
     if (isLouver08(it) && !hasCustomSpec(modelId, specs)) continue;
+    if (isRl10Item(it) && !hasCustomSpec(modelId, specs)) continue;
     // elementi specifikacije modela (podrazumevani ili izmenjeni): količine i dužine po formulama
-    const vars = specVars({ modelId, widthMm: li.clearWidth, heightMm: it.heightMm, axisMm: li.axisEnd - li.axisStart, params: it.params, doubleGate: it.kind === 'gate' && it.gateType === 'double' });
+    const vars = specVars({ modelId, slopeFactor: itemSlope(li).factor, widthMm: li.clearWidth, heightMm: it.heightMm, axisMm: li.axisEnd - li.axisStart, params: it.params, doubleGate: it.kind === 'gate' && it.gateType === 'double', leafWidthsMm: it.kind === 'gate' && it.gateType === 'double' ? gateLeafPoses(it, li.clearStart, li.clearEnd, 1).map((q) => q.widthMm) : undefined });
     for (const ev of evaluateSpec(specFor(modelId, specs), vars)) add(ev.part.group, ev.part.materialId, ev.materialQty);
 
     if (it.kind === 'gate') {
@@ -100,9 +105,11 @@ export function buildBom(project: Project, materials: Material[], specs?: ModelS
   }
   const railPosts = new Set(hasCustomSpec('rail_black', specs) ? [] : project.posts.map((_, i) => i).filter((i) => [project.items[i - 1], project.items[i]].some((x) => x && isRail04(x))));
   project.posts.forEach((p, i) => {
-    if (railPosts.has(i)) return;
+    if (railPosts.has(i) || layout.posts[i]?.hidden) return;
     // stub uz tarabicu: kvadratna cev 80 × 80 ili 100 × 100 po dužini stuba i izabrane kape iz kataloga
-    if (isTarabicaPost(project.items, p, i)) { for (const l of tarabicaPostLines(p)) add('Stubovi', l.materialId, l.qty); return; }
+    if (isTarabicaPost(project.items, p, i)) { for (const l of tarabicaPostLines({ ...p, heightMm: layout.posts[i]?.lengthMm ?? p.heightMm })) add('Stubovi', l.materialId, l.qty); return; }
+    // stubovi RL10 se obračunavaju u sastavnici modela (cev, lajsna, veza, stopa, sidra, nosači, završeci)
+    if (isRl10Post(project.items, i) && !hasCustomSpec('rail_inox', specs)) return;
     add('Stubovi', POST_MATERIAL[p.type], 1);
   });
   {
@@ -127,7 +134,37 @@ export function buildBom(project: Project, materials: Material[], specs?: ModelS
       add('Stubovi', 'mat_anchor', q.stubLens.length);
     }
   }
-  for (const li of layout.items) add('Stubovi', 'mat_concrete_plinth', (li.clearWidth * li.plinthMm) / 1_000_000);
+  {
+    // RL10: rukohvat P-1033, prečke P-1146, stubovi P-1054 sa lajsnom, veze, stope, sidra, nosači, zglobovi i završeci
+    const sheet = buildRl10Sheet(project, specs);
+    if (sheet) {
+      const q = sheet.quantities;
+      const meters = (lens: number[]) => lens.reduce((x, v) => x + v, 0) / 1000;
+      add('Profili ispune', 'mat_bts_p1033', meters([...q.railLens, ...q.cornerRailLens]));
+      add('Profili ispune', 'mat_bts_p1146', meters([...q.rodLens, ...q.cornerRodLens]));
+      add('Stubovi', 'mat_bts_p1054', meters(q.tubeLens));
+      add('Stubovi', 'mat_bts_pal2647', meters(q.tubeLens));
+      add('Stubovi', 'mat_bts_ak5036x', q.posts);
+      add('Stubovi', 'mat_bts_ak5027k', q.posts * 3);
+      add('Nosači i spojnice', 'mat_bts_ak5062', q.posts);
+      add('Nosači i spojnice', 'mat_bts_ak5039n', q.saddlesFixed);
+      add('Nosači i spojnice', 'mat_bts_ak5001', q.saddlesAdjustable);
+      add('Nosači i spojnice', 'mat_bts_ak5011y', q.holders);
+      add('Nosači i spojnice', 'mat_bts_ak5020k', q.jointsRail);
+      add('Nosači i spojnice', 'mat_bts_ak5022y', q.jointsRod);
+      add('Nosači i spojnice', 'mat_bts_ak5009', q.railCaps);
+      add('Nosači i spojnice', 'mat_bts_ak5012a', q.rodCaps);
+    }
+  }
+  // betonsko podnožje je jedan komad ispod polja i stubova: dužina polja (osa–osa) i po pola stuba na krajevima niza ili zadata dužina
+  for (const li of layout.items) {
+    if (li.plinthMm <= 0) continue;
+    // dužina je od ivice do ivice podnožja; deo koji preklapa prethodno podnožje (ispod zajedničkog stuba) se ne računa dvaput
+    const prev = layout.items[li.index - 1];
+    const overlap = prev && prev.plinthMm > 0 ? Math.max(0, prev.plinthX1 - li.plinthX0) : 0;
+    const len = Math.max(0, li.plinthX1 - li.plinthX0 - overlap);
+    add('Stubovi', 'mat_concrete_plinth', (len * li.plinthMm) / 1_000_000);
+  }
 
   const lines: BomLine[] = [];
   for (const a of acc.values()) {

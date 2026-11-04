@@ -25,6 +25,24 @@ export interface FenceParams {
   frameMm: Mm;
   /** Broj prečki (samo modeli sa prečkama, npr. „Srebrni stubovi — crne prečke"); bez vrednosti važi standard modela */
   barCount?: number;
+  /** Samo tarabica: razmak od poda do donjeg kraja tarabica (mm); bez vrednosti važi podrazumevani */
+  liftMm?: number;
+  /** Samo model RL10 (inox prečke): mere delova (rukohvat, stub, veza, prsten, stopa, nosači, prečke); bez vrednosti važe podrazumevane */
+  rl10?: Partial<import('./rl10').Rl10Dims>;
+  /** Samo model uske horizontalne letvice (kvadratne cevi u U profilima): dubina i zidovi cevi, dubina i zid U profila, zazor; bez vrednosti važe podrazumevane */
+  hn?: Partial<import('./tubes').TubesDims>;
+}
+
+/** Stepenište (samo ograde za terase): polje prati stepenice. */
+export interface StairSpec {
+  /** visinska razlika između levog i desnog stuba ovog polja (mm): + penje se ka kraju trase, − silazi */
+  riseMm: Mm;
+  /** ukupan broj stepenika celog stepeništa (isti u svim poljima niza); bez vrednosti računa se iz visinske razlike (oko 170 mm po stepeniku) */
+  steps?: number;
+  /** oznaka stepeništa: uzastopna polja sa istom oznakom čine jedno stepenište (polja između stubova), nagib im je isti */
+  group?: string;
+  /** broj polja (stubova) je ručno zadat; inače se preporučuje jedan stub na svaki metar */
+  fieldsCustom?: boolean;
 }
 
 export interface FenceSection {
@@ -37,6 +55,12 @@ export interface FenceSection {
   color: string; // RAL ključ
   materialId: string;
   params: FenceParams;
+  /** Betonsko podnožje ispod ovog polja (mm), nezavisno od stubova; bez vrednosti nema podnožja (ako ga ne traži stub „sa podnožjem“) */
+  plinthMm?: Mm;
+  /** Ukupna dužina podnožja ispod ovog polja (mm); bez vrednosti podnožje ide od spoljne ivice levog do spoljne ivice desnog stuba */
+  plinthWidthMm?: Mm;
+  /** Stepenište: polje prati stepenice (širina ostaje horizontalna dužina u osnovi) */
+  stair?: StairSpec;
 }
 
 export interface Gate {
@@ -53,6 +77,10 @@ export interface Gate {
   hinge: HingeType;
   automation: boolean;
   automationType: AutomationType;
+  /** Kapija ima svoje stubove: između kapije i susednog elementa su dva stuba (stub ograde i stub kapije), a ne jedan zajednički */
+  ownPosts?: boolean;
+  /** Razmak (mm) između stuba ograde i stuba kapije kad kapija ima svoje stubove; bez vrednosti važi podrazumevani */
+  postGapMm?: Mm;
   /** Samo dvokrilne: ručno zadate širine krila */
   unequalLeaves: boolean;
   leftLeafMm: Mm;
@@ -71,6 +99,8 @@ export interface Opening {
    * Ugao se ne pravi na stubu nego između dva stuba. Bez vrednosti je običan prazan otvor.
    */
   bendDeg?: number;
+  /** Tehnički razmak između dva susedna stuba (kapija sa svojim stubovima); ne prikazuje se kao element i ne ulazi u liste */
+  spacer?: boolean;
 }
 
 /** Razmak osa dva stuba uz ugaoni spoj (mm): 100 mm slobodno između stubova Ø40 za savijanje cevi */

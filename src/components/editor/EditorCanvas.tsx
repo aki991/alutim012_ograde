@@ -1,14 +1,14 @@
 import { Image as ImageIcon, Box, Columns2, Download, Eye, List, AlertTriangle, Loader2, PencilRuler, Save, Maximize2, Minimize2, Redo2, Ruler, ScanLine, SlidersHorizontal, Square, Undo2, ZoomIn, ZoomOut } from 'lucide-react';
 import { Component, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import type { DragSource, DragView, DropTarget } from '../../hooks/useDragController';
+import { hasLightFence, projectModelId } from '../../domain/models/catalog';
 import type { Project } from '../../domain/models/types';
 import { useAppStore, type EditorView } from '../../store/useAppStore';
 import { saveNow } from '../../services/persistence';
 import { exportSvg } from '../../services/exports';
 import { BomTable, DimensionsTable } from './Tables';
 import { FrontView, fitScale } from './FrontView';
-import { TopView } from './TopView';
-import { computePlan } from '../../domain/geometry/plan';
+import { TopView, topViewLayout } from './TopView';
 import { outerWidthMm } from '../../domain/geometry/layout';
 import { traceToProject } from '../../domain/geometry/trace';
 import { TraceCanvas } from './TraceCanvas';
@@ -68,7 +68,7 @@ export function EditorCanvas({ project, svgRef, areaRef, drag, onBeginDrag, regi
   const multi = useAppStore((s) => s.editor.multi);
   const canUndo = useAppStore((s) => s.editor.history.past.length > 0);
   const canRedo = useAppStore((s) => s.editor.history.future.length > 0);
-  const { setView, setZoom, select, toggleItem, selectItems, undo, redo, mutate } = useAppStore.getState();
+  const { setView, setZoom, select, toggleItem, selectItems, togglePost, selectPosts, undo, redo, mutate } = useAppStore.getState();
   const [autoFit, setAutoFit] = useState(true);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const optionsRef = useRef<HTMLSpanElement>(null);
@@ -89,7 +89,9 @@ export function EditorCanvas({ project, svgRef, areaRef, drag, onBeginDrag, regi
   const [saveClicked, setSaveClicked] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [dimEdit, setDimEdit] = useState<{ id: string; kind: DimKind } | null>(null);
-  const activeModelId = useAppStore((s) => s.editor.activeModelId);
+  const storeModelId = useAppStore((s) => s.editor.activeModelId);
+  const activeModelId = projectModelId(project.items) ?? storeModelId;
+  const multiPosts = useAppStore((s) => s.editor.multiPosts);
   const panRef = useRef<{ x: number; y: number; sl: number; st: number; moved: boolean } | null>(null);
   const justPanned = useRef(false);
   // okvir za izbor više polja (koordinate ekrana) i taster Razmaknica (pomeranje prikaza levim tasterom)
@@ -115,11 +117,11 @@ export function EditorCanvas({ project, svgRef, areaRef, drag, onBeginDrag, regi
     if (!el) return;
     let sc = fitScale(project, el.clientWidth, el.clientHeight, s.showDimensions);
     if (view === 'top') {
-      const pl = computePlan(project);
-      const swing = Math.max(1200, ...project.items.filter((i) => i.kind === 'gate').map((i) => i.widthMm));
-      const wMm = pl.maxX - pl.minX + 400 + (pl.turned ? 2 * swing : 0);
-      const hMm = pl.maxZ - pl.minZ + 2 * swing + 1000;
-      sc = Math.min(0.5, Math.max(0.02, Math.min((el.clientWidth - 24) / wMm, (el.clientHeight - 24) / hMm)));
+      // crtež se uklapa u prozor: okvir u mm, a kote, brojevi i legenda imaju stalan razmak u pikselima
+      const t = topViewLayout(project);
+      const wMm = Math.max(1, t.x1 - t.x0);
+      const hMm = Math.max(1, t.z1 - t.z0);
+      sc = Math.min(0.35, Math.max(0.01, Math.min((el.clientWidth - 2 * t.marginPx - 4) / wMm, (el.clientHeight - 2 * t.marginPx - t.legendPx - 4) / hMm)));
     }
     sc = sc || 0.1;
     useAppStore.getState().setZoom(sc / BASE);
@@ -195,6 +197,18 @@ export function EditorCanvas({ project, svgRef, areaRef, drag, onBeginDrag, regi
         window.dispatchEvent(new CustomEvent('open-props'));
         onBeginDrag({ kind: 'move', id, label: `${idx + 1}. element · ${Math.round(outerWidthMm(project, idx))} mm` }, e);
       } else {
+        if (e.ctrlKey || e.metaKey) {
+          // Ctrl+klik: dodaje stub u izbor ili ga izbacuje
+          togglePost(id);
+          window.dispatchEvent(new CustomEvent('open-props'));
+          return;
+        }
+        if (e.shiftKey && selection?.type === 'post') {
+          // Shift+klik: svi stubovi od izabranog do kliknutog
+          const from = project.posts.findIndex((x) => x.id === selection.id);
+          const to = project.posts.findIndex((x) => x.id === id);
+          if (from >= 0 && to >= 0) { selectPosts(project.posts.slice(Math.min(from, to), Math.max(from, to) + 1).map((x) => x.id)); window.dispatchEvent(new CustomEvent('open-props')); return; }
+        }
         select({ type: 'post', id });
         window.dispatchEvent(new CustomEvent('open-props'));
       }
@@ -293,7 +307,7 @@ export function EditorCanvas({ project, svgRef, areaRef, drag, onBeginDrag, regi
     <div
       ref={areaRef}
       data-testid="canvas-area"
-      className={`relative overflow-auto scroll-thin bg-white ${paneHeight} ${view === 'top' ? 'cursor-grab active:cursor-grabbing' : 'cursor-crosshair'}`}
+      className={`relative overflow-auto scroll-thin ${view !== 'top' && hasLightFence(project.items) ? 'bg-[#b3bac3]' : 'bg-white'} ${view === 'top' ? 'h-[clamp(420px,68vh,760px)]' : paneHeight} ${view === 'top' ? 'cursor-grab active:cursor-grabbing' : 'cursor-crosshair'}`}
       onPointerDownCapture={(e) => { downOnHit.current = Boolean((e.target as Element).closest('[data-hit]')); }}
       onPointerDown={onPointerDown}
       onClick={onClickBackground}
@@ -311,6 +325,7 @@ export function EditorCanvas({ project, svgRef, areaRef, drag, onBeginDrag, regi
               selectedId={selection?.id ?? null}
               selectedType={selection?.type ?? null}
               selectedIds={multi}
+              selectedPostIds={multiPosts}
               dimmedId={dimmedId}
               dropIndex={dragging?.indicatorPost ?? null}
               dropLabel={dropLabel}
@@ -335,7 +350,7 @@ export function EditorCanvas({ project, svgRef, areaRef, drag, onBeginDrag, regi
   );
 
   const area3D = (
-    <div className={`${paneHeight} relative bg-[#eef2f6]`} data-testid="three-pane">
+    <div className={`${paneHeight} relative ${hasLightFence(project.items) ? 'bg-[#b9c0c9]' : 'bg-[#eef2f6]'}`} data-testid="three-pane">
       <ThreeBoundary onSwitchTo2D={() => setView('front')}>
         <Suspense fallback={<div className="h-full grid place-items-center text-muted text-sm" data-testid="three-loading">Učitavanje 3D prikaza…</div>}>
           <Scene3D project={project} drag={drag} onBeginDrag={onBeginDrag} registerTarget={registerTarget} targetKey="3d" onSwitchTo2D={() => setView('front')} />

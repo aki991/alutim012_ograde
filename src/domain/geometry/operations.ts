@@ -1,9 +1,9 @@
 import { uid } from '../../utils/id';
 import { FENCE_MODELS } from '../models/catalog';
 import { applyPostRoles, createPost } from '../models/factories';
-import { CONCRETE_POST_WIDTH_MM, type FenceModelId, FenceSection, Gate, LayoutItem, Post, Project } from '../models/types';
+import { CONCRETE_POST_WIDTH_MM, PLINTH_DEFAULT_MM, type FenceModelId, FenceSection, Gate, LayoutItem, Post, Project } from '../models/types';
 import { widthRangeFor } from '../validation/limits';
-import { computeLayout, postHalfSum, sumModularWidths } from './layout';
+import { computeLayout, isHiddenPost, isSpacer, outerWidthMm, postHalfSum, sumModularWidths } from './layout';
 
 const touch = (p: Project): Project => ({ ...p, updatedAt: new Date().toISOString() });
 
@@ -42,7 +42,7 @@ export function insertItem(p: Project, item: LayoutItem, index: number): Project
   }
   const existing = p.items.find((it) => it.kind === 'fence' && !!FENCE_MODELS[it.modelId].rods)?.id;
   const template = p.posts[Math.min(at, p.posts.length - 1)] ?? createPost();
-  posts.splice(at, 0, createPost({ type: template.type === 'gate' ? 'aluminium' : template.type, widthMm: template.custom ? template.widthMm : Math.min(template.widthMm, 100), heightMm: template.heightMm, color: template.color, mounting: template.mounting, plinthMm: template.plinthMm, custom: template.custom }));
+  posts.splice(at, 0, createPost({ type: template.type === 'gate' ? 'aluminium' : template.type, widthMm: template.custom ? template.widthMm : Math.min(template.widthMm, 100), heightMm: template.heightMm, color: template.color, mounting: template.mounting, plinthMm: template.plinthMm, custom: template.custom, round: template.round, capTop: template.capTop, capBottom: template.capBottom }));
   return touch(applyPostRoles(syncRodCounts({ ...p, items, posts }, existing)));
 }
 
@@ -105,9 +105,80 @@ export function setOuterWidth(p: Project, id: string, outerMm: number): Project 
   return updateItem(p, id, { widthMm: Math.max(1, Math.round(outerMm - postHalfSum(p, i))) });
 }
 
+/**
+ * Širina podnožja polja. Šire podnožje proširuje i ogradu (spoljna širina polja postaje širina podnožja), pa se susedni elementi
+ * pomeraju i podnožje nikad ne prelazi preko stuba, drugog podnožja ni ograde. Kraće podnožje je centrirano ispod polja.
+ */
+export function setPlinthWidth(p: Project, id: string, widthMm: number): Project {
+  const i = indexOfItem(p, id);
+  const it = p.items[i];
+  if (!it || it.kind !== 'fence') return p;
+  const outer = Math.round(outerWidthMm(p, i));
+  // podrazumevana dužina podnožja (sa stubovima i rozetnama), bez ručno zadate širine
+  const free = computeLayout({ items: p.items.map((x) => (x.id === id && x.kind === 'fence' ? { ...x, plinthWidthMm: undefined } : x)), posts: p.posts }).items[i];
+  const span = Math.round(free.plinthX1 - free.plinthX0);
+  const w = Math.max(100, Math.round(widthMm));
+  if (w >= span) {
+    const maxOuter = widthRangeFor(it).max + postHalfSum(p, i);
+    const q = w > span ? setOuterWidth(p, id, Math.min(outer + (w - span), maxOuter)) : p;
+    return updateItem(q, id, { plinthWidthMm: undefined });
+  }
+  return updateItem(p, id, { plinthWidthMm: w });
+}
+
+/** Betonsko podnožje svih ograda (ili njegovo uklanjanje). */
+export function setAllPlinths(p: Project, on: boolean): Project {
+  const items = p.items.map((it) => (it.kind === 'fence' ? { ...it, plinthMm: on ? (it.plinthMm ?? PLINTH_DEFAULT_MM) : undefined, ...(on ? {} : { plinthWidthMm: undefined }) } : it));
+  return touch(applyPostRoles({ ...p, items }));
+}
+
+/** Sve kapije dobijaju svoje stubove (ili zajednički stub sa susednim elementom). */
+export function setAllGatesOwnPosts(p: Project, own: boolean): Project {
+  const items = p.items.map((it) => (it.kind === 'gate' ? { ...it, ownPosts: own } : it));
+  return touch(applyPostRoles({ ...p, items }));
+}
+
 export function updateItemParams(p: Project, id: string, patch: Partial<FenceSection['params']>): Project {
   const items = p.items.map((it) => (it.id === id && 'params' in it ? ({ ...it, params: { ...it.params, ...patch } } as LayoutItem) : it));
   return touch(patch.barCount !== undefined ? syncRodCounts({ ...p, items }, id) : { ...p, items });
+}
+
+/**
+ * RL10: mere delova (rukohvat, stub, veza, prsten, stopa, nosači, prečke) i prečnik prečki važe za celu ogradu tog modela,
+ * pa se menjaju na svim njenim poljima odjednom.
+ */
+export function setRl10Params(p: Project, patch: { rl10?: Partial<NonNullable<FenceSection['params']['rl10']>>; barSizeMm?: number }): Project {
+  const items = p.items.map((it) => (it.kind === 'fence' && it.modelId === 'rail_inox'
+    ? { ...it, params: { ...it.params, ...(patch.barSizeMm !== undefined ? { barSizeMm: patch.barSizeMm } : {}), ...(patch.rl10 ? { rl10: { ...(it.params.rl10 ?? {}), ...patch.rl10 } } : {}) } }
+    : it));
+  return touch(applyPostRoles({ ...p, items }));
+}
+
+/**
+ * Uske horizontalne letvice (kvadratne cevi u U profilima): dubina i zid cevi, dubina i zid U profila i zazor važe za sva polja i
+ * kapije tog modela. Visina cevi, razmak i širina U profila menjaju se kao ostale mere elementa (po elementu).
+ */
+export function setTubesParams(p: Project, patch: { hn?: Partial<NonNullable<FenceSection['params']['hn']>> }): Project {
+  const items = p.items.map((it) => {
+    const model = it.kind === 'fence' ? it.modelId : it.kind === 'gate' ? it.infillModelId : null;
+    return model === 'h_narrow' && 'params' in it && patch.hn ? ({ ...it, params: { ...it.params, hn: { ...(it.params.hn ?? {}), ...patch.hn } } } as LayoutItem) : it;
+  });
+  return touch({ ...p, items });
+}
+
+/** Vraća podrazumevane mere delova (cevi i U profila) na svim poljima i kapijama modela uskih letvica. */
+export function resetTubesParams(p: Project): Project {
+  const items = p.items.map((it) => {
+    const model = it.kind === 'fence' ? it.modelId : it.kind === 'gate' ? it.infillModelId : null;
+    return model === 'h_narrow' && 'params' in it ? ({ ...it, params: { ...it.params, hn: undefined, barSizeMm: 20, gapMm: 6, frameMm: 20 } } as LayoutItem) : it;
+  });
+  return touch({ ...p, items });
+}
+
+/** Vraća podrazumevane mere delova RL10 na svim poljima. */
+export function resetRl10Params(p: Project): Project {
+  const items = p.items.map((it) => (it.kind === 'fence' && it.modelId === 'rail_inox' ? { ...it, params: { ...it.params, rl10: undefined, barSizeMm: 16 } } : it));
+  return touch({ ...p, items });
 }
 
 /** Menja model ispune; širina i ostalo ostaju, parametri se vraćaju na podrazumevane za novi model. */
@@ -140,15 +211,43 @@ export function changeColor(p: Project, id: string, color: string): Project {
 
 /** Širi stub na podrazumevanu širinu betonskog stuba kada tip postane „concrete" a širina nije zadata. */
 function withConcreteWidth(x: Post, patch: Partial<Post>): Post {
-  return (patch.type === 'concrete' || patch.type === 'concrete_plinth') && x.type !== 'concrete' && x.type !== 'concrete_plinth' && patch.widthMm === undefined && x.widthMm < CONCRETE_POST_WIDTH_MM
-    ? { ...x, widthMm: CONCRETE_POST_WIDTH_MM }
-    : x;
+  if (patch.type === undefined || patch.widthMm !== undefined) return x;
+  const toConcrete = patch.type === 'concrete' || patch.type === 'concrete_plinth';
+  const wasConcrete = x.type === 'concrete' || x.type === 'concrete_plinth';
+  if (toConcrete && !wasConcrete && x.widthMm < CONCRETE_POST_WIDTH_MM) return { ...x, widthMm: CONCRETE_POST_WIDTH_MM };
+  // povratak sa betonskog na metalni stub vraća uobičajenu širinu
+  if (!toConcrete && wasConcrete && x.widthMm >= CONCRETE_POST_WIDTH_MM) return { ...x, widthMm: patch.type === 'gate' ? 120 : 100 };
+  return x;
+}
+
+/**
+ * Širi (ili uži) stubovi ne troše susedna polja: svetli otvor svakog elementa ostaje isti, pa se razmak osa stubova menja za
+ * razliku polovina širina stubova, a ukupna dužina raste (ili se smanjuje) za razliku širina stubova.
+ */
+function keepClearWidths(before: Project, after: Project): Project {
+  if (before.items.length !== after.items.length || before.posts.length !== after.posts.length) return after;
+  const eff = (q: Project, i: number) => (isHiddenPost(q.items, i) ? 0 : q.posts[i]?.widthMm ?? 0);
+  let changed = false;
+  const items = after.items.map((it, k) => {
+    if (isSpacer(it)) return it;
+    const d = (eff(after, k) - eff(before, k) + eff(after, k + 1) - eff(before, k + 1)) / 2;
+    if (!d) return it;
+    changed = true;
+    return { ...it, widthMm: Math.max(1, it.widthMm + d) } as LayoutItem;
+  });
+  return changed ? { ...after, items } : after;
 }
 
 export function updatePost(p: Project, id: string, patch: Partial<Post>): Project {
   // samo promena ugla skretanja ne znači da je stub ručno prilagođen (automatika tipa i visine ostaje)
   const turnOnly = Object.keys(patch).every((k) => k === 'turnDeg' || k === 'capTop' || k === 'capBottom');
   const posts = p.posts.map((x) => (x.id === id ? { ...withConcreteWidth(x, patch), ...patch, ...(turnOnly ? {} : { custom: true }), ...(patch.heightMm !== undefined ? { heightCustom: true } : {}) } : x));
+  return touch(keepClearWidths(p, applyPostRoles({ ...p, posts })));
+}
+
+/** Vraća automatsku visinu stubova (visina ograde + prepust, od vrha podnožja na kome stoje) umesto ručno zadate. */
+export function resetPostHeights(p: Project, ids: string[]): Project {
+  const posts = p.posts.map((x) => (ids.includes(x.id) ? { ...x, heightCustom: undefined } : x));
   return touch(applyPostRoles({ ...p, posts }));
 }
 
@@ -158,7 +257,7 @@ export function applyPostType(p: Project, type: Post['type'], id?: string): Proj
     if (id ? x.id !== id : x.type === 'gate' && type !== 'gate' && type !== 'concrete' && type !== 'concrete_plinth') return x;
     return { ...withConcreteWidth(x, { type }), type, custom: true };
   });
-  return touch(applyPostRoles({ ...p, posts }));
+  return touch(keepClearWidths(p, applyPostRoles({ ...p, posts })));
 }
 
 /** Oba stuba uz element postaju betonski (npr. kapija sa betonskim stubom). */

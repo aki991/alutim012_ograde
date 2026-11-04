@@ -1,4 +1,4 @@
-import { Download, Loader2 } from 'lucide-react';
+import { Download, Loader2, Maximize2, Minimize2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { AppSettings, Customer, Material, Project } from '../../domain/models/types';
 import { downloadBlob, safeFilename } from '../../services/exports';
@@ -17,6 +17,7 @@ export function PdfPreviewModal({ project, customer, materials, settings, onClos
   const [blob, setBlob] = useState<Blob | null>(null);
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [full, setFull] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -39,7 +40,9 @@ export function PdfPreviewModal({ project, customer, materials, settings, onClos
     <Modal
       title={workorder ? 'Pregled radnog naloga' : cutlist ? 'Pregled krojne liste' : `Pregled ponude${project.quoteNo ? ` ${project.quoteNo}` : ''}`}
       width={900}
+      fullscreen={full}
       onClose={onClose}
+      headerActions={<button className="btn btn-icon" aria-label={full ? 'Smanji prikaz' : 'Prikaži preko celog ekrana'} title={full ? 'Smanji prikaz' : 'Preko celog ekrana'} aria-pressed={full} onClick={() => setFull((f) => !f)} data-testid="pdf-fullscreen">{full ? <Minimize2 size={18} /> : <Maximize2 size={18} />}</button>}
       footer={
         <div className="flex justify-end gap-2 w-full">
           <button className="btn" onClick={onClose} data-testid="pdf-close">Zatvori</button>
@@ -47,7 +50,7 @@ export function PdfPreviewModal({ project, customer, materials, settings, onClos
         </div>
       }
     >
-      <div className="h-[68vh] min-h-[320px] bg-slate-100 rounded-lg overflow-hidden" data-testid="pdf-preview">
+      <div className={`${full ? 'h-[calc(100vh-10.5rem)]' : 'h-[68vh]'} min-h-[320px] bg-slate-100 rounded-lg overflow-hidden`} data-testid="pdf-preview">
         {error ? (
           <div className="h-full grid place-items-center text-sm text-[#b42318] p-4" role="alert">{error}</div>
         ) : url ? (

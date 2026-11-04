@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createSeedData } from '../data/seed';
-import { FENCE_MODEL_LIST } from '../domain/models/catalog';
+import { FENCE_MODEL_LIST, FENCE_MODELS, panelArt } from '../domain/models/catalog';
 import { SEED_MATERIALS } from '../data/materials';
 import { loadAll } from '../db';
 import { computeInfill } from '../domain/geometry/infill';
@@ -63,9 +63,10 @@ describe('visina stubova prati ogradu', () => {
 describe('stubovi uz polje po slici modela', () => {
   it('vire malo iznad polja, srazmerno visini, i ravni su u boji sa slike', () => {
     for (const h of [1000, 1600, 2000]) {
-      const p = createProject('v', [createFence({ heightMm: h })]);
-      expect(p.posts[0].heightMm).toBe(h + Math.round(0.0268 * h));
-      expect(p.posts[0].color).toBe('#35383c');
+      const art = panelArt('h_boards', FENCE_MODELS.h_boards.defaultColor)!;
+      const p = createProject('v', [createFence({ modelId: 'h_boards', heightMm: h })]);
+      expect(p.posts[0].heightMm).toBe(h + Math.round(art.postTopRatio * h));
+      expect(p.posts[0].color).toBe(art.postHex);
     }
   });
 });
@@ -89,11 +90,13 @@ describe('betonski stub sa podnožjem', () => {
     p = applyPostType(p, 'concrete_plinth');
     const lay = computeLayout(p);
     expect(lay.items.map((l) => l.plinthMm)).toEqual([400, 0]); // kapija nema podnožje
-    expect(p.posts.map((x) => x.heightMm)).toEqual([1750, 1750, 1650]);
+    expect(p.posts.map((x) => x.heightMm)).toEqual([1350, 1350, 1650]); // visina iznad podnožja (ne zavisi od njegove visine)
+    expect(lay.posts.map((x) => x.topMm)).toEqual([1750, 1750, 1650]); // vrh od tla
     expect(lay.maxHeightMm).toBe(1750);
     p = updatePost(p, p.posts[1].id, { plinthMm: 600 });
     expect(computeLayout(p).items.map((l) => l.plinthMm)).toEqual([600, 0]);
-    expect(p.posts[1].heightMm).toBe(1950);
+    expect(p.posts[1].heightMm).toBe(1350);
+    expect(computeLayout(p).posts[1].topMm).toBe(1950);
     expect(computePrice(p, SEED_MATERIALS).grossTotal).toBeGreaterThan(before);
   });
 });

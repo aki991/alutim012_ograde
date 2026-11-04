@@ -41,4 +41,28 @@ describe('tlocrt trase sa skretanjima', () => {
     p = updatePost(p, p.posts[1].id, { color: 'RAL 3020' });
     expect(p.posts[1].custom).toBe(true);
   });
+
+  it('crtež odozgo: najduži pravi niz se postavlja vodoravno, ostatak se orijentiše prema njemu', () => {
+    // kratak deo (1 ograda), pa skretanje od 45°, pa dugačak niz od 3 ograde
+    let p = fences(4);
+    p = updatePost(p, p.posts[1].id, { turnDeg: 45 });
+    const raw = computePlan(p);
+    expect(raw.items[0].heading).toBeCloseTo(0, 9); // bez poravnanja prvi element ostaje vodoravan
+    const plan = computePlan(p, true);
+    expect(plan.items[1].heading).toBeCloseTo(0, 9);
+    expect(plan.items[3].heading).toBeCloseTo(0, 9);
+    expect(plan.items[0].heading).toBeCloseTo((-45 * Math.PI) / 180, 9);
+    // dužine i uglovi se ne menjaju
+    for (const it of plan.items) expect(Math.hypot(it.end.x - it.start.x, it.end.z - it.start.z)).toBeCloseTo(2000, 6);
+    expect(Math.round(plan.posts[3].at.z - plan.posts[1].at.z)).toBe(0);
+    expect(plan.minX).toBeLessThanOrEqual(0);
+  });
+
+  it('crtež odozgo: prava ograda i trasa kojoj je prvi niz najduži ostaju kakvi jesu', () => {
+    const straight = fences(3);
+    expect(computePlan(straight, true)).toEqual(computePlan(straight));
+    let p = fences(4);
+    p = updatePost(p, p.posts[3].id, { turnDeg: 90 });
+    expect(computePlan(p, true).items[0].heading).toBeCloseTo(0, 9);
+  });
 });

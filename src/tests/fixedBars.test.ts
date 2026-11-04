@@ -34,9 +34,9 @@ describe('stalna dimenzija letvica: veća visina daje više letvica', () => {
   });
 
   it('slika polja se slaže iz perioda: broj ponavljanja prati visinu', () => {
-    const art = panelArt('h_narrow', FENCE_MODELS.h_narrow.defaultColor)!;
-    const p = FENCE_MODELS.h_narrow.defaults;
-    const a = panelRepeat('h_narrow', art, 1000, p)!; const b = panelRepeat('h_narrow', art, 2000, p)!;
+    const art = panelArt('h_wide', FENCE_MODELS.h_wide.defaultColor)!;
+    const p = FENCE_MODELS.h_wide.defaults;
+    const a = panelRepeat('h_wide', art, 1000, p)!; const b = panelRepeat('h_wide', art, 2000, p)!;
     expect(b.n).toBeGreaterThan(a.n * 1.8);
     expect(a.v1).toBeGreaterThan(a.v0);
     expect(panelRepeat('picket_narrow', panelArt('picket_narrow', FENCE_MODELS.picket_narrow.defaultColor)!, 1600, FENCE_MODELS.picket_narrow.defaults)).toBeNull();

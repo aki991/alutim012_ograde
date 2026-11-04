@@ -1,8 +1,9 @@
 import { ChevronRight } from 'lucide-react';
 import { ElementThumb, type ThumbKind } from './Catalog';
 import { useState } from 'react';
+import { newItemFor, type NewItemSpec } from '../../domain/geometry/newItem';
 import { applyPostType, insertItem, setOuterWidth, withConcretePosts } from '../../domain/geometry/operations';
-import { FENCE_MODEL_LIST, FENCE_MODELS, GATE_DEFAULT_WIDTH, GATE_LABELS, isTerraceModel } from '../../domain/models/catalog';
+import { FENCE_MODEL_LIST, FENCE_MODELS, GATE_LABELS, isTerraceModel, projectModelId } from '../../domain/models/catalog';
 import { createCorner, createFence, createGate, createOpening } from '../../domain/models/factories';
 import type { FenceModelId, GateType, LayoutItem, Project } from '../../domain/models/types';
 import { heightRangeFor, validateRange, widthRangeFor } from '../../domain/validation/limits';
@@ -21,6 +22,8 @@ const KINDS: Kind[] = [
   { id: 'corner', label: 'Ugaoni spoj', hint: 'Savijanje prečki i rukohvata između dva stuba', thumb: 'corner', corner: true },
 ];
 
+const specOf = (k: Kind, m: FenceModelId): NewItemSpec => (k.gate ? { kind: 'gate', gateType: k.gate, modelId: m } : k.corner ? { kind: 'corner' } : k.opening ? { kind: 'opening' } : { kind: 'fence', modelId: m });
+
 const buildItem = (k: Kind, modelId: FenceModelId, widthMm: number, heightMm: number, bendDeg: number): LayoutItem => {
   if (k.gate) return createGate(k.gate, { widthMm, heightMm, infillModelId: modelId });
   if (k.corner) return createCorner({ heightMm, bendDeg });
@@ -32,15 +35,21 @@ const buildItem = (k: Kind, modelId: FenceModelId, widthMm: number, heightMm: nu
 export function AddItemModal({ project, onClose }: { project: Project; onClose: () => void }) {
   const [kind, setKind] = useState<Kind | null>(null);
   const activeModel = useAppStore((s) => s.editor.activeModelId);
-  const [model, setModel] = useState<FenceModelId>(activeModel);
+  const projectModel = projectModelId(project.items); // projekat ima jedan model: nudi se samo on
+  const [model, setModel] = useState<FenceModelId>(projectModel ?? activeModel);
   const [width, setWidth] = useState('2000');
   const [height, setHeight] = useState(String(project.settings.defaultHeightMm));
   const [bend, setBend] = useState('90');
   const [post, setPost] = useState<'auto' | 'concrete' | 'aluminium'>('auto');
 
+  const selection = useAppStore((s) => s.editor.selection);
+  const selectedId = selection?.type === 'item' ? selection.id : null;
+  // mere novog elementa: kao ograda koja je već u projektu (izabrano polje, inače poslednja ograda)
   const pick = (k: Kind) => {
     setKind(k);
-    setWidth(String(k.gate ? GATE_DEFAULT_WIDTH[k.gate] : k.opening ? 1000 : 2000));
+    const { item, outerWidthMm } = newItemFor(project, specOf(k, model), model, selectedId);
+    setWidth(String(Math.round(outerWidthMm)));
+    setHeight(String(Math.round(item.heightMm)));
   };
 
   if (!kind) {
@@ -51,7 +60,7 @@ export function AddItemModal({ project, onClose }: { project: Project; onClose: 
             <li key={k.id}>
               <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-line bg-white hover:bg-[#fdf0f0] hover:border-primary text-left" data-testid={`add-kind-${k.id}`} onClick={() => pick(k)}>
                 <span className="shrink-0 overflow-hidden rounded-lg" style={{ width: 90, height: 71 }}>
-                  <span className="block origin-top-left" style={{ transform: 'scale(0.6)', width: 150, height: 118 }}><ElementThumb kind={k.thumb} model={activeModel} /></span>
+                  <span className="block origin-top-left" style={{ transform: 'scale(0.6)', width: 150, height: 118 }}><ElementThumb kind={k.thumb} model={model} /></span>
                 </span>
                 <span className="flex-1"><span className="block font-semibold text-[14px]">{k.label}</span><span className="block text-[12px] text-muted">{k.hint}</span></span>
                 <ChevronRight size={16} className="text-muted" />
@@ -75,7 +84,8 @@ export function AddItemModal({ project, onClose }: { project: Project; onClose: 
 
   const add = () => {
     if (!ok) return;
-    const item = buildItem(kind, model, Math.round(Number(width)), Math.round(Number(height)), Number(bend));
+    const base = newItemFor(project, specOf(kind, model), model, selectedId).item;
+    const item = (kind.corner ? { ...base, bendDeg: Number(bend) } : { ...base, widthMm: Math.round(Number(width)), heightMm: Math.round(Number(height)) }) as LayoutItem;
     const postChoice = kind.fence && isTerraceModel(model) ? 'auto' : post; // stubovi ograde za terasu su deo ograde
     const st = useAppStore.getState();
     if (kind.fence || kind.gate) st.setActiveModel(model);
@@ -97,7 +107,7 @@ export function AddItemModal({ project, onClose }: { project: Project; onClose: 
       footer={<div className="flex justify-between w-full"><button className="btn" onClick={() => setKind(null)}>Nazad</button><button className="btn btn-primary" data-testid="add-apply" disabled={!ok} onClick={add}>Dodaj</button></div>}
     >
       <div className="grid gap-3" data-testid="add-form" onKeyDown={(e) => { if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') { e.preventDefault(); add(); } }}>
-        {(kind.fence || kind.gate) && (
+        {(kind.fence || kind.gate) && !projectModel && (
           <label className="grid gap-1"><span className="label">Model ispune</span>
             <select className="input" data-testid="add-model" value={model} onChange={(e) => setModel(e.target.value as FenceModelId)}>
               {FENCE_MODEL_LIST.filter((m) => !kind.gate || !isTerraceModel(m.id)).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}

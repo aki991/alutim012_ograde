@@ -4,6 +4,7 @@ import { PANEL_IMAGES } from '../../assets/panels';
 import { MODEL_IMAGES } from '../../assets/models';
 import { FENCE_MODELS, panelArt, panelTiles, railArt, railBands, RAIL_POST_MM } from '../../domain/models/catalog';
 import type { FenceModelId } from '../../domain/models/types';
+import { TarabicaArt } from './TarabicaArt';
 
 export const GAP_TINT = '#cdd7d0';
 
@@ -62,10 +63,18 @@ interface InfillProps {
   colorKey?: string;
   /** levi stub je zajednički sa prethodnim poljem i već je nacrtan */
   skipLeftPost?: boolean;
+  /** desni stub se crta posebno (uspravan stub uz stepenište) */
+  skipRightPost?: boolean;
+  /** stepenište: polje se iskosi, pa se crta samo rukohvat i prečke (bez slike sa stubovima) */
+  sloped?: boolean;
   /** osa levog i desnog stuba (x, širina); ograde sa rukohvatom se crtaju od ose do ose */
   axis?: { x: number; w: number };
   /** broj prečki (modeli sa izborom broja prečki) */
   rodCount?: number;
+  /** tarabica: razmak od poda (mm) */
+  lift?: number;
+  /** tarabica: prepust levo i desno kad se razlikuje (krilo dvokrilne kapije nema prepust uz sredinu) */
+  edgeOverhang?: [number, number];
   /** jedinstveni sufiks za clipPath */
   uid: string;
 }
@@ -96,8 +105,11 @@ function RoundedPicket({ x, y, w, h, hex }: { x: number; y: number; w: number; h
 }
 
 /** Crta ispunu jednog polja (ram + model ispune) kao pravi SVG oblici. Koordinate u mm. */
-export function InfillArt({ modelId, x, y, w, h, frame, barSize, gap, hex, colorKey, skipLeftPost, axis, rodCount, uid }: InfillProps) {
-  const rail = colorKey !== undefined ? railArt(modelId, colorKey) : null;
+export function InfillArt({ modelId, x, y, w, h, frame, barSize, gap, hex, colorKey, skipLeftPost, skipRightPost, sloped, axis, rodCount, lift, edgeOverhang, uid }: InfillProps) {
+  // tarabica: detaljan crtež delova iz kataloga (u mestu „debljine rama“ je prepust spojnih cevi)
+  if (FENCE_MODELS[modelId].style === 'tarabica') return <TarabicaArt x={x} y={y} w={w} h={h} barSize={barSize} gap={gap} overhang={frame} overhangs={edgeOverhang} lift={lift} hex={hex} />;
+  // stepenište: nema slike sa stubovima (iskosila bi se i stub); crta se samo rukohvat i prečke, stubovi su uspravni
+  const rail = colorKey !== undefined && !sloped ? railArt(modelId, colorKey) : null;
   if (rail && MODEL_IMAGES[rail.id]) {
     // slika modela u tri dela: stub sa stezaljkama (stalna širina) levo i desno, srednji deo se razvlači
     const k = RAIL_POST_MM / rail.postPx;
@@ -116,7 +128,7 @@ export function InfillArt({ modelId, x, y, w, h, frame, barSize, gap, hex, color
       const rows = bands.map((b) => { const r = { ...b, y: yy }; yy += b.hMm; return r; });
       return (
         <g>
-          {rows.flatMap((b, bi) => parts.filter((_, i) => !(skipLeftPost && i === 0)).map((p, i) => (
+          {rows.flatMap((b, bi) => parts.filter((_, i) => !(skipLeftPost && i === 0) && !(skipRightPost && i === 2)).map((p, i) => (
             <svg key={`${bi}-${i}`} x={p.px} y={b.y} width={p.pw} height={b.hMm + 0.6} viewBox={`${p.u0} ${b.v0} ${p.u1 - p.u0} ${b.v1 - b.v0}`} preserveAspectRatio="none" overflow="hidden">
               <image href={MODEL_IMAGES[rail.id]} x={0} y={0} width={rail.imgW} height={rail.imgH} />
             </svg>
@@ -126,7 +138,7 @@ export function InfillArt({ modelId, x, y, w, h, frame, barSize, gap, hex, color
     }
     return (
       <g>
-        {parts.filter((_, i) => !(skipLeftPost && i === 0)).map((p, i) => (
+        {parts.filter((_, i) => !(skipLeftPost && i === 0) && !(skipRightPost && i === 2)).map((p, i) => (
           <svg key={i} x={p.px} y={y} width={p.pw} height={h} viewBox={`${p.u0} 0 ${p.u1 - p.u0} ${rail.imgH}`} preserveAspectRatio="none" overflow="hidden">
             <image href={MODEL_IMAGES[rail.id]} x={0} y={0} width={rail.imgW} height={rail.imgH} />
           </svg>
@@ -240,6 +252,31 @@ export function InfillArt({ modelId, x, y, w, h, frame, barSize, gap, hex, color
             ))}
           </g>
         )}
+      </g>
+    );
+  }
+
+  if (style === 'tubes') {
+    // kvadratne cevi 20 × 20 u bočnim U profilima (krajevi cevi ulaze u kanal): U profil se vidi kao traka širine „širina U" po celoj visini
+    const sh = Math.max(1.5, f / 14);
+    return (
+      <g data-testid="tubes-art">
+        <rect x={ix} y={iy} width={iw} height={ih} fill={GAP_TINT} fillOpacity="0.42" />
+        {geo.bars.filter((b) => b.tone === 'main').map((b, i) => (
+          <g key={i}>
+            <rect x={x + b.x} y={y + b.y} width={b.w} height={b.h} fill={hex} />
+            <rect x={x + b.x} y={y + b.y} width={b.w} height={b.h} fill="url(#shade-h)" fillOpacity="0.6" />
+            <rect x={x + b.x} y={y + b.y} width={b.w} height={Math.max(sh, b.h * 0.08)} fill="#fff" fillOpacity="0.16" />
+          </g>
+        ))}
+        {[x, x + w - f].map((ux, i) => (
+          <g key={`u${i}`}>
+            <rect x={ux} y={y} width={f} height={h} fill={hex} />
+            <rect x={ux} y={y} width={f} height={h} fill="url(#shade-v)" fillOpacity="0.55" />
+            <rect x={ux} y={y} width={f} height={h} fill="none" stroke="#000" strokeOpacity="0.4" strokeWidth={sh} />
+            <line x1={i === 0 ? ux + f - sh * 2 : ux + sh * 2} y1={y} x2={i === 0 ? ux + f - sh * 2 : ux + sh * 2} y2={y + h} stroke="#fff" strokeOpacity="0.14" strokeWidth={sh} />
+          </g>
+        ))}
       </g>
     );
   }

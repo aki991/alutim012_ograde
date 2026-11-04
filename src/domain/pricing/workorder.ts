@@ -1,9 +1,10 @@
+import { isStair, stairGroupAt, stairGroupSummary } from '../geometry/stair';
 import { computeInfill } from '../geometry/infill';
 import { computeLayout, outerWidthMm } from '../geometry/layout';
 import { AUTOMATION_LABELS, HINGE_LABELS, LOCK_LABELS, MOUNTING_LABELS, POST_LABELS } from '../models/catalog';
 import type { ModelSpecs } from '../models/spec';
 import type { Material, Project } from '../models/types';
-import { itemLabel } from '../../utils/labels';
+import { indexOfNumber, itemLabel, itemNumber } from '../../utils/labels';
 import { buildBom } from './calc';
 import { buildCuttingList, type CutOptions, type CuttingList, type CutPosition } from './cutting';
 import { buildCutList } from './production';
@@ -99,19 +100,20 @@ export function buildWorkOrder(project: Project, specs: ModelSpecs | undefined, 
     const facts: WorkFact[] = [];
     let color = '';
     let isGate = false;
-    const idx = /^\d+$/.test(pos.key) ? Number(pos.key) - 1 : -1;
+    const idx = /^\d+$/.test(pos.key) ? indexOfNumber(project.items, Number(pos.key)) : -1;
     const it = idx >= 0 ? project.items[idx] : undefined;
     if (it && it.kind !== 'opening') {
       color = colorLabel(it.color);
       isGate = it.kind === 'gate';
       const modelId = it.kind === 'fence' ? it.modelId : it.infillModelId;
       const li = layout.items[idx];
-      const geo = computeInfill(modelId, li.clearWidth, it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount);
+      const geo = computeInfill(modelId, li.clearWidth, it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount, it.params.liftMm);
       facts.push(
         { label: 'Ukupna širina', value: `${Math.round(outerWidthMm(project, idx))} mm` },
         { label: 'Visina', value: `${Math.round(it.heightMm)} mm` },
         { label: 'Boja', value: colorLabel(it.color) },
         { label: 'Profila ispune', value: String(geo.bars.filter((b) => b.tone === 'main').length) },
+        ...(isStair(it) ? [{ label: 'Stepenište', value: stairGroupSummary(stairGroupAt(project.items, idx)!) }] : []),
       );
       if (it.kind === 'gate') {
         facts.push(
@@ -129,11 +131,13 @@ export function buildWorkOrder(project: Project, specs: ModelSpecs | undefined, 
     elements.push({ key: pos.key, label: pos.label, detail: pos.detail, color, parts, facts, isGate });
   }
 
-  const posts: WorkPost[] = project.posts.map((p, i) => {
+  const posts: WorkPost[] = project.posts.flatMap((p, i) => (layout.posts[i]?.hidden ? [] : [{ p, i }])).map(({ p, i }) => {
     const n = project.items.length;
-    const where = i === 0 ? 'Početak (levo)' : i === n ? 'Kraj (desno)' : `Između: ${itemLabel(project.items, i - 1)} i ${itemLabel(project.items, i)}`;
+    const spacerRight = project.items[i]?.kind === 'opening' && Boolean((project.items[i] as { spacer?: boolean }).spacer);
+    const spacerLeft = project.items[i - 1]?.kind === 'opening' && Boolean((project.items[i - 1] as { spacer?: boolean }).spacer);
+    const where = i === 0 ? 'Početak (levo)' : i === n ? 'Kraj (desno)' : spacerRight ? `Stub ograde uz: ${itemLabel(project.items, i - 1)}` : spacerLeft ? `Svoj stub: ${itemLabel(project.items, i)}` : `Između: ${itemLabel(project.items, i - 1)} i ${itemLabel(project.items, i)}`;
     return {
-      name: `S${i + 1}`, where, type: POST_LABELS[p.type], widthMm: p.widthMm, heightMm: p.heightMm, mounting: MOUNTING_LABELS[p.mounting], color: colorLabel(p.color),
+      name: `S${i + 1}`, where, type: POST_LABELS[p.type], widthMm: p.widthMm, heightMm: layout.posts[i]?.lengthMm ?? p.heightMm, mounting: MOUNTING_LABELS[p.mounting], color: colorLabel(p.color),
       plinthMm: p.type === 'concrete_plinth' ? p.plinthMm : undefined,
     };
   });
@@ -151,6 +155,6 @@ export function buildWorkOrder(project: Project, specs: ModelSpecs | undefined, 
     posts,
     small,
     summary: { occupiedMm: layout.occupiedMm, elements: project.items.filter((i) => i.kind !== 'opening').length, gates, posts: layout.postCount, maxHeightMm: layout.maxHeightMm },
-    positionOfItem: (index) => positionOfItem(cutting.positions, index),
+    positionOfItem: (index) => positionOfItem(cutting.positions, itemNumber(project.items, index) - 1),
   };
 }

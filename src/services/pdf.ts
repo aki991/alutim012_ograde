@@ -1,13 +1,15 @@
+import { buildRl10Sheet } from '../domain/pricing/rl10Spec';
 import { FENCE_MODELS, STATUS_LABELS } from '../domain/models/catalog';
 import type { AppSettings, Customer, Material, Project } from '../domain/models/types';
 import { buildBom, computePrice } from '../domain/pricing/calc';
 import { buildCutList, buildHardwareList, describeItem } from '../domain/pricing/production';
 import { buildLouver08Sheet } from '../domain/pricing/louverSpec';
 import { buildRail04Sheet } from '../domain/pricing/railSpec';
-import { computeLayout, outerWidthMm } from '../domain/geometry/layout';
-import { itemLabel } from '../utils/labels';
+import { computeLayout, isSpacer, outerWidthMm } from '../domain/geometry/layout';
+import { itemLabel, itemNumber } from '../utils/labels';
 import { fmtDate, fmtMoney, fmtNum } from '../utils/units';
-import { downloadBlob, frontViewPng, safeFilename } from './exports';
+import { downloadBlob, frontViewPng, safeFilename, topViewPng } from './exports';
+import { BRAND_RED, docHeader, loadHeaderLogos } from './pdfHeader';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 let pdfMakePromise: Promise<any> | null = null;
@@ -51,20 +53,26 @@ export async function buildQuotePdfBlob(project: Project, customer: Customer | n
   const bom = buildBom(project, materials, settings.modelSpecs);
   const layout = computeLayout(project);
   const sketch = await frontViewPng(project, 1500);
+  const logos = await loadHeaderLogos();
+  // pogled odozgo i 3D prikaz; ako se ne mogu napraviti (npr. nema WebGL), ponuda ide bez njih
+  const top = project.items.length ? await topViewPng(project).catch(() => null) : null;
+  const view3d = project.items.length ? await import('./scene3dImage').then((m) => m.scene3dJpeg(project)).catch(() => null) : null;
+  const info = settings.companyInfo ?? {};
+  const contact = [info.address, info.phone, info.email, info.pib ? `PIB: ${info.pib}` : ''].filter(Boolean).join('  ·  ');
   const demo = materials.some((m) => m.demo) || !project.quoteNo;
   const cur = settings.currency;
   const rate = settings.currencyRateToEur;
   const money = (n: number) => fmtMoney(n, cur, rate);
   const pr = project.settings.pricing;
 
-  const itemRows = project.items.map((it, i) => [
-    td(i + 1, 'center'),
+  const itemRows = project.items.flatMap((it, i) => (isSpacer(it) ? [] : [[
+    td(itemNumber(project.items, i), 'center'),
     td(itemLabel(project.items, i)),
     td(describeItem(project, i)),
     td(fmtNum(outerWidthMm(project, i), 0), 'right'),
     td(fmtNum(it.heightMm, 0), 'right'),
     td(it.kind === 'opening' ? '—' : it.color),
-  ]);
+  ]]));
 
   const def: any = {
     pageSize: 'A4',
@@ -79,21 +87,19 @@ export async function buildQuotePdfBlob(project: Project, customer: Customer | n
       margin: [36, 12, 36, 0],
     }),
     content: [
-      {
-        columns: [
-          { stack: [{ text: settings.companyName, fontSize: 20, bold: true }, { text: 'Ograde i kapije po meri', color: MUTED, fontSize: 9 }] },
-          { stack: [{ text: 'PONUDA', fontSize: 18, bold: true, alignment: 'right', color: '#d71920' }, { text: `Broj: ${project.quoteNo || '—'}`, alignment: 'right' }, { text: `Datum: ${fmtDate(new Date().toISOString())}`, alignment: 'right' }] },
-        ],
-      },
+      docHeader('PONUDA', `Broj: ${project.quoteNo || '—'}  ·  ${fmtDate(new Date().toISOString())}`, settings.companyName, contact, logos),
+      { canvas: [{ type: 'rect', x: 0, y: 0, w: 523, h: 3, color: BRAND_RED }], margin: [0, 0, 0, 4] },
       demo ? { text: 'DEMONSTRACIONA PONUDA — svi podaci, dimenzije i cene su ilustrativni i ne predstavljaju ponudu ni specifikaciju proizvođača.', margin: [0, 10, 0, 0], color: '#b45309', bold: true, fontSize: 9 } : {},
       {
         margin: [0, 14, 0, 10],
         columns: [
           { width: '50%', stack: [{ text: 'KUPAC', fontSize: 8, color: MUTED, bold: true }, { text: customer?.name ?? 'Nije izabran', bold: true }, { text: customer?.address ?? '', color: MUTED }, { text: [customer?.phone, customer?.email].filter(Boolean).join(' · '), color: MUTED }] },
-          { width: '50%', stack: [{ text: 'PROJEKAT', fontSize: 8, color: MUTED, bold: true }, { text: project.name, bold: true }, { text: `Status: ${STATUS_LABELS[project.status]}`, color: MUTED }, { text: `Ukupna dužina: ${fmtNum(layout.occupiedMm, 0)} mm · Elemenata: ${project.items.length}`, color: MUTED }] },
+          { width: '50%', stack: [{ text: 'PROJEKAT', fontSize: 8, color: MUTED, bold: true }, { text: project.name, bold: true }, { text: `Status: ${STATUS_LABELS[project.status]}`, color: MUTED }, { text: `Ukupna dužina: ${fmtNum(layout.occupiedMm, 0)} mm · Elemenata: ${project.items.filter((x) => !isSpacer(x)).length}`, color: MUTED }] },
         ],
       },
       { image: sketch.dataUrl, width: 523, margin: [0, 0, 0, 10] },
+      ...(top ? [{ unbreakable: true, stack: [{ text: 'Pogled odozgo', style: 'h2' }, { image: top.dataUrl, fit: [523, 330], alignment: 'center', margin: [0, 0, 0, 10] }] }] : []),
+      ...(view3d ? [{ unbreakable: true, stack: [{ text: '3D prikaz', style: 'h2' }, { image: view3d.dataUrl, width: 523, margin: [0, 0, 0, 10] }] }] : []),
       { text: 'Lista elemenata', style: 'h2' },
       {
         table: { headerRows: 1, widths: [22, 85, '*', 50, 50, 55], body: [[th('R.br.', 'center'), th('Element'), th('Model'), th('Širina (mm)', 'right'), th('Visina (mm)', 'right'), th('Boja')], ...itemRows] },
@@ -148,6 +154,7 @@ export async function buildProductionPdfBlob(project: Project, customer: Custome
   const cuts = buildCutList(project, settings.modelSpecs);
   const hw = buildHardwareList(project);
   const rail = buildRail04Sheet(project, settings.modelSpecs);
+  const rl10 = buildRl10Sheet(project, settings.modelSpecs);
   const louver = buildLouver08Sheet(project, settings.modelSpecs);
   const layout = computeLayout(project);
   const def: any = {
@@ -167,7 +174,7 @@ export async function buildProductionPdfBlob(project: Project, customer: Custome
           headerRows: 1, widths: [24, 100, '*', 60, 60, 60, 60],
           body: [
             [th('#', 'center'), th('Element'), th('Model'), th('Modul (mm)', 'right'), th('Svetli otvor (mm)', 'right'), th('Visina (mm)', 'right'), th('Boja')],
-            ...project.items.map((it, i) => [td(i + 1, 'center'), td(itemLabel(project.items, i)), td(describeItem(project, i)), td(fmtNum(it.widthMm, 0), 'right'), td(fmtNum(layout.items[i].clearWidth, 0), 'right'), td(fmtNum(it.heightMm, 0), 'right'), td(it.kind === 'opening' ? '—' : it.color)]),
+            ...project.items.flatMap((it, i) => (isSpacer(it) ? [] : [[td(itemNumber(project.items, i), 'center'), td(itemLabel(project.items, i)), td(describeItem(project, i)), td(fmtNum(it.widthMm, 0), 'right'), td(fmtNum(layout.items[i].clearWidth, 0), 'right'), td(fmtNum(it.heightMm, 0), 'right'), td(it.kind === 'opening' ? '—' : it.color)]])),
           ],
         },
         layout: tableLayout,
@@ -198,6 +205,16 @@ export async function buildProductionPdfBlob(project: Project, customer: Custome
         { text: 'Raspored na nabavne šipke', style: 'h2', margin: [0, 10, 0, 4] },
         { table: { headerRows: 1, dontBreakRows: true, widths: ['*', '*', 80, 80], body: [[th('Profil'), th('Komadi (mm)'), th('Rezovi (mm)', 'right'), th('Ostatak (mm)', 'right')], ...rail.bars.map((b) => [td(b.profile), td(b.pieces), td(fmtNum(b.cutsMm, 0), 'right'), td(fmtNum(b.leftoverMm, 0), 'right')])] }, layout: tableLayout },
         { ul: rail.notes, fontSize: 8.5, color: MUTED, margin: [0, 8, 0, 0] },
+      ] : []),
+      ...(rl10 ? [
+        { text: `${rl10.title} — sastavnica`, style: 'h2', margin: [0, 14, 0, 4], pageBreak: 'before' },
+        { table: { headerRows: 1, dontBreakRows: true, widths: [26, '*', 120, 110, '*'], body: [[th('Poz.'), th('Deo'), th('Kataloška oznaka'), th('Količina', 'right'), th('Napomena')], ...rl10.bom.map((r) => [td(r.pos), td(r.part), td(r.code), td(r.qty, 'right'), td(r.note)])] }, layout: tableLayout },
+        { text: `${rl10.title} — krojna lista (mm)`, style: 'h2', margin: [0, 12, 0, 4] },
+        { table: { headerRows: 1, dontBreakRows: true, widths: [40, '*', 90, 50, 70, 70, '*'], body: [[th('Oznaka'), th('Deo'), th('Profil'), th('Kom.', 'right'), th('Dužina', 'right'), th('Ukupno', 'right'), th('Rez')], ...rl10.cuts.map((c) => [td(c.mark), td(c.part), td(c.profile), td(c.qty, 'right'), td(fmtNum(c.lengthMm, 0), 'right'), td(fmtNum(c.totalMm, 0), 'right'), td(c.cut)])] }, layout: tableLayout },
+        { text: `Zbir glavnih profila: ${fmtNum(rl10.mainTotalMm, 0)} mm (${fmtNum(rl10.mainTotalMm / 1000, 2)} m).`, margin: [0, 6, 0, 0] },
+        { text: 'Raspored na nabavne šipke', style: 'h2', margin: [0, 10, 0, 4] },
+        { table: { headerRows: 1, dontBreakRows: true, widths: ['*', '*', 80, 80], body: [[th('Profil'), th('Komadi (mm)'), th('Rezovi (mm)', 'right'), th('Ostatak (mm)', 'right')], ...rl10.bars.map((b) => [td(b.profile), td(b.pieces), td(fmtNum(b.cutsMm, 0), 'right'), td(fmtNum(b.leftoverMm, 0), 'right')])] }, layout: tableLayout },
+        { ul: rl10.notes, fontSize: 8.5, color: MUTED, margin: [0, 8, 0, 0] },
       ] : []),
       ...(louver ? [
         { text: 'Model 08 — sastavnica (radno, čeka potvrdu profila i spoja)', style: 'h2', margin: [0, 14, 0, 4], pageBreak: 'before' },

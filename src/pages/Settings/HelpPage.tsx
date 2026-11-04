@@ -60,6 +60,7 @@ const TOPICS: Topic[] = [
       <>Klizna kapija traži slobodan prostor za povlačenje; ako ga nema, javlja se upozorenje sa potrebnom dužinom (orijentaciona provera).</>,
       <>U 3D prikazu kapije se otvaraju i zatvaraju, što ne utiče na cenu.</>,
       <><b>Ograde za terase</b> (Srebrni stubovi — crne prečke, Inox — horizontalne prečke, Inox i staklo) nemaju kapije ni zasebne stubove iz kataloga (betonski, dekorativni, stub kapije): njihovi stubovi su deo ograde. Model za terasu se ne može izabrati dok u projektu ima kapija.</>,
+      <><b>Stepenište</b> (samo ograde za terase): kartica „Stepenište" u katalogu ili prekidač „Stepenište" na polju. Širina polja je horizontalna dužina u osnovi; zadaju se smer (penje se / silazi, gledano s leva nadesno), visinska razlika i broj stepenika (oko 170 mm po stepeniku). Stubovi ostaju uspravni, rukohvat, prečke i staklo prate nagib, a ograda posle stepeništa je na novom nivou. U sastavnici i krojnoj listi rukohvat i prečke idu po kosoj dužini sa kosim rezom, a staklo je paralelogram.</>,
     ],
   },
   {
