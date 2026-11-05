@@ -1,13 +1,13 @@
 import type { FenceModelId, FenceParams } from './types';
 
 /**
- * Model „Crna — uske horizontalne letvice": panel od kvadratnih cevi 20 × 20 (zid 1 mm) u dve bočne U vođice 25 × 20
- * (zid 1,35 mm) otvorene ka ispuni (3D model i crtež radnika: 1.panel-u25-20x20).
- *  - U profil: širina 20 (mera u prednjem pogledu = „širina ramova" polja), dubina 25, zid 1,35; stoji uz stub, otvoren ka ispuni;
- *  - cev: visina 20 (po osi y), dubina 20, zid 1; krajevi ulaze u kanal U profila sa zazorom od 0,5 mm;
- *  - razmak cevi 6 mm; period (cev + razmak) se slaže od poda naviše, a prvi i poslednji razmak je po pola (3 mm);
- *  - primer 220 × 312 mm: 12 cevi, svetli razmak 6 mm, korak 26 mm.
- * Debljine zidova i zazor su usvojene za model (nisu potvrđene) i mogu se menjati u panelu.
+ * Model „Crna — uske horizontalne letvice": panel od kvadratnih cevi 30 × 20 (zid 1 mm) u dve bočne U vođice 20 × 20
+ * (zid 1,35 mm) otvorene ka ispuni (tačne mere radnika; 3D model i crtež iz priloga 1.panel-u25-20x20).
+ *  - U profil: širina 20 (mera u prednjem pogledu = „širina U profila" polja), dubina 20, zid 1,35; stoji uz stub, otvoren ka ispuni;
+ *  - cev: visina 30 (po osi y), dubina 20, zid 1; krajevi ulaze u kanal U profila sa zazorom od 0,5 mm;
+ *  - razmak cevi 15 mm; period (cev + razmak) se slaže od poda naviše, a prvi i poslednji razmak je po pola (7,5 mm);
+ *  - početna veličina: visina 600 mm, svetla širina 400 mm (sa U profilima).
+ * Debljine zidova i zazor su usvojeni za model (nisu potvrđeni) i mogu se menjati u panelu.
  */
 export const TUBES_MODEL: FenceModelId = 'h_narrow';
 export const isTubesModel = (id: FenceModelId | undefined): boolean => id === TUBES_MODEL;
@@ -28,7 +28,7 @@ export interface TubesDims {
 export const TUBES_DEFAULTS: TubesDims = {
   tubeDepthMm: 20,
   tubeWallMm: 1,
-  uDepthMm: 25,
+  uDepthMm: 20,
   uWallMm: 1.35,
   endClearMm: 0.5,
 };

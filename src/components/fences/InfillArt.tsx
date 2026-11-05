@@ -257,7 +257,7 @@ export function InfillArt({ modelId, x, y, w, h, frame, barSize, gap, hex, color
   }
 
   if (style === 'tubes') {
-    // kvadratne cevi 20 × 20 u bočnim U profilima (krajevi cevi ulaze u kanal): U profil se vidi kao traka širine „širina U" po celoj visini
+    // kvadratne cevi 30 × 20 u bočnim U profilima (krajevi cevi ulaze u kanal): U profil se vidi kao traka širine „širina U" po celoj visini
     const sh = Math.max(1.5, f / 14);
     return (
       <g data-testid="tubes-art">

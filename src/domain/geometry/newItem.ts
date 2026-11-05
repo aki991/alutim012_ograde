@@ -47,12 +47,15 @@ export function referenceDims(p: Project, selectedId?: string | null): Reference
  * Novi element: iste mere (visina, širina ograde i otvora) i izgled (parametri, boja, podnožje) kao ograda koja je već u projektu;
  * bez ograde važi početna veličina modela, inače opšte podrazumevane mere. Vraća element i njegovu spoljnu širinu.
  */
-export function newItemFor(project: Project, spec: NewItemSpec, activeModel: FenceModelId, selectedId?: string | null): { item: LayoutItem; outerWidthMm: Mm } {
+export function newItemFor(project: Project, spec: NewItemSpec, activeModel: FenceModelId, selectedId?: string | null): { item: LayoutItem; outerWidthMm: Mm; /** zadata svetla širina polja (model sa početnom veličinom „sa U profilima"); koristi se umesto spoljne */ clearWidthMm?: Mm } {
   const model = (spec.kind === 'fence' || spec.kind === 'gate' ? spec.modelId : undefined) ?? activeModel;
   const def = FENCE_MODELS[model];
   const ref = referenceDims(project, selectedId);
   const same = ref && ref.modelId === model ? ref : null; // izgled se prenosi samo na isti model
-  const heightMm = ref?.heightMm ?? def.defaultSize?.heightMm ?? project.settings.defaultHeightMm;
+  const lastGate = [...project.items].reverse().find((i) => i.kind === 'gate');
+  // kapija modela sa svojom početnom visinom kapije: visina poslednje kapije u projektu, inače početna; ograda i ostalo: kao ograda
+  const gateHeight = spec.kind === 'gate' && def.defaultGateHeightMm ? (lastGate && lastGate.infillModelId === model ? lastGate.heightMm : def.defaultGateHeightMm) : null;
+  const heightMm = gateHeight ?? ref?.heightMm ?? def.defaultSize?.heightMm ?? project.settings.defaultHeightMm;
   const look = same ? { params: same.params, color: same.color } : {};
   if (spec.kind === 'fence' && spec.stair) {
     // stepenište: posle postojeće ograde (terase) silazi, na početku praznog projekta se penje; oko 280 mm gazišta po stepeniku
@@ -63,6 +66,7 @@ export function newItemFor(project: Project, spec: NewItemSpec, activeModel: Fen
   }
   if (spec.kind === 'fence') {
     const item = createFence({ modelId: model, heightMm, ...look, ...(same?.plinthMm ? { plinthMm: same.plinthMm } : {}) });
+    if (!ref && def.defaultSize?.clearWidth) return { item, outerWidthMm: def.defaultSize.widthMm, clearWidthMm: def.defaultSize.widthMm };
     return { item, outerWidthMm: ref?.outerWidthMm ?? def.defaultSize?.widthMm ?? item.widthMm };
   }
   if (spec.kind === 'gate') {

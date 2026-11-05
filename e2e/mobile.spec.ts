@@ -50,3 +50,26 @@ test('mobilni prikaz: meni, editor, katalog i svojstva', async ({ page }) => {
   await page.getByTestId('close-props').click();
   expect(errors).toEqual([]);
 });
+
+test('telefon: ponuda, krojna lista i radni nalog se otvaraju kao PDF (bez okvira koji telefon ne prikazuje)', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('hero-new').click();
+  await page.getByTestId('cat-fence-add').click();
+  await page.getByTestId('toggle-props').click();
+  for (const [btn, title] of [['btn-pdf', 'Pregled ponude'], ['btn-cutlist', 'Pregled krojne liste'], ['btn-workorder', 'Pregled radnog naloga']] as const) {
+    await page.getByTestId(btn).scrollIntoViewIfNeeded();
+    await page.getByTestId(btn).click();
+    await expect(page.getByRole('dialog')).toContainText(title);
+    const open = page.getByTestId('pdf-open');
+    await expect(open).toBeVisible({ timeout: 30000 });
+    await expect(page.getByTestId('pdf-frame')).toHaveCount(0);
+    const href = await open.getAttribute('href');
+    expect(href).toMatch(/^blob:/);
+    // PDF iza veze je stvaran dokument
+    const head = await page.evaluate(async (u) => new TextDecoder().decode((await (await fetch(u!)).arrayBuffer()).slice(0, 5)), href);
+    expect(head).toBe('%PDF-');
+    const [dl] = await Promise.all([page.waitForEvent('download'), page.getByTestId('pdf-save').click()]);
+    expect(dl.suggestedFilename()).toMatch(/\.pdf$/);
+    await page.getByTestId('pdf-close').click();
+  }
+});

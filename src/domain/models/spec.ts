@@ -260,13 +260,13 @@ function rl10Spec(): SpecPart[] {
 }
 
 /**
- * Uske horizontalne letvice po polju: dve bočne U vođice 25 × 20 (dužine visine polja) i kvadratne cevi 20 × 20 (broj iz razmaka,
+ * Uske horizontalne letvice po polju: dve bočne U vođice 20 × 20 (dužine visine polja) i kvadratne cevi 30 × 20 (broj iz razmaka,
  * dužina = svetli otvor − 2·(zid U + zazor)). Stubovi su deo stubova projekta.
  */
 function tubesSpec(): SpecPart[] {
   return [
-    part({ name: 'U profil 25 × 20 (bočna vođica)', materialId: 'mat_u_25x20', group: 'Profili ispune', qty: '2', lengthMm: 'H', note: 'dužina = visina polja; otvoren ka ispuni, krajevi cevi ulaze u kanal' }),
-    part({ name: 'Kvadratna cev 20 × 20 (letvica)', materialId: 'mat_kv_20x20', group: 'Profili ispune', qty: 'N', lengthMm: 'TUBELEN', note: 'dužina = svetli otvor − 2 × (zid U profila + zazor); broj prema razmaku' }),
+    part({ name: 'U profil 20 × 20 (bočna vođica)', materialId: 'mat_u_20x20', group: 'Profili ispune', qty: '2', lengthMm: 'H', note: 'dužina = visina polja; otvoren ka ispuni, krajevi cevi ulaze u kanal' }),
+    part({ name: 'Kvadratna cev 30 × 20 (letvica)', materialId: 'mat_kv_30x20', group: 'Profili ispune', qty: 'N', lengthMm: 'TUBELEN', note: 'dužina = svetli otvor − 2 × (zid U profila + zazor); broj prema razmaku' }),
     part({ name: 'Nosači / spojnice (U profil na stub)', materialId: 'mat_bracket', group: 'Nosači i spojnice', qty: String(CALC_RULES.bracketsPerSection) }),
     { ...part({ name: 'Vijci / zakivci (cev u U profil)', materialId: 'mat_screw', group: 'Vijci', qty: '2*N', note: 'Spoj cevi i U profila nije potvrđen (vijci, zakivci ili uvlačenje u kanal); uključiti ako se spaja vijcima' }), enabled: false },
   ];

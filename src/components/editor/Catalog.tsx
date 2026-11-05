@@ -21,7 +21,7 @@ function MiniThumb({ project, width = 150, grey = false }: { project: Project; w
 /** Uzorak polja ograde izabranog modela za sličice: veličina polja modela (tarabica: 6 tarabica), inače 1800 × 1200 mm. */
 function sampleFence(model: FenceModelId) {
   const size = FENCE_MODELS[model].defaultSize;
-  return createFence({ modelId: model, widthMm: size ? size.widthMm - 100 : 1800, heightMm: size?.heightMm ?? 1200 });
+  return createFence({ modelId: model, widthMm: size ? (size.clearWidth ? size.widthMm : size.widthMm - 100) : 1800, heightMm: size?.heightMm ?? 1200 });
 }
 
 function useMini(build: () => Project, key: string): Project {

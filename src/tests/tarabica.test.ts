@@ -201,8 +201,8 @@ describe('samo podnožje ispod polja (bez betonskog stuba)', () => {
     expect(lay.posts[0].baseMm).toBe(400);
     expect(lay.maxHeightMm).toBe(1600); // vrh: podnožje + visina
     const bom = buildBom(p, SEED_MATERIALS);
-    // podnožje je jedan komad ispod polja i stubova: osa–osa + po pola stuba na kraju niza (drugo polje nema podnožje)
-    expect(qty(bom, 'mat_concrete_plinth')).toBeCloseTo(((lay.items[0].axisEnd - lay.items[0].axisStart + 100) * 400) / 1_000_000, 6);
+    // betonsko podnožje se crta, ali ne ulazi u ponudu (ne izvodi ga aluminijumska radnja)
+    expect(qty(bom, 'mat_concrete_plinth')).toBe(0);
   });
 });
 
@@ -319,7 +319,7 @@ describe('stubovi na podnožju, prazan otvor bez stubova, mere novog elementa', 
     lay = computeLayout(p);
     expect(lay.items[0].plinthX1 - lay.items[0].plinthX0).toBe(600);
     expect((lay.items[0].plinthX0 + lay.items[0].plinthX1) / 2).toBe(450);
-    expect(qty(buildBom(p, SEED_MATERIALS), 'mat_concrete_plinth')).toBeCloseTo((600 * 300 + 1000 * 500) / 1_000_000, 6);
+    expect(qty(buildBom(p, SEED_MATERIALS), 'mat_concrete_plinth')).toBe(0);
     // zastarela veća vrednost se ne primenjuje: podnožje nikad ne prelazi polje sa stubovima
     const stale = { ...p, items: p.items.map((it, i) => (i === 0 && it.kind === 'fence' ? { ...it, plinthWidthMm: 5000 } : it)) };
     expect(computeLayout(stale).items[0].plinthX1 - computeLayout(stale).items[0].plinthX0).toBe(1000);

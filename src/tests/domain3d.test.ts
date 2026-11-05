@@ -47,7 +47,7 @@ describe('D1/D2 — prazan projekat', () => {
 describe('visina stubova prati ogradu', () => {
   it('stub je za 200 mm viši od najvišeg susednog elementa, za svaku visinu', () => {
     // element u drugoj boji od boje modela crta se parametarski: podrazumevano izdanje stuba je 200 mm
-    let p = createProject('v', [createFence({ heightMm: 1100, color: 'RAL 3020' }), createFence({ heightMm: 1100, color: 'RAL 3020' })]);
+    let p = createProject('v', [createFence({ modelId: 'h_white', heightMm: 1100, color: 'RAL 3020' }), createFence({ modelId: 'h_white', heightMm: 1100, color: 'RAL 3020' })]);
     expect(p.posts.map((x) => x.heightMm)).toEqual([1300, 1300, 1300]);
     p = updateItem(p, p.items[1].id, { heightMm: 2000 });
     expect(p.posts.map((x) => x.heightMm)).toEqual([1300, 2200, 2200]);
@@ -84,7 +84,7 @@ describe('betonski stubovi', () => {
 });
 
 describe('betonski stub sa podnožjem', () => {
-  it('podnožje podiže ogradu i kapiju, stubovi vire malo iznad, cena raste', () => {
+  it('podnožje podiže ogradu i kapiju, stubovi vire malo iznad, betonski stubovi i podnožje ne ulaze u cenu', () => {
     let p = createProject('p', [createFence({ heightMm: 1200 }), createGate('pedestrian', { heightMm: 1500 })]);
     const before = computePrice(p, SEED_MATERIALS).grossTotal;
     p = applyPostType(p, 'concrete_plinth');
@@ -97,7 +97,7 @@ describe('betonski stub sa podnožjem', () => {
     expect(computeLayout(p).items.map((l) => l.plinthMm)).toEqual([600, 0]);
     expect(p.posts[1].heightMm).toBe(1350);
     expect(computeLayout(p).posts[1].topMm).toBe(1950);
-    expect(computePrice(p, SEED_MATERIALS).grossTotal).toBeGreaterThan(before);
+    expect(computePrice(p, SEED_MATERIALS).grossTotal).toBeLessThanOrEqual(before); // beton ne ulazi u ponudu
   });
 });
 

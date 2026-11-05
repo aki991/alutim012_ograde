@@ -33,15 +33,15 @@ export function migrateProject(p: Project): Project {
       }),
     };
   }
-  // uske horizontalne letvice su sada kvadratne cevi 20 × 20 u U profilima 25 × 20: stare početne mere (80 / 30 / 40) se menjaju
-  const oldHn = (p: { barSizeMm: number; gapMm: number; frameMm: number }) => p.barSizeMm === 80 && p.gapMm === 30 && p.frameMm === 40;
+  // uske horizontalne letvice su sada kvadratne cevi 30 × 20 u U profilima 20 × 20: stare početne mere (80 / 30 / 40 i prelazne 20 / 6 / 20) se menjaju
+  const oldHn = (p: { barSizeMm: number; gapMm: number; frameMm: number }) => (p.barSizeMm === 80 && p.gapMm === 30 && p.frameMm === 40) || (p.barSizeMm === 20 && p.gapMm === 6 && p.frameMm === 20);
   if (out.items.some((it) => (it.kind === 'fence' && it.modelId === 'h_narrow' && oldHn(it.params)) || (it.kind === 'gate' && it.infillModelId === 'h_narrow' && oldHn(it.params)))) {
     const nu = FENCE_MODELS.h_narrow.defaults;
     out = {
       ...out,
       items: out.items.map((it) => {
-        if (it.kind === 'fence' && it.modelId === 'h_narrow' && oldHn(it.params)) return { ...it, materialId: FENCE_MODELS.h_narrow.materialId, params: { ...it.params, ...nu } };
-        if (it.kind === 'gate' && it.infillModelId === 'h_narrow' && oldHn(it.params)) return { ...it, params: { ...it.params, ...nu } };
+        if (it.kind === 'fence' && it.modelId === 'h_narrow' && oldHn(it.params)) return { ...it, materialId: FENCE_MODELS.h_narrow.materialId, params: { ...it.params, ...nu, hn: undefined } };
+        if (it.kind === 'gate' && it.infillModelId === 'h_narrow' && oldHn(it.params)) return { ...it, params: { ...it.params, ...nu, hn: undefined } };
         return it;
       }),
     };

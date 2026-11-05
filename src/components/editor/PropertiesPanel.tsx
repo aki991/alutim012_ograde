@@ -51,7 +51,7 @@ function TubesParts({ params }: { params: FenceParams }) {
       </button>
       {open && (
         <div className="px-3 pb-2">
-          <p className="text-[12px] text-muted mb-1">Kvadratna cev 20 × 20 × 1 u U profilima 25 × 20 × 1,35 (podatak radnika). Zidovi i zazor su usvojeni; važe za sva polja i kapije ovog modela.</p>
+          <p className="text-[12px] text-muted mb-1">Kvadratna cev 30 × 20 × 1 u U profilima 20 × 20 × 1,35 (mere radnika). Zidovi i zazor su usvojeni; važe za sva polja i kapije ovog modela.</p>
           {keys.map((k) => (
             <NumberField key={k} label={TUBES_LABELS[k]} testId={`tubes-${k}`} value={d[k]} range={TUBES_LIMITS[k]} integer={k === 'tubeDepthMm' || k === 'uDepthMm'} step={k === 'uWallMm' || k === 'tubeWallMm' || k === 'endClearMm' ? 0.05 : 1}
               onCommit={(v) => mutate((p) => setTubesParams(p, { hn: { [k]: v } }), `hn-${k}`)} />

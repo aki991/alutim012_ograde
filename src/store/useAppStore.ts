@@ -3,9 +3,10 @@ import { SEED_MATERIALS } from '../data/materials';
 import { createSeedData } from '../data/seed';
 import { loadAll, saveAll, wipeAll } from '../db';
 import {
-  changeColor, changeModelAll, duplicateItem, insertItem, moveItemBy, setOuterWidth, withConcretePosts, updateItem, updateItemParams, updatePost,
+  changeColor, changeModelAll, duplicateItem, indexOfItem, insertItem, moveItemBy, setOuterWidth, withConcretePosts, updateItem, updateItemParams, updatePost,
 } from '../domain/geometry/operations';
 import { newItemFor } from '../domain/geometry/newItem';
+import { computeLayout } from '../domain/geometry/layout';
 import { removeStair, setStairGroup } from '../domain/geometry/stairOps';
 import { DEFAULT_MODEL_ID, TERRACE_NO_GATES, isTerraceModel, projectModelId } from '../domain/models/catalog';
 import { createFence, createGate, createProject, nowIso } from '../domain/models/factories';
@@ -97,6 +98,9 @@ interface AppState {
   updateSettings: (patch: Partial<AppSettings>) => void;
 }
 
+/** prelazni materijali modela uskih horizontalnih letvica (pre tačnih mera radnika): zamenjeni sa mat_u_20x20 / mat_kv_30x20 */
+const LEGACY_MATERIAL_IDS = ['mat_u_25x20', 'mat_kv_20x20'];
+
 const emptyEditor = (): EditorState => ({
   projectId: null, selection: null, multi: [], multiPosts: [], history: emptyHistory<Project>(), view: 'front', zoom: 1, activeModelId: DEFAULT_MODEL_ID, notice: null,
 });
@@ -164,7 +168,7 @@ export const useAppStore = create<AppState>((set, get) => {
           await saveAll(s);
           set({ ...s, ready: true });
         } else {
-          set({ projects: data.projects.map(migrateProject), customers: data.customers, materials: [...data.materials, ...SEED_MATERIALS.filter((m) => !data.materials.some((x) => x.id === m.id))], settings: data.settings ?? seed.settings, ready: true });
+          set({ projects: data.projects.map(migrateProject), customers: data.customers, materials: [...data.materials.filter((m) => !LEGACY_MATERIAL_IDS.includes(m.id)), ...SEED_MATERIALS.filter((m) => !data.materials.some((x) => x.id === m.id))], settings: data.settings ?? seed.settings, ready: true });
         }
       } catch (e) {
         // IndexedDB nedostupan (npr. privatni režim): radimo u memoriji i jasno prijavljujemo grešku
@@ -309,10 +313,15 @@ export const useAppStore = create<AppState>((set, get) => {
       if (spec.kind === 'gate' && isTerraceModel(spec.modelId ?? modelId)) { get().setNotice(TERRACE_NO_GATES); return null; }
       // novi element ima mere i izgled ograde koja je već u projektu (izabrano polje, inače poslednja ograda)
       const sel = get().editor.selection;
-      const { item, outerWidthMm: outer } = newItemFor(cur, spec, modelId, sel?.type === 'item' ? sel.id : null);
+      const { item, outerWidthMm: outer, clearWidthMm } = newItemFor(cur, spec, modelId, sel?.type === 'item' ? sel.id : null);
       get().mutate((p) => {
         const q = insertItem(p, item, index ?? p.items.length);
-        const w = setOuterWidth(spec.kind === 'gate' && spec.concrete ? withConcretePosts(q, item.id) : q, item.id, outer);
+        let w = setOuterWidth(spec.kind === 'gate' && spec.concrete ? withConcretePosts(q, item.id) : q, item.id, outer);
+        // zadata svetla širina (sa U profilima): spoljna se dopuni za polovine stubova, tako da otvor bude tačno tražen
+        if (clearWidthMm) {
+          const li = computeLayout(w).items[indexOfItem(w, item.id)];
+          if (li) w = setOuterWidth(w, item.id, outer + (clearWidthMm - li.clearWidth));
+        }
         // stepenište: polja sa stubovima između (preporuka: stub na svaki metar)
         return spec.kind === 'fence' && spec.stair ? setStairGroup(w, item.id, {}) : w;
       });

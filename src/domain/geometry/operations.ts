@@ -170,7 +170,7 @@ export function setTubesParams(p: Project, patch: { hn?: Partial<NonNullable<Fen
 export function resetTubesParams(p: Project): Project {
   const items = p.items.map((it) => {
     const model = it.kind === 'fence' ? it.modelId : it.kind === 'gate' ? it.infillModelId : null;
-    return model === 'h_narrow' && 'params' in it ? ({ ...it, params: { ...it.params, hn: undefined, barSizeMm: 20, gapMm: 6, frameMm: 20 } } as LayoutItem) : it;
+    return model === 'h_narrow' && 'params' in it ? ({ ...it, params: { ...it.params, hn: undefined, ...FENCE_MODELS.h_narrow.defaults } } as LayoutItem) : it;
   });
   return touch({ ...p, items });
 }

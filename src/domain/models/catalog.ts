@@ -51,7 +51,9 @@ export interface FenceModelDef {
   /** naziv polja „debljina rama“ kad model ima drugačije značenje te mere (tarabica: prepust spojnih cevi) */
   frameLabel?: string;
   /** veličina polja pri dodavanju (spoljna širina kao u panelu i visina), ako se razlikuje od opšte (tarabica: 1000 × 1000 mm) */
-  defaultSize?: { widthMm: number; heightMm: number };
+  defaultSize?: { widthMm: number; heightMm: number; /** širina je svetli otvor (sa U profilima), a ne spoljna mera sa stubovima */ clearWidth?: boolean };
+  /** visina kapije pri dodavanju (bez vrednosti: kao ograda) */
+  defaultGateHeightMm?: number;
   /** koliko stub viri iznad ograde pri dodavanju (bez vrednosti: opšte pravilo); tarabica: 0, stub je visine ograde */
   postExtraMm?: number;
   hasBars: boolean;
@@ -69,9 +71,10 @@ const model = (d: Omit<FenceModelDef, 'shortName'>): FenceModelDef => ({ shortNa
 
 const MODEL_LIST: FenceModelDef[] = [
   model({
-    id: 'h_narrow', name: 'Crna — uske horizontalne letvice', description: 'Kvadratne cevi 20×20 u bočnim U profilima 25×20', infill: 'Kvadratne cevi 20×20 u U profilima 25×20', material: 'Aluminijum',
-    image: '01', style: 'tubes', defaultColor: 'RAL 9005', defaults: { barSizeMm: 20, gapMm: 6, frameMm: 20 }, barLabel: 'Visina kvadratne cevi', gapLabel: 'Razmak cevi', frameLabel: 'Širina U profila', hasBars: true,
-    materialId: 'mat_kv_20x20', railMaterialId: 'mat_u_25x20', parts: { main: 'Kvadratna cev 20×20', rail: 'U profil 25×20' },
+    id: 'h_narrow', name: 'Crna — uske horizontalne letvice', description: 'Kvadratne cevi 30×20 u bočnim U profilima 20×20', infill: 'Kvadratne cevi 30×20 u U profilima 20×20', material: 'Aluminijum',
+    image: '01', style: 'tubes', defaultColor: 'RAL 9005', defaults: { barSizeMm: 30, gapMm: 15, frameMm: 20 }, barLabel: 'Visina kvadratne cevi', gapLabel: 'Razmak cevi', frameLabel: 'Širina U profila', hasBars: true,
+    defaultSize: { widthMm: 400, heightMm: 600, clearWidth: true }, defaultGateHeightMm: 1400, postExtraMm: 0,
+    materialId: 'mat_kv_30x20', railMaterialId: 'mat_u_20x20', parts: { main: 'Kvadratna cev 30×20', rail: 'U profil 20×20' },
   }),
   model({
     id: 'h_boards', name: 'Braon — široke horizontalne daske', description: 'Široke daske u izgledu drveta', infill: 'Široke horizontalne daske', material: 'Aluminijum sa dekorom drveta',
@@ -174,7 +177,7 @@ const HORIZONTAL_BY_MODEL = 'zavisno od modela: 80×20, 20×20, 40×20 ili 60×2
 const VERTICAL_UMASK = 'U profil sa maskom 25×30 ili U profil 25×20';
 
 export const MODEL_CONSTRUCTION: Partial<Record<FenceModelId, ModelConstruction>> = {
-  h_narrow: { vertical: 'U profil 25×20×1,35 mm (dve bočne vođice, otvorene ka ispuni)', horizontal: 'Kvadratna cev 20×20×1 mm', note: 'Krajevi cevi ulaze u kanal U profila; mere zidova su usvojene i menjaju se u panelu.' },
+  h_narrow: { vertical: 'U profil 20×20×1,35 mm (dve bočne vođice, otvorene ka ispuni)', horizontal: 'Kvadratna cev 30×20×1 mm', note: 'Krajevi cevi ulaze u kanal U profila; mere zidova su usvojene i menjaju se u panelu.' },
   h_combo: { vertical: VERTICAL_UMASK, horizontal: HORIZONTAL_BY_MODEL, note: 'Široke i uske letvice naizmenično: po radniku kombinacija više profila.' },
   panel_lines: { vertical: VERTICAL_UMASK, horizontal: HORIZONTAL_BY_MODEL },
   h_white: { vertical: VERTICAL_UMASK, horizontal: HORIZONTAL_BY_MODEL },

@@ -55,7 +55,8 @@ test('glavni scenario: projektovanje, kalkulacija, čuvanje, izvoz', async ({ pa
   const name = 'Čačak šuma žđ ćuprija';
   await page.getByTestId('project-name').fill(name);
 
-  // 4. tri segmenta ograde
+  // 4. tri segmenta ograde (model bez posebne početne veličine: 2000 mm)
+  await page.getByTestId('catalog-model').selectOption('h_white');
   for (let i = 0; i < 3; i++) await page.getByTestId('cat-fence-add').click();
   await expect(page.getByTestId('count-items')).toHaveText('3');
 
@@ -123,7 +124,7 @@ test('glavni scenario: projektovanje, kalkulacija, čuvanje, izvoz', async ({ pa
   await page.getByTestId('btn-open-calc').click();
   const total1 = num(await page.getByTestId('calc-total').textContent());
   expect(total1).toBeGreaterThan(0);
-  await page.getByTestId('price-input-mat_kv_20x20').fill('5000');
+  await page.getByTestId('price-input-mat_alu_lamela').fill('5000');
   await expect.poll(async () => num(await page.getByTestId('calc-total').textContent())).toBeGreaterThan(total1);
   await page.getByTestId('calc-close').click();
 
@@ -563,6 +564,7 @@ test('obaveštenja: zvonce otvara samo poruku da nema obaveštenja', async ({ pa
 test('klik na kotu ukupne dužine raspoređuje polja na zadatu dužinu; meni prikaza se zatvara klikom van njega', async ({ page }) => {
   await page.goto('/');
   await page.getByTestId('hero-new').first().click();
+  await page.getByTestId('catalog-model').selectOption('h_white');
   await page.getByTestId('cat-fence-add').click();
   await page.getByTestId('cat-fence-add').click();
   await page.getByTestId('btn-view-options').click();
@@ -886,8 +888,8 @@ test('modeli: kartice navode profile (vertikale i horizontale) po podacima radni
   await page.goto('/modeli');
   await expect(page.getByTestId('construction-vertical-louver_light')).toHaveText('U profil 60×28');
   await expect(page.getByTestId('construction-horizontal-louver_light')).toHaveText('Kutijasti profil 80×20');
-  await expect(page.getByTestId('construction-vertical-h_narrow')).toContainText('U profil 25×20');
-  await expect(page.getByTestId('construction-horizontal-h_narrow')).toContainText('Kvadratna cev 20×20');
+  await expect(page.getByTestId('construction-vertical-h_narrow')).toContainText('U profil 20×20');
+  await expect(page.getByTestId('construction-horizontal-h_narrow')).toContainText('Kvadratna cev 30×20');
   await expect(page.getByTestId('construction-horizontal-h_white')).toContainText('20×20');
   await expect(page.getByTestId('construction-note-louver_dark')).toContainText('Z profil');
   await expect(page.getByTestId('construction-note-louver_dark')).toContainText('nije potvrđen');
@@ -1256,8 +1258,8 @@ test('uske horizontalne letvice: cevi u U profilima se crtaju, broj cevi prati r
   await page.getByTestId('catalog-model').selectOption('h_narrow');
   await page.getByTestId('cat-fence-add').click();
   await expect(page.getByTestId('front-view').getByTestId('tubes-art')).toHaveCount(1);
-  await expect(page.getByTestId('field-bar')).toHaveValue('20');
-  await expect(page.getByTestId('field-gap')).toHaveValue('6');
+  await expect(page.getByTestId('field-bar')).toHaveValue('30');
+  await expect(page.getByTestId('field-gap')).toHaveValue('15');
 
   await expect(page.getByText('Širina U profila')).toBeVisible();
   const rects0 = await page.getByTestId('front-view').getByTestId('tubes-art').locator('rect').count();
@@ -1268,14 +1270,14 @@ test('uske horizontalne letvice: cevi u U profilima se crtaju, broj cevi prati r
   expect(rects1).toBeLessThan(rects0);
   // dimenzije cevi i U profila
   await page.getByTestId('tubes-parts-toggle').click();
-  await expect(page.getByTestId('tubes-uDepthMm')).toHaveValue('25');
+  await expect(page.getByTestId('tubes-uDepthMm')).toHaveValue('20');
   await expect(page.getByTestId('tubes-uWallMm')).toHaveValue('1.35');
   await page.getByTestId('tubes-uDepthMm').fill('30');
   await page.getByTestId('tubes-uDepthMm').press('Enter');
   await expect(page.getByTestId('tubes-uDepthMm')).toHaveValue('30');
   await page.getByTestId('tubes-reset').click();
-  await expect(page.getByTestId('tubes-uDepthMm')).toHaveValue('25');
-  await expect(page.getByTestId('field-gap')).toHaveValue('6');
+  await expect(page.getByTestId('tubes-uDepthMm')).toHaveValue('20');
+  await expect(page.getByTestId('field-gap')).toHaveValue('15');
   await page.getByRole('tab', { name: /3D prikaz/ }).click();
   await expect(page.getByTestId('three-canvas')).toBeVisible();
   await page.waitForTimeout(500);

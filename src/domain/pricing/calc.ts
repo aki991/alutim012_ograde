@@ -110,6 +110,8 @@ export function buildBom(project: Project, materials: Material[], specs?: ModelS
     if (isTarabicaPost(project.items, p, i)) { for (const l of tarabicaPostLines({ ...p, heightMm: layout.posts[i]?.lengthMm ?? p.heightMm })) add('Stubovi', l.materialId, l.qty); return; }
     // stubovi RL10 se obračunavaju u sastavnici modela (cev, lajsna, veza, stopa, sidra, nosači, završeci)
     if (isRl10Post(project.items, i) && !hasCustomSpec('rail_inox', specs)) return;
+    // betonski stubovi se crtaju (na šta se kapija montira), ali ne ulaze u ponudu: aluminijumska radnja ih ne izvodi
+    if (p.type === 'concrete' || p.type === 'concrete_plinth') return;
     add('Stubovi', POST_MATERIAL[p.type], 1);
   });
   {
@@ -156,15 +158,7 @@ export function buildBom(project: Project, materials: Material[], specs?: ModelS
       add('Nosači i spojnice', 'mat_bts_ak5012a', q.rodCaps);
     }
   }
-  // betonsko podnožje je jedan komad ispod polja i stubova: dužina polja (osa–osa) i po pola stuba na krajevima niza ili zadata dužina
-  for (const li of layout.items) {
-    if (li.plinthMm <= 0) continue;
-    // dužina je od ivice do ivice podnožja; deo koji preklapa prethodno podnožje (ispod zajedničkog stuba) se ne računa dvaput
-    const prev = layout.items[li.index - 1];
-    const overlap = prev && prev.plinthMm > 0 ? Math.max(0, prev.plinthX1 - li.plinthX0) : 0;
-    const len = Math.max(0, li.plinthX1 - li.plinthX0 - overlap);
-    add('Stubovi', 'mat_concrete_plinth', (len * li.plinthMm) / 1_000_000);
-  }
+  // betonsko podnožje se crta (na šta se kapija montira), ali NE ulazi u ponudu: aluminijumska radnja ga ne izvodi
 
   const lines: BomLine[] = [];
   for (const a of acc.values()) {
