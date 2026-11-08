@@ -19,8 +19,8 @@ const EDGE = { stroke: '#000', strokeOpacity: 0.38 } as const;
  * spojnim cevima nije potvrđen (zadnja strana ili varenje), pa se spojevi sa prednje strane ne crtaju.
  * Koordinate su u mm; (x, y) je gornji levi ugao polja između stubova.
  */
-export function TarabicaArt({ x, y, w, h, barSize, gap, overhang, overhangs, lift, hex }: { x: number; y: number; w: number; h: number; barSize: number; gap: number; overhang: number; /** prepust levo i desno kad se razlikuje (krilo dvokrilne kapije) */ overhangs?: [number, number]; lift?: number; hex: string }) {
-  const t = tarabicaLayout(w, h, barSize, gap, overhangs?.[0] ?? overhang, lift, overhangs?.[1] ?? overhang);
+export function TarabicaArt({ x, y, w, h, barSize, gap, overhang, overhangs, lift, arch, hex }: { x: number; y: number; w: number; h: number; barSize: number; gap: number; overhang: number; /** prepust levo i desno kad se razlikuje (krilo dvokrilne kapije) */ overhangs?: [number, number]; lift?: number; /** luk gornje ivice (mm): tarabice su niže ka krajevima */ arch?: number; hex: string }) {
+  const t = tarabicaLayout(w, h, barSize, gap, overhangs?.[0] ?? overhang, lift, overhangs?.[1] ?? overhang, arch);
   const dome = tarabicaDomeMm(barSize);
   const capH = tarabicaCapHeight(barSize);
   const ex = TARABICA.collarExtraMm;
@@ -40,24 +40,26 @@ export function TarabicaArt({ x, y, w, h, barSize, gap, overhang, overhangs, lif
           {slats.map((sx) => <rect key={sx} x={sx + barSize} y={y + ry} width={Math.min(8, t.gapMm)} height={TARABICA.railMm} fill="#000" fillOpacity={0.22} />)}
         </g>
       ))}
-      {slats.map((sx) => {
-        const top = y + capH;
+      {slats.map((sx, si) => {
+        // luk: svaka tarabica počinje niže za svoj pad; donji kraj je isti za sve
+        const sy = y + t.dropsMm[si];
+        const top = sy + capH;
         return (
           <g key={sx}>
             {/* cev 80 × 20 */}
-            <rect x={sx} y={top} width={barSize} height={t.slatLenMm - capH} fill={hex} />
-            <rect x={sx} y={top} width={barSize} height={t.slatLenMm - capH} fill="url(#shade-v)" />
-            <rect x={sx} y={top} width={barSize} height={t.slatLenMm - capH} fill="none" {...EDGE} strokeWidth={2} />
-            <line x1={sx + barSize * 0.12} y1={top + 6} x2={sx + barSize * 0.12} y2={y + t.slatLenMm - 6} stroke="#fff" strokeOpacity={0.45} strokeWidth={3} />
+            <rect x={sx} y={top} width={barSize} height={t.slatLens[si] - capH} fill={hex} />
+            <rect x={sx} y={top} width={barSize} height={t.slatLens[si] - capH} fill="url(#shade-v)" />
+            <rect x={sx} y={top} width={barSize} height={t.slatLens[si] - capH} fill="none" {...EDGE} strokeWidth={2} />
+            <line x1={sx + barSize * 0.12} y1={top + 6} x2={sx + barSize * 0.12} y2={sy + t.slatLens[si] - 6} stroke="#fff" strokeOpacity={0.45} strokeWidth={3} />
             {/* čep tarabice pun: okovratnik i kupola */}
-            <rect x={sx - ex} y={y + dome} width={barSize + 2 * ex} height={TARABICA.collarMm} rx={1.5} fill={mixHex(hex, -0.04)} />
-            <rect x={sx - ex} y={y + dome} width={barSize + 2 * ex} height={TARABICA.collarMm} rx={1.5} fill="url(#shade-h)" />
-            <rect x={sx - ex} y={y + dome} width={barSize + 2 * ex} height={TARABICA.collarMm} rx={1.5} fill="none" {...EDGE} strokeWidth={2} />
-            <path d={`M${sx} ${y + dome} A${barSize / 2} ${dome} 0 0 1 ${sx + barSize} ${y + dome} Z`} fill={hex} />
-            <path d={`M${sx} ${y + dome} A${barSize / 2} ${dome} 0 0 1 ${sx + barSize} ${y + dome} Z`} fill="url(#shade-v)" />
-            <path d={`M${sx} ${y + dome} A${barSize / 2} ${dome} 0 0 1 ${sx + barSize} ${y + dome} Z`} fill="none" {...EDGE} strokeWidth={2} />
-            <path d={`M${sx + rimInset} ${y + dome} A${barSize / 2 - rimInset} ${dome - rimInset} 0 0 1 ${sx + barSize - rimInset} ${y + dome}`} fill="none" stroke="#fff" strokeOpacity={0.55} strokeWidth={2.5} />
-            <path d={`M${sx + rimInset} ${y + dome} A${barSize / 2 - rimInset} ${dome - rimInset} 0 0 1 ${sx + barSize - rimInset} ${y + dome}`} fill="none" stroke="#000" strokeOpacity={0.12} strokeWidth={1} transform="translate(0.8 0.8)" />
+            <rect x={sx - ex} y={sy + dome} width={barSize + 2 * ex} height={TARABICA.collarMm} rx={1.5} fill={mixHex(hex, -0.04)} />
+            <rect x={sx - ex} y={sy + dome} width={barSize + 2 * ex} height={TARABICA.collarMm} rx={1.5} fill="url(#shade-h)" />
+            <rect x={sx - ex} y={sy + dome} width={barSize + 2 * ex} height={TARABICA.collarMm} rx={1.5} fill="none" {...EDGE} strokeWidth={2} />
+            <path d={`M${sx} ${sy + dome} A${barSize / 2} ${dome} 0 0 1 ${sx + barSize} ${sy + dome} Z`} fill={hex} />
+            <path d={`M${sx} ${sy + dome} A${barSize / 2} ${dome} 0 0 1 ${sx + barSize} ${sy + dome} Z`} fill="url(#shade-v)" />
+            <path d={`M${sx} ${sy + dome} A${barSize / 2} ${dome} 0 0 1 ${sx + barSize} ${sy + dome} Z`} fill="none" {...EDGE} strokeWidth={2} />
+            <path d={`M${sx + rimInset} ${sy + dome} A${barSize / 2 - rimInset} ${dome - rimInset} 0 0 1 ${sx + barSize - rimInset} ${sy + dome}`} fill="none" stroke="#fff" strokeOpacity={0.55} strokeWidth={2.5} />
+            <path d={`M${sx + rimInset} ${sy + dome} A${barSize / 2 - rimInset} ${dome - rimInset} 0 0 1 ${sx + barSize - rimInset} ${sy + dome}`} fill="none" stroke="#000" strokeOpacity={0.12} strokeWidth={1} transform="translate(0.8 0.8)" />
           </g>
         );
       })}

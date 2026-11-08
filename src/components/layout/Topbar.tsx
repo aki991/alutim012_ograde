@@ -1,4 +1,4 @@
-import { Bell, Building2, ChevronDown, CircleHelp, FileText, LogOut, Menu, Settings } from 'lucide-react';
+import { Bell, Building2, ChevronDown, CircleHelp, FileText, LogOut, Menu, Plus, Settings } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
@@ -38,6 +38,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
     <header className="h-[69px] shrink-0 brand-bg text-white border-b border-black/20 flex items-center gap-3 px-4 lg:px-6">
       <span className="lg:hidden"><button className="btn btn-icon !text-ink" aria-label="Otvori meni" onClick={onMenu}><Menu size={20} /></button></span>
       <div className="ml-auto flex items-center gap-2">
+        <button className="btn !bg-accent !text-brand-black !border-transparent hover:!brightness-95 !px-3 sm:!px-4" aria-label="Novi projekat" data-testid="topbar-new-project" onClick={() => { setBell(false); setUser(false); navigate(`/editor/${useAppStore.getState().newProject()}`); }}><Plus size={18} /><span className="hidden sm:inline">Novi projekat</span></button>
         <div className="relative" ref={bellRef}>
           <button className="btn btn-icon !border-transparent !bg-transparent !text-white hover:!bg-white/10 relative" aria-label={specs.unread > 0 ? `Obaveštenja (${specs.unread} nepročitano)` : 'Obaveštenja'} onClick={() => { setBell((b) => !b); setUser(false); if (!bell) void specs.reload(); }}>
             <Bell size={20} />

@@ -37,7 +37,7 @@ const HANDRAIL_MM = 60;
  * Zajednički geometrijski opis ispune jednog polja. Isti opis koriste 2D (SVG), 3D (Three.js) i kalkulacija,
  * pa su broj i položaj letvica uvek usklađeni. Koordinate su u mm, y raste naniže od gornje ivice polja.
  */
-export function computeInfill(modelId: FenceModelId, widthMm: number, heightMm: number, frameMm: number, barSizeMm: number, gapMm: number, barCount?: number, liftMm?: number, overhangRightMm?: number): InfillGeometry {
+export function computeInfill(modelId: FenceModelId, widthMm: number, heightMm: number, frameMm: number, barSizeMm: number, gapMm: number, barCount?: number, liftMm?: number, overhangRightMm?: number, archMm?: number): InfillGeometry {
   const style = FENCE_MODELS[modelId].style;
   // cevi u U profilima: U profili su samo sa strane (bez gornjeg i donjeg ramena), pa je unutrašnja površina umanjena po širini
   const tubes = style === 'tubes';
@@ -109,10 +109,10 @@ export function computeInfill(modelId: FenceModelId, widthMm: number, heightMm: 
   } else if (style === 'tarabica') {
     // dve spojne cevi 30 × 30 preko cele širine (viri iza krajnjih tarabica) i vertikalne tarabice sa čepom na vrhu
     vertical = true;
-    const t = tarabicaLayout(widthMm, heightMm, barSizeMm, gapMm, frameMm, liftMm, overhangRightMm);
+    const t = tarabicaLayout(widthMm, heightMm, barSizeMm, gapMm, frameMm, liftMm, overhangRightMm, archMm);
     hBar(t.railTopMm, TARABICA.railMm, 'rail');
     hBar(t.railBottomMm, TARABICA.railMm, 'rail');
-    for (let i = 0; i < t.count; i++) bars.push({ x: t.startMm + i * (barSizeMm + t.gapMm), y: 0, w: barSizeMm, h: t.slatLenMm, tone: 'main', round: true });
+    for (let i = 0; i < t.count; i++) bars.push({ x: t.startMm + i * (barSizeMm + t.gapMm), y: t.dropsMm[i], w: barSizeMm, h: t.slatLens[i], tone: 'main', round: true });
   } else if (style === 'framed_vertical') {
     vertical = true;
     const H = inner.h;

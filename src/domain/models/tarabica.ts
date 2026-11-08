@@ -22,6 +22,8 @@ export const TARABICA = {
   maxLiftMm: 300,
   /** osa spojne cevi od vrha, odnosno dna polja */
   railFromEndMm: 200,
+  /** najveći luk: deo visine polja (polukružni oblik zahteva i do polovine širine, ali visina polja ostaje ograničenje) */
+  maxArchFraction: 0.4,
   defaultGapMm: 20,
   defaultOverhangMm: 30,
   maxOverhangMm: 150,
@@ -51,6 +53,35 @@ export interface TarabicaLayout {
   /** razmak od poda do donjeg kraja tarabica i visina tarabice od vrha polja do donjeg kraja (kupola + cev) */
   liftMm: number;
   slatLenMm: number;
+  /** luk: za koliko je svaka tarabica niža od najviše (mm, od vrha polja); bez luka sve nule */
+  dropsMm: number[];
+  /** dužina svake tarabice (kupola + cev) od njenog vrha do donjeg kraja; bez luka sve jednake slatLenMm */
+  slatLens: number[];
+  /** upotrebljen luk (mm) posle ograničenja */
+  archMm: number;
+}
+
+/** Najveći dozvoljen luk (mm) za polje zadate visine. */
+export const maxArchMm = (heightMm: number): number => Math.max(0, Math.floor(heightMm * TARABICA.maxArchFraction));
+
+/**
+ * Za koliko je tarabica sa središtem na x (mm od leve ivice polja) niža od najviše: kružni luk kroz središta krajnjih
+ * tarabica, najviši u sredini (obe strane) ili uz ivicu polja bez prepusta (polovina luka dvokrilne kapije, najviša uz sredinu kapije).
+ */
+export function archDrops(centers: number[], archMm: number, peak: 'center' | 'left' | 'right'): number[] {
+  const n = centers.length;
+  if (n < 2 || archMm <= 0) return centers.map(() => 0);
+  const lo = centers[0];
+  const hi = centers[n - 1];
+  const pk = peak === 'left' ? lo : peak === 'right' ? hi : (lo + hi) / 2;
+  const half = peak === 'center' ? (hi - lo) / 2 : hi - lo;
+  if (half <= 0) return centers.map(() => 0);
+  const f = Math.min(archMm, half); // luk viši od polovine tetive nije više krug: najviše polukrug
+  const R = (half * half + f * f) / (2 * f);
+  return centers.map((c) => {
+    const d = Math.min(Math.abs(c - pk), R);
+    return R - Math.sqrt(Math.max(0, R * R - d * d));
+  });
 }
 
 /**
@@ -58,7 +89,7 @@ export interface TarabicaLayout {
  * tačno za prepust (cevi vire), pa se zadati razmak ravnomerno koriguje da cela širina bude popunjena. Prepust levo i desno
  * može da se razlikuje: krilo dvokrilne kapije ga nema uz sredinu, da razmak između krila ne bude veći od razmaka tarabica.
  */
-export function tarabicaLayout(widthMm: number, heightMm: number, barSizeMm: number, gapMm: number, overhangMm: number, liftMm: number = TARABICA.defaultLiftMm, overhangRightMm: number = overhangMm): TarabicaLayout {
+export function tarabicaLayout(widthMm: number, heightMm: number, barSizeMm: number, gapMm: number, overhangMm: number, liftMm: number = TARABICA.defaultLiftMm, overhangRightMm: number = overhangMm, archMm: number = 0): TarabicaLayout {
   const bar = Math.max(1, barSizeMm);
   const side = (v: number) => Math.min(Math.max(0, v), Math.max(0, widthMm / 3));
   const o = side(overhangMm);
@@ -67,8 +98,13 @@ export function tarabicaLayout(widthMm: number, heightMm: number, barSizeMm: num
   const count = avail < bar ? 0 : Math.max(1, Math.floor((avail + gapMm) / (bar + gapMm)));
   const gap = count > 1 ? (avail - count * bar) / (count - 1) : gapMm;
   const startMm = count > 1 ? o : o + (avail - bar) / 2;
-  const off = Math.min(TARABICA.railFromEndMm, heightMm * 0.25);
+  const arch = Math.min(Math.max(0, archMm), maxArchMm(heightMm));
+  // luk: gornja spojna cev se spušta ispod najniže tarabice (kupola i okovratnik moraju da stoje iznad nje)
+  const off = Math.min(Math.max(TARABICA.railFromEndMm, arch > 0 ? arch + tarabicaCapHeight(bar) + 40 : 0), heightMm * (arch > 0 ? 0.45 : 0.25));
   const lift = Math.min(Math.max(0, liftMm), TARABICA.maxLiftMm, heightMm / 3);
+  const centers = Array.from({ length: count }, (_, i) => startMm + i * (bar + gap) + bar / 2);
+  const peak = o > 0 && oRight === 0 ? 'right' : oRight > 0 && o === 0 ? 'left' : 'center';
+  const dropsMm = archDrops(centers, arch, peak);
   return {
     count,
     gapMm: gap,
@@ -78,6 +114,9 @@ export function tarabicaLayout(widthMm: number, heightMm: number, barSizeMm: num
     railLenMm: widthMm,
     liftMm: lift,
     slatLenMm: heightMm - lift,
+    dropsMm,
+    slatLens: dropsMm.map((d) => heightMm - lift - d),
+    archMm: arch,
   };
 }
 

@@ -27,6 +27,8 @@ export interface FenceParams {
   barCount?: number;
   /** Samo tarabica: razmak od poda do donjeg kraja tarabica (mm); bez vrednosti važi podrazumevani */
   liftMm?: number;
+  /** Samo tarabica: luk gornje ivice (mm) — za toliko su najniže tarabice (uz krajeve) kraće od najviše; 0 / bez vrednosti = ravno */
+  archMm?: number;
   /** Samo model RL10 (inox prečke): mere delova (rukohvat, stub, veza, prsten, stopa, nosači, prečke); bez vrednosti važe podrazumevane */
   rl10?: Partial<import('./rl10').Rl10Dims>;
   /** Samo model uske horizontalne letvice (kvadratne cevi u U profilima): dubina i zidovi cevi, dubina i zid U profila, zazor; bez vrednosti važe podrazumevane */

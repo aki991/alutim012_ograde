@@ -107,7 +107,7 @@ export function buildWorkOrder(project: Project, specs: ModelSpecs | undefined, 
       isGate = it.kind === 'gate';
       const modelId = it.kind === 'fence' ? it.modelId : it.infillModelId;
       const li = layout.items[idx];
-      const geo = computeInfill(modelId, li.clearWidth, it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount, it.params.liftMm);
+      const geo = computeInfill(modelId, li.clearWidth, it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount, it.params.liftMm, undefined, it.params.archMm);
       facts.push(
         { label: 'Ukupna širina', value: `${Math.round(outerWidthMm(project, idx))} mm` },
         { label: 'Visina', value: `${Math.round(it.heightMm)} mm` },

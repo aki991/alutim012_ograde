@@ -64,13 +64,29 @@ export interface SpecContext {
   slopeFactor?: number;
 }
 
+/** Geometrija ispune polja: jedna, a kod tarabice dvokrilne kapije po jedna za svako krilo. */
+function leafGeometries(c: SpecContext): ReturnType<typeof computeInfill>[] {
+  const f = c.slopeFactor && c.slopeFactor > 1 ? c.slopeFactor : 1;
+  const geoOf = (w: number, left: number, right?: number) => computeInfill(c.modelId, w * f, c.heightMm, left, c.params.barSizeMm, c.params.gapMm, c.params.barCount, c.params.liftMm, right, c.params.archMm);
+  return FENCE_MODELS[c.modelId].style === 'tarabica' && c.leafWidthsMm?.length === 2
+    ? [geoOf(c.leafWidthsMm[0], c.params.frameMm, 0), geoOf(c.leafWidthsMm[1], 0, c.params.frameMm)]
+    : [geoOf(c.widthMm, c.params.frameMm)];
+}
+
+/**
+ * Tarabica sa lukom: svaka tarabica ima svoju dužinu reza (visina − čep − pad luka). Vraća dužine reza svih tarabica polja
+ * (u mm, nezaokružene) ili null kad nema luka — tada su sve iste i važi dužina iz specifikacije.
+ */
+export function slatCutLengths(c: SpecContext): number[] | null {
+  if (FENCE_MODELS[c.modelId].style !== 'tarabica' || !(c.params.archMm && c.params.archMm > 0)) return null;
+  const capH = tarabicaCapHeight(c.params.barSizeMm);
+  return leafGeometries(c).flatMap((g) => g.bars.filter((b) => b.tone === 'main').map((b) => b.h - capH));
+}
+
 export function specVars(c: SpecContext): Record<string, number> {
   // stepenište: delovi duž polja (rukohvat, prečke) su dugi koliko kosa dužina; površina stakla ostaje horizontalna × vertikalna
   const f = c.slopeFactor && c.slopeFactor > 1 ? c.slopeFactor : 1;
-  const geoOf = (w: number, left: number, right?: number) => computeInfill(c.modelId, w * f, c.heightMm, left, c.params.barSizeMm, c.params.gapMm, c.params.barCount, c.params.liftMm, right);
-  const leaves = FENCE_MODELS[c.modelId].style === 'tarabica' && c.leafWidthsMm?.length === 2
-    ? [geoOf(c.leafWidthsMm[0], c.params.frameMm, 0), geoOf(c.leafWidthsMm[1], 0, c.params.frameMm)]
-    : [geoOf(c.widthMm, c.params.frameMm)];
+  const leaves = leafGeometries(c);
   const sums = leaves.map(summarizeInfill);
   const tone = (k: 'main' | 'rail' | 'accent') => ({ count: sums.reduce((n, x) => n + x[k].count, 0), lengthMm: sums.reduce((n, x) => n + x[k].lengthMm, 0) });
   const sum = { main: tone('main'), rail: tone('rail'), accent: tone('accent'), glassAreaM2: sums.reduce((n, x) => n + x.glassAreaM2, 0) };

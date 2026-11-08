@@ -11,6 +11,7 @@ import { hasLightFence, isLightColor } from '../domain/models/catalog';
 import { capTiers, catalogPostSize, isTarabicaPost, postCaps, tarabicaCapHeight, tarabicaClearWidth, tarabicaDomeMm, tarabicaLayout, tarabicaPostLines } from '../domain/models/tarabica';
 import { buildBom } from '../domain/pricing/calc';
 import { buildCuttingList } from '../domain/pricing/cutting';
+import { buildCutList } from '../domain/pricing/production';
 import { buildWorkOrder } from '../domain/pricing/workorder';
 
 const fence = () => createFence({ modelId: 'picket_wide', widthMm: 2000, heightMm: 1600 });
@@ -356,5 +357,63 @@ describe('stubovi na podnožju, prazan otvor bez stubova, mere novog elementa', 
     // rozetna na tlu (bez podnožja) ne menja podnožje
     const noPlinth = createProject('N', [createFence({ modelId: 'picket_wide', widthMm: 900, heightMm: 1000 })]);
     expect(computeLayout(noPlinth).items[0].plinthMm).toBe(0);
+  });
+});
+
+describe('tarabica: luk gornje ivice', () => {
+  const W = tarabicaClearWidth(9, 80, 20, 30); // 9 tarabica, 1000 mm svetli otvor
+  it('bez luka su sve tarabice iste visine; sa lukom je srednja najviša, a krajnje niže tačno za luk', () => {
+    const flat = tarabicaLayout(W, 1200, 80, 20, 30, 40, 30, 0);
+    expect(flat.dropsMm.every((d) => d === 0)).toBe(true);
+    const t = tarabicaLayout(W, 1200, 80, 20, 30, 40, 30, 100);
+    expect(t.count).toBe(9);
+    expect(t.archMm).toBe(100);
+    expect(t.dropsMm[4]).toBeCloseTo(0, 9); // srednja je najviša
+    expect(t.dropsMm[0]).toBeCloseTo(100, 6);
+    expect(t.dropsMm[8]).toBeCloseTo(100, 6);
+    // simetrično i opada ka krajevima
+    for (let i = 0; i < 4; i++) {
+      expect(t.dropsMm[i]).toBeCloseTo(t.dropsMm[8 - i], 6);
+      expect(t.dropsMm[i]).toBeGreaterThan(t.dropsMm[i + 1]);
+    }
+    // donji kraj je isti za sve, dužina = slatLen − pad
+    expect(t.slatLens[0]).toBeCloseTo(1200 - 40 - 100, 6);
+    expect(t.slatLens[4]).toBeCloseTo(1200 - 40, 6);
+  });
+
+  it('luk je ograničen visinom polja, a gornja spojna cev se spušta ispod najniže tarabice', () => {
+    expect(tarabicaLayout(W, 1000, 80, 20, 30, 40, 30, 5000).archMm).toBe(400);
+    const t = tarabicaLayout(W, 1200, 80, 20, 30, 40, 30, 100);
+    expect(t.railTopMm).toBeGreaterThanOrEqual(100 + tarabicaCapHeight(80) + 20);
+    expect(tarabicaLayout(W, 1200, 80, 20, 30, 40, 30, 0).railTopMm).toBe(185); // ravno: kao do sada
+  });
+
+  it('computeInfill: svaka tarabica ima svoj vrh i dužinu; sastavnica i krojna lista imaju različite dužine', () => {
+    const geo = computeInfill('picket_wide', W, 1200, 30, 80, 20, undefined, 40, undefined, 100);
+    const mains = geo.bars.filter((b) => b.tone === 'main');
+    expect(mains[0].y).toBeCloseTo(100, 6);
+    expect(mains[4].y).toBeCloseTo(0, 9);
+    expect(new Set(mains.map((b) => Math.round(b.h))).size).toBeGreaterThan(3);
+    const p = createProject('t', [createFence({ modelId: 'picket_wide', widthMm: W + 100, heightMm: 1200, params: { barSizeMm: 80, gapMm: 20, frameMm: 30, liftMm: 40, archMm: 100 } })]);
+    const cuts = buildCutList(p).filter((r) => r.part.startsWith('Tarabica'));
+    expect(cuts.reduce((n, r) => n + r.qty, 0)).toBe(9);
+    expect(new Set(cuts.map((r) => r.lengthMm)).size).toBeGreaterThan(3);
+    // najduža je ista kao kod ravne ograde, najkraća je kraća za luk
+    const flat = buildCutList(createProject('t', [createFence({ modelId: 'picket_wide', widthMm: W + 100, heightMm: 1200 })])).filter((r) => r.part.startsWith('Tarabica'));
+    expect(Math.max(...cuts.map((r) => r.lengthMm))).toBe(flat[0].lengthMm);
+    expect(Math.min(...cuts.map((r) => r.lengthMm))).toBe(flat[0].lengthMm - 100);
+    // ukupan materijal u sastavnici = zbir dužina reza
+    const bom = buildBom(p, SEED_MATERIALS);
+    const total = cuts.reduce((n, r) => n + (r.lengthMm * r.qty) / 1000, 0);
+    expect(qty(bom, 'mat_ek_kv000007')).toBeCloseTo(total, 1);
+  });
+
+  it('dvokrilna kapija: krila su polovine jednog luka, najviše uz sredinu kapije', () => {
+    const left = tarabicaLayout(1000, 1400, 80, 20, 30, 40, 0, 100);
+    const right = tarabicaLayout(1000, 1400, 80, 20, 0, 40, 30, 100);
+    expect(left.dropsMm[left.count - 1]).toBeCloseTo(0, 9); // uz sredinu
+    expect(left.dropsMm[0]).toBeCloseTo(100, 6); // spoljna ivica
+    expect(right.dropsMm[0]).toBeCloseTo(0, 9);
+    expect(right.dropsMm[right.count - 1]).toBeCloseTo(100, 6);
   });
 });

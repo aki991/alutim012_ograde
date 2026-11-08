@@ -112,7 +112,7 @@ export function schemaSvg(project: Project, keyOfItem: (index: number) => string
     out.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="${color}" fill-opacity="0.14" stroke="${color}" stroke-width="2"/>`);
     // ispuna iz istog proračuna kao crtež
     const modelId = it.kind === 'fence' ? it.modelId : it.infillModelId;
-    const geo = computeInfill(modelId, li.clearWidth, it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount, it.params.liftMm);
+    const geo = computeInfill(modelId, li.clearWidth, it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount, it.params.liftMm, undefined, it.params.archMm);
     const ix = ox + li.clearStart * s;
     for (const b of geo.bars) {
       out.push(`<rect x="${(ix + b.x * s).toFixed(1)}" y="${(y + b.y * s).toFixed(1)}" width="${Math.max(0.8, b.w * s).toFixed(1)}" height="${Math.max(0.8, b.h * s).toFixed(1)}" fill="${color}" fill-opacity="0.55"/>`);

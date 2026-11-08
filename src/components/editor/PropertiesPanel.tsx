@@ -14,7 +14,7 @@ import { OWN_POSTS_GAP_MM } from '../../domain/models/factories';
 import { PLINTH_DEFAULT_MM, type FenceModelId, type FenceParams, type Gate, type LayoutItem, type Project } from '../../domain/models/types';
 import { RL10_LABELS, RL10_LIMITS, isRl10Model, rl10Dims, type Rl10Dims } from '../../domain/models/rl10';
 import { TUBES_LABELS, TUBES_LIMITS, isTubesModel, tubesDims, type TubesDims } from '../../domain/models/tubes';
-import { CAP_LABELS, catalogPostSize, isTarabicaPost, postCaps, TARABICA, TOP_CAPS, tarabicaClearWidth, tarabicaLayout } from '../../domain/models/tarabica';
+import { CAP_LABELS, catalogPostSize, isTarabicaPost, maxArchMm, postCaps, TARABICA, TOP_CAPS, tarabicaClearWidth, tarabicaLayout } from '../../domain/models/tarabica';
 import { computePrice } from '../../domain/pricing/calc';
 import { LIMITS, heightRangeFor, widthRangeFor } from '../../domain/validation/limits';
 import { useAppStore } from '../../store/useAppStore';
@@ -162,6 +162,23 @@ function ModelSelect({ value, onChange }: { value: FenceModelId; onChange: (m: F
 }
 
 /* ---------- Izabrani element ---------- */
+/** Razmak tarabica od poda (ograda i kapija). */
+function LiftField({ id, value }: { id: string; value: number }) {
+  return (
+    <NumberField label="Razmak od poda" testId="field-lift" value={value} range={{ min: 0, max: TARABICA.maxLiftMm }} onCommit={(v) => useAppStore.getState().patchItemParams(id, { liftMm: v }, 'lift')}
+      hint="Tarabice su podignute od poda (podrazumevano koliko je visina čepa)" />
+  );
+}
+
+/** Luk gornje ivice tarabica: za toliko su tarabice uz krajeve niže od najviše (u sredini); 0 = ravna ivica. */
+function ArchField({ id, heightMm, value }: { id: string; heightMm: number; value: number }) {
+  const max = maxArchMm(heightMm);
+  return (
+    <NumberField label="Luk gornje ivice" testId="field-arch" value={Math.min(value, max)} range={{ min: 0, max }} onCommit={(v) => useAppStore.getState().patchItemParams(id, { archMm: v }, 'arch')}
+      hint="Razlika visine između najviše (srednje) i najniže tarabice. 0 = ravna ivica. Kod dvokrilne kapije svako krilo je polovina luka." />
+  );
+}
+
 function ItemPanel({ project, id }: { project: Project; id: string }) {
   const st = useAppStore.getState();
   const index = indexOfItem(project, id);
@@ -199,7 +216,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
     body = common;
   } else if (it.kind === 'fence') {
     const def = FENCE_MODELS[it.modelId];
-    const count = computeInfill(it.modelId, li.clearWidth, it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount, it.params.liftMm).bars.filter((b: { tone: string }) => b.tone === 'main').length;
+    const count = computeInfill(it.modelId, li.clearWidth, it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount, it.params.liftMm, undefined, it.params.archMm).bars.filter((b: { tone: string }) => b.tone === 'main').length;
     const tl = def.style === 'tarabica' ? tarabicaLayout(li.clearWidth, it.heightMm, it.params.barSizeMm, it.params.gapMm, it.params.frameMm) : null;
     const slatCountRange = (() => {
       const per = it.params.barSizeMm + it.params.gapMm;
@@ -300,10 +317,8 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
             </>
           );
         })()}
-        {def.style === 'tarabica' && (
-          <NumberField label="Razmak od poda" testId="field-lift" value={it.params.liftMm ?? TARABICA.defaultLiftMm} range={{ min: 0, max: TARABICA.maxLiftMm }} onCommit={(v) => st.patchItemParams(id, { liftMm: v }, 'lift')}
-            hint="Tarabice su podignute od poda (podrazumevano koliko je visina čepa)" />
-        )}
+        {def.style === 'tarabica' && <LiftField id={id} value={it.params.liftMm ?? TARABICA.defaultLiftMm} />}
+        {def.style === 'tarabica' && <ArchField id={id} heightMm={it.heightMm} value={it.params.archMm ?? 0} />}
       </>
     );
   } else {
@@ -343,6 +358,8 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
           </>
         )}
         <NumberField label="Debljina rama" value={g.params.frameMm} range={LIMITS.frame} onCommit={(v) => st.patchItemParams(id, { frameMm: v }, 'frame')} />
+        {FENCE_MODELS[g.infillModelId].style === 'tarabica' && <LiftField id={id} value={g.params.liftMm ?? TARABICA.defaultLiftMm} />}
+        {FENCE_MODELS[g.infillModelId].style === 'tarabica' && <ArchField id={id} heightMm={g.heightMm} value={g.params.archMm ?? 0} />}
       </>
     );
   }

@@ -73,6 +73,8 @@ interface InfillProps {
   rodCount?: number;
   /** tarabica: razmak od poda (mm) */
   lift?: number;
+  /** tarabica: luk gornje ivice (mm) */
+  arch?: number;
   /** tarabica: prepust levo i desno kad se razlikuje (krilo dvokrilne kapije nema prepust uz sredinu) */
   edgeOverhang?: [number, number];
   /** jedinstveni sufiks za clipPath */
@@ -105,9 +107,9 @@ function RoundedPicket({ x, y, w, h, hex }: { x: number; y: number; w: number; h
 }
 
 /** Crta ispunu jednog polja (ram + model ispune) kao pravi SVG oblici. Koordinate u mm. */
-export function InfillArt({ modelId, x, y, w, h, frame, barSize, gap, hex, colorKey, skipLeftPost, skipRightPost, sloped, axis, rodCount, lift, edgeOverhang, uid }: InfillProps) {
+export function InfillArt({ modelId, x, y, w, h, frame, barSize, gap, hex, colorKey, skipLeftPost, skipRightPost, sloped, axis, rodCount, lift, arch, edgeOverhang, uid }: InfillProps) {
   // tarabica: detaljan crtež delova iz kataloga (u mestu „debljine rama“ je prepust spojnih cevi)
-  if (FENCE_MODELS[modelId].style === 'tarabica') return <TarabicaArt x={x} y={y} w={w} h={h} barSize={barSize} gap={gap} overhang={frame} overhangs={edgeOverhang} lift={lift} hex={hex} />;
+  if (FENCE_MODELS[modelId].style === 'tarabica') return <TarabicaArt x={x} y={y} w={w} h={h} barSize={barSize} gap={gap} overhang={frame} overhangs={edgeOverhang} lift={lift} arch={arch} hex={hex} />;
   // stepenište: nema slike sa stubovima (iskosila bi se i stub); crta se samo rukohvat i prečke, stubovi su uspravni
   const rail = colorKey !== undefined && !sloped ? railArt(modelId, colorKey) : null;
   if (rail && MODEL_IMAGES[rail.id]) {

@@ -1283,3 +1283,41 @@ test('uske horizontalne letvice: cevi u U profilima se crtaju, broj cevi prati r
   await page.waitForTimeout(500);
   expect(errors).toEqual([]);
 });
+
+test('zaglavlje: dugme Novi projekat otvara prazan projekat sa bilo koje stranice', async ({ page }) => {
+  await page.goto('/projekti');
+  await page.getByTestId('topbar-new-project').click();
+  await expect(page).toHaveURL(/\/editor\/proj_/);
+  const first = page.url();
+  await page.getByTestId('cat-fence-add').click();
+  await page.getByTestId('topbar-new-project').click();
+  await expect(page).toHaveURL(/\/editor\/proj_/);
+  expect(page.url()).not.toBe(first);
+  await expect(page.getByTestId('count-items')).toHaveText('0');
+});
+
+test('tarabica: luk gornje ivice menja visine tarabica u 2D i 3D, i važi za kapiju', async ({ page }) => {
+  const errors = trackErrors(page);
+  await page.goto('/');
+  await page.getByTestId('hero-new').first().click();
+  await page.getByTestId('catalog-model').selectOption('picket_wide');
+  await page.getByTestId('cat-fence-add').click();
+  const tops = () => page.getByTestId('front-view').getByTestId('tarabica-art').first().locator('rect[height]').evaluateAll((els) => [...new Set(els.map((e) => Math.round(Number(e.getAttribute('y')))))].length);
+  const before = await tops();
+  await page.getByTestId('field-arch').fill('120');
+  await page.getByTestId('field-arch').press('Enter');
+  await expect.poll(tops).toBeGreaterThan(before + 2);
+  await page.getByTestId('cat-gate-pedestrian-add').click();
+  await expect(page.getByTestId('field-arch')).toBeVisible();
+  // razmak od poda postoji i za kapiju i menja položaj tarabica
+  const lowest = () => page.getByTestId('front-view').getByTestId('tarabica-art').last().locator('rect[height]').evaluateAll((els) => Math.max(...els.map((e) => Number(e.getAttribute('y')) + Number(e.getAttribute('height')))));
+  await expect(page.getByTestId('field-lift')).toBeVisible();
+  const bottomBefore = await lowest();
+  await page.getByTestId('field-lift').fill('120');
+  await page.getByTestId('field-lift').press('Enter');
+  await expect.poll(lowest).toBeLessThan(bottomBefore - 50);
+  await page.getByRole('tab', { name: /3D prikaz/ }).click();
+  await expect(page.getByTestId('three-canvas')).toBeVisible();
+  await page.waitForTimeout(500);
+  expect(errors).toEqual([]);
+});

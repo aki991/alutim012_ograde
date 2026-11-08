@@ -26,11 +26,12 @@ const domeGeometry = (() => {
 export function TarabicaPanel({ widthMm, heightMm, params, color, overhangs }: PanelProps) {
   const hex = colorHex(color);
   const mat = bodyMaterial(hex);
-  const t = useMemo(() => tarabicaLayout(widthMm, heightMm, params.barSizeMm, params.gapMm, overhangs?.[0] ?? params.frameMm, params.liftMm, overhangs?.[1] ?? params.frameMm), [widthMm, heightMm, params.barSizeMm, params.gapMm, params.frameMm, params.liftMm, overhangs?.[0], overhangs?.[1]]);
+  const t = useMemo(() => tarabicaLayout(widthMm, heightMm, params.barSizeMm, params.gapMm, overhangs?.[0] ?? params.frameMm, params.liftMm, overhangs?.[1] ?? params.frameMm, params.archMm), [widthMm, heightMm, params.barSizeMm, params.gapMm, params.frameMm, params.liftMm, params.archMm, overhangs?.[0], overhangs?.[1]]);
   const bar = params.barSizeMm;
   const dome = tarabicaDomeMm(bar);
   const capH = tarabicaCapHeight(bar);
-  const tubeLen = Math.max(1, t.slatLenMm - capH);
+  // luk: svaka tarabica ima svoju dužinu (donji kraj je isti), pa i svoj vrh
+  const tubeLenOf = (i: number) => Math.max(1, t.slatLens[i] - capH);
   const lift = t.liftMm;
   const W = s(widthMm);
   const H = s(heightMm);
@@ -44,11 +45,11 @@ export function TarabicaPanel({ widthMm, heightMm, params, color, overhangs }: P
       {/* spojne cevi 30 × 30 iza tarabica */}
       {railY.map((y) => <mesh key={y} geometry={boxGeometry} material={mat} scale={[W, s(TARABICA.railMm), s(TARABICA.railMm)]} position={[0, y, railZ]} castShadow receiveShadow />)}
       {/* cevi 80 × 20 */}
-      <Instances count={t.count} mat={mat} build={(i, m) => m.compose(new THREE.Vector3(slatX(i), s(lift + tubeLen / 2), 0), new THREE.Quaternion(), new THREE.Vector3(s(bar), s(tubeLen), s(thick)))} />
+      <Instances count={t.count} mat={mat} build={(i, m) => m.compose(new THREE.Vector3(slatX(i), s(lift + tubeLenOf(i) / 2), 0), new THREE.Quaternion(), new THREE.Vector3(s(bar), s(tubeLenOf(i)), s(thick)))} />
       {/* čep tarabice: okovratnik, kupola i povišen obod na kupoli */}
-      <Instances count={t.count} mat={mat} build={(i, m) => m.compose(new THREE.Vector3(slatX(i), s(lift + tubeLen + TARABICA.collarMm / 2), 0), new THREE.Quaternion(), new THREE.Vector3(s(bar + 2 * TARABICA.collarExtraMm), s(TARABICA.collarMm), s(thick + 2 * TARABICA.collarExtraMm)))} />
-      <Instances count={t.count} mat={mat} geometry={domeGeometry} build={(i, m) => m.compose(new THREE.Vector3(slatX(i), s(lift + tubeLen + TARABICA.collarMm), 0), new THREE.Quaternion(), new THREE.Vector3(s(bar), s(dome), s(thick)))} />
-      <Instances count={t.count} mat={mat} geometry={domeGeometry} build={(i, m) => m.compose(new THREE.Vector3(slatX(i), s(lift + tubeLen + TARABICA.collarMm), 0), new THREE.Quaternion(), new THREE.Vector3(s(bar - 12), s(dome - 6), s(thick + 3)))} />
+      <Instances count={t.count} mat={mat} build={(i, m) => m.compose(new THREE.Vector3(slatX(i), s(lift + tubeLenOf(i) + TARABICA.collarMm / 2), 0), new THREE.Quaternion(), new THREE.Vector3(s(bar + 2 * TARABICA.collarExtraMm), s(TARABICA.collarMm), s(thick + 2 * TARABICA.collarExtraMm)))} />
+      <Instances count={t.count} mat={mat} geometry={domeGeometry} build={(i, m) => m.compose(new THREE.Vector3(slatX(i), s(lift + tubeLenOf(i) + TARABICA.collarMm), 0), new THREE.Quaternion(), new THREE.Vector3(s(bar), s(dome), s(thick)))} />
+      <Instances count={t.count} mat={mat} geometry={domeGeometry} build={(i, m) => m.compose(new THREE.Vector3(slatX(i), s(lift + tubeLenOf(i) + TARABICA.collarMm), 0), new THREE.Quaternion(), new THREE.Vector3(s(bar - 12), s(dome - 6), s(thick + 3)))} />
     </group>
   );
 }
