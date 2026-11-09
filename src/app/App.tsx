@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Sidebar } from '../components/layout/Sidebar';
 import { Topbar } from '../components/layout/Topbar';
+import { UpdateBanner } from '../components/layout/UpdateBanner';
 import CustomersPage from '../pages/Customers/CustomersPage';
 import DashboardPage from '../pages/Dashboard/DashboardPage';
 import EditorPage from '../pages/Editor/EditorPage';
@@ -71,6 +72,7 @@ export default function App() {
           </Routes>
         </main>
       </div>
+      <UpdateBanner />
     </div>
   );
 }

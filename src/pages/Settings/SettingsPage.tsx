@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { NumberField, SegmentedField, TextField, ToggleField } from '../../components/forms/Fields';
 import { Page, PageHeader } from '../../components/ui/Common';
 import { UsersAdmin } from '../../components/settings/UsersAdmin';
@@ -31,6 +31,8 @@ function AccountName() {
 }
 
 export default function SettingsPage() {
+  const [appVersion, setAppVersion] = useState<string | null>(null);
+  useEffect(() => { void window.electronAPI?.getVersion().then(setAppVersion); }, []);
   const auth = useAuth();
   const settings = useAppStore((s) => s.settings);
   const update = useAppStore((s) => s.updateSettings);
@@ -77,6 +79,7 @@ export default function SettingsPage() {
             <button className="btn" onClick={() => void saveNow()}>Sačuvaj sada</button>
             <button className="btn btn-danger" data-testid="btn-reset-demo" onClick={() => setConfirm(true)}>Reset demonstracionih podataka</button>
           </div>
+          {appVersion && <p className="text-sm text-muted mt-3" data-testid="app-version">Verzija aplikacije: {appVersion}</p>}
           {done && <p role="status" className="text-sm text-[#067647] mt-3">Demonstracioni podaci su vraćeni na početno stanje.</p>}
         </section>
       </div>

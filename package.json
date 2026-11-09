@@ -9,12 +9,16 @@
     "preview": "vite preview --port 4173",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "test:e2e:auth": "playwright test -c playwright.auth.config.ts"
+    "test:e2e:auth": "playwright test -c playwright.auth.config.ts",
+    "electron:dev": "concurrently -k -n vite,electron \"vite\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
+    "electron:build": "npm run build && electron-builder --win nsis --publish never",
+    "release": "npm run build && electron-builder --win nsis --publish always"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",
     "@react-three/fiber": "^9.8.2",
     "@supabase/supabase-js": "^2.118.0",
+    "electron-updater": "^6.8.11",
     "fflate": "^0.8.3",
     "idb": "^8.0.4",
     "lucide-react": "^1.64.0",
@@ -35,11 +39,59 @@
     "@types/react-dom": "^19.3.0",
     "@types/three": "^0.186.0",
     "@vitejs/plugin-react": "^6.1.2",
+    "concurrently": "^10.0.7",
+    "cross-env": "^10.1.0",
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0",
     "fake-indexeddb": "^6.2.6",
     "sharp": "^0.35.5",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
-    "vitest": "^5.0.5"
+    "vitest": "^5.0.5",
+    "wait-on": "^9.5.1"
+  },
+  "main": "electron/main.cjs",
+  "description": "ALU TIM 012 Ograde",
+  "author": "ALU TIM 012",
+  "build": {
+    "appId": "rs.alutim012.ograde",
+    "productName": "ALU TIM 012 Ograde",
+    "copyright": "ALU TIM 012",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ALU TIM 012 Ograde",
+      "perMachine": false
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "aki991",
+        "repo": "alutim012_ograde"
+      }
+    ]
   }
 }
