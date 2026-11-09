@@ -157,7 +157,7 @@ function setupUpdater() {
   setInterval(check, CHECK_EVERY_MS);
 
   ipcMain.handle('update:install', () => {
-    autoUpdater.quitAndInstall(false, true);
+    autoUpdater.quitAndInstall(true, true); // tiho: bez čarobnjaka, aplikacija se sama ponovo pokrene
   });
 }
 
