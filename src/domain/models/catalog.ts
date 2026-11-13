@@ -31,7 +31,7 @@ export function isLightColor(key: string): boolean {
 export const hasLightFence = (items: ReadonlyArray<{ kind: string; color?: string }>): boolean => items.some((i) => i.kind !== 'opening' && i.color !== undefined && isLightColor(i.color));
 
 /** Način crtanja ispune; isti opis koriste 2D, 3D i kalkulacija (vidi domain/geometry/infill.ts). */
-export type InfillStyle = 'tubes' | 'hbars' | 'louver' | 'combo' | 'framed_vertical' | 'picket' | 'tarabica' | 'panel_lines' | 'rods' | 'glass_rail';
+export type InfillStyle = 'tubes' | 'hbars' | 'louver' | 'combo' | 'framed_vertical' | 'picket' | 'tarabica' | 'panel_lines' | 'rods' | 'glass_rail' | 'custom';
 
 export interface FenceModelDef {
   id: FenceModelId;
@@ -145,11 +145,6 @@ const MODEL_LIST: FenceModelDef[] = [
     image: '14', style: 'hbars', defaultColor: 'RAL 7016', defaults: { barSizeMm: 180, gapMm: 45, frameMm: 40 }, barLabel: 'Visina letvice', gapLabel: 'Razmak letvica', hasBars: true,
     materialId: 'mat_alu_panel', parts: { main: 'Letvica 180×20' },
   }),
-  model({
-    id: 'glass_inox', name: 'Inox i staklo', description: 'Staklena ispuna sa inox rukohvatom', infill: 'Staklo sa inox rukohvatom i nosačima', material: 'Kaljeno staklo / inox',
-    image: '15', style: 'glass_rail', defaultColor: 'INOX', defaults: { barSizeMm: 0, gapMm: 0, frameMm: 0 }, barLabel: '', gapLabel: '', hasBars: false,
-    materialId: 'mat_glass', railMaterialId: 'mat_rukohvat', parts: { main: 'Staklo 8 mm', rail: 'Rukohvat Ø50 (inox)' },
-  }),
 ];
 
 export const FENCE_MODELS = Object.fromEntries(MODEL_LIST.map((m) => [m.id, m])) as Record<FenceModelId, FenceModelDef>;
@@ -157,7 +152,7 @@ export const FENCE_MODELS = Object.fromEntries(MODEL_LIST.map((m) => [m.id, m]))
 export const FENCE_MODEL_LIST = MODEL_LIST;
 
 /** Ograde za terase (rukohvat sa prečkama ili staklom): nemaju kapije ni zasebne stubove iz kataloga; stubovi su deo same ograde. */
-export const TERRACE_MODELS: readonly FenceModelId[] = ['rail_black', 'rail_inox', 'glass_inox'];
+export const TERRACE_MODELS: readonly FenceModelId[] = ['rail_black', 'rail_inox'];
 export const isTerraceModel = (id: FenceModelId): boolean => TERRACE_MODELS.includes(id);
 export const TERRACE_NO_GATES = 'Ograde za terase nemaju kapije.';
 
@@ -221,7 +216,7 @@ export function panelPeriodMm(modelId: FenceModelId, p: { barSizeMm: number; gap
 }
 
 /** Modeli sa srebrnim okruglim stubovima (rukohvat + prečke ili staklo). Ostali modeli prate boju elementa. */
-const INOX_POST_MODELS: FenceModelId[] = ['rail_black', 'rail_inox', 'glass_inox'];
+const INOX_POST_MODELS: FenceModelId[] = ['rail_black', 'rail_inox'];
 
 export interface PostStyle {
   color: string;
@@ -379,7 +374,9 @@ export function projectModelId(items: ReadonlyArray<{ kind: string; modelId?: Fe
 
 /** Stari modeli (šema v1/v2) → najbliži novi model; koristi se pri migraciji i uvozu starih JSON fajlova. */
 export const LEGACY_MODEL_MAP: Record<string, FenceModelId> = {
-  tarabica: 'picket_wide', horizontal: 'h_narrow', solid: 'panel_lines', vertical: 'v_framed', lamele: 'louver_dark', decor: 'panel_lines', glass: 'glass_inox',
+  tarabica: 'picket_wide', horizontal: 'h_narrow', solid: 'panel_lines', vertical: 'v_framed', lamele: 'louver_dark', decor: 'panel_lines', glass: 'rail_inox',
+  // model „Inox i staklo“ je izbačen iz kataloga: stari projekti prelaze na inox ogradu sa prečkama
+  glass_inox: 'rail_inox',
 };
 
 export const GATE_LABELS: Record<GateType, string> = {

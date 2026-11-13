@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { SEED_MATERIALS } from '../data/materials';
+import { isBuiltinMaterial } from '../data/materials';
 import { createSeedData } from '../data/seed';
 import { loadAll, saveAll, wipeAll } from '../db';
 import {
@@ -8,7 +8,8 @@ import {
 import { newItemFor } from '../domain/geometry/newItem';
 import { computeLayout } from '../domain/geometry/layout';
 import { removeStair, setStairGroup } from '../domain/geometry/stairOps';
-import { DEFAULT_MODEL_ID, TERRACE_NO_GATES, isTerraceModel, projectModelId } from '../domain/models/catalog';
+import { DEFAULT_MODEL_ID, FENCE_MODELS, TERRACE_NO_GATES, isTerraceModel, projectModelId } from '../domain/models/catalog';
+import { registerCustomModels } from '../domain/models/customRegistry';
 import { createFence, createGate, createProject, nowIso } from '../domain/models/factories';
 import { emptyHistory, recordChange, redo as redoH, undo as undoH, type History } from '../domain/models/history';
 import type {
@@ -96,10 +97,24 @@ interface AppState {
   setMaterials: (list: Material[]) => void;
   removeMaterial: (id: string) => void;
   updateSettings: (patch: Partial<AppSettings>) => void;
+  /** briše ručno nacrtan model; projekti koji ga koriste prelaze na podrazumevani model iz kataloga */
+  removeCustomModel: (id: string) => void;
 }
 
-/** prelazni materijali modela uskih horizontalnih letvica (pre tačnih mera radnika): zamenjeni sa mat_u_20x20 / mat_kv_30x20 */
-const LEGACY_MATERIAL_IDS = ['mat_u_25x20', 'mat_kv_20x20'];
+/** Element čiji model više ne postoji (obrisan nacrtani model) prelazi na podrazumevani model, da se projekat i dalje otvara. */
+const dropUnknownModels = (p: Project): Project => {
+  const known = (id: string) => id in FENCE_MODELS;
+  if (p.items.every((it) => it.kind === 'opening' || known(it.kind === 'fence' ? it.modelId : it.infillModelId))) return p;
+  const d = FENCE_MODELS[DEFAULT_MODEL_ID];
+  return {
+    ...p,
+    items: p.items.map((it) => {
+      if (it.kind === 'fence' && !known(it.modelId)) return { ...it, modelId: DEFAULT_MODEL_ID, materialId: d.materialId, params: { ...d.defaults } };
+      if (it.kind === 'gate' && !known(it.infillModelId)) return { ...it, infillModelId: DEFAULT_MODEL_ID, params: { ...d.defaults } };
+      return it;
+    }),
+  };
+};
 
 const emptyEditor = (): EditorState => ({
   projectId: null, selection: null, multi: [], multiPosts: [], history: emptyHistory<Project>(), view: 'front', zoom: 1, activeModelId: DEFAULT_MODEL_ID, notice: null,
@@ -168,7 +183,11 @@ export const useAppStore = create<AppState>((set, get) => {
           await saveAll(s);
           set({ ...s, ready: true });
         } else {
-          set({ projects: data.projects.map(migrateProject), customers: data.customers, materials: [...data.materials.filter((m) => !LEGACY_MATERIAL_IDS.includes(m.id)), ...SEED_MATERIALS.filter((m) => !data.materials.some((x) => x.id === m.id))], settings: data.settings ?? seed.settings, ready: true });
+          const settings = data.settings ?? seed.settings;
+          const materials = data.materials.filter((m) => !isBuiltinMaterial(m));
+          // nacrtani modeli moraju biti u katalogu pre nego što se projekti učitaju
+          registerCustomModels(settings.customModels, materials);
+          set({ projects: data.projects.map(migrateProject).map(dropUnknownModels), customers: data.customers, materials, settings, ready: true });
         }
       } catch (e) {
         // IndexedDB nedostupan (npr. privatni režim): radimo u memoriji i jasno prijavljujemo grešku
@@ -382,7 +401,22 @@ export const useAppStore = create<AppState>((set, get) => {
     setMaterials(materials) { set({ materials }); },
     removeMaterial(id) { set((s) => ({ materials: s.materials.filter((x) => x.id !== id) })); },
     updateSettings(patch) { set((s) => ({ settings: { ...s.settings, ...patch } })); },
+    removeCustomModel(id) {
+      const customModels = (get().settings.customModels ?? []).filter((m) => m.id !== id);
+      // katalog se osvežava pre izmene projekata, da nijedan prikaz ne zatekne element sa nepostojećim modelom
+      registerCustomModels(customModels, get().materials);
+      set((s) => ({
+        settings: { ...s.settings, customModels },
+        projects: s.projects.map(dropUnknownModels),
+        editor: { ...s.editor, history: emptyHistory<Project>(), activeModelId: s.editor.activeModelId === id ? DEFAULT_MODEL_ID : s.editor.activeModelId },
+      }));
+    },
   };
+});
+
+// katalog prati nacrtane modele i cenovnik (pretplata na nivou modula se izvršava pre osvežavanja komponenti)
+useAppStore.subscribe((s, prev) => {
+  if (s.settings.customModels !== prev.settings.customModels || s.materials !== prev.materials) registerCustomModels(s.settings.customModels, s.materials);
 });
 
 export const useCurrentProject = (): Project | undefined =>

@@ -50,7 +50,24 @@ export const PROFILE_BY_SKU: Record<string, ProfileSpec> = {
   KZ000004: { kind: 'slant', width: 80, height: 20, wall: 1, offset: 25.6 },
 };
 
-export const profileSpecFor = (m: Pick<Material, 'sku'>): ProfileSpec | null => PROFILE_BY_SKU[m.sku.trim().toUpperCase()] ?? null;
+/** Debljina zida preseka (mm); null za složene oblike kojima se zid ne menja. */
+export const specWall = (s: ProfileSpec): number | null => (s.kind === 'u' || s.kind === 'tube' || s.kind === 'l' ? s.c : s.kind === 'h' ? s.t : s.kind === 'slant' ? s.wall : null);
+
+/** Presek sa drugom debljinom zida (spoljne mere ostaju iste); zid ne može biti deblji od pola manje stranice. */
+export function withWall(s: ProfileSpec, wallMm: number | undefined): ProfileSpec {
+  if (!wallMm || !(wallMm > 0)) return s;
+  if (s.kind === 'u' || s.kind === 'l') return { ...s, c: Math.min(wallMm, Math.min(s.a, s.b) / 2 - 0.05) };
+  if (s.kind === 'tube') return { ...s, c: Math.min(wallMm, Math.min(s.a, s.b) / 2 - 0.05) };
+  if (s.kind === 'h') return { ...s, t: Math.min(wallMm, s.width / 2 - 0.05) };
+  if (s.kind === 'slant') return { ...s, wall: Math.min(wallMm, s.height / 2 - 0.05) };
+  return s;
+}
+
+/** Presek profila po šifri; ako je materijalu zadata debljina zida, presek je sa tom debljinom. */
+export const profileSpecFor = (m: Pick<Material, 'sku'> & { wallMm?: number }): ProfileSpec | null => {
+  const s = PROFILE_BY_SKU[m.sku.trim().toUpperCase()];
+  return s ? withWall(s, m.wallMm) : null;
+};
 
 /** Kota na crtežu: duž od `from` do `to`, pomerena upravno za `gap` (mm; pozitivno = udesno/nadole od pravca crtanja). */
 export interface Dim { from: Pt; to: Pt; gap: number; label: string }

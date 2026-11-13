@@ -1,5 +1,7 @@
 import { isTubesModel } from '../../../domain/models/tubes';
-import { TubesPanel } from './TubesPanel';
+import { TubesWithRam } from './TubesPanel';
+import { customPartsFor } from '../../../domain/models/customRegistry';
+import { PartMesh } from '../../designer/Designer3D';
 import { useTexture } from '@react-three/drei';
 import { Suspense, useLayoutEffect, useMemo } from 'react';
 import * as THREE from 'three';
@@ -137,10 +139,18 @@ function RailArtPanel({ url, rail, axisWidthMm, heightMm, rodCount }: { url: str
 
 /** Ram + ispuna jednog polja, centrirano u x, od y=0 (tlo) do y=visina. Koristi se za ogradu i krila kapija. */
 export function PanelBody(props: PanelProps) {
+  // ručno nacrtan model: isti delovi kao na crtežu (profili izvučeni iz preseka), razvučeni na veličinu polja
+  if (FENCE_MODELS[props.modelId].style === 'custom') {
+    return (
+      <group position={[-s(props.widthMm) / 2, 0, 0]} scale={s(1)}>
+        {customPartsFor(props.modelId, props.widthMm, props.heightMm, colorHex(props.color)).map((r) => <PartMesh key={r.part.id} part={r.part} shape={r.shape} hex={r.hex} materialKey={r.material ? `${r.material.sku}|${r.material.name}` : 'x'} selected={false} />)}
+      </group>
+    );
+  }
   // model 08: stvarni profili (letvice 80 × 20, U vođice 60 × 28) umesto slike
   if (props.modelId === 'louver_light') return <LouverPanel {...props} />;
   // uske horizontalne letvice: kvadratne cevi u bočnim U profilima (stvarne dimenzije)
-  if (isTubesModel(props.modelId)) return <TubesPanel {...props} />;
+  if (isTubesModel(props.modelId)) return <TubesWithRam {...props} />;
   // tarabica: stvarni delovi iz kataloga (cevi 80 × 20 sa čepom, spojne cevi 30 × 30, zavrtnji)
   if (FENCE_MODELS[props.modelId].style === 'tarabica') return <TarabicaPanel {...props} />;
   const rail = railArt(props.modelId, props.color);

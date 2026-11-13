@@ -1,3 +1,5 @@
+import { PartsPanel } from './PartsPanel';
+import { allFenceModels } from '../../domain/models/customRegistry';
 import { AlertTriangle, ArrowLeft, ArrowRight, Copy, Trash2, Calculator, FileDown, Scissors, ClipboardList } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { autoFillToFixedTotal, changeColor, indexOfItem, resetPostHeights, setAllColors, setAllGatesOwnPosts, setAllPlinths, setRl10Params, resetRl10Params, setTubesParams, resetTubesParams, setPlinthWidth, setAllHeights, setOuterWidth, updateItem, updatePost } from '../../domain/geometry/operations';
@@ -6,7 +8,7 @@ import { MAX_TURN_DEG } from '../../domain/geometry/plan';
 import { cornerInfo } from '../../domain/geometry/corner';
 import { computeLayout, isSpacer, outerWidthMm, postHalfSum, totalStatus } from '../../domain/geometry/layout';
 import {
-  AUTOMATION_LABELS, FENCE_MODEL_LIST, FENCE_MODELS, HINGE_LABELS, LOCK_LABELS, MOUNTING_LABELS, POST_LABELS, POST_SIZES, isTerraceModel, maxRods, rodCountFor,
+  AUTOMATION_LABELS, FENCE_MODELS, HINGE_LABELS, LOCK_LABELS, MOUNTING_LABELS, POST_LABELS, POST_SIZES, isTerraceModel, maxRods, rodCountFor,
 } from '../../domain/models/catalog';
 import { MAX_FIELDS, STAIR_DEFAULT_RISE_MM, STAIR_MAX_DEG, STAIR_MIN_DEG, recommendedStairPosts, slopeOf, stairGroupAt } from '../../domain/geometry/stair';
 import { clearStair, makeStair, setStairGroup, stairOuterRunMm, type StairPatch } from '../../domain/geometry/stairOps';
@@ -157,7 +159,7 @@ function ProjectBasics({ project }: { project: Project }) {
 /* ---------- Model (padajući meni; menja se za sve elemente) ---------- */
 function ModelSelect({ value, onChange }: { value: FenceModelId; onChange: (m: FenceModelId) => void }) {
   return (
-    <SelectField stacked label="Model (menja se na svim elementima)" testId="field-model" value={value} options={FENCE_MODEL_LIST.map((m) => ({ value: m.id, label: m.name }))} onChange={onChange} />
+    <SelectField stacked label="Model (menja se na svim elementima)" testId="field-model" value={value} options={allFenceModels().map((m) => ({ value: m.id, label: m.name }))} onChange={onChange} />
   );
 }
 
@@ -246,7 +248,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
             )}
           </>
         )}
-        {def.style !== 'rods' && def.style !== 'glass_rail' && (
+        {def.style !== 'rods' && def.style !== 'glass_rail' && def.style !== 'custom' && (
           <NumberField label={def.frameLabel ?? 'Debljina rama'} testId={def.style === 'tarabica' ? 'field-overhang' : undefined} value={it.params.frameMm}
             range={def.style === 'tarabica' ? { min: 0, max: TARABICA.maxOverhangMm } : LIMITS.frame} onCommit={(v) => st.patchItemParams(id, { frameMm: v }, 'frame')}
             hint={def.style === 'tarabica' ? 'Koliko cev 30×30 viri iza krajnje tarabice sa svake strane' : undefined} />
@@ -263,6 +265,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
         )}
         {isRl10Model(it.modelId) && <Rl10Parts params={it.params} />}
         {isTubesModel(it.modelId) && <TubesParts params={it.params} />}
+        <PartsPanel project={project} params={it.params} />
         {isTerraceModel(it.modelId) && (() => {
           // stepenište: niz polja između stubova; prvi i poslednji stub su na krajevima, stubovi između se dodaju (preporuka: na svaki metar)
           const grp = stairGroupAt(project.items, index);
@@ -360,6 +363,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
         <NumberField label="Debljina rama" value={g.params.frameMm} range={LIMITS.frame} onCommit={(v) => st.patchItemParams(id, { frameMm: v }, 'frame')} />
         {FENCE_MODELS[g.infillModelId].style === 'tarabica' && <LiftField id={id} value={g.params.liftMm ?? TARABICA.defaultLiftMm} />}
         {FENCE_MODELS[g.infillModelId].style === 'tarabica' && <ArchField id={id} heightMm={g.heightMm} value={g.params.archMm ?? 0} />}
+        <PartsPanel project={project} params={g.params} />
       </>
     );
   }

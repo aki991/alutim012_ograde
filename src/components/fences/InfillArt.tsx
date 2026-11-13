@@ -5,6 +5,8 @@ import { MODEL_IMAGES } from '../../assets/models';
 import { FENCE_MODELS, panelArt, panelTiles, railArt, railBands, RAIL_POST_MM } from '../../domain/models/catalog';
 import type { FenceModelId } from '../../domain/models/types';
 import { TarabicaArt } from './TarabicaArt';
+import { customPartsFor } from '../../domain/models/customRegistry';
+import { PartSvg } from '../designer/PartsSvg';
 
 export const GAP_TINT = '#cdd7d0';
 
@@ -77,6 +79,8 @@ interface InfillProps {
   arch?: number;
   /** tarabica: prepust levo i desno kad se razlikuje (krilo dvokrilne kapije nema prepust uz sredinu) */
   edgeOverhang?: [number, number];
+  /** ram (okvir sa sve četiri strane, rez 45°) kod modela sa horizontalnim kvadratnim cevima */
+  ram?: { kind: 'u' | 'tube' | null; side: number; top: number };
   /** jedinstveni sufiks za clipPath */
   uid: string;
 }
@@ -107,7 +111,41 @@ function RoundedPicket({ x, y, w, h, hex }: { x: number; y: number; w: number; h
 }
 
 /** Crta ispunu jednog polja (ram + model ispune) kao pravi SVG oblici. Koordinate u mm. */
-export function InfillArt({ modelId, x, y, w, h, frame, barSize, gap, hex, colorKey, skipLeftPost, skipRightPost, sloped, axis, rodCount, lift, arch, edgeOverhang, uid }: InfillProps) {
+export function InfillArt(props: InfillProps) {
+  const { modelId, x, y, w, h, frame, barSize, gap, hex, colorKey, skipLeftPost, skipRightPost, sloped, axis, rodCount, lift, arch, edgeOverhang, uid, ram } = props;
+  // ram: članovi rama sa kosim spojevima u uglovima (45°), a ispuna (U vođice i cevi) se crta unutar njega
+  if (ram?.kind && FENCE_MODELS[modelId].style === 'tubes') {
+    const t = Math.min(ram.kind === 'tube' ? ram.side : ram.top, w / 3, h / 3);
+    const sh = Math.max(1.5, t / 14);
+    const tube = ram.kind === 'tube';
+    const member = (rx: number, ry: number, rw: number, rh: number, k: string) => (
+      <g key={k}>
+        <rect x={rx} y={ry} width={rw} height={rh} fill={hex} />
+        <rect x={rx} y={ry} width={rw} height={rh} fill={rw > rh ? 'url(#shade-h)' : 'url(#shade-v)'} fillOpacity="0.55" />
+        <rect x={rx} y={ry} width={rw} height={rh} fill="none" stroke="#000" strokeOpacity="0.4" strokeWidth={sh} />
+      </g>
+    );
+    return (
+      <g data-testid="ram-art" data-ram={ram.kind}>
+        <InfillArt {...props} ram={undefined} x={tube ? x + t : x} y={y + t} w={tube ? w - 2 * t : w} h={h - 2 * t} uid={`${uid}-in`} />
+        {member(x, y, w, t, 'top')}{member(x, y + h - t, w, t, 'bottom')}
+        {tube && member(x, y, t, h, 'left')}{tube && member(x + w - t, y, t, h, 'right')}
+        {/* kosi rezovi u uglovima */}
+        {[[x, y, x + t, y + t], [x + w, y, x + w - t, y + t], [x, y + h, x + t, y + h - t], [x + w, y + h, x + w - t, y + h - t]].map(([x1, y1, x2, y2], i) => (
+          <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#000" strokeOpacity="0.55" strokeWidth={sh * 1.2} />
+        ))}
+      </g>
+    );
+  }
+  // ručno nacrtan model: delovi sa crteža, razvučeni na veličinu polja
+  if (FENCE_MODELS[modelId].style === 'custom') {
+    return (
+      <g data-testid="custom-art" transform={`translate(${x} ${y + h}) scale(1,-1)`} style={{ pointerEvents: 'none' }}>
+        <rect x={0} y={0} width={w} height={h} fill={GAP_TINT} fillOpacity="0.25" />
+        {customPartsFor(modelId, w, h, hex).map((r) => <PartSvg key={r.part.id} part={r.part} shape={r.shape} hex={r.hex} />)}
+      </g>
+    );
+  }
   // tarabica: detaljan crtež delova iz kataloga (u mestu „debljine rama“ je prepust spojnih cevi)
   if (FENCE_MODELS[modelId].style === 'tarabica') return <TarabicaArt x={x} y={y} w={w} h={h} barSize={barSize} gap={gap} overhang={frame} overhangs={edgeOverhang} lift={lift} arch={arch} hex={hex} />;
   // stepenište: nema slike sa stubovima (iskosila bi se i stub); crta se samo rukohvat i prečke, stubovi su uspravni

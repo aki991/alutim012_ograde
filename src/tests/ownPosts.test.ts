@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SEED_MATERIALS } from '../data/materials';
+import { SEED_MATERIALS } from './fixtures/materials';
 import { applyPostType, setAllGatesOwnPosts, setAllPlinths, updateItem, updatePost } from '../domain/geometry/operations';
 import { computeLayout, isSpacer } from '../domain/geometry/layout';
 import { createFence, createGate, createProject } from '../domain/models/factories';

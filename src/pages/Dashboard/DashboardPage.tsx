@@ -14,7 +14,6 @@ const POPULAR: { name: string; modelId: FenceModelId; photo: string | null; gate
   { name: 'Antracit — žaluzine', modelId: 'louver_dark', photo: null },
   { name: 'Braon — zaobljeni vrhovi', modelId: 'picket_brown', photo: null },
   { name: 'Panel sa srebrnim linijama', modelId: 'panel_lines', photo: null },
-  { name: 'Inox i staklo', modelId: 'glass_inox', photo: null },
   { name: 'Kapija sa lamelama', modelId: 'louver_dark', photo: 'kapija-lamele', gate: 'sliding' },
 ];
 

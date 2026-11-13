@@ -1,9 +1,10 @@
+import { allFenceModels } from '../../domain/models/customRegistry';
 import { ChevronRight } from 'lucide-react';
 import { ElementThumb, type ThumbKind } from './Catalog';
 import { useState } from 'react';
 import { newItemFor, type NewItemSpec } from '../../domain/geometry/newItem';
 import { applyPostType, insertItem, setOuterWidth, withConcretePosts } from '../../domain/geometry/operations';
-import { FENCE_MODEL_LIST, FENCE_MODELS, GATE_LABELS, isTerraceModel, projectModelId } from '../../domain/models/catalog';
+import { FENCE_MODELS, GATE_LABELS, isTerraceModel, projectModelId } from '../../domain/models/catalog';
 import { createCorner, createFence, createGate, createOpening } from '../../domain/models/factories';
 import type { FenceModelId, GateType, LayoutItem, Project } from '../../domain/models/types';
 import { heightRangeFor, validateRange, widthRangeFor } from '../../domain/validation/limits';
@@ -110,7 +111,7 @@ export function AddItemModal({ project, onClose }: { project: Project; onClose: 
         {(kind.fence || kind.gate) && !projectModel && (
           <label className="grid gap-1"><span className="label">Model ispune</span>
             <select className="input" data-testid="add-model" value={model} onChange={(e) => setModel(e.target.value as FenceModelId)}>
-              {FENCE_MODEL_LIST.filter((m) => !kind.gate || !isTerraceModel(m.id)).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              {allFenceModels().filter((m) => !kind.gate || !isTerraceModel(m.id)).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
           </label>
         )}

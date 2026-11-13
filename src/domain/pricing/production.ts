@@ -22,6 +22,8 @@ export interface CutRow {
   lengthMm: number;
   qty: number;
   note?: string;
+  /** deo rama: seče se pod 45° na oba kraja (dužina je spoljna mera) */
+  miter?: boolean;
 }
 
 /**
@@ -52,7 +54,8 @@ export function buildCutList(project: Project, specs?: ModelSpecs, materials?: M
       const len = Math.round(ev.lengthMm);
       const qty = Math.round(ev.qty);
       if (qty <= 0 || len <= 0) continue;
-      const profile = materials ? materialName(materials, ev.part.materialId) : ev.part.name;
+      const profile = materials ? materialName(materials, project.partMaterials?.[ev.part.materialId] ?? ev.part.materialId) : ev.part.name;
+      const miter = ev.part.group === 'Ramovi' || undefined;
       // tarabice sa lukom: svaka grupa iste dužine je poseban red krojne liste
       if (slats && ev.part.lengthMm === 'MAINLEN-CAPH') {
         const byLen = new Map<number, number>();
@@ -66,7 +69,7 @@ export function buildCutList(project: Project, specs?: ModelSpecs, materials?: M
       const key = `${ev.part.name}|${len}`;
       const cur = group.get(key);
       if (cur) cur.qty += qty;
-      else group.set(key, { element: name, index: li.index, part: ev.part.name, profile, lengthMm: len, qty, note: [ev.part.note, stairNote].filter(Boolean).join(' · ') || undefined });
+      else group.set(key, { element: name, index: li.index, part: ev.part.name, profile, lengthMm: len, qty, miter, note: [ev.part.note, miter && !/45/.test(ev.part.note ?? '') ? 'rez 45° na oba kraja' : '', stairNote].filter(Boolean).join(' · ') || undefined });
     }
     rows.push(...group.values());
   }

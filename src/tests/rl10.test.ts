@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { computeInfill } from '../domain/geometry/infill';
 import { setRl10Params, updateItemParams } from '../domain/geometry/operations';
-import { SEED_MATERIALS } from '../data/materials';
+import { SEED_MATERIALS } from './fixtures/materials';
 import { createFence, createProject } from '../domain/models/factories';
 import { RL10_DEFAULTS, isRl10EndPost, isRl10Post, rl10Geometry, rl10PostInfo } from '../domain/models/rl10';
 import { computeLayout } from '../domain/geometry/layout';

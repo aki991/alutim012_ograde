@@ -8,7 +8,8 @@ import { itemLabel } from '../../utils/labels';
 import { useAppStore } from '../../store/useAppStore';
 import { Modal } from '../ui/Modal';
 
-export type DimKind = 'width' | 'height' | 'total';
+/** 'width' = spoljna širina elementa (sa stubovima), 'clear' = platno (svetla širina između stubova) */
+export type DimKind = 'width' | 'clear' | 'height' | 'total';
 
 /**
  * Izmena mere sa kote: širina elementa (ukupna, sa stubovima), visina, ili ukupna dužina cele ograde —
@@ -18,18 +19,22 @@ export function DimEditModal({ project, id, kind, onClose }: { project: Project;
   const items = project.items;
   const index = items.findIndex((i) => i.id === id);
   const item = items[index];
-  const occupied = computeLayout(project).occupiedMm;
-  const [text, setText] = useState(String(kind === 'total' ? Math.round(occupied) : kind === 'width' ? Math.round(outerWidthMm(project, index)) : item?.heightMm));
+  const laid = computeLayout(project);
+  const occupied = laid.occupiedMm;
+  // platno: razlika spoljne i svetle širine ostaje ista (to su stubovi), pa se menja spoljna širina za isti iznos
+  const postsMm = kind === 'clear' && index >= 0 ? Math.round(outerWidthMm(project, index) - (laid.items[index]?.clearWidth ?? 0)) : 0;
+  const [text, setText] = useState(String(kind === 'total' ? Math.round(occupied) : kind === 'width' ? Math.round(outerWidthMm(project, index)) : kind === 'clear' ? Math.round(outerWidthMm(project, index)) - postsMm : item?.heightMm));
   const value = Number(text);
 
   // ukupna dužina: proba raspodele unapred, da se odmah vidi da li polja mogu da stanu
   const totalTry = useMemo(() => (kind === 'total' && value > 0 ? setTotalLength(project, value) : null), [kind, project, value]);
 
   if (kind !== 'total' && !item) return null;
-  const half = kind === 'width' ? postHalfSum(project, index) : 0;
-  const base = kind === 'total' ? LIMITS.fixedTotal : kind === 'width' ? widthRangeFor(item) : heightRangeFor(item);
-  const range = kind === 'width' ? { min: Math.round(base.min + half), max: Math.round(base.max + half) } : base;
-  const label = kind === 'height' ? 'Visina' : kind === 'total' ? 'Ukupna dužina' : 'Širina';
+  const wide = kind === 'width' || kind === 'clear';
+  const half = wide ? postHalfSum(project, index) : 0;
+  const base = kind === 'total' ? LIMITS.fixedTotal : wide ? widthRangeFor(item) : heightRangeFor(item);
+  const range = wide ? { min: Math.max(1, Math.round(base.min + half) - postsMm), max: Math.round(base.max + half) - postsMm } : base;
+  const label = kind === 'height' ? 'Visina' : kind === 'total' ? 'Ukupna dužina' : kind === 'clear' ? 'Širina platna (između stubova)' : 'Širina';
   const rangeCheck = validateRange(value, range, label);
   const error = !rangeCheck.ok ? rangeCheck.message : totalTry?.reason;
   const ok = !error;
@@ -40,13 +45,13 @@ export function DimEditModal({ project, id, kind, onClose }: { project: Project;
     if (!ok) return;
     const st = useAppStore.getState();
     if (kind === 'total') st.mutate((p) => setTotalLength(p, Math.round(value)).project);
-    else if (kind === 'width') st.mutate((p) => setOuterWidth(p, id, Math.round(value)));
+    else if (wide) st.mutate((p) => setOuterWidth(p, id, Math.round(value) + postsMm));
     else st.patchItem(id, { heightMm: Math.round(value) });
     onClose();
   };
   return (
     <Modal
-      title={kind === 'total' ? 'Izmena ukupne dužine' : kind === 'width' ? 'Izmena širine' : 'Izmena visine'}
+      title={kind === 'total' ? 'Izmena ukupne dužine' : kind === 'clear' ? 'Izmena širine platna' : kind === 'width' ? 'Izmena širine' : 'Izmena visine'}
       width={420}
       onClose={onClose}
       footer={<div className="flex justify-end gap-2 w-full"><button className="btn" onClick={onClose}>Otkaži</button><button className="btn btn-primary" data-testid="dim-apply" disabled={!ok} onClick={apply}>Primeni</button></div>}

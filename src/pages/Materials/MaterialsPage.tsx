@@ -78,7 +78,7 @@ export default function MaterialsPage() {
 
   return (
     <Page>
-      <PageHeader title="Materijali i cene" subtitle={<>Cenovnik koji koristi kalkulacija. <DemoBadge>Ilustrativni iznosi — nisu stvarne cene</DemoBadge></>} actions={
+      <PageHeader title="Materijali i cene" subtitle="Cenovnik koji koriste kalkulacija i crtanje modela. Materijali se uvoze iz cenovnika dobavljača ili dodaju ručno."  actions={
         <div className="flex flex-wrap gap-2">
           <input ref={fileRef} type="file" accept=".pdf,.xlsx,.csv,.tsv,.txt,application/pdf,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" data-testid="import-file" onChange={(e) => { void onFile(e.target.files?.[0]); e.target.value = ''; }} />
           <button className="btn" data-testid="btn-import-materials" disabled={reading} onClick={() => fileRef.current?.click()}><Upload size={17} />{reading ? 'Čitanje PDF-a…' : 'Uvezi materijale'}</button>
@@ -138,7 +138,7 @@ export default function MaterialsPage() {
                 </Fragment>
                 );
               })}
-              {list.length === 0 && <tr><td className="td text-muted" colSpan={7}>Nema materijala koji odgovaraju pretrazi.</td></tr>}
+              {list.length === 0 && <tr><td className="td text-muted" colSpan={7}>{materials.length === 0 ? 'Lista materijala je prazna. Uvezite cenovnik dobavljača (dugme „Uvezi materijale“) ili dodajte materijal ručno.' : 'Nema materijala koji odgovaraju pretrazi.'}</td></tr>}
             </tbody>
           </table>
         </div>
@@ -152,6 +152,12 @@ export default function MaterialsPage() {
           <SelectField label="Kategorija" value={form.category} options={Object.entries(CATS).map(([value, label]) => ({ value: value as MaterialCategory, label }))} onChange={(v) => setForm({ ...form, category: v })} />
           <SelectField label="Jedinica mere" value={form.unit} options={UNITS.map((u) => ({ value: u, label: u }))} onChange={(v) => setForm({ ...form, unit: v })} />
           <NumberField label="Cena po jedinici" unit={settings.currency} value={form.unitPrice} range={{ min: 0, max: 10_000_000 }} allowZero integer={false} step={10} onCommit={(v) => setForm({ ...form, unitPrice: v })} />
+          <div className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.45fr)] items-center gap-x-3 gap-y-1 py-1.5">
+            <label className="label" htmlFor="material-wall">Debljina zida (mm)</label>
+            <input id="material-wall" data-testid="material-wall" className="input tabular-nums" inputMode="decimal" placeholder="kao u cenovniku" value={form.wallMm ?? ''}
+              onChange={(e) => { const v = Number(e.target.value.replace(',', '.')); setForm({ ...form, wallMm: e.target.value.trim() !== '' && Number.isFinite(v) && v > 0 && v <= 20 ? v : undefined }); }} />
+            <div className="col-span-2 text-xs text-muted leading-snug">Samo za profile. Menja presek: npr. U profil 60 mm ima unutrašnji otvor 56 mm sa zidom 2 mm, a 54 mm sa zidom 3 mm. Prazno = debljina iz cenovnika.</div>
+          </div>
           <NumberField label="Procenat otpada" unit="%" value={form.wastePercent} range={{ min: 0, max: 100 }} allowZero integer={false} step={1} onCommit={(v) => setForm({ ...form, wastePercent: v })} />
         </Modal>
       )}

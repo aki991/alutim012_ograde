@@ -1,4 +1,5 @@
-import { tubeLengthMm } from './tubes';
+import { customModelOf, customSpec } from './customRegistry';
+import { tubeLengthMm, ramInsets } from './tubes';
 import { computeInfill, summarizeInfill } from '../geometry/infill';
 import { CALC_RULES } from '../pricing/rules';
 import { tarabicaCapHeight } from './tarabica';
@@ -45,6 +46,10 @@ export const SPEC_VARIABLES: { name: string; label: string }[] = [
   { name: 'AREA', label: 'površina polja W·H (m²)' },
   { name: 'DOUBLE', label: '1 za dvokrilnu kapiju, inače 0' },
   { name: 'TUBELEN', label: 'dužina kvadratne cevi: svetli otvor − 2·(zid U profila + zazor) (mm), samo model uskih letvica' },
+  { name: 'RAMU', label: '1 ako polje ima ram od U profila, inače 0' },
+  { name: 'RAMC', label: '1 ako polje ima ram od kvadratne cevi, inače 0' },
+  { name: 'RAMT', label: 'koliko ram sužava ispunu gore i dole (mm)' },
+  { name: 'RAMS', label: 'koliko ram sužava ispunu levo i desno (mm)' },
   { name: 'FRAME', label: 'debljina rama (mm)' },
   { name: 'BAR', label: 'visina/širina profila ispune (mm)' },
   { name: 'GAP', label: 'razmak profila (mm)' },
@@ -67,7 +72,8 @@ export interface SpecContext {
 /** Geometrija ispune polja: jedna, a kod tarabice dvokrilne kapije po jedna za svako krilo. */
 function leafGeometries(c: SpecContext): ReturnType<typeof computeInfill>[] {
   const f = c.slopeFactor && c.slopeFactor > 1 ? c.slopeFactor : 1;
-  const geoOf = (w: number, left: number, right?: number) => computeInfill(c.modelId, w * f, c.heightMm, left, c.params.barSizeMm, c.params.gapMm, c.params.barCount, c.params.liftMm, right, c.params.archMm);
+  const ins = ramInsets(c.modelId, c.params); // ram sužava ispunu: manje cevi po visini, kraće po širini
+  const geoOf = (w: number, left: number, right?: number) => computeInfill(c.modelId, Math.max(0, w - 2 * ins.side) * f, Math.max(0, c.heightMm - 2 * ins.top), left, c.params.barSizeMm, c.params.gapMm, c.params.barCount, c.params.liftMm, right, c.params.archMm);
   return FENCE_MODELS[c.modelId].style === 'tarabica' && c.leafWidthsMm?.length === 2
     ? [geoOf(c.leafWidthsMm[0], c.params.frameMm, 0), geoOf(c.leafWidthsMm[1], 0, c.params.frameMm)]
     : [geoOf(c.widthMm, c.params.frameMm)];
@@ -99,7 +105,9 @@ export function specVars(c: SpecContext): Record<string, number> {
     GLASS: sum.glassAreaM2 / f,
     PERIM: 2 * c.widthMm * f + 2 * c.heightMm, AREA: (c.widthMm * c.heightMm) / 1_000_000,
     DOUBLE: c.doubleGate ? 1 : 0,
-    TUBELEN: tubeLengthMm(c.widthMm, c.params),
+    TUBELEN: tubeLengthMm(Math.max(0, c.widthMm - 2 * ramInsets(c.modelId, c.params).side), c.params),
+    RAMU: ramInsets(c.modelId, c.params).kind === 'u' ? 1 : 0, RAMC: ramInsets(c.modelId, c.params).kind === 'tube' ? 1 : 0,
+    RAMT: ramInsets(c.modelId, c.params).top, RAMS: ramInsets(c.modelId, c.params).side,
     FRAME: c.params.frameMm, BAR: c.params.barSizeMm, GAP: c.params.gapMm,
   };
 }
@@ -211,6 +219,8 @@ const part = (p: Omit<SpecPart, 'id' | 'enabled'>): SpecPart => ({ id: `sp_${++s
 
 /** Podrazumevana specifikacija: isti delovi koje je aplikacija do sada računala za polje tog modela. */
 export function defaultSpec(modelId: FenceModelId): SpecPart[] {
+  const custom = customModelOf(modelId);
+  if (custom) return customSpec(custom);
   const def = FENCE_MODELS[modelId];
   const parts: SpecPart[] = [];
   const framed = def.style !== 'rods' && def.style !== 'glass_rail';
@@ -281,8 +291,12 @@ function rl10Spec(): SpecPart[] {
  */
 function tubesSpec(): SpecPart[] {
   return [
-    part({ name: 'U profil 20 × 20 (bočna vođica)', materialId: 'mat_u_20x20', group: 'Profili ispune', qty: '2', lengthMm: 'H', note: 'dužina = visina polja; otvoren ka ispuni, krajevi cevi ulaze u kanal' }),
-    part({ name: 'Kvadratna cev 30 × 20 (letvica)', materialId: 'mat_kv_30x20', group: 'Profili ispune', qty: 'N', lengthMm: 'TUBELEN', note: 'dužina = svetli otvor − 2 × (zid U profila + zazor); broj prema razmaku' }),
+    part({ name: 'U profil (bočna vođica)', materialId: 'mat_u_20x20', group: 'Profili ispune', qty: '2*(1-RAMU)', lengthMm: 'H-2*RAMT', note: 'dužina = visina polja (unutar rama od cevi kraća za ram); otvoren ka ispuni, krajevi cevi ulaze u kanal' }),
+    part({ name: 'Ram — U profil, uspravni', materialId: 'mat_u_20x20', group: 'Ramovi', qty: '2*RAMU', lengthMm: 'H', note: 'rez 45° na oba kraja; dužina je spoljna mera rama' }),
+    part({ name: 'Ram — U profil, vodoravni', materialId: 'mat_u_20x20', group: 'Ramovi', qty: '2*RAMU', lengthMm: 'W', note: 'rez 45° na oba kraja; dužina je spoljna mera rama' }),
+    part({ name: 'Ram — kvadratna cev, uspravni', materialId: RAM_TUBE_MATERIAL, group: 'Ramovi', qty: '2*RAMC', lengthMm: 'H', note: 'rez 45° na oba kraja; dužina je spoljna mera rama' }),
+    part({ name: 'Ram — kvadratna cev, vodoravni', materialId: RAM_TUBE_MATERIAL, group: 'Ramovi', qty: '2*RAMC', lengthMm: 'W', note: 'rez 45° na oba kraja; dužina je spoljna mera rama' }),
+    part({ name: 'Kvadratna cev (letvica)', materialId: 'mat_kv_30x20', group: 'Profili ispune', qty: 'N', lengthMm: 'TUBELEN', note: 'dužina = svetli otvor − 2 × (zid U profila + zazor); broj prema razmaku' }),
     part({ name: 'Nosači / spojnice (U profil na stub)', materialId: 'mat_bracket', group: 'Nosači i spojnice', qty: String(CALC_RULES.bracketsPerSection) }),
     { ...part({ name: 'Vijci / zakivci (cev u U profil)', materialId: 'mat_screw', group: 'Vijci', qty: '2*N', note: 'Spoj cevi i U profila nije potvrđen (vijci, zakivci ili uvlačenje u kanal); uključiti ako se spaja vijcima' }), enabled: false },
   ];
@@ -295,6 +309,9 @@ function louverLightSpec(): SpecPart[] {
     part({ name: 'Horizontalna letvica 80 × 20 (KV000007)', materialId: 'mat_ek_kv000007', group: 'Profili ispune', qty: 'N', lengthMm: 'W-2*2-2', note: 'L = W − 2·zid − zazor' }),
   ];
 }
+
+/** Mesto u specifikaciji za kvadratnu cev rama (stvarni materijal se bira u projektu, „Delovi ograde“). */
+export const RAM_TUBE_MATERIAL = 'mat_ram_cev';
 
 export const specFor = (modelId: FenceModelId, specs?: ModelSpecs): SpecPart[] => specs?.[modelId] ?? defaultSpec(modelId);
 

@@ -9,12 +9,14 @@ import EditorPage from '../pages/Editor/EditorPage';
 import HelpPage from '../pages/Settings/HelpPage';
 import LoginPage from '../pages/Login/LoginPage';
 import MaterialsPage from '../pages/Materials/MaterialsPage';
+import ModelDesignerPage from '../pages/Models/ModelDesignerPage';
 import ModelsPage from '../pages/Models/ModelsPage';
 import ProductionPage from '../pages/Production/ProductionPage';
 import ProjectsPage from '../pages/Projects/ProjectsPage';
 import QuotesPage from '../pages/Quotes/QuotesPage';
 import ReportsPage from '../pages/Reports/ReportsPage';
 import SettingsPage from '../pages/Settings/SettingsPage';
+import StockPage from '../pages/Stock/StockPage';
 import { useAuth } from '../services/auth';
 import { startAutosave } from '../services/persistence';
 import { useAppStore } from '../store/useAppStore';
@@ -59,7 +61,10 @@ export default function App() {
             <Route path="/editor/:id" element={<EditorPage />} />
             <Route path="/projekti" element={<ProjectsPage />} />
             <Route path="/modeli" element={<ModelsPage />} />
+            <Route path="/modeli/crtanje" element={<ModelDesignerPage />} />
+            <Route path="/modeli/crtanje/:id" element={<ModelDesignerPage />} />
             <Route path="/materijali" element={<MaterialsPage />} />
+            <Route path="/magacin" element={<StockPage />} />
             <Route path="/kupci" element={<CustomersPage />} />
             <Route path="/ponude" element={<QuotesPage />} />
             <Route path="/ponude/:id" element={<QuotesPage />} />

@@ -1,5 +1,5 @@
 import {
-  BarChart3, CircleHelp, Database, FileText, FolderOpen, Home, LayoutGrid, PencilRuler, Settings, Users, Wrench, type LucideIcon,
+  BarChart3, Boxes, CircleHelp, Database, FileText, FolderOpen, Home, LayoutGrid, PencilRuler, Settings, Users, Wrench, type LucideIcon,
 } from 'lucide-react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { currentProjectId, useAppStore } from '../../store/useAppStore';
@@ -13,6 +13,7 @@ const MAIN: Item[] = [
   { to: '/projekti', label: 'Projekti', icon: FolderOpen },
   { to: '/modeli', label: 'Modeli ograda', icon: LayoutGrid },
   { to: '/materijali', label: 'Materijali i cene', icon: Database },
+  { to: '/magacin', label: 'Magacin', icon: Boxes },
   { to: '/kupci', label: 'Kupci', icon: Users },
   { to: '/ponude', label: 'Ponude', icon: FileText },
   { to: '/proizvodnja', label: 'Proizvodnja', icon: Wrench },

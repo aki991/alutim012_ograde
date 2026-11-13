@@ -8,6 +8,7 @@ import type { Gate } from '../../../domain/models/types';
 import { useViewStore } from '../../../store/useViewStore';
 import { GlbBoundary, GlbLeaf } from './GlbLeaf';
 import { PanelBody } from './PanelBody';
+import { isCustomModel } from '../../../domain/models/customRegistry';
 import { isTarabicaModel } from '../../../domain/models/tarabica';
 import { boxGeometry, darkMaterial, steelMaterial } from './materials';
 
@@ -104,7 +105,7 @@ export function GateMesh({ gate, li, showZones }: { gate: Gate; li: LaidOutItem;
             <group ref={(g) => { inner.current[k] = g; }}>
               <group position={[p.extendDir * w / 2, 0, 0]}>
                 {/* tarabica nema gotov 3D model kapije (stari model je imao široke letvice): krilo se gradi od istih delova kao ograda */}
-                {isTarabicaModel(gate.infillModelId) || isTubesModel(gate.infillModelId) ? legacy(p, w) : (
+                {isTarabicaModel(gate.infillModelId) || isTubesModel(gate.infillModelId) || isCustomModel(gate.infillModelId) ? legacy(p, w) : (
                   <GlbBoundary fallback={legacy(p, w)}>
                     <Suspense fallback={legacy(p, w)}>
                       <GlbLeaf modelId={gate.infillModelId} gateType={gate.gateType} extendDir={p.extendDir} slideDir={dir} widthMm={p.widthMm} heightMm={gate.heightMm} color={gate.color} />

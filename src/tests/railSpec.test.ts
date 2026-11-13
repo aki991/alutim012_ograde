@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SEED_MATERIALS } from '../data/materials';
+import { SEED_MATERIALS } from './fixtures/materials';
 import { createFence, createProject } from '../domain/models/factories';
 import { buildBom } from '../domain/pricing/calc';
 import { buildCutList } from '../domain/pricing/production';

@@ -9,7 +9,7 @@ import {
   buildBom, computePrice, countHorizontalBars, countVerticalBars, sellingPrice, sharedPostCount,
 } from '../domain/pricing/calc';
 import { colorHex } from '../domain/models/catalog';
-import { SEED_MATERIALS } from '../data/materials';
+import { SEED_MATERIALS } from './fixtures/materials';
 import { parseProject, serializeProject } from '../domain/validation/project';
 import { LIMITS, validateRange } from '../domain/validation/limits';
 
@@ -278,7 +278,7 @@ describe('stubovi prate model ograde i kapije', () => {
   });
   it('promena modela menja i stubove', () => {
     const p = createProject('s', [createFence({ modelId: 'h_narrow' })]);
-    const q = changeModel(p, p.items[0].id, 'glass_inox');
+    const q = changeModel(p, p.items[0].id, 'rail_inox');
     expect(q.posts.map((x) => [x.color, x.round])).toEqual([['INOX', true], ['INOX', true]]);
   });
 });

@@ -1,5 +1,6 @@
 import type { Gate } from '../../domain/models/types';
 import { InfillArt } from '../fences/InfillArt';
+import { ramInsets } from '../../domain/models/tubes';
 
 interface Props {
   gate: Gate;
@@ -45,7 +46,7 @@ function Leaf({ gate, x, y, w, h, hex, uid, withHandle, handleSide, edge }: { ga
   const hxPos = handleSide === 'left' ? x + gate.params.frameMm + 50 : x + w - gate.params.frameMm - 80;
   return (
     <g>
-      <InfillArt modelId={gate.infillModelId} x={x} y={y} w={w} h={h} frame={gate.params.frameMm} barSize={gate.params.barSizeMm} gap={gate.params.gapMm} lift={gate.params.liftMm} arch={gate.params.archMm} edgeOverhang={edge} hex={hex} colorKey={gate.color} uid={uid} />
+      <InfillArt modelId={gate.infillModelId} x={x} y={y} w={w} h={h} frame={gate.params.frameMm} barSize={gate.params.barSizeMm} gap={gate.params.gapMm} lift={gate.params.liftMm} arch={gate.params.archMm} edgeOverhang={edge} hex={hex} colorKey={gate.color} ram={ramInsets(gate.infillModelId, gate.params)} uid={uid} />
       {withHandle && (
         <g>
           <rect x={hxPos} y={y + h * 0.5 - 220} width={22} height={440} rx="8" fill="#d8dee6" stroke="#6b7380" strokeWidth="3" />

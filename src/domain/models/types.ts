@@ -6,7 +6,9 @@ export const SCHEMA_VERSION = 3;
 export type ProjectStatus = 'nacrt' | 'ponuda' | 'u_izradi' | 'zavrseno';
 export type FenceModelId =
   | 'h_narrow' | 'h_boards' | 'h_combo' | 'rail_black' | 'panel_lines' | 'rail_inox' | 'picket_narrow' | 'louver_light'
-  | 'louver_dark' | 'picket_brown' | 'h_white' | 'v_framed' | 'picket_wide' | 'h_wide' | 'glass_inox';
+  | 'louver_dark' | 'picket_brown' | 'h_white' | 'v_framed' | 'picket_wide' | 'h_wide'
+  /** ručno nacrtan model (ID iz settings.customModels) */
+  | `cm_${string}`;
 export type GateType = 'pedestrian' | 'sliding' | 'double' | 'single';
 export type OpeningSide = 'left' | 'right';
 export type SwingDirection = 'inward' | 'outward';
@@ -33,6 +35,14 @@ export interface FenceParams {
   rl10?: Partial<import('./rl10').Rl10Dims>;
   /** Samo model uske horizontalne letvice (kvadratne cevi u U profilima): dubina i zidovi cevi, dubina i zid U profila, zazor; bez vrednosti važe podrazumevane */
   hn?: Partial<import('./tubes').TubesDims>;
+  /**
+   * Ram (okvir, ojačanje sa sve četiri strane) kod ograda sa horizontalnim kvadratnim cevima: 'u' = U profil sa sve četiri strane
+   * (bočne vođice se produžavaju gore i dole), 'tube' = spoljašnji ram od kvadratne cevi, a U vođice i cevi su unutar njega.
+   * Delovi rama se seku pod 45° na oba kraja. Bez vrednosti nema rama (samo dve bočne vođice).
+   */
+  ram?: 'u' | 'tube';
+  /** širina kvadratne cevi rama u prednjem pogledu (mm); bez vrednosti 40 */
+  ramMm?: Mm;
 }
 
 /** Stepenište (samo ograde za terase): polje prati stepenice. */
@@ -204,6 +214,13 @@ export interface Project {
   settings: ProjectSettings;
   /** radna specifikacija modela 08 (neobavezno) */
   louverSpec?: Partial<LouverSpec>;
+  /**
+   * Ostaci materijala koje krojna lista prvo koristi (pre novih šipki). Bez vrednosti poslovođa još nije odgovorio (krojna lista
+   * ga prvo pita); prazan spisak znači „nema ostataka“.
+   */
+  offcuts?: Offcut[];
+  /** izabrani materijali delova ograde za ovaj projekat: ključ „model::naziv dela“ → ID materijala iz cenovnika */
+  partMaterials?: Record<string, string>;
   /** simulacija na fotografiji: slika dvorišta (data URL) i četiri ugla ograde (gore levo, gore desno, dole desno, dole levo) kao udeo širine/visine slike */
   photoSim?: PhotoSim;
 }
@@ -235,6 +252,28 @@ export interface Material {
   unitPrice: number;
   wastePercent: number;
   demo: boolean;
+  /**
+   * Debljina zida profila (mm) kad se razlikuje od kataloške: menja presek profila (npr. U profil 60 mm ima unutrašnji otvor
+   * 56 mm sa zidom 2 mm, a 54 mm sa zidom 3 mm). Bez vrednosti važi debljina iz cenovnika / naziva.
+   */
+  wallMm?: number;
+}
+
+/** Stavka magacina: komadi jednog materijala iste dužine. */
+export interface StockItem {
+  id: string;
+  materialId: string;
+  /** dužina komada (mm); cela šipka ili ostatak */
+  lengthMm: number;
+  qty: number;
+  note?: string;
+}
+
+/** Ostatak materijala koji poslovođa želi da se prvo iskoristi u krojnoj listi projekta. */
+export interface Offcut {
+  materialId: string;
+  lengthMm: number;
+  qty: number;
 }
 
 export interface AppSettings {
@@ -244,11 +283,15 @@ export interface AppSettings {
   photoSimEnabled?: boolean;
   /** izmenjene specifikacije modela (delovi sa formulama); model bez zapisa koristi podrazumevanu */
   modelSpecs?: Record<string, import('./spec').SpecPart[]>;
+  /** ručno nacrtani modeli ograda i kapija (strana Modeli ograda → Napravi model) */
+  customModels?: import('./custom').CustomModel[];
   companyName: string;
   /** podaci firme za zaglavlja dokumenata (krojna lista); prazna polja se ne prikazuju */
   companyInfo?: { address?: string; phone?: string; email?: string; pib?: string };
   /** nabavna dužina šipke i širina reza testere za krojnu listu (mm); bez vrednosti važi 6000 / 3 */
   cutting?: { stockMm: number; kerfMm: number };
+  /** magacin: materijal na stanju (cele šipke i ostaci) */
+  stock?: StockItem[];
   currency: string;
   currencyRateToEur: number;
   userName: string;

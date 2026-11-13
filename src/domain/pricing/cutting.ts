@@ -25,6 +25,8 @@ export interface CutPiece {
   /** ključ pozicije (elementa) kojoj komad pripada, npr. „2" ili „1–3" ili „S4" */
   pos: string;
   part: string;
+  /** komad rama: oba kraja se seku pod 45° */
+  miter?: boolean;
 }
 
 /** Pozicija = element projekta (ili niz elemenata / stub) sa opisom za legendu. */
@@ -38,6 +40,10 @@ export interface CutBar {
   pieces: CutPiece[];
   /** ostatak šipke posle svih rezova (mm) */
   leftoverMm: number;
+  /** dužina ove šipke (mm) kad nije cela nabavna šipka: ostatak materijala koji se koristi prvi */
+  stockMm?: number;
+  /** šipka je ostatak iz magacina / koji je uneo poslovođa (ne nabavlja se) */
+  offcut?: boolean;
 }
 
 export interface ProfileCutPlan {
@@ -48,10 +54,15 @@ export interface ProfileCutPlan {
   pieceCount: number;
   pieceTotalMm: number;
   leftoverMm: number;
+  /** broj novih (nabavnih) šipki i broj iskorišćenih ostataka */
+  newBars: number;
+  offcutBars: number;
+  /** ostaci koji su bili na raspolaganju, a nisu upotrebljeni (mm) */
+  unusedOffcuts: number[];
   /** udeo komada u dužini svih šipki (%) */
   efficiencyPct: number;
   /** zbirni spisak: dužina, komada, pozicije */
-  summary: { lengthMm: number; qty: number; positions: string[] }[];
+  summary: { lengthMm: number; qty: number; positions: string[]; miter?: boolean }[];
 }
 
 export interface CuttingList {
@@ -59,26 +70,47 @@ export interface CuttingList {
   kerfMm: number;
   profiles: ProfileCutPlan[];
   positions: CutPosition[];
-  totals: { profiles: number; bars: number; pieces: number; pieceTotalMm: number; leftoverMm: number; efficiencyPct: number };
+  /** bars = nove šipke za nabavku; offcutBars = iskorišćeni ostaci */
+  totals: { profiles: number; bars: number; offcutBars: number; pieces: number; pieceTotalMm: number; leftoverMm: number; efficiencyPct: number };
   notes: string[];
 }
 
-/** Raspoređivanje na šipke: najduži komadi prvi, svaki komad ide u šipku sa najmanjim ostatkom u koji staje (rez troši širinu testere). */
-export function packBars(pieces: CutPiece[], stockMm: number, kerfMm: number): { bars: CutBar[]; oversize: CutPiece[] } {
-  const bars: { pieces: CutPiece[]; free: number }[] = [];
+/**
+ * Raspoređivanje na šipke: najduži komadi prvi, svaki komad ide u šipku sa najmanjim ostatkom u koji staje (rez troši širinu testere).
+ * Ostaci materijala (`offcuts`, dužine u mm) se koriste PRVI: komad ide u ostatak kad god u neki staje, a nova šipka se otvara
+ * tek kad ne staje ni u jedan ostatak ni u već otvorenu šipku. Neupotrebljeni ostaci se vraćaju u `unusedOffcuts`.
+ */
+export function packBars(pieces: CutPiece[], stockMm: number, kerfMm: number, offcuts: number[] = []): { bars: CutBar[]; oversize: CutPiece[]; unusedOffcuts: number[] } {
+  interface Open { pieces: CutPiece[]; free: number; len: number; offcut: boolean }
+  const bars: Open[] = [...offcuts].filter((l) => l > 0).sort((a, b) => a - b).map((len) => ({ pieces: [], free: len, len, offcut: true }));
   const oversize: CutPiece[] = [];
   const sorted = [...pieces].sort((a, b) => b.lengthMm - a.lengthMm);
+  // komad staje ako ima mesta za njega i rez; u praznu šipku staje i kad je tačno njene dužine (bez reza)
+  const fits = (b: Open, p: CutPiece) => b.free >= p.lengthMm + kerfMm || (b.pieces.length === 0 && b.free >= p.lengthMm);
+  const place = (b: Open, p: CutPiece) => { b.pieces.push(p); b.free = Math.max(0, b.free - p.lengthMm - kerfMm); };
+  const bestOf = (list: Open[], p: CutPiece): Open | null => list.filter((b) => fits(b, p)).sort((a, b) => a.free - b.free)[0] ?? null;
   for (const p of sorted) {
+    const off = bestOf(bars.filter((b) => b.offcut), p);
+    if (off) { place(off, p); continue; }
     if (p.lengthMm > stockMm) { oversize.push(p); continue; }
-    if (p.lengthMm + kerfMm > stockMm) { bars.push({ pieces: [p], free: stockMm - p.lengthMm }); continue; } // cela šipka, bez reza
-    const need = p.lengthMm + kerfMm;
-    let best = -1;
-    bars.forEach((b, i) => { if (b.free >= need && (best < 0 || b.free < bars[best].free)) best = i; });
-    if (best >= 0) { bars[best].pieces.push(p); bars[best].free -= need; }
-    else bars.push({ pieces: [p], free: stockMm - need });
+    const open = bestOf(bars.filter((b) => !b.offcut), p);
+    if (open) { place(open, p); continue; }
+    const nb: Open = { pieces: [], free: stockMm, len: stockMm, offcut: false };
+    place(nb, p);
+    bars.push(nb);
   }
-  return { bars: bars.map((b) => ({ pieces: b.pieces, leftoverMm: Math.max(0, b.free) })), oversize };
+  const used = bars.filter((b) => b.pieces.length > 0);
+  return {
+    // prvo ostaci (od najdužeg), pa nove šipke redom kako su otvarane
+    bars: [...used.filter((b) => b.offcut).sort((a, b) => b.len - a.len), ...used.filter((b) => !b.offcut)]
+      .map((b) => ({ pieces: b.pieces, leftoverMm: Math.max(0, b.free), ...(b.offcut ? { stockMm: b.len, offcut: true } : {}) })),
+    oversize,
+    unusedOffcuts: bars.filter((b) => b.offcut && b.pieces.length === 0).map((b) => b.len).sort((a, b) => b - a),
+  };
 }
+
+/** Dužina šipke: ostatak ima svoju dužinu, ostale su cele nabavne šipke. */
+export const barLength = (b: CutBar, stockMm: number): number => b.stockMm ?? stockMm;
 
 export interface BarGroup {
   bar: CutBar;
@@ -91,7 +123,7 @@ export interface BarGroup {
 
 /** Uzastopne šipke sa potpuno istim rasporedom komada (dužina i pozicija) čine jednu grupu: „Šipke 1–10 × 10". */
 export function groupBars(bars: CutBar[]): BarGroup[] {
-  const key = (b: CutBar) => b.pieces.map((p) => `${p.lengthMm}@${p.pos}`).join('|');
+  const key = (b: CutBar) => `${b.offcut ? `o${b.stockMm}` : 'n'}#${b.pieces.map((p) => `${p.lengthMm}@${p.pos}`).join('|')}`;
   const out: BarGroup[] = [];
   bars.forEach((bar, i) => {
     const last = out[out.length - 1];
@@ -127,7 +159,7 @@ function collectPieces(project: Project, specs: ModelSpecs | undefined, material
   for (const c of buildCutList(project, specs, materials)) {
     if (c.glass) continue;
     const pos = elementPos(c.index);
-    for (let i = 0; i < c.qty; i++) add(c.profile, { lengthMm: c.lengthMm, pos, part: c.part });
+    for (let i = 0; i < c.qty; i++) add(c.profile, { lengthMm: c.lengthMm, pos, part: c.miter ? `${c.part} (45°)` : c.part, ...(c.miter ? { miter: true } : {}) });
   }
 
   // stubovi uz tarabicu: cev stuba (80 × 80 ili 100 × 100) se seče iz šipke po visini stuba
@@ -211,18 +243,28 @@ function collectPieces(project: Project, specs: ModelSpecs | undefined, material
 
 export function buildCuttingList(project: Project, specs: ModelSpecs | undefined, materials: Material[], opts: CutOptions = { stockMm: DEFAULT_STOCK_MM, kerfMm: DEFAULT_KERF_MM }): CuttingList {
   const { groups, positions } = collectPieces(project, specs, materials);
+  // ostaci koje je poslovođa zadao za ovaj projekat, po profilu (nazivu materijala kao u krojnoj listi)
+  const offcutsOf = new Map<string, number[]>();
+  for (const o of project.offcuts ?? []) {
+    const name = materialName(materials, o.materialId);
+    const list = offcutsOf.get(name) ?? [];
+    for (let i = 0; i < Math.max(0, Math.round(o.qty)); i++) list.push(o.lengthMm);
+    offcutsOf.set(name, list);
+  }
   const profiles: ProfileCutPlan[] = groups
     .filter((g) => g.pieces.length > 0)
     .map((g) => {
-      const { bars, oversize } = packBars(g.pieces, opts.stockMm, opts.kerfMm);
+      const { bars, oversize, unusedOffcuts } = packBars(g.pieces, opts.stockMm, opts.kerfMm, offcutsOf.get(g.profile) ?? []);
+      const totalBarMm = bars.reduce((s, b) => s + barLength(b, opts.stockMm), 0);
       const placed = bars.flatMap((b) => b.pieces);
       const pieceTotalMm = placed.reduce((s, p) => s + p.lengthMm, 0);
       const leftoverMm = bars.reduce((s, b) => s + b.leftoverMm, 0);
-      const byLen = new Map<number, { qty: number; positions: Set<string> }>();
+      const byLen = new Map<string, { lengthMm: number; miter: boolean; qty: number; positions: Set<string> }>();
       for (const p of g.pieces) {
-        const cur = byLen.get(p.lengthMm) ?? { qty: 0, positions: new Set<string>() };
+        const k = `${p.lengthMm}|${p.miter ? 1 : 0}`;
+        const cur = byLen.get(k) ?? { lengthMm: p.lengthMm, miter: !!p.miter, qty: 0, positions: new Set<string>() };
         cur.qty += 1; cur.positions.add(p.pos);
-        byLen.set(p.lengthMm, cur);
+        byLen.set(k, cur);
       }
       return {
         profile: g.profile,
@@ -231,18 +273,34 @@ export function buildCuttingList(project: Project, specs: ModelSpecs | undefined
         pieceCount: g.pieces.length,
         pieceTotalMm,
         leftoverMm,
-        efficiencyPct: bars.length ? (pieceTotalMm / (bars.length * opts.stockMm)) * 100 : 0,
-        summary: [...byLen.entries()].sort((a, b) => b[0] - a[0]).map(([lengthMm, v]) => ({ lengthMm, qty: v.qty, positions: [...v.positions] })),
+        newBars: bars.filter((b) => !b.offcut).length,
+        offcutBars: bars.filter((b) => b.offcut).length,
+        unusedOffcuts,
+        efficiencyPct: totalBarMm ? (pieceTotalMm / totalBarMm) * 100 : 0,
+        summary: [...byLen.values()].sort((a, b) => b.lengthMm - a.lengthMm).map((v) => ({ lengthMm: v.lengthMm, qty: v.qty, positions: [...v.positions], ...(v.miter ? { miter: true } : {}) })),
       };
     })
     .sort((a, b) => a.profile.localeCompare(b.profile, 'sr'));
-  const bars = profiles.reduce((s, p) => s + p.bars.length, 0);
+  const bars = profiles.reduce((s, p) => s + p.newBars, 0);
+  const offcutBars = profiles.reduce((s, p) => s + p.offcutBars, 0);
+  const allBarMm = profiles.reduce((s, p) => s + p.bars.reduce((x, b) => x + barLength(b, opts.stockMm), 0), 0);
   const pieceTotalMm = profiles.reduce((s, p) => s + p.pieceTotalMm, 0);
   const notes: string[] = [`Nabavna dužina šipke ${opts.stockMm} mm, širina reza testere ${opts.kerfMm} mm. Svi rezovi su ravni (90°), osim ako je drugačije označeno.`];
   const louver = buildLouver08Sheet(project, specs);
   if (louver) notes.push(louver.notes[0]);
   const rail = buildRail04Sheet(project, specs);
   if (rail) notes.push(rail.notes[0]);
+  if (profiles.some((p) => p.summary.some((s) => s.miter))) notes.push('Delovi rama (oznaka 45°) se seku pod uglom od 45° na oba kraja (gerung); navedena dužina je spoljna, duža mera komada.');
+  if (project.offcuts?.length) {
+    const fm = (n: number) => String(Math.round(n));
+    const usedTxt = profiles.filter((p) => p.offcutBars > 0).map((p) => `${p.profile}: ${p.bars.filter((b) => b.offcut).map((b) => fm(b.stockMm ?? 0)).join(', ')} mm`);
+    notes.push(usedTxt.length ? `Prvo su iskorišćeni ostaci materijala (${offcutBars} kom): ${usedTxt.join('; ')}.` : 'Zadati ostaci materijala nisu mogli da se iskoriste (nijedan komad ne staje u njih ili su od drugog profila).');
+    const unused = profiles.filter((p) => p.unusedOffcuts.length).map((p) => `${p.profile}: ${p.unusedOffcuts.map(fm).join(', ')} mm`);
+    const known = new Set(profiles.map((p) => p.profile));
+    const foreign = [...offcutsOf.keys()].filter((k) => !known.has(k));
+    if (unused.length) notes.push(`Neupotrebljeni ostaci: ${unused.join('; ')}.`);
+    if (foreign.length) notes.push(`Ostaci profila koji se ne koriste u ovom projektu: ${foreign.join(', ')}.`);
+  }
   for (const p of profiles) {
     if (p.oversize.length) notes.push(`${p.profile}: ${p.oversize.length} kom duži od šipke (${Math.max(...p.oversize.map((o) => o.lengthMm))} mm) — ne mogu se iseći iz jedne šipke; potrebna duža šipka ili spajanje.`);
   }
@@ -254,10 +312,11 @@ export function buildCuttingList(project: Project, specs: ModelSpecs | undefined
     totals: {
       profiles: profiles.length,
       bars,
+      offcutBars,
       pieces: profiles.reduce((s, p) => s + p.pieceCount, 0),
       pieceTotalMm,
       leftoverMm: profiles.reduce((s, p) => s + p.leftoverMm, 0),
-      efficiencyPct: bars ? (pieceTotalMm / (bars * opts.stockMm)) * 100 : 0,
+      efficiencyPct: allBarMm ? (pieceTotalMm / allBarMm) * 100 : 0,
     },
     notes,
   };

@@ -1,3 +1,4 @@
+import { ramInsets } from '../../domain/models/tubes';
 import { isRl10Model, isRl10Post, rl10Ends, rl10ItemAt, rl10PostInfo, rl10Tan } from '../../domain/models/rl10';
 import { Rl10FieldArt, Rl10JointArt, Rl10PostArt } from '../fences/Rl10Art';
 import { isStairPost, stairGroupAt, stairGroupSummary, stairProfile } from '../../domain/geometry/stair';
@@ -60,14 +61,23 @@ function dimMode(widthMm: number, scale: number, text: string): DimMode {
   return 'vertical';
 }
 
-/** Spoljne mere elemenata za kote odozgo: od spoljne ivice levog do spoljne ivice desnog stuba. */
-function widthDims(layout: ReturnType<typeof computeLayout>) {
-  return layout.items.filter((li) => !isSpacer(li.item)).map((li) => {
-    const bend = li.item.kind === 'opening' && li.item.bendDeg !== undefined;
-    const hl = bend ? 0 : (layout.posts[li.index]?.widthMm ?? 0) / 2;
-    const hr = bend ? 0 : (layout.posts[li.index + 1]?.widthMm ?? 0) / 2;
-    return { li, x1: li.axisStart - hl, x2: li.axisEnd + hr };
+type LaidItem = ReturnType<typeof computeLayout>['items'][number];
+export interface WidthDim { kind: 'panel' | 'post'; x1: number; x2: number; li?: LaidItem; postIndex?: number }
+
+/**
+ * Kote odozgo kao lanac stvarnih mera: posebno svako platno (svetla širina između stubova: ograda, kapija ili otvor) i posebno
+ * svaki stubić (njegova širina). Ugaoni spoj se kotira od ose do ose (stubovi uz njega se kotiraju zasebno).
+ */
+export function widthDims(layout: ReturnType<typeof computeLayout>): WidthDim[] {
+  const out: WidthDim[] = [];
+  for (const li of layout.items) {
+    if (isSpacer(li.item)) continue;
+    if (li.clearEnd - li.clearStart > 0.5) out.push({ kind: 'panel', li, x1: li.clearStart, x2: li.clearEnd });
+  }
+  layout.posts.forEach((lp, i) => {
+    if (!lp.hidden && lp.widthMm > 0.5) out.push({ kind: 'post', x1: lp.x - lp.widthMm / 2, x2: lp.x + lp.widthMm / 2, postIndex: i });
   });
+  return out.sort((a, b) => a.x1 - b.x1);
 }
 
 /** Kote visine: posebno za ograde i posebno za kapije (po jedna za svaku različitu visinu). */
@@ -179,7 +189,7 @@ function PostArt({ post, x, groundY, hex, caps }: { post: Post; x: number; groun
   );
 }
 
-function DimLine({ x1, x2, y, text, sub, fs, scale, edit }: { x1: number; x2: number; y: number; text: string; sub?: string; fs: number; scale: number; edit?: { kind: 'width' | 'height' | 'total'; id: string } }) {
+function DimLine({ x1, x2, y, text, sub, fs, scale, edit, color = '#17212e' }: { x1: number; x2: number; y: number; text: string; sub?: string; fs: number; scale: number; edit?: { kind: 'width' | 'clear' | 'height' | 'total'; id: string }; color?: string }) {
   const t = 5 / scale;
   const mid = (x1 + x2) / 2;
   const mode = dimMode(x2 - x1, scale, text);
@@ -189,16 +199,16 @@ function DimLine({ x1, x2, y, text, sub, fs, scale, edit }: { x1: number; x2: nu
   const hitW = vertical ? fs * 1.8 : 2 * Math.max(text.length * fs * 0.32, 14 / scale);
   const hitH = vertical ? label.length * fs * 0.62 + 12 / scale : fs * 2.3;
   return (
-    <g stroke="#17212e" strokeWidth={1.2 / scale} fill="none">
+    <g stroke={color} strokeWidth={1.2 / scale} fill="none">
       <line x1={x1} y1={y} x2={x2} y2={y} />
       <line x1={x1 - t} y1={y + t} x2={x1 + t} y2={y - t} strokeWidth={1.8 / scale} />
       <line x1={x2 - t} y1={y + t} x2={x2 + t} y2={y - t} strokeWidth={1.8 / scale} />
       <line x1={x1} y1={y - 7 / scale} x2={x1} y2={y + 7 / scale} />
       <line x1={x2} y1={y - 7 / scale} x2={x2} y2={y + 7 / scale} />
       {vertical ? (
-        <text transform={`translate(${mid + fs * 0.35} ${y - 6 / scale}) rotate(-90)`} textAnchor="start" fontSize={fs} fontWeight="600" fill="#17212e" stroke="none">{label}</text>
+        <text transform={`translate(${mid + fs * 0.35} ${y - 6 / scale}) rotate(-90)`} textAnchor="start" fontSize={fs} fontWeight="600" fill={color} stroke="none">{label}</text>
       ) : (
-        <text x={mid} y={y - 6 / scale} textAnchor="middle" fontSize={fs} fontWeight="600" fill="#17212e" stroke="none" style={{ paintOrder: 'stroke' }}>{label}</text>
+        <text x={mid} y={y - 6 / scale} textAnchor="middle" fontSize={fs} fontWeight="600" fill={color} stroke="none" style={{ paintOrder: 'stroke' }}>{label}</text>
       )}
       {sub && !narrow && (
         <text x={mid} y={y + fs * 1.05 + 4 / scale} textAnchor="middle" fontSize={fs * 0.82} fill="#64748b" stroke="none">{sub}</text>
@@ -335,7 +345,7 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
               </g>
             )}
             {it.kind === 'fence' && !isRl10Model(it.modelId) && (
-              <InfillArt modelId={it.modelId} x={x} y={y} w={w} h={it.heightMm} frame={it.params.frameMm} barSize={it.params.barSizeMm} gap={it.params.gapMm} lift={it.params.liftMm} arch={it.params.archMm} hex={colorHex(it.color)} colorKey={it.color} skipLeftPost={leftPostShared(project.items, li.index) || isStairPost(project.items, li.index)} skipRightPost={isStairPost(project.items, li.index + 1)} sloped={li.floorStart !== li.floorEnd} axis={{ x: li.axisStart, w: li.axisEnd - li.axisStart }} rodCount={rodCountFor(it.modelId, it.params, it.heightMm) ?? undefined} uid={it.id} />
+              <InfillArt modelId={it.modelId} x={x} y={y} w={w} h={it.heightMm} frame={it.params.frameMm} barSize={it.params.barSizeMm} gap={it.params.gapMm} lift={it.params.liftMm} arch={it.params.archMm} hex={colorHex(it.color)} colorKey={it.color} skipLeftPost={leftPostShared(project.items, li.index) || isStairPost(project.items, li.index)} skipRightPost={isStairPost(project.items, li.index + 1)} sloped={li.floorStart !== li.floorEnd} axis={{ x: li.axisStart, w: li.axisEnd - li.axisStart }} rodCount={rodCountFor(it.modelId, it.params, it.heightMm) ?? undefined} ram={ramInsets(it.modelId, it.params)} uid={it.id} />
             )}
             {it.kind === 'gate' && <GateArt gate={it} x={x} y={y} w={w} h={it.heightMm} hex={colorHex(it.color)} px={px} realistic={opts.transparent} />}
             {it.kind === 'opening' && isCorner(it) && (() => {
@@ -467,19 +477,26 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
       {/* kote */}
       {opts.showDimensions && items.length > 0 && (
         <g pointerEvents="none">
-          {/* kote po širini: sve na jednoj liniji iznad najvišeg dela, sa pomoćnim linijama do svakog elementa; kota je spoljna
-              (zauzeta) dužina — od spoljne ivice levog do spoljne ivice desnog stuba */}
+          {/* kote po širini: lanac stvarnih mera na jednoj liniji iznad najvišeg dela — posebno svako platno (svetla širina između
+              stubova) i posebno svaki stubić (plavo), sa pomoćnim linijama do ivica */}
           {(() => {
             const dy = groundY - layout.maxTopMm - 30 * px;
-            return widthDims(layout).map(({ li, x1, x2 }) => {
-              const lh = layout.posts[li.index]?.topMm ?? 0;
-              const rh = layout.posts[li.index + 1]?.topMm ?? 0;
-              const itemTop = li.item.heightMm + li.plinthMm;
+            return widthDims(layout).map((d) => {
+              if (d.kind === 'post') {
+                const lp = layout.posts[d.postIndex!];
+                const top = groundY - lp.floorMm - lp.topMm - 4 * px;
+                return (
+                  <g key={`dp-${lp.post.id}`} data-testid="dim-post">
+                    <line x1={d.x1} y1={dy} x2={d.x1} y2={top} stroke="#93c5fd" strokeWidth={1 * px} strokeDasharray={`${3 * px} ${3 * px}`} />
+                    <line x1={d.x2} y1={dy} x2={d.x2} y2={top} stroke="#93c5fd" strokeWidth={1 * px} strokeDasharray={`${3 * px} ${3 * px}`} />
+                    <DimLine x1={d.x1} x2={d.x2} y={dy} text={fmtMm(d.x2 - d.x1)} fs={fs * 0.9} scale={scale} color="#1d4ed8" />
+                  </g>
+                );
+              }
+              const li = d.li!;
               return (
-                <g key={`d-${li.item.id}`}>
-                  <line x1={x1} y1={dy} x2={x1} y2={groundY - li.floorStart - Math.max(lh, itemTop) - 4 * px} stroke="#94a3b8" strokeWidth={1 * px} strokeDasharray={`${3 * px} ${3 * px}`} />
-                  <line x1={x2} y1={dy} x2={x2} y2={groundY - li.floorEnd - Math.max(rh, itemTop) - 4 * px} stroke="#94a3b8" strokeWidth={1 * px} strokeDasharray={`${3 * px} ${3 * px}`} />
-                  <DimLine x1={x1} x2={x2} y={dy} text={fmtMm(x2 - x1)} fs={fs} scale={scale} edit={interactive ? { kind: 'width', id: li.item.id } : undefined} />
+                <g key={`d-${li.item.id}`} data-testid="dim-panel">
+                  <DimLine x1={d.x1} x2={d.x2} y={dy} text={fmtMm(d.x2 - d.x1)} sub={li.item.kind === 'opening' ? 'otvor' : 'platno'} fs={fs} scale={scale} edit={interactive ? { kind: 'clear', id: li.item.id } : undefined} />
                 </g>
               );
             });

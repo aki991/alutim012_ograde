@@ -1,10 +1,12 @@
-import { ListChecks } from 'lucide-react';
+import { ListChecks, PencilRuler, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { CustomModelThumb } from '../../components/designer/PartsSvg';
 import { SpecEditor } from '../../components/models/SpecEditor';
 import { ModelThumb, Page, PageHeader } from '../../components/ui/Common';
-import { Modal } from '../../components/ui/Modal';
-import { FENCE_MODEL_LIST, constructionOf } from '../../domain/models/catalog';
+import { ConfirmDialog, Modal } from '../../components/ui/Modal';
+import { FENCE_MODEL_LIST, FENCE_MODELS, constructionOf } from '../../domain/models/catalog';
+import { CUSTOM_KIND_LABELS, type CustomModel } from '../../domain/models/custom';
 import type { FenceModelId } from '../../domain/models/types';
 import { useAppStore } from '../../store/useAppStore';
 import { itemLabel } from '../../utils/labels';
@@ -13,7 +15,10 @@ export default function ModelsPage() {
   const navigate = useNavigate();
   const [choice, setChoice] = useState<FenceModelId | null>(null);
   const [specFor, setSpecFor] = useState<FenceModelId | null>(null);
+  const [del, setDel] = useState<CustomModel | null>(null);
   const modelSpecs = useAppStore((s) => s.settings.modelSpecs);
+  const customModels = useAppStore((s) => s.settings.customModels);
+  const materials = useAppStore((s) => s.materials);
   const projectId = useAppStore((s) => s.editor.projectId);
   const projects = useAppStore((s) => s.projects);
   const selection = useAppStore((s) => s.editor.selection);
@@ -21,12 +26,13 @@ export default function ModelsPage() {
   const selected = selection?.type === 'item' ? current?.items.find((i) => i.id === selection.id) : undefined;
   const canApply = selected && selected.kind !== 'opening';
 
+  const usedBy = (modelId: string): string[] => projects.filter((p) => p.items.some((it) => (it.kind === 'fence' && it.modelId === modelId) || (it.kind === 'gate' && it.infillModelId === modelId))).map((p) => p.name);
   const useModel = (m: FenceModelId) => {
     if (!current) { startNew(m); return; }
     setChoice(m);
   };
   const startNew = (m: FenceModelId) => {
-    const model = FENCE_MODEL_LIST.find((x) => x.id === m)!;
+    const model = FENCE_MODELS[m];
     navigate(`/editor/${useAppStore.getState().newProject({ modelId: m, name: `Novi projekat — ${model.name}` })}`);
   };
   const apply = (m: FenceModelId) => {
@@ -38,7 +44,30 @@ export default function ModelsPage() {
 
   return (
     <Page>
-      <PageHeader title="Modeli ograda" subtitle="Svi modeli ograde i pripadajućih kapija. Model se menja bez promene ukupne širine segmenta; boja se postavlja prema slici modela." />
+      <PageHeader title="Modeli ograda" subtitle="Svi modeli ograde i pripadajućih kapija. Model se menja bez promene ukupne širine segmenta; boja se postavlja prema slici modela."
+        actions={<button className="btn btn-primary" data-testid="btn-create-model" onClick={() => navigate('/modeli/crtanje')}><PencilRuler size={17} />Napravi model</button>} />
+      {!!customModels?.length && (
+        <section className="mb-7" data-testid="custom-models">
+          <h2 className="font-bold text-lg mb-3">Moji modeli (ručno nacrtani)</h2>
+          <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+            {customModels.map((m) => (
+              <article key={m.id} className="card overflow-hidden flex flex-col" data-testid="custom-model-card">
+                <div className="relative aspect-[16/10] bg-[#eef2f6] overflow-hidden border-b border-line p-3"><CustomModelThumb model={m} materials={materials} /></div>
+                <div className="p-4 flex-1 flex flex-col">
+                  <h3 className="font-bold text-[17px]">{m.name || 'Model bez naziva'}</h3>
+                  <p className="text-sm text-muted mt-0.5">{CUSTOM_KIND_LABELS[m.kind]} · {m.widthMm} × {m.heightMm} mm · {m.parts.length} delova</p>
+                  <div className="flex flex-wrap gap-2 mt-auto pt-4">
+                    <button className="btn btn-primary" data-testid="use-custom-model" disabled={m.parts.length === 0} onClick={() => useModel(m.id as FenceModelId)}>Koristi model</button>
+                    <button className="btn" data-testid="open-custom-model" onClick={() => navigate(`/modeli/crtanje/${m.id}`)}><PencilRuler size={16} />Otvori crtež</button>
+                    <button className="btn btn-danger" aria-label={`Obriši model ${m.name}`} onClick={() => setDel(m)}><Trash2 size={16} />Obriši</button>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+          <h2 className="font-bold text-lg mt-7 -mb-2">Modeli iz kataloga</h2>
+        </section>
+      )}
       <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
         {FENCE_MODEL_LIST.map((m) => (
           <article key={m.id} className="card overflow-hidden flex flex-col" data-testid={`model-card-${m.id}`}>
@@ -69,6 +98,7 @@ export default function ModelsPage() {
           </article>
         ))}
       </div>
+      {del && <ConfirmDialog title="Brisanje modela" danger confirmLabel="Obriši" message={usedBy(del.id).length ? <>Model <b>{del.name}</b> koriste projekti: <b>{usedBy(del.id).join(', ')}</b>. Ako ga obrišete, ti projekti prelaze na podrazumevani model iz kataloga. Crtež se ne može vratiti.</> : <>Obrisati nacrtani model <b>{del.name}</b>? Crtež se ne može vratiti.</>} onCancel={() => setDel(null)} onConfirm={() => { useAppStore.getState().removeCustomModel(del.id); setDel(null); }} />}
       {specFor && <SpecEditor modelId={specFor} onClose={() => setSpecFor(null)} />}
       {choice && current && (
         <Modal title="Kako želite da koristite model?" onClose={() => setChoice(null)}>

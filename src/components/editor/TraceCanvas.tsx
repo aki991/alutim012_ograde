@@ -1,7 +1,8 @@
+import { allFenceModels } from '../../domain/models/customRegistry';
 import { Check, Pencil, Trash2, Undo2, X } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { pointAt, segmentLength, setSegmentLength, setTurnAt, snapTracePoint, turnBetween, type TracePoint } from '../../domain/geometry/trace';
-import { FENCE_MODEL_LIST, FENCE_MODELS } from '../../domain/models/catalog';
+import { FENCE_MODELS } from '../../domain/models/catalog';
 import type { FenceModelId } from '../../domain/models/types';
 import { fmtMm, fmtNum } from '../../utils/units';
 
@@ -199,7 +200,7 @@ export function TraceCanvas({ modelId, onModel, onFinish, onCancel }: {
         <b>{mode === 'draw' ? 'Crtanje ograde' : 'Izmena nacrtane ograde'}</b>
         <label className="flex items-center gap-1.5">Model:
           <select className="input !w-auto !py-1" aria-label="Model ograde za crtanje" data-testid="trace-model" value={modelId} onChange={(e) => onModel(e.target.value as FenceModelId)}>
-            {FENCE_MODEL_LIST.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            {allFenceModels().map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
         </label>
         <span className="tabular-nums text-slate-700" data-testid="trace-total">Ukupno {fmtMm(total)}</span>

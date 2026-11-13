@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SEED_MATERIALS } from '../data/materials';
+import { SEED_MATERIALS } from './fixtures/materials';
 import { computeInfill } from '../domain/geometry/infill';
 import { computeLayout } from '../domain/geometry/layout';
 import { resetTubesParams, setTubesParams, updateItemParams } from '../domain/geometry/operations';

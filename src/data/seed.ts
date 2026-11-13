@@ -49,7 +49,7 @@ export function createSeedProjects(): Project[] {
     20, 'P-2026-005', 'zavrseno',
   );
   const nikolic = dated(
-    createProject('Staklena terasa', [createFence({ widthMm: 1500, modelId: 'glass_inox', heightMm: 1100 }), createFence({ widthMm: 1500, modelId: 'glass_inox', heightMm: 1100 }), createFence({ widthMm: 1500, modelId: 'glass_inox', heightMm: 1100 })], 'cust_nikolic'),
+    createProject('Inox terasa', [createFence({ widthMm: 1500, modelId: 'rail_inox', heightMm: 1100 }), createFence({ widthMm: 1500, modelId: 'rail_inox', heightMm: 1100 }), createFence({ widthMm: 1500, modelId: 'rail_inox', heightMm: 1100 })], 'cust_nikolic'),
     26, 'P-2026-006', 'ponuda',
   );
   return [petrovic, stanic, jovanovic, eurostil, ilic, nikolic];

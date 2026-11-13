@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SEED_MATERIALS } from '../data/materials';
+import { SEED_MATERIALS } from './fixtures/materials';
 import { computeInfill } from '../domain/geometry/infill';
 import { gateLeafPoses } from '../domain/geometry/gates';
 import { computeLayout, outerWidthMm } from '../domain/geometry/layout';

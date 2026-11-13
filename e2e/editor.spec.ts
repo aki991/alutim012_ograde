@@ -272,8 +272,8 @@ test('„Uredi" otvara izmenu podataka projekta; kapija sa betonskim stubom se d
   await expect(page.getByTestId('count-items')).toHaveText('2');
 });
 
-const TERRACE = ['rail_black', 'rail_inox', 'glass_inox'];
-const ALL_MODELS = ['h_narrow', 'h_boards', 'h_combo', 'rail_black', 'panel_lines', 'rail_inox', 'picket_narrow', 'louver_light', 'louver_dark', 'picket_brown', 'h_white', 'v_framed', 'picket_wide', 'h_wide', 'glass_inox'];
+const TERRACE = ['rail_black', 'rail_inox'];
+const ALL_MODELS = ['h_narrow', 'h_boards', 'h_combo', 'rail_black', 'panel_lines', 'rail_inox', 'picket_narrow', 'louver_light', 'louver_dark', 'picket_brown', 'h_white', 'v_framed', 'picket_wide', 'h_wide'];
 
 test('svih 15 modela: ograda i kapija se crtaju u 2D i 3D bez grešaka', async ({ page }) => {
   const errors = trackErrors(page);
@@ -894,7 +894,7 @@ test('modeli: kartice navode profile (vertikale i horizontale) po podacima radni
   await expect(page.getByTestId('construction-note-louver_dark')).toContainText('Z profil');
   await expect(page.getByTestId('construction-note-louver_dark')).toContainText('nije potvrđen');
   // modeli bez podatka radnika nemaju red sa profilima
-  await expect(page.getByTestId('construction-vertical-glass_inox')).toHaveCount(0);
+  await expect(page.getByTestId('construction-vertical-h_wide')).toHaveCount(0);
 });
 
 test('modeli: dugmad „Koristi model" i „Specifikacija" su na istoj visini u svim karticama istog reda', async ({ page }) => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SEED_MATERIALS } from '../data/materials';
+import { SEED_MATERIALS } from './fixtures/materials';
 import { FENCE_MODEL_LIST } from '../domain/models/catalog';
 import { createFence, createProject } from '../domain/models/factories';
 import { checkFormula, defaultSpec, evalFormula, evaluateSpec, specVars, type ModelSpecs } from '../domain/models/spec';

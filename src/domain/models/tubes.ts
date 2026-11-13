@@ -49,6 +49,21 @@ export const TUBES_LABELS: Record<keyof TubesDims, string> = {
   endClearMm: 'Zazor kraja cevi u U profilu',
 };
 
+/** Podrazumevana širina kvadratne cevi rama (mm). */
+export const RAM_TUBE_DEFAULT_MM = 40;
+export const RAM_LABELS = { none: 'Bez rama', u: 'U profil', tube: 'Kvadratna cev' } as const;
+
+/**
+ * Koliko ram sužava ispunu: `side` sa leve i desne strane, `top` gore i dole (mm). Ram od U profila zauzima samo gore i dole
+ * (bočne strane su već U vođice), a ram od kvadratne cevi sve četiri strane.
+ */
+export function ramInsets(modelId: FenceModelId | undefined, params: Pick<FenceParams, 'ram' | 'ramMm' | 'frameMm'> | undefined): { kind: 'u' | 'tube' | null; side: number; top: number } {
+  if (!isTubesModel(modelId) || !params?.ram) return { kind: null, side: 0, top: 0 };
+  if (params.ram === 'u') return { kind: 'u', side: 0, top: params.frameMm };
+  const t = params.ramMm ?? RAM_TUBE_DEFAULT_MM;
+  return { kind: 'tube', side: t, top: t };
+}
+
 export const tubesDims = (params: Pick<FenceParams, 'hn'> | undefined): TubesDims => ({ ...TUBES_DEFAULTS, ...(params?.hn ?? {}) });
 
 /** Dužina cevi: svetli otvor polja umanjen za zid i zazor sa obe strane (krajevi ulaze u kanal U profila). */

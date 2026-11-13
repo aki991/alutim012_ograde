@@ -105,12 +105,12 @@ export async function buildCutlistPdfBlob(project: Project, customer: Customer |
       [
         { colSpan: 3, fillColor: '#f6f4f3', margin: [6, 0, 6, 0], columns: [
           { stack: [{ text: p.profile, fontSize: 11.5, bold: true }, { text: `${p.pieceCount} komada · ${fmtNum(p.pieceTotalMm / 1000, 2)} m`, fontSize: 8.5, color: MUTED }], width: '*' },
-          { text: [{ text: `${p.bars.length} ${p.bars.length === 1 ? 'šipka' : 'šipke'}`, bold: true, color: BRAND_RED }, { text: `   ·   iskorišćenje ` , color: MUTED }, { text: `${fmtNum(p.efficiencyPct, 1)} %`, bold: true, color: effColor(p.efficiencyPct) }], alignment: 'right', fontSize: 10, margin: [0, 5, 0, 0], width: 'auto' },
+          { text: [{ text: `${p.newBars} ${p.newBars === 1 ? 'šipka' : 'šipke'}${p.offcutBars ? ` + ${p.offcutBars} ostat.` : ''}`, bold: true, color: BRAND_RED }, { text: `   ·   iskorišćenje ` , color: MUTED }, { text: `${fmtNum(p.efficiencyPct, 1)} %`, bold: true, color: effColor(p.efficiencyPct) }], alignment: 'right', fontSize: 10, margin: [0, 5, 0, 0], width: 'auto' },
         ] },
         {}, {},
       ],
       ...groupBars(p.bars).map((g) => [
-        { stack: [{ text: g.count > 1 ? `Šipke ${g.from}–${g.to}` : `Šipka ${g.from}`, fontSize: 8.5, bold: true, color: INK }, ...(g.count > 1 ? [{ text: `× ${g.count}`, fontSize: 11, bold: true, color: BRAND_RED }] : [])], margin: [0, g.count > 1 ? 3 : 9, 0, 0] },
+        { stack: [{ text: g.bar.offcut ? `Ostatak ${fmtNum(g.bar.stockMm ?? 0, 0)}` : g.count > 1 ? `Šipke ${g.from}–${g.to}` : `Šipka ${g.from}`, fontSize: 8.5, bold: true, color: g.bar.offcut ? '#b45309' : INK }, ...(g.count > 1 ? [{ text: `× ${g.count}`, fontSize: 11, bold: true, color: BRAND_RED }] : [])], margin: [0, g.count > 1 ? 3 : 9, 0, 0] },
         { image: barImages.get(`${p.profile}|${g.from}`)!, width: 640 },
         { text: [{ text: 'Ostatak\n', fontSize: 7, color: MUTED }, { text: fmtMm(g.bar.leftoverMm), fontSize: 9, bold: true, color: g.bar.leftoverMm === 0 ? '#15803d' : INK }], alignment: 'right', margin: [0, 3, 0, 0] },
       ]),
@@ -120,7 +120,7 @@ export async function buildCutlistPdfBlob(project: Project, customer: Customer |
         widths: [70, 40, '*'],
         body: [
           [{ text: 'DUŽINA', fontSize: 7.5, bold: true, color: MUTED }, { text: 'KOM.', fontSize: 7.5, bold: true, color: MUTED, alignment: 'right' }, { text: 'POZICIJE', fontSize: 7.5, bold: true, color: MUTED }],
-          ...p.summary.map((s) => [{ text: fmtMm(s.lengthMm), fontSize: 9 }, { text: String(s.qty), fontSize: 9, bold: true, alignment: 'right' }, { text: s.positions.map((k) => (/^\d/.test(k) ? `P${k}` : k)).join(', '), fontSize: 8.5, color: MUTED }]),
+          ...p.summary.map((s) => [{ text: s.miter ? `${fmtMm(s.lengthMm)}  (45°)` : fmtMm(s.lengthMm), fontSize: 9 }, { text: String(s.qty), fontSize: 9, bold: true, alignment: 'right' }, { text: s.positions.map((k) => (/^\d/.test(k) ? `P${k}` : k)).join(', '), fontSize: 8.5, color: MUTED }]),
         ],
       },
       layout: { hLineColor: () => LINE, hLineWidth: (i: number, node: any) => (i === 0 || i === node.table.body.length ? 0 : 0.4), vLineWidth: () => 0, paddingTop: () => 2, paddingBottom: () => 2 },

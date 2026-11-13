@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SEED_MATERIALS } from '../data/materials';
+import { SEED_MATERIALS } from './fixtures/materials';
 import { createFence, createGate, createProject } from '../domain/models/factories';
 import { buildCuttingList, cutOptions, packBars, type CutPiece } from '../domain/pricing/cutting';
 import { barSvg, positionColors } from '../services/cutlistSvg';

@@ -1,6 +1,7 @@
+import { allFenceModels } from '../../domain/models/customRegistry';
 import { ChevronDown, ChevronUp, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { FENCE_MODEL_LIST, FENCE_MODELS, GATE_LABELS, POST_LABELS, isLightColor, isTerraceModel, projectModelId } from '../../domain/models/catalog';
+import { FENCE_MODELS, GATE_LABELS, POST_LABELS, isLightColor, isTerraceModel, projectModelId } from '../../domain/models/catalog';
 import { createFence, createGate, createOpening, createProject } from '../../domain/models/factories';
 import { applyPostType } from '../../domain/geometry/operations';
 import type { FenceModelId, GateType, PostType, Project } from '../../domain/models/types';
@@ -144,7 +145,7 @@ export function Catalog({ onBeginDrag }: { onBeginDrag: (source: DragSource, e: 
         <label className="flex items-center gap-2 text-sm font-medium">
           Model ograde
           <select className="input !w-auto !py-1.5 min-w-[260px]" data-testid="catalog-model" value={model} onChange={(e) => changeModel(e.target.value as FenceModelId)}>
-            {FENCE_MODEL_LIST.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            {allFenceModels().map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
         </label>
         <button className="btn btn-sm ml-auto" aria-expanded={showAll} data-testid="catalog-show-all" onClick={() => setShowAll((v) => !v)}>

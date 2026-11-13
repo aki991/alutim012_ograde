@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { SEED_MATERIALS } from '../data/materials';
+import { SEED_MATERIALS } from './fixtures/materials';
 import { planImport } from '../domain/pricing/materialsIo';
 import { readPdfTable, type PdfLib } from '../services/pdfTable';
 

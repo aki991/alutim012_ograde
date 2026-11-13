@@ -5,6 +5,7 @@ import { UsersAdmin } from '../../components/settings/UsersAdmin';
 import { ConfirmDialog } from '../../components/ui/Modal';
 import { useAuth } from '../../services/auth';
 import { saveNow } from '../../services/persistence';
+import { cutOptions } from '../../domain/pricing/cutting';
 import { useAppStore } from '../../store/useAppStore';
 
 /** Ime i prezime prijavljenog korisnika: čuva se u Supabase nalogu i prikazuje u meniju i na avataru. */
@@ -61,6 +62,12 @@ export default function SettingsPage() {
           <h2 className="font-bold mb-2">Napredne opcije</h2>
           <ToggleField label="Napredni prikaz dužina" checked={Boolean(settings.advancedLengths)} onLabel="Uključen" offLabel="Isključen" onChange={(v) => update({ advancedLengths: v })} testId="set-advanced" />
           <ToggleField label="Simulacija na fotografiji" checked={settings.photoSimEnabled !== false} onLabel="Uključena" offLabel="Isključena" onChange={(v) => update({ photoSimEnabled: v })} testId="set-photosim" />
+        </section>
+        <section className="card p-5" data-testid="set-cutting">
+          <h2 className="font-bold mb-1">Sečenje materijala (krojna lista)</h2>
+          <p className="text-sm text-muted mb-2">Širina testere se dodaje na svaki rez, pa utiče na to koliko komada staje u jednu šipku i koliki je ostatak.</p>
+          <NumberField label="Širina testere" testId="set-kerf" value={cutOptions(settings).kerfMm} range={{ min: 0, max: 50 }} allowZero integer={false} step={0.5} onCommit={(v) => update({ cutting: { ...cutOptions(settings), kerfMm: v } })} hint="Debljina lista testere (rez). Uobičajeno 2–4 mm." />
+          <NumberField label="Dužina nabavne šipke" testId="set-stock" value={cutOptions(settings).stockMm} range={{ min: 500, max: 20000 }} onCommit={(v) => update({ cutting: { ...cutOptions(settings), stockMm: v } })} hint="Dužina cele šipke kako stiže od dobavljača (najčešće 6000 mm)." />
         </section>
         <section className="card p-5">
           <h2 className="font-bold mb-2">Podrazumevana kalkulacija (novi projekti)</h2>

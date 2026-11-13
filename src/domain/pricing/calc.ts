@@ -28,10 +28,10 @@ export function innerArea(li: LaidOutItem, heightMm: number, frameMm: number): I
   return { widthMm: Math.max(0, li.clearWidth - 2 * frameMm), heightMm: Math.max(0, heightMm - 2 * frameMm) };
 }
 
-const POST_MATERIAL = { aluminium: 'mat_post_alu', concrete: 'mat_post_concrete', concrete_plinth: 'mat_post_concrete', decorative: 'mat_post_decorative', gate: 'mat_post_gate' } as const;
-const HINGE_MATERIAL = { standard: 'mat_hinge_standard', hidden: 'mat_hinge_hidden', heavy: 'mat_hinge_heavy' } as const;
-const LOCK_MATERIAL = { standard: 'mat_lock_standard', cylinder: 'mat_lock_cylinder', electric: 'mat_lock_electric' } as const;
-const MOTOR_MATERIAL = { sliding_motor: 'mat_motor_sliding', swing_arm: 'mat_motor_swing', underground: 'mat_motor_underground' } as const;
+export const POST_MATERIAL = { aluminium: 'mat_post_alu', concrete: 'mat_post_concrete', concrete_plinth: 'mat_post_concrete', decorative: 'mat_post_decorative', gate: 'mat_post_gate' } as const;
+export const HINGE_MATERIAL = { standard: 'mat_hinge_standard', hidden: 'mat_hinge_hidden', heavy: 'mat_hinge_heavy' } as const;
+export const LOCK_MATERIAL = { standard: 'mat_lock_standard', cylinder: 'mat_lock_cylinder', electric: 'mat_lock_electric' } as const;
+export const MOTOR_MATERIAL = { sliding_motor: 'mat_motor_sliding', swing_arm: 'mat_motor_swing', underground: 'mat_motor_underground' } as const;
 
 /* ---------- Spisak materijala (BOM) ---------- */
 
@@ -61,8 +61,10 @@ interface Acc { group: BomGroup; materialId: string; qty: number; label?: string
 export function buildBom(project: Project, materials: Material[], specs?: ModelSpecs): BomLine[] {
   const layout = computeLayout(project);
   const acc = new Map<string, Acc>();
-  const add = (group: BomGroup, materialId: string, qty: number) => {
+  const add = (group: BomGroup, originalId: string, qty: number) => {
     if (qty <= 0) return;
+    // deo zamenjen u projektu („Delovi ograde“): umesto materijala iz specifikacije ide izabrani
+    const materialId = project.partMaterials?.[originalId] ?? originalId;
     const k = `${group}|${materialId}`;
     const cur = acc.get(k);
     if (cur) cur.qty += qty;

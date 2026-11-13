@@ -4,7 +4,6 @@ import { isStair, slopeOf, stairProfile, stairSteps, stairSummary } from '../dom
 import { createFence, createProject } from '../domain/models/factories';
 import type { FenceSection } from '../domain/models/types';
 import { rail04Runs, buildRail04Sheet } from '../domain/pricing/railSpec';
-import { buildCutList } from '../domain/pricing/production';
 import { specVars } from '../domain/models/spec';
 import { makeStair, removeStair, setStairGroup, stairOuterRunMm, clearStair } from '../domain/geometry/stairOps';
 import { stairGroupAt } from '../domain/geometry/stair';
@@ -74,21 +73,14 @@ describe('stepenište', () => {
     expect(sheet.cuts.some((c) => c.cut.includes('pod uglom 27°'))).toBe(true);
   });
 
-  it('specifikacija: delovi duž polja po kosoj dužini, površina stakla ostaje horizontalna × vertikalna', () => {
-    const base = { modelId: 'glass_inox' as const, widthMm: 1800, heightMm: 1000, axisMm: 1900, params: { barSizeMm: 0, gapMm: 0, frameMm: 0 } };
+  it('specifikacija: delovi duž polja po kosoj dužini, površina ostaje horizontalna × vertikalna', () => {
+    const base = { modelId: 'rail_inox' as const, widthMm: 1800, heightMm: 1000, axisMm: 1900, params: { barSizeMm: 0, gapMm: 0, frameMm: 0 } };
     const flat = specVars(base);
     const sloped = specVars({ ...base, slopeFactor: 1.25 });
     expect(sloped.W).toBeCloseTo(flat.W * 1.25, 6);
     expect(sloped.A).toBeCloseTo(flat.A * 1.25, 6);
     expect(sloped.H).toBe(flat.H);
-    expect(sloped.GLASS).toBeCloseTo(flat.GLASS, 3);
     expect(sloped.AREA).toBeCloseTo(flat.AREA, 9);
-  });
-
-  it('krojna lista: staklo stepeništa je paralelogram sa nagibom', () => {
-    const p = createProject('t', [createFence({ widthMm: 1800, modelId: 'glass_inox', heightMm: 1000, stair: { riseMm: 1020 } })]);
-    const glass = buildCutList(p).find((r) => r.glass);
-    expect(glass?.note).toMatch(/paralelogram/);
   });
 
   it('15 stepenika: stub na svaki treći stepenik, po sredini gazišta; prvi i poslednji stub su na krajevima', () => {

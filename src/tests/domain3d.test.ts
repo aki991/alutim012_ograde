@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createSeedData } from '../data/seed';
 import { FENCE_MODEL_LIST, FENCE_MODELS, panelArt } from '../domain/models/catalog';
-import { SEED_MATERIALS } from '../data/materials';
+import { SEED_MATERIALS } from './fixtures/materials';
 import { loadAll } from '../db';
 import { computeInfill } from '../domain/geometry/infill';
 import { computeLayout } from '../domain/geometry/layout';
@@ -143,12 +143,9 @@ describe('zajednički geometrijski opis ispune (2D = 3D)', () => {
     expect(v.vertical).toBe(true);
     expect(v.bars.filter((b) => b.round)).toHaveLength(countVerticalBars(1820, 60, 30));
     expect(v.bars.filter((b) => b.tone === 'rail')).toHaveLength(2);
-    const g = computeInfill('glass_inox', 1900, 1600, 25, 0, 0);
-    expect(g.glass).not.toBeNull();
-    expect(g.bars).toHaveLength(1);
   });
-  it('svih 15 modela: geometrija staje u polje, i za ogradu i za kapiju, a kalkulacija nema stavki bez cene', () => {
-    expect(FENCE_MODEL_LIST).toHaveLength(15);
+  it('svih 14 modela: geometrija staje u polje, i za ogradu i za kapiju, a kalkulacija nema stavki bez cene', () => {
+    expect(FENCE_MODEL_LIST).toHaveLength(14);
     for (const def of FENCE_MODEL_LIST) {
       const geo = computeInfill(def.id, 2000, 1600, def.defaults.frameMm, def.defaults.barSizeMm, def.defaults.gapMm);
       if (def.hasBars || def.style === 'glass_rail') expect(geo.bars.length, def.id).toBeGreaterThan(0);
@@ -174,7 +171,7 @@ describe('zajednički geometrijski opis ispune (2D = 3D)', () => {
     const m = migrateProject(old);
     expect(m.schemaVersion).toBe(SCHEMA_VERSION);
     expect(m.items[0].kind === 'fence' && m.items[0].modelId).toBe('louver_dark');
-    expect(m.items[1].kind === 'gate' && m.items[1].infillModelId).toBe('glass_inox');
+    expect(m.items[1].kind === 'gate' && m.items[1].infillModelId).toBe('rail_inox');
     expect(m.items.map((i) => i.widthMm)).toEqual([2300, 4100]);
     const json = JSON.parse(serializeProject(old));
     json.project = old;
