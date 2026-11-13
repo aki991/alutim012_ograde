@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { SEED_MATERIALS } from '../src/tests/fixtures/materials';
 import fs from 'node:fs';
 import zlib from 'node:zlib';
 
@@ -7,6 +8,33 @@ async function enableAdvanced(page: import('@playwright/test').Page) {
   const sw = page.getByTestId('set-advanced');
   if ((await sw.getAttribute('aria-checked')) !== 'true') await sw.click();
   await page.getByRole('link', { name: 'Početna' }).first().click();
+}
+
+/**
+ * Cenovnik je u novoj instalaciji prazan, pa testovi koji računaju na postojeće materijale upisuju probni cenovnik
+ * (nekadašnje ugrađene materijale) u lokalnu bazu i ponovo učitavaju stranu. Isti podaci kao pre uklanjanja ugrađenih materijala.
+ */
+async function seedMaterials(page: import('@playwright/test').Page, path = '/materijali') {
+  await page.goto('/');
+  await page.waitForSelector('[data-testid="hero"]');
+  await page.evaluate(async (mats) => {
+    localStorage.setItem('alutim.modelMaterialsV1', '1'); // bez automatskog dodavanja materijala modela
+    const open = () => new Promise<IDBDatabase>((resolve, reject) => { const r = indexedDB.open('alu-tim-012'); r.onerror = () => reject(r.error); r.onsuccess = () => resolve(r.result); });
+    const get = (db: IDBDatabase, store: string, key: string) => new Promise<unknown>((resolve, reject) => { const r = db.transaction([store]).objectStore(store).get(key); r.onerror = () => reject(r.error); r.onsuccess = () => resolve(r.result); });
+    const db = await open();
+    // početni upis aplikacije mora da se završi pre našeg (inače bi obrisao naše materijale)
+    for (let i = 0; i < 100 && !(await get(db, 'kv', 'seeded')); i++) await new Promise((r) => setTimeout(r, 50));
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(['materials'], 'readwrite');
+      const st = tx.objectStore('materials');
+      st.clear();
+      for (const m of mats) st.put(m);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  }, SEED_MATERIALS.map((m) => ({ ...m, demo: false }))); // „demo" ugrađeni materijali se pri učitavanju brišu, pa se upisuju kao obični
+  await page.goto(path);
 }
 
 async function showDims(page: import('@playwright/test').Page) {
@@ -45,7 +73,7 @@ test('glavni scenario: projektovanje, kalkulacija, čuvanje, izvoz', async ({ pa
   const errors = trackErrors(page);
 
   // 1–2. otvori aplikaciju, klikni Novi projekat
-  await page.goto('/');
+  await seedMaterials(page, '/');
   await expect(page.getByTestId('hero')).toBeVisible();
   await enableAdvanced(page);
   await page.getByTestId('hero-new').click();
@@ -74,7 +102,7 @@ test('glavni scenario: projektovanje, kalkulacija, čuvanje, izvoz', async ({ pa
   await page.getByTestId('field-width').fill('1500');
   await expect(page.getByTestId('total-modular')).toContainText('9.960');
   await showDims(page);
-  await expect(page.getByTestId('front-view').getByText(/1\.500/).first()).toBeVisible();
+  await expect(page.getByTestId('front-view').getByText(/1\.300/).first()).toBeVisible(); // kota platna je svetla širina: spoljna 1500 minus stubovi
   expect(await page.getByTestId('front-view').innerHTML()).not.toBe(before);
 
   // nevažeća vrednost: objašnjenje, vrednost se ne primenjuje potajno
@@ -212,7 +240,7 @@ test('dashboard statistika, modeli i projekti rade', async ({ page }) => {
   const errors = trackErrors(page);
   await page.goto('/');
   await expect(page.getByTestId('stat-customers')).toHaveText('8');
-  await expect(page.getByTestId('popular-model')).toHaveCount(6);
+  await expect(page.getByTestId('popular-model')).toHaveCount(5);
   await page.getByTestId('popular-model').first().click();
   await expect(page).toHaveURL(/\/editor\//);
   await expect(page.getByTestId('count-items')).toHaveText('1');
@@ -278,7 +306,7 @@ test('„Uredi" otvara izmenu podataka projekta; kapija sa betonskim stubom se d
 const TERRACE = ['rail_black', 'rail_inox'];
 const ALL_MODELS = ['h_narrow', 'h_boards', 'h_combo', 'rail_black', 'panel_lines', 'rail_inox', 'picket_narrow', 'louver_light', 'louver_dark', 'picket_brown', 'h_white', 'v_framed', 'picket_wide', 'h_wide'];
 
-test('svih 15 modela: ograda i kapija se crtaju u 2D i 3D bez grešaka', async ({ page }) => {
+test('svi modeli: ograda i kapija se crtaju u 2D i 3D bez grešaka', async ({ page }) => {
   const errors = trackErrors(page);
   await page.goto('/');
   await page.getByTestId('hero-new').first().click();
@@ -295,7 +323,7 @@ test('svih 15 modela: ograda i kapija se crtaju u 2D i 3D bez grešaka', async (
     await page.getByTestId('field-model').selectOption(id);
     await expect(page.getByTestId('field-model')).toHaveValue(id);
   }
-  await expect(page.getByTestId('count-items')).toHaveText('16');
+  await expect(page.getByTestId('count-items')).toHaveText(String(ALL_MODELS.length + 1)); // po jedna ograda svakog modela i klizna kapija
   // kapija u 3D se učitava iz GLB modela izabranog dizajna (14 = Antracit široke letvice, klizna)
   const glb = page.waitForResponse((r) => /14-klizna.*\.glb/.test(r.url()) && r.ok());
   await page.getByTestId('tab-three').click();
@@ -446,15 +474,16 @@ test('crtanje ograde: završi crtanje, izmeni meru, pa napravi ogradu', async ({
   await expect(page.getByTestId('canvas-card')).toContainText('6.000');
 });
 
+// kota širine u 2D je širina platna (svetli otvor između stubova): klik na nju menja platno
 test('klik na kotu menja širinu elementa uz proveru granica', async ({ page }) => {
   await page.goto('/');
   await page.getByTestId('hero-new').click();
   await page.getByTestId('cat-fence-add').click();
   await showDims(page);
-  await page.locator('[data-dim="width"]').first().click({ force: true });
+  await page.locator('[data-dim="clear"]').first().click({ force: true });
   await expect(page.getByTestId('dim-edit')).toBeVisible();
   await page.getByTestId('dim-input').fill('300');
-  await expect(page.getByTestId('dim-error')).toContainText('600');
+  await expect(page.getByTestId('dim-error')).toContainText('400');
   await expect(page.getByTestId('dim-apply')).toBeDisabled();
   await page.getByTestId('dim-input').fill('2400');
   await page.getByTestId('dim-input').press('Enter');
@@ -478,11 +507,12 @@ test('dugme + na kraju niza dodaje sledeći element sa zadatim merama', async ({
   await page.getByTestId('add-post-concrete').click();
   await page.getByTestId('add-apply').click();
   await expect(page.getByTestId('add-form')).toHaveCount(0);
-  await expect(page.getByTestId('front-view')).toContainText('1.700');
+  // element je dodat sa spoljnom širinom 1700: ukupna dužina je 500 + 1700, a platno se kotira svetlom širinom
+  await expect(page.getByTestId('front-view')).toContainText('2.200 mm (ukupna dužina)');
   await page.getByTestId('add-end').click({ force: true });
   await page.getByTestId('add-kind-pedestrian').click();
   await page.getByTestId('add-apply').click();
-  await expect(page.locator('[data-dim="width"]')).toHaveCount(3);
+  await expect(page.locator('[data-dim="clear"]')).toHaveCount(3);
 });
 
 test('„Trenutni projekat" otvara projekat na kome se radi, a ne pravi novi', async ({ page }) => {
@@ -628,7 +658,7 @@ test('simulacija se isključuje i uključuje u podešavanjima (Napredne opcije)'
 });
 
 test('materijali: izvoz tabele i uvoz cena sa pregledom pre primene', async ({ page }) => {
-  await page.goto('/materijali');
+  await seedMaterials(page);
   const download = page.waitForEvent('download');
   await page.getByTestId('btn-export-materials').click();
   await page.getByTestId('export-csv').click();
@@ -651,7 +681,7 @@ test('materijali: izvoz tabele i uvoz cena sa pregledom pre primene', async ({ p
 });
 
 test('materijali: uvoz Excel (.xlsx) dokumenta prikazuje pregled izmena', async ({ page }) => {
-  await page.goto('/materijali');
+  await seedMaterials(page);
   await page.getByTestId('import-file').setInputFiles('probni-cenovnik.xlsx');
   await expect(page.getByTestId('import-preview')).toBeVisible();
   await expect(page.getByTestId('import-summary')).toContainText('5 cena');
@@ -679,7 +709,7 @@ test('materijali: uvoz PDF cenovnika dobavljača kao tabele, sa pregledom', asyn
 });
 
 test('materijali: uvoz probnog PDF-a (test-cenovnik-dobavljac.pdf)', async ({ page }) => {
-  await page.goto('/materijali');
+  await seedMaterials(page);
   await page.getByTestId('import-file').setInputFiles('test-cenovnik-dobavljac.pdf');
   await expect(page.getByTestId('import-preview')).toBeVisible({ timeout: 30000 });
   await expect(page.getByTestId('import-counts')).toContainText('Menja se: 6');
@@ -688,7 +718,7 @@ test('materijali: uvoz probnog PDF-a (test-cenovnik-dobavljac.pdf)', async ({ pa
 });
 
 test('materijali: izvoz u PDF, meni se zatvara klikom van njega, izvezeni PDF se uvozi nazad bez izmena', async ({ page }) => {
-  await page.goto('/materijali');
+  await seedMaterials(page);
   await page.getByTestId('btn-export-materials').click();
   await expect(page.getByTestId('export-menu')).toBeVisible();
   await page.getByRole('heading', { name: 'Materijali i cene' }).click();
@@ -947,7 +977,7 @@ test('ograde za terase: bez kapija i kataloga stubova; model se ne menja dok ima
 
 test('model tarabica: razmak i prepust se menjaju, stub ima izbor kapa, sastavnica sadrži cevi i kape iz kataloga', async ({ page }) => {
   const errors = trackErrors(page);
-  await page.goto('/');
+  await seedMaterials(page, '/');
   await page.getByTestId('hero-new').first().click();
   await page.getByTestId('catalog-model').selectOption('picket_wide');
   for (let i = 0; i < 2; i++) await page.getByTestId('cat-fence-add').click();

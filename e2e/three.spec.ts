@@ -113,6 +113,8 @@ test.describe('prazan projekat (D1/D2)', () => {
 test.describe('3D prikaz', () => {
   test('scena je stvarno nacrtana; klik bira objekat; panel i 2D ostaju sinhronizovani', async ({ page }) => {
     const errors = trackErrors(page);
+    // širi desni panel ostavlja manje mesta za 3D u podeljenom prikazu, pa se objekti biraju na širem prozoru
+    await page.setViewportSize({ width: 1700, height: 900 });
     await openDemo(page);
     await page.getByTestId('tab-split').click();
     await page.waitForFunction(() => Boolean(window.__aluTest));
@@ -132,7 +134,7 @@ test.describe('3D prikaz', () => {
     await page.getByTestId('field-width').fill('1500');
     await expect(page.getByTestId('total-modular')).toContainText('10.390');
     await showDims(page);
-  await expect(page.getByTestId('front-view').getByText(/1\.500/).first()).toBeVisible();
+    await expect(page.getByTestId('front-view').getByText(/1\.280/).first()).toBeVisible(); // kota platna je svetla širina: spoljna 1500 minus stubovi
     await page.getByTestId('field-color').locator('[data-color=\"RAL 9005\"]').click();
     await page.getByTestId('field-model').selectOption('v_framed');
     await expect(page.getByTestId('field-bar')).toBeVisible();
