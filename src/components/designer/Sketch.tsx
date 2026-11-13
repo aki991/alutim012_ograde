@@ -178,7 +178,7 @@ function SketchDrawing({ model, materials, sk, parts, className, style }: { mode
           </g>
         );
       })}
-      {/* zavarivanje: od poda do gornje ivice svake prečke (zelena osa) */}
+      {/* zavarivanje: od poda do linije naleganja svake prečke na bočni U profil (zelena osa) */}
       {weldItems.length > 0 && (
         <g data-testid="sketch-welds">
           <line x1={xWeld} y1={H} x2={xWeld} y2={weldItems[0].Y} stroke={WELD} strokeWidth={sw * 1.4} />
@@ -193,7 +193,7 @@ function SketchDrawing({ model, materials, sk, parts, className, style }: { mode
             </g>
           ))}
           <text x={xWeld - 0.2 * fs} y={-1.75 * fs} fontSize={fs * 0.85} fontFamily={FONT} fontWeight={700} fill={WELD} textAnchor="start">Zavarivanje</text>
-          <text x={xWeld - 0.2 * fs} y={-0.75 * fs} fontSize={fs * 0.8} fontFamily={FONT} fontWeight={600} fill={WELD} textAnchor="start">od poda do gornje ivice</text>
+          <text x={xWeld - 0.2 * fs} y={-0.75 * fs} fontSize={fs * 0.8} fontFamily={FONT} fontWeight={600} fill={WELD} textAnchor="start">od poda do linije naleganja</text>
         </g>
       )}
       {/* desne kote */}
@@ -252,7 +252,7 @@ function SketchDrawing({ model, materials, sk, parts, className, style }: { mode
         );
       })}
       {sk.missing > 0 && label(minX + 0.6 * fs, maxY - 0.3 * fs, `Upozorenje: ${sk.missing} delova ima materijal koji je obrisan iz cenovnika.`, 'start', true, fs * 0.9)}
-      <text x={maxX - 0.6 * fs} y={maxY - 0.3 * fs} fontSize={fs * 0.8} fontFamily={FONT} fill={MUTED} textAnchor="end">Mere su u mm. Pozicije su obojene kao u tabeli. Zelena osa: visina od poda do gornje ivice prečke (mesto zavarivanja).</text>
+      <text x={maxX - 0.6 * fs} y={maxY - 0.3 * fs} fontSize={fs * 0.8} fontFamily={FONT} fill={MUTED} textAnchor="end">Mere su u mm. Pozicije su obojene kao u tabeli. Zelena osa: visina od poda do linije na kojoj prečka naleže na U profil (mesto zavarivanja).</text>
     </svg>
   );
 }

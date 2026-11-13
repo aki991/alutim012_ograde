@@ -1,7 +1,7 @@
 import { uid } from '../../utils/id';
 import { FENCE_MODELS } from '../models/catalog';
 import { applyPostRoles, createPost } from '../models/factories';
-import { CONCRETE_POST_WIDTH_MM, PLINTH_DEFAULT_MM, type FenceModelId, FenceSection, Gate, LayoutItem, Post, Project } from '../models/types';
+import { CONCRETE_POST_WIDTH_MM, PLINTH_DEFAULT_MM, type FenceModelId, FenceSection, type Finish, Gate, LayoutItem, Post, Project } from '../models/types';
 import { widthRangeFor } from '../validation/limits';
 import { computeLayout, isHiddenPost, isSpacer, outerWidthMm, postHalfSum, sumModularWidths } from './layout';
 
@@ -128,8 +128,40 @@ export function setPlinthWidth(p: Project, id: string, widthMm: number): Project
 
 /** Betonsko podnožje svih ograda (ili njegovo uklanjanje). */
 export function setAllPlinths(p: Project, on: boolean): Project {
-  const items = p.items.map((it) => (it.kind === 'fence' ? { ...it, plinthMm: on ? (it.plinthMm ?? PLINTH_DEFAULT_MM) : undefined, ...(on ? {} : { plinthWidthMm: undefined }) } : it));
+  if (!on) return removeItemPlinths(p, p.items.filter((it) => it.kind === 'fence').map((it) => it.id));
+  const items = p.items.map((it) => (it.kind === 'fence' ? { ...it, plinthMm: it.plinthMm ?? PLINTH_DEFAULT_MM } : it));
   return touch(applyPostRoles({ ...p, items }));
+}
+
+/**
+ * Ograde bez podnožja. Podnožje ograde dolazi iz nje same ili iz betonskih stubova sa podnožjem uz nju, pa se uklanjaju oba:
+ * stubovi uz nju postaju obični betonski. Ako je isti stub uz susednu ogradu koja nema svoje podnožje (već ga ima samo od stuba),
+ * ta ograda zadržava podnožje kao svoje, da se ne promeni bez znanja korisnika.
+ */
+export function removeItemPlinths(p: Project, itemIds: string[]): Project {
+  const ids = new Set(itemIds);
+  let q: Project = { ...p, items: p.items.map((it) => (ids.has(it.id) && it.kind === 'fence' ? { ...it, plinthMm: undefined, plinthWidthMm: undefined } : it)) as LayoutItem[] };
+  p.posts.forEach((post, pi) => {
+    if (post.type !== 'concrete_plinth') return;
+    const left = p.items[pi - 1]; const right = p.items[pi];
+    const touches = [left, right].some((it) => it && ids.has(it.id) && it.kind === 'fence');
+    if (!touches) return;
+    const mm = post.plinthMm ?? PLINTH_DEFAULT_MM;
+    // susedna ograda koja ostaje: podnožje koje je imala samo od ovog stuba postaje njeno
+    const keep = [left, right].filter((it): it is FenceSection => !!it && it.kind === 'fence' && !ids.has(it.id) && (it.plinthMm ?? 0) === 0);
+    if (keep.length) q = { ...q, items: q.items.map((it) => (keep.some((k) => k.id === it.id) ? { ...it, plinthMm: mm } : it)) as LayoutItem[] };
+    q = { ...q, posts: q.posts.map((x) => (x.id === post.id ? { ...x, type: 'concrete', custom: true } : x)) };
+  });
+  return touch(applyPostRoles(q));
+}
+
+/** Visina podnožja ograde: ista za ogradu i betonske stubove sa podnožjem uz nju (jedna celina). */
+export function setItemPlinthHeight(p: Project, itemId: string, mm: number): Project {
+  const i = indexOfItem(p, itemId);
+  if (i < 0) return p;
+  const items = p.items.map((it) => (it.id === itemId && it.kind === 'fence' ? { ...it, plinthMm: mm } : it)) as LayoutItem[];
+  const posts = p.posts.map((x, k) => ((k === i || k === i + 1) && x.type === 'concrete_plinth' ? { ...x, plinthMm: mm } : x));
+  return touch(applyPostRoles({ ...p, items, posts }));
 }
 
 /** Sve kapije dobijaju svoje stubove (ili zajednički stub sa susednim elementom). */
@@ -209,6 +241,12 @@ export function changeColor(p: Project, id: string, color: string): Project {
   return touch(applyPostRoles({ ...p, items }));
 }
 
+/** Završna obrada boje jednog polja ili kapije; stubovi uz njega je preuzimaju (osim ručno menjanih). */
+export function changeFinish(p: Project, id: string, finish: Finish | undefined): Project {
+  const items = p.items.map((it) => (it.id === id && it.kind !== 'opening' ? { ...it, finish } : it));
+  return touch(applyPostRoles({ ...p, items }));
+}
+
 /** Širi stub na podrazumevanu širinu betonskog stuba kada tip postane „concrete" a širina nije zadata. */
 function withConcreteWidth(x: Post, patch: Partial<Post>): Post {
   if (patch.type === undefined || patch.widthMm !== undefined) return x;
@@ -269,6 +307,22 @@ export function withConcretePosts(p: Project, itemId: string): Project {
   return q;
 }
 
+/** Visina svih polja ograde ili svih kapija (kota visine na crtežu); stubovi koje ne zadaje korisnik prate je sami. */
+export function setHeightsOfKind(p: Project, kind: 'fence' | 'gate', heightMm: number): Project {
+  const items = p.items.map((it) => (it.kind === kind ? { ...it, heightMm } : it)) as LayoutItem[];
+  return touch(applyPostRoles({ ...p, items }));
+}
+
+/**
+ * Visina svih stubova: ukupna visina od poda do vrha (kota „Stubovi H"). Visina stuba se zadaje iznad podnožja na kome stoji,
+ * pa se od ukupne oduzima podnožje uz svaki stub; tako svi stubovi dobijaju isti vrh. Ručno zadate visine više ne prate ogradu.
+ */
+export function setAllPostHeights(p: Project, totalMm: number): Project {
+  const lay = computeLayout(p);
+  const posts = p.posts.map((x, i) => ({ ...x, heightMm: Math.round(totalMm - (lay.posts[i]?.levelMm ?? 0)), heightCustom: true }));
+  return touch(applyPostRoles({ ...p, posts }));
+}
+
 export function setAllHeights(p: Project, heightMm: number): Project {
   const items = p.items.map((it) => ({ ...it, heightMm })) as LayoutItem[];
   return touch(applyPostRoles({ ...p, items, settings: { ...p.settings, defaultHeightMm: heightMm } }));
@@ -278,6 +332,13 @@ export function setAllColors(p: Project, color: string): Project {
   const items = p.items.map((it) => (it.kind === 'opening' ? it : { ...it, color })) as LayoutItem[];
   const posts = p.posts.map((x) => (x.custom ? x : { ...x, color }));
   return touch({ ...p, items, posts, settings: { ...p.settings, defaultColor: color } });
+}
+
+/** Završna obrada (mat / sjaj / struktura) svim poljima, kapijama i stubovima koje korisnik nije ručno menjao; undefined je briše. */
+export function setAllFinishes(p: Project, finish: Finish | undefined): Project {
+  const items = p.items.map((it) => (it.kind === 'opening' ? it : { ...it, finish })) as LayoutItem[];
+  const posts = p.posts.map((x) => (x.custom ? x : { ...x, finish }));
+  return touch({ ...p, items, posts, settings: { ...p.settings, defaultFinish: finish } });
 }
 
 export interface FillResult {

@@ -41,7 +41,7 @@ export function PartSvg({ part, shape, hex, selected = false, ghost = false }: {
       </g>
     );
   }
-  return <g data-part-id={ghost ? undefined : part.id} data-testid={ghost ? 'designer-ghost' : 'designer-part'} opacity={ghost ? 0.55 : 1} style={ghost ? { pointerEvents: 'none' } : { cursor: 'move' }}>{body}</g>;
+  return <g data-part-id={ghost ? undefined : part.id} data-testid={ghost ? 'designer-ghost' : 'designer-part'} opacity={ghost ? 0.55 : 1} style={ghost ? { pointerEvents: 'none' } : undefined}>{body}</g>;
 }
 
 /** Sličica oblika materijala u paleti: poprečni presek profila, ploča ili komadni deo spreda. */

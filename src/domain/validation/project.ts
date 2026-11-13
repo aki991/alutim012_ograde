@@ -1,4 +1,4 @@
-import { FENCE_MODELS, LEGACY_MODEL_MAP, RAL_COLORS } from '../models/catalog';
+import { FENCE_MODELS, LEGACY_COLORS, LEGACY_MODEL_MAP, normalizeColorKey, RAL_COLORS } from '../models/catalog';
 import { applyPostRoles, DEFAULT_PRICING } from '../models/factories';
 import { SCHEMA_VERSION, type LayoutItem, type Post, type Project } from '../models/types';
 
@@ -49,6 +49,16 @@ export function migrateProject(p: Project): Project {
   // model 06 je sistem RL10: prečke Ø16 (umesto ranijih Ø30) i izbor broja prečki
   if (out.items.some((it) => it.kind === 'fence' && it.modelId === 'rail_inox' && it.params.barSizeMm === 30 && it.params.barCount === undefined)) {
     out = { ...out, items: out.items.map((it) => (it.kind === 'fence' && it.modelId === 'rail_inox' && it.params.barSizeMm === 30 && it.params.barCount === undefined ? { ...it, materialId: FENCE_MODELS.rail_inox.materialId, params: { ...it.params, barSizeMm: 16, barCount: 4 } } : it)) };
+  }
+  // stare boje (bela, inox, dekor drvo) više ne postoje: prebacuju se na RAL boje sa karte
+  const legacy = (c: string | undefined) => c !== undefined && c in LEGACY_COLORS;
+  if (out.items.some((it) => it.kind !== 'opening' && legacy(it.color)) || out.posts.some((x) => legacy(x.color)) || legacy(out.settings.defaultColor)) {
+    out = {
+      ...out,
+      items: out.items.map((it) => (it.kind !== 'opening' && legacy(it.color) ? { ...it, color: normalizeColorKey(it.color) } : it)) as Project['items'],
+      posts: out.posts.map((x) => (legacy(x.color) ? { ...x, color: normalizeColorKey(x.color) } : x)),
+      settings: { ...out.settings, defaultColor: normalizeColorKey(out.settings.defaultColor) },
+    };
   }
   return applyPostRoles(out); // visine stubova prate susedne elemente
 }
@@ -139,6 +149,7 @@ export function parseProject(text: string): ParseResult {
       fillStrategy: settings.fillStrategy === 'even' ? 'even' : 'proportional',
       defaultHeightMm: isNum(settings.defaultHeightMm) ? settings.defaultHeightMm : 1600,
       defaultColor: isStr(settings.defaultColor) ? settings.defaultColor : RAL_COLORS[0].key,
+      ...(settings.defaultFinish === 'mat' || settings.defaultFinish === 'sjaj' || settings.defaultFinish === 'struktura' ? { defaultFinish: settings.defaultFinish } : {}),
       showDimensions: settings.showDimensions !== false,
       showGrid: settings.showGrid !== false,
       showLabels: settings.showLabels !== false,

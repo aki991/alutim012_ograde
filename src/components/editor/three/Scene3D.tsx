@@ -821,7 +821,7 @@ function Scene3DInner({ project, drag, onBeginDrag, registerTarget, targetKey, o
           {space && selectedGate.item.gateType === 'sliding' && (
             <p className={`text-[12px] mt-1.5 ${space.known && !space.ok ? 'text-[#b42318]' : 'text-[#93370d]'}`} role="status" data-testid="sliding-warning">
               {!space.known ? `Prostor za povlačenje nije zadat; potrebno je približno ${fmtMm(space.neededMm)} pored otvora.`
-                : space.ok ? `Raspoloživ prostor (${fmtMm(space.availableMm ?? 0)}) je dovoljan za demonstracioni hod od ${fmtMm(space.neededMm)}.`
+                : space.ok ? `Raspoloživ prostor (${fmtMm(space.availableMm ?? 0)}) je dovoljan za hod kapije od ${fmtMm(space.neededMm)}.`
                   : `Nedovoljan prostor: potrebno ≈ ${fmtMm(space.neededMm)}, zadato ${fmtMm(space.availableMm ?? 0)}. Orijentaciona provera, nije sertifikovana.`}
             </p>
           )}

@@ -2,7 +2,7 @@ import { uid } from '../../utils/id';
 import { STAIR_DEFAULT_RISE_MM, STAIR_TREAD_MM, STEP_RISE_MM, isStair } from './stair';
 import { FENCE_MODELS } from '../models/catalog';
 import { createCorner, createFence, createGate, createOpening } from '../models/factories';
-import type { FenceModelId, FenceParams, GateType, LayoutItem, Mm, Project } from '../models/types';
+import type { FenceModelId, FenceParams, Finish, GateType, LayoutItem, Mm, Project } from '../models/types';
 import { outerWidthMm } from './layout';
 
 export type NewItemSpec =
@@ -19,6 +19,7 @@ export interface ReferenceDims {
   heightMm: Mm;
   params: FenceParams;
   color: string;
+  finish?: Finish;
   plinthMm?: Mm;
 }
 
@@ -39,6 +40,7 @@ export function referenceDims(p: Project, selectedId?: string | null): Reference
     heightMm: ref.heightMm,
     params: ref.params,
     color: ref.color,
+    finish: ref.finish,
     plinthMm: ref.kind === 'fence' ? ref.plinthMm : undefined,
   };
 }
@@ -56,7 +58,7 @@ export function newItemFor(project: Project, spec: NewItemSpec, activeModel: Fen
   // kapija modela sa svojom početnom visinom kapije: visina poslednje kapije u projektu, inače početna; ograda i ostalo: kao ograda
   const gateHeight = spec.kind === 'gate' && def.defaultGateHeightMm ? (lastGate && lastGate.infillModelId === model ? lastGate.heightMm : def.defaultGateHeightMm) : null;
   const heightMm = gateHeight ?? ref?.heightMm ?? def.defaultSize?.heightMm ?? project.settings.defaultHeightMm;
-  const look = same ? { params: same.params, color: same.color } : {};
+  const look = same ? { params: same.params, color: same.color, ...(same.finish ? { finish: same.finish } : {}) } : {};
   if (spec.kind === 'fence' && spec.stair) {
     // stepenište: posle postojeće ograde (terase) silazi, na početku praznog projekta se penje; oko 280 mm gazišta po stepeniku
     const riseMm = project.items.length > 0 ? -STAIR_DEFAULT_RISE_MM : STAIR_DEFAULT_RISE_MM;

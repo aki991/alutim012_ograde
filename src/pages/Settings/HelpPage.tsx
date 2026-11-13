@@ -7,7 +7,7 @@ const TOPICS: Topic[] = [
   {
     title: 'Kako se projektuje',
     items: [
-      <><b>Trenutni projekat</b> u meniju otvara projekat na kome ste poslednji radili (pamti se i posle zatvaranja aplikacije). Novi projekat pravite dugmetom <b>Novi projekat</b> na Početnoj ili na strani Projekti.</>,
+      <><b>Trenutni projekat</b> u meniju otvara projekat na kome ste poslednji radili (pamti se i posle zatvaranja aplikacije). Novi projekat pravite dugmetom <b>Novi projekat</b> u zaglavlju (gore desno) ili na Početnoj.</>,
       <>U katalogu ispod crteža izaberite <b>Model ograde</b> (menja se na svim elementima projekta), pa kliknite <b>Dodaj</b> na elementu ili ga prevucite na crtež. Mesto ubacivanja pokazuje crvena linija.</>,
       <>Katalog nudi elemente izabranog modela: ogradu, pešačku, kliznu, dvokrilnu i jednokrilnu kapiju, kapiju sa betonskim stubom i prazan otvor.</>,
       <>Dugme <b>+</b> desno od poslednjeg stuba u 2D prikazu dodaje sledeći element na kraj niza: izaberete vrstu, zadate dužinu i visinu i tip novog krajnjeg stuba. Tu se dodaje i ugaoni spoj.</>,
@@ -77,7 +77,7 @@ const TOPICS: Topic[] = [
     title: 'Model i specifikacija',
     items: [
       <>Na strani <b>Modeli ograda</b>, <b>Koristi model</b> primenjuje model, a <b>Specifikacija</b> otvara spisak elemenata modela koji ulaze u krojnu listu i cenu.</>,
-      <>Na kartici modela (strana <b>Modeli ograda</b>) pišu <b>vertikalni i horizontalni profili</b> od kojih se model pravi (podatak radnika prema uzorcima; nije potvrđen u cenovniku). Sav sadržaj i otvorena pitanja su u dokumentaciji <code>docs/konstrukcija-modela.md</code>.</>,
+      <>Na kartici modela (strana <b>Modeli ograda</b>) pišu <b>vertikalni i horizontalni profili</b> od kojih se model pravi.</>,
       <>U specifikaciji dodajete i brišete elemente; količina i dužina reza su formule (+ − × / zagrade, ceil, floor, round, min, max, abs). Promenljive su navedene u prozoru, npr. N, W, H.</>,
       <>Dok specifikacija modela 04 i 08 nije sačuvana, važi njihova detaljna sastavnica; čuvanjem se prelazi na obračun po polju. „Vrati podrazumevanu" briše izmenu.</>,
     ],
@@ -85,11 +85,31 @@ const TOPICS: Topic[] = [
   {
     title: 'Krojna lista',
     items: [
-      <>Dugme <b>Krojna lista</b> u panelu desno (ispod <b>PDF ponude</b>) otvara pregled krojne liste izabranog projekta, a <b>Sačuvaj PDF</b> je preuzima. Ista lista je na strani <b>Proizvodnja</b>, gde se vidi i na ekranu.</>,
+      <>Dugme <b>Krojna lista</b> u panelu desno (pored <b>PDF ponude</b>, u okviru <b>Kalkulacija cene</b>) prvo pita ima li ostataka materijala, pa otvara pregled krojne liste izabranog projekta, a <b>Sačuvaj PDF</b> je preuzima. Ista lista je na strani <b>Proizvodnja</b>, gde se vidi i na ekranu.</>,
       <>Svi komadi profila se raspoređuju na nabavne šipke: dužina šipke i širina testere (rez) zadaju se na strani Proizvodnja (podrazumevano 6000 i 3 mm). Svaki rez troši širinu testere; šrafirani deo šipke je ostatak.</>,
       <>Svaki komad je u boji svoje <b>pozicije</b> (elementa projekta: ograda, kapija…), sa dužinom u mm; oznaka P1, P2… ispod komada se čita iz legende na vrhu. Šipke sa istim rasporedom se spajaju u jednu liniju („Šipke 1–14 × 14"). Ispod svakog profila je zbirni spisak: dužina, komada i pozicije.</>,
       <>Zaglavlje sadrži logotip, naziv i podatke firme (adresa, telefon, email, PIB se unose u <b>Podešavanjima → Firma i korisnik</b>), kupca, status, broj ponude i datum. Na dnu su napomene i mesta za potpis.</>,
-      <>Staklo, stubovi iz cenovnika (kom), okovi i delovi bez dužine reza nisu u krojnoj listi. Rezovi su ravni (90°). Modeli 04 i 08 koriste svoje planske mere (vidi napomene na listi).</>,
+      <>Staklo, stubovi iz cenovnika (kom), okovi i delovi bez dužine reza nisu u krojnoj listi. Rezovi su ravni (90°), osim delova rama: oni se crtaju kao trapez sa oznakom 45 na oba kraja (rez pod 45°, dužina je spoljna mera). Modeli 04 i 08 koriste svoje planske mere (vidi napomene na listi).</>,
+    ],
+  },
+  {
+    title: 'Magacin i ostaci',
+    items: [
+      <>Strana <b>Magacin</b> vodi materijal na stanju: cele šipke i ostatke (materijal, dužina, broj komada i napomena, npr. polica).</>,
+      <>Pre krojne liste aplikacija pita: <b>Imate li ostatke materijala koje treba prvo iskoristiti?</b> Odgovorite <b>Nema ostataka</b> ili unesite komade ručno ili klikom na stavke iz magacina. Nude se samo profili koji se seku u tom projektu.</>,
+      <>Ostaci se koriste prvi, a nova šipka se otvara tek kad u njih više ništa ne staje. U krojnoj listi su označeni kao „Ostatak 3300", a broj šipki za nabavku se smanjuje.</>,
+    ],
+  },
+  {
+    title: 'Crtanje sopstvenog modela',
+    items: [
+      <>Na strani <b>Modeli ograda</b> dugme <b>Napravi model</b> otvara crtanje: levo izaberite materijal iz cenovnika i povucite ga na polju (profil od početka do kraja, ploču kao pravougaonik).</>,
+      <><b>Izbor:</b> levi klik na deo ga bira, <b>Ctrl + klik</b> dodaje ili skida deo iz izbora, a prevlačenje levim tasterom po praznom bira sve delove koje okvir dotakne. <b>Desni taster</b> pomera papir, točkić zumira. Strelice pomeraju izabrane delove, Delete ih briše.</>,
+      <>Kad je izabrano više delova, panel desno menja dužinu, ugao, okretanje i nagib preseka, rez 45° i dubinu svima odjednom. Za više prečki u U profilima postoji <b>Postavi sve pod uglom uklapanja</b>.</>,
+      <><b>Zameni materijal</b> menja materijal izabranog dela. Bočni U profili idu u paru, pa se uz potvrdu menja i onaj na suprotnoj strani; prečke iste grupe se menjaju zajedno. Prečke se same prilagođavaju novom U profilu (ulaz u kanal, ugao uklapanja, razmak).</>,
+      <>Prečka nacrtana između dva uspravna U profila se sama uklapa u njih i ne može da izađe iz kanala. <b>Raspored prečki</b> zadaje broj prečki, odstojanje od vrha i dna i razmak (sa luftom ili bez lufta).</>,
+      <>Svi delovi staju u okvir modela (širina × visina): deo koji viri se vraća unutra, a deo duži od okvira povećava širinu ili visinu modela.</>,
+      <>Prikaz <b>Skica</b> daje skicu sa kotama za majstora (lanci mera, mesta zavarivanja, tabela delova i presek prečke u U profilu), koja se preuzima kao PDF ili SVG.</>,
     ],
   },
   {
@@ -139,23 +159,22 @@ const TOPICS: Topic[] = [
       <>Statistika na nadzornoj tabli računa se iz lokalno sačuvanih podataka; vrednost ponuda je zbir ukupnih iznosa sa PDV-om za projekte u statusu „Ponuda".</>,
     ],
   },
-  {
-    title: 'Demonstracione pretpostavke',
-    items: [
-      <>Profili, cene, otpad, marža i pravila obračuna su <b>ilustrativni</b>, ne stvarni podaci proizvođača, a obračun je demonstracioni.</>,
-      <>Granične dimenzije (min/max) su demonstracione.</>,
-      <>Proizvodna lista je okvirna geometrijska specifikacija bez optimizacije sečenja (osim detaljne sastavnice modela 04 i 08).</>,
-    ],
-  },
 ];
 
 export default function HelpPage() {
   return (
     <Page>
       <PageHeader title="Pomoć" subtitle="Podsetnik kako radi editor, crtanje, kalkulacija i podešavanja." />
-      <div className="grid gap-5 lg:grid-cols-2" data-testid="help-topics">
-        {TOPICS.map((t) => (
-          <section key={t.title} className="card p-5">
+      {/* sadržaj: klik vodi na poglavlje */}
+      <nav className="card p-4 mb-5" aria-label="Sadržaj pomoći" data-testid="help-toc">
+        <div className="text-[13px] font-semibold text-muted mb-2">Sadržaj</div>
+        <div className="flex flex-wrap gap-2">
+          {TOPICS.map((t, i) => <a key={t.title} href={`#tema-${i}`} className="btn btn-sm" onClick={(e) => { e.preventDefault(); document.getElementById(`tema-${i}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>{t.title}</a>)}
+        </div>
+      </nav>
+      <div className="grid gap-5 lg:grid-cols-2 items-start" data-testid="help-topics">
+        {TOPICS.map((t, i) => (
+          <section key={t.title} id={`tema-${i}`} className="card p-5 scroll-mt-4">
             <h2 className="font-bold mb-2">{t.title}</h2>
             <ul className="list-disc pl-5 space-y-1.5 text-sm text-slate-700">
               {t.items.map((it, i) => <li key={i}>{it}</li>)}

@@ -57,6 +57,9 @@ export interface StairSpec {
   fieldsCustom?: boolean;
 }
 
+/** Završna obrada boje (po dogovoru sa majstorom): mat, sjaj ili struktura. Bez vrednosti = nije zadata. */
+export type Finish = 'mat' | 'sjaj' | 'struktura';
+
 export interface FenceSection {
   kind: 'fence';
   id: string;
@@ -65,6 +68,8 @@ export interface FenceSection {
   widthMm: Mm;
   heightMm: Mm;
   color: string; // RAL ključ
+  /** završna obrada boje (mat / sjaj / struktura); ispisuje se uz RAL u dokumentima */
+  finish?: Finish;
   materialId: string;
   params: FenceParams;
   /** Betonsko podnožje ispod ovog polja (mm), nezavisno od stubova; bez vrednosti nema podnožja (ako ga ne traži stub „sa podnožjem“) */
@@ -82,6 +87,7 @@ export interface Gate {
   widthMm: Mm;
   heightMm: Mm;
   color: string;
+  finish?: Finish;
   infillModelId: FenceModelId;
   opening: OpeningSide;
   swing: SwingDirection;
@@ -126,6 +132,7 @@ export interface Post {
   widthMm: Mm;
   heightMm: Mm;
   color: string;
+  finish?: Finish;
   mounting: MountingType;
   /** true ako je korisnik ručno menjao stub; tada ga automatika ne dira */
   custom: boolean;
@@ -175,6 +182,7 @@ export interface ProjectSettings {
   fillStrategy: FillStrategy;
   defaultHeightMm: Mm;
   defaultColor: string;
+  defaultFinish?: Finish;
   showDimensions: boolean;
   showGrid: boolean;
   showLabels: boolean;
@@ -277,6 +285,8 @@ export interface Offcut {
 }
 
 export interface AppSettings {
+  /** pet boja za brzi izbor u svim poljima za boju (strana karta boja ih menja); bez vrednosti važe podrazumevane */
+  favoriteColors?: string[];
   /** napredni prikaz dužina: fiksna ukupna dužina, modularna dužina (osa–osa), zbir svetlih otvora i položaji stubova */
   advancedLengths?: boolean;
   /** tab Simulacija (ograda na fotografiji); bez vrednosti = uključeno */

@@ -37,7 +37,7 @@ export function UsersAdmin() {
     try {
       const r = await call();
       // bez pokrenute serverske funkcije (npr. lokalno) stiže stranica aplikacije, a ne spisak
-      if (!r.ok || !Array.isArray(r.body.users)) { setLoadError(errorOf(r, 'Spisak korisnika nije dostupan (funkcija na serveru nije pokrenuta).')); return; }
+      if (!r.ok || !Array.isArray(r.body.users)) { setLoadError(errorOf(r, 'Spisak korisnika trenutno nije dostupan. Proverite internet vezu i pokušajte ponovo.')); return; }
       setUsers(r.body.users as AppUser[]);
     } catch {
       setLoadError('Nema veze sa serverom.');

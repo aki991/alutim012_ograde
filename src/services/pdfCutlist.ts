@@ -120,7 +120,7 @@ export async function buildCutlistPdfBlob(project: Project, customer: Customer |
         widths: [70, 40, '*'],
         body: [
           [{ text: 'DUŽINA', fontSize: 7.5, bold: true, color: MUTED }, { text: 'KOM.', fontSize: 7.5, bold: true, color: MUTED, alignment: 'right' }, { text: 'POZICIJE', fontSize: 7.5, bold: true, color: MUTED }],
-          ...p.summary.map((s) => [{ text: s.miter ? `${fmtMm(s.lengthMm)}  (45°)` : fmtMm(s.lengthMm), fontSize: 9 }, { text: String(s.qty), fontSize: 9, bold: true, alignment: 'right' }, { text: s.positions.map((k) => (/^\d/.test(k) ? `P${k}` : k)).join(', '), fontSize: 8.5, color: MUTED }]),
+          ...p.summary.map((s) => [(s.miter ? { columns: [{ text: fmtMm(s.lengthMm), fontSize: 9, width: 'auto' }, { canvas: [{ type: 'polyline', closePath: true, color: '#475569', lineColor: '#475569', points: [{ x: 0, y: 1 }, { x: 24, y: 1 }, { x: 16, y: 9 }, { x: 8, y: 9 }] }], width: 26, margin: [5, 0, 0, 0] }] } : { text: fmtMm(s.lengthMm), fontSize: 9 }), { text: String(s.qty), fontSize: 9, bold: true, alignment: 'right' }, { text: s.positions.map((k) => (/^\d/.test(k) ? `P${k}` : k)).join(', '), fontSize: 8.5, color: MUTED }]),
         ],
       },
       layout: { hLineColor: () => LINE, hLineWidth: (i: number, node: any) => (i === 0 || i === node.table.body.length ? 0 : 0.4), vLineWidth: () => 0, paddingTop: () => 2, paddingBottom: () => 2 },

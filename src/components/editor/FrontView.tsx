@@ -80,27 +80,40 @@ export function widthDims(layout: ReturnType<typeof computeLayout>): WidthDim[] 
   return out.sort((a, b) => a.x1 - b.x1);
 }
 
-/** Kote visine: posebno za ograde i posebno za kapije (po jedna za svaku različitu visinu). */
-export interface HeightGroup { key: string; kind: 'fence' | 'gate'; heightMm: number; plinthMm: number; id: string; /** nivo poda (stepenište, terasa) */ floorMm: number }
-export function heightGroups(project: Project, preferId?: string | null): HeightGroup[] {
+/**
+ * Kote visine sa leve strane: najviše tri — jedna za sva platna ograde, jedna za sve stubove i jedna za sve kapije (ako ih ima),
+ * jer kapije obično nisu iste visine kao platna. Svaka kota pokazuje najvišu meru svoje vrste, a klik menja visinu svih.
+ */
+export interface HeightGroup { key: string; kind: 'fence' | 'post' | 'gate'; heightMm: number; plinthMm: number; id: string; /** nivo poda (stepenište, terasa) */ floorMm: number; /** elementi te vrste nisu iste visine: kota pokazuje najvišu */ mixed: boolean }
+export function heightGroups(project: Project, _preferId?: string | null): HeightGroup[] {
   const layout = computeLayout(project);
   const out: HeightGroup[] = [];
   for (const kind of ['fence', 'gate'] as const) {
-    const seen = new Set<number>();
-    for (const li of layout.items) {
-      const it = li.item;
-      if (it.kind !== kind) continue;
-      const h = Math.round(it.heightMm);
-      if (seen.has(h) || seen.size >= 2) continue;
-      seen.add(h);
-      const rep = layout.items.find((l) => l.item.id === preferId && l.item.kind === kind && Math.round(l.item.heightMm) === h) ?? li;
-      out.push({ key: `${kind}-${h}`, kind, heightMm: it.heightMm, plinthMm: li.plinthMm, id: rep.item.id, floorMm: Math.min(li.floorStart, li.floorEnd) });
+    const all = layout.items.filter((li) => li.item.kind === kind);
+    if (!all.length) continue;
+    const top = all.reduce((a, li) => (li.item.heightMm > a.item.heightMm ? li : a), all[0]);
+    out.push({ key: kind, kind, heightMm: top.item.heightMm, plinthMm: top.plinthMm, id: top.item.id, floorMm: Math.min(top.floorStart, top.floorEnd), mixed: new Set(all.map((li) => Math.round(li.item.heightMm))).size > 1 });
+    if (kind === 'fence') {
+      const posts = layout.posts.filter((lp) => !lp.hidden);
+      if (posts.length) {
+        const tallest = posts.reduce((a, lp) => (lp.topMm > a.topMm ? lp : a), posts[0]);
+        out.push({ key: 'post', kind: 'post', heightMm: tallest.topMm, plinthMm: 0, id: tallest.post.id, floorMm: tallest.floorMm, mixed: new Set(posts.map((lp) => Math.round(lp.topMm))).size > 1 });
+      }
+    }
+  }
+  // redosled: ograda, stubovi, kapije (stubovi su dodati odmah posle ograde); projekat samo sa kapijama dobija i kotu stubova
+  if (!out.some((g) => g.kind === 'post')) {
+    const posts = layout.posts.filter((lp) => !lp.hidden);
+    if (posts.length) {
+      const tallest = posts.reduce((a, lp) => (lp.topMm > a.topMm ? lp : a), posts[0]);
+      out.splice(0, 0, { key: 'post', kind: 'post', heightMm: tallest.topMm, plinthMm: 0, id: tallest.post.id, floorMm: tallest.floorMm, mixed: new Set(posts.map((lp) => Math.round(lp.topMm))).size > 1 });
     }
   }
   return out;
 }
 
-const heightLabel = (g: HeightGroup) => `${g.kind === 'gate' ? 'Kapija' : 'Ograda'} H: ${fmtMm(g.heightMm)}`;
+const HEIGHT_NAMES = { fence: 'Ograda', post: 'Stubovi', gate: 'Kapija' } as const;
+const heightLabel = (g: HeightGroup) => `${HEIGHT_NAMES[g.kind]} H${g.mixed ? ' (najviša)' : ''}: ${fmtMm(g.heightMm)}`;
 /** koliko piksela uspravni natpis kote visine viri iznad vrha kote (kad ne staje uz nju) */
 const heightLabelOverflowPx = (g: HeightGroup, scale: number) => Math.max(0, heightLabel(g).length * DIM_CHAR_PX + 8 - g.heightMm * scale);
 
@@ -116,7 +129,7 @@ export function frontViewMetrics(project: Project, scale: number, showDimensions
   const padR = compact ? COMPACT_PAD : (withAdd ? 120 : 40) / scale; // desno ostaje mesto za dugme +
   const overflow = showDimensions ? Math.max(0, ...heightGroups(project).map((g) => heightLabelOverflowPx(g, scale))) : 0;
   const padT = compact ? COMPACT_PAD : (showDimensions ? Math.max(vertical ? 116 : 74, 40 + overflow) : 40) / scale;
-  const padB = compact ? COMPACT_PAD : (showDimensions ? 118 : 50) / scale;
+  const padB = compact ? COMPACT_PAD : (showDimensions ? 150 : 50) / scale; // dole: kote osa–osa, ukupna dužina i položaji stubova
   const groundY = compact ? Math.max(layout.maxTopMm, 400) : Math.max(layout.maxTopMm, 800);
   const vx = -firstW / 2 - padL;
   const vy = -padT;
@@ -130,13 +143,13 @@ export function fitScale(project: Project, containerW: number, containerH: numbe
   const layout = computeLayout(project);
   const groundY = Math.max(layout.maxTopMm, 800);
   const padX = (showDimensions ? 56 + 38 * Math.max(1, heightGroups(project).length) : 40) + 120;
-  const padY = (showDimensions ? 100 : 40) + (showDimensions ? 118 : 50);
+  const padY = (showDimensions ? 100 : 40) + (showDimensions ? 150 : 50);
   const sw = (containerW - padX - 8) / Math.max(layout.occupiedMm, 1000);
   const sh = (containerH - padY - 8) / (groundY + GROUND_BAND);
   return Math.min(0.5, Math.max(0.02, Math.min(sw, sh)));
 }
 
-function PostArt({ post, x, groundY, hex, caps }: { post: Post; x: number; groundY: number; hex: string; caps?: { top: PostCap; bottom: PostCap } }) {
+function PostArt({ post, x, groundY, hex, caps, plinthMm = 0 }: { post: Post; x: number; groundY: number; hex: string; caps?: { top: PostCap; bottom: PostCap }; /** visina podnožja uz betonski stub: stub i podnožje se crtaju kao jedna livena celina (bez šava, ivica samo iznad podnožja) */ plinthMm?: number }) {
   const w = post.widthMm;
   const top = groundY - post.heightMm;
   const left = x - w / 2;
@@ -170,10 +183,13 @@ function PostArt({ post, x, groundY, hex, caps }: { post: Post; x: number; groun
       </g>
     );
   }
+  const merged = isMasonry && post.type !== 'decorative' && plinthMm > 0;
+  const bodyH = post.heightMm;
   return (
     <g>
-      <rect x={left} y={top} width={w} height={post.heightMm} fill={body} />
-      <rect x={left} y={top} width={w} height={post.heightMm} fill="url(#shade-v)" />
+      <rect x={left} y={top} width={w} height={bodyH} fill={body} />
+      {/* stub na podnožju je ravan kao i podnožje (bez senčenja), da nema šava: jedna livena celina */}
+      {!merged && <rect x={left} y={top} width={w} height={bodyH} fill="url(#shade-v)" />}
       <g fill="#000" fillOpacity="0.08">
         {Array.from({ length: 14 }, (_, i) => (
           <circle key={i} cx={left + ((i * 37) % 100) / 100 * w} cy={top + ((i * 211) % 1000) / 1000 * post.heightMm} r="5" />
@@ -184,7 +200,10 @@ function PostArt({ post, x, groundY, hex, caps }: { post: Post; x: number; groun
       ) : (
         <rect x={left - 12} y={top - capH} width={w + 24} height={capH} rx="6" fill={cap} />
       )}
-      <rect x={left} y={top} width={w} height={post.heightMm} fill="none" stroke="#000" strokeOpacity="0.35" strokeWidth="4" />
+      {merged
+        // ivica samo iznad podnožja (bez linije na spoju sa podnožjem): stub i podnožje deluju kao jedan komad
+        ? <path d={`M${left} ${groundY - plinthMm} L${left} ${top} L${left + w} ${top} L${left + w} ${groundY - plinthMm}`} fill="none" stroke="#000" strokeOpacity="0.35" strokeWidth="4" strokeLinejoin="miter" />
+        : <rect x={left} y={top} width={w} height={post.heightMm} fill="none" stroke="#000" strokeOpacity="0.35" strokeWidth="4" />}
     </g>
   );
 }
@@ -337,13 +356,20 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
         const shear = t !== 0 ? `matrix(1 ${-t} 0 1 0 ${t * li.axisStart})` : undefined;
         return (
           <g key={it.id} opacity={dim ? 0.3 : 1} data-item-art={it.id} transform={shear} data-stair={t !== 0 ? 'true' : undefined}>
-            {li.plinthMm > 0 && (
-              <g>
-                <rect x={li.plinthX0} y={floorY - li.plinthMm} width={li.plinthX1 - li.plinthX0} height={li.plinthMm} fill="#c9ccd0" />
-                <rect x={li.plinthX0} y={floorY - li.plinthMm} width={li.plinthX1 - li.plinthX0} height={li.plinthMm} fill="url(#shade-v)" />
-                <rect x={li.plinthX0} y={floorY - li.plinthMm} width={li.plinthX1 - li.plinthX0} height={14} fill="#8b9097" />
-              </g>
-            )}
+            {li.plinthMm > 0 && (() => {
+              // gornja tamna traka podnožja ne ide ispod betonskog stuba koji stoji na njemu: stub i podnožje su jedna celina
+              const masonryAt = (k: number) => { const lp = layout.posts[k]; return !!lp && !lp.hidden && (lp.post.type === 'concrete' || lp.post.type === 'concrete_plinth'); };
+              const bx0 = masonryAt(li.index) ? Math.max(li.plinthX0, li.clearStart) : li.plinthX0;
+              const bx1 = masonryAt(li.index + 1) ? Math.min(li.plinthX1, li.clearEnd) : li.plinthX1;
+              return (
+                <g>
+                  <rect x={li.plinthX0} y={floorY - li.plinthMm} width={li.plinthX1 - li.plinthX0} height={li.plinthMm} fill="#c9ccd0" />
+                  {/* uz betonski stub podnožje je ravno (bez svog senčenja): senčenje stuba ide kroz podnožje, pa nema šava na spoju */}
+                  {!masonryAt(li.index) && !masonryAt(li.index + 1) && <rect x={li.plinthX0} y={floorY - li.plinthMm} width={li.plinthX1 - li.plinthX0} height={li.plinthMm} fill="url(#shade-v)" />}
+                  {bx1 > bx0 && <rect x={bx0} y={floorY - li.plinthMm} width={bx1 - bx0} height={14} fill="#8b9097" />}
+                </g>
+              );
+            })()}
             {it.kind === 'fence' && !isRl10Model(it.modelId) && (
               <InfillArt modelId={it.modelId} x={x} y={y} w={w} h={it.heightMm} frame={it.params.frameMm} barSize={it.params.barSizeMm} gap={it.params.gapMm} lift={it.params.liftMm} arch={it.params.archMm} hex={colorHex(it.color)} colorKey={it.color} skipLeftPost={leftPostShared(project.items, li.index) || isStairPost(project.items, li.index)} skipRightPost={isStairPost(project.items, li.index + 1)} sloped={li.floorStart !== li.floorEnd} axis={{ x: li.axisStart, w: li.axisEnd - li.axisStart }} rodCount={rodCountFor(it.modelId, it.params, it.heightMm) ?? undefined} ram={ramInsets(it.modelId, it.params)} uid={it.id} />
             )}
@@ -400,7 +426,7 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
               </>
             );
           })()}
-          {!isRl10Post(project.items, lp.index) && (!postDrawnByItems(project.items, lp.index) || isStairPost(project.items, lp.index)) && <PostArt post={{ ...lp.post, heightMm: lp.lengthMm }} x={lp.x} groundY={groundY - lp.floorMm - lp.baseMm} hex={colorHex(lp.post.color)} caps={isTarabicaPost(project.items, lp.post, lp.index) ? postCaps(lp.post) : undefined} />}
+          {!isRl10Post(project.items, lp.index) && (!postDrawnByItems(project.items, lp.index) || isStairPost(project.items, lp.index)) && <PostArt post={{ ...lp.post, heightMm: lp.lengthMm }} x={lp.x} groundY={groundY - lp.floorMm - lp.baseMm} hex={colorHex(lp.post.color)} plinthMm={lp.levelMm} caps={isTarabicaPost(project.items, lp.post, lp.index) ? postCaps(lp.post) : undefined} />}
           {interactive && <rect
             x={lp.x + lp.shiftMm - lp.post.widthMm / 2 - 10 * px} y={groundY - lp.floorMm - lp.topMm - 70} width={lp.post.widthMm + 20 * px} height={lp.lengthMm + 70}
             fill="transparent" data-hit="post" data-id={lp.post.id} style={{ cursor: 'pointer' }}
@@ -448,9 +474,8 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
       {/* selekcija */}
       {selectedIds && selectedIds.length > 1 && layout.items.filter((l) => selectedIds.includes(l.item.id)).map((li) => {
         const y = groundY - Math.max(li.floorStart, li.floorEnd) - li.item.heightMm - li.plinthMm;
-        const w = li.axisEnd - li.axisStart;
         return (
-          <rect key={`ms-${li.item.id}`} data-testid="multi-outline" data-id={li.item.id} x={li.axisStart + Math.min(4 * px, w / 4)} y={y - 8 * px} width={Math.max(1, w - Math.min(8 * px, w / 2))} height={li.item.heightMm + li.plinthMm + Math.abs(li.floorEnd - li.floorStart) + 16 * px} rx={6 * px} fill="#d71920" fillOpacity="0.1" stroke="#d71920" strokeWidth={3 * px} pointerEvents="none" />
+          <rect key={`ms-${li.item.id}`} data-testid="multi-outline" data-id={li.item.id} x={li.clearStart} y={y} width={Math.max(1, li.clearEnd - li.clearStart)} height={li.item.heightMm + li.plinthMm + Math.abs(li.floorEnd - li.floorStart)} rx={0} fill="#d71920" fillOpacity="0.1" stroke="#d71920" strokeWidth={3 * px} pointerEvents="none" />
         );
       })}
       {selectedType === 'item' && selectedId && !(selectedIds && selectedIds.length > 1) && (() => {
@@ -458,7 +483,7 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
         if (!li) return null;
         const y = groundY - Math.max(li.floorStart, li.floorEnd) - li.item.heightMm - li.plinthMm;
         return (
-          <rect data-testid="selection-outline" x={li.axisStart + Math.min(4 * px, (li.axisEnd - li.axisStart) / 4)} y={y - 8 * px} width={Math.max(1, li.axisEnd - li.axisStart - Math.min(8 * px, (li.axisEnd - li.axisStart) / 2))} height={li.item.heightMm + li.plinthMm + Math.abs(li.floorEnd - li.floorStart) + 16 * px} rx={6 * px} fill="#d71920" fillOpacity="0.06" stroke="#d71920" strokeWidth={3 * px} pointerEvents="none" />
+          <rect data-testid="selection-outline" x={li.clearStart} y={y} width={Math.max(1, li.clearEnd - li.clearStart)} height={li.item.heightMm + li.plinthMm + Math.abs(li.floorEnd - li.floorStart)} rx={0} fill="#d71920" fillOpacity="0.06" stroke="#d71920" strokeWidth={3 * px} pointerEvents="none" />
         );
       })()}
       {selectedType === 'post' && selectedId && (() => {
@@ -466,12 +491,12 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
         if (!lp) return null;
         const top = groundY - lp.floorMm - lp.topMm;
         return (
-          <rect data-testid="selection-outline" x={lp.x - lp.post.widthMm / 2 - 8 * px} y={top - 80} width={lp.post.widthMm + 16 * px} height={lp.lengthMm + 90} rx={6 * px} fill="#d71920" fillOpacity="0.08" stroke="#d71920" strokeWidth={3 * px} pointerEvents="none" />
+          <rect data-testid="selection-outline" x={lp.x - lp.post.widthMm / 2} y={top} width={lp.post.widthMm} height={lp.lengthMm} rx={0} fill="#d71920" fillOpacity="0.08" stroke="#d71920" strokeWidth={3 * px} pointerEvents="none" />
         );
       })()}
 
       {selectedPostIds && selectedPostIds.length > 1 && layout.posts.filter((l) => selectedPostIds.includes(l.post.id)).map((lp) => (
-        <rect key={`mp-${lp.post.id}`} data-testid="multi-post-outline" x={lp.x - lp.post.widthMm / 2 - 8 * px} y={groundY - lp.floorMm - lp.topMm - 80} width={lp.post.widthMm + 16 * px} height={lp.lengthMm + 90} rx={6 * px} fill="#d71920" fillOpacity="0.1" stroke="#d71920" strokeWidth={3 * px} pointerEvents="none" />
+        <rect key={`mp-${lp.post.id}`} data-testid="multi-post-outline" x={lp.x - lp.post.widthMm / 2} y={groundY - lp.floorMm - lp.topMm} width={lp.post.widthMm} height={lp.lengthMm} rx={0} fill="#d71920" fillOpacity="0.1" stroke="#d71920" strokeWidth={3 * px} pointerEvents="none" />
       ))}
 
       {/* kote */}
@@ -502,18 +527,32 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
             });
           })()}
 
+          {/* kote osa–osa: razmak od sredine jednog stuba do sredine sledećeg, za svako platno (kapije i otvori su isto platna u nizu) */}
+          <g data-testid="dim-axis-chain">
+            {layout.items.filter((li) => !isSpacer(li.item)).map((li) => {
+              const a = li.axisStart; const b = li.axisEnd;
+              return (
+                <g key={`ax-${li.item.id}`} data-testid="dim-axis">
+                  <line x1={a} y1={groundY + 4 * px} x2={a} y2={groundY + 52 * px} stroke="#94a3b8" strokeWidth={1 * px} strokeDasharray={`${3 * px} ${3 * px}`} />
+                  <line x1={b} y1={groundY + 4 * px} x2={b} y2={groundY + 52 * px} stroke="#94a3b8" strokeWidth={1 * px} strokeDasharray={`${3 * px} ${3 * px}`} />
+                  <DimLine x1={a} x2={b} y={groundY + 46 * px} text={fmtMm(b - a)} sub="osa–osa" fs={fs} scale={scale} color="#0f766e" />
+                </g>
+              );
+            })}
+          </g>
+
           {/* pozicije stubova */}
           {opts.showModular && layout.posts.map((lp, i) => (
             <g key={`pp-${lp.post.id}`}>
-              <line x1={lp.x} y1={groundY + 0} x2={lp.x} y2={groundY + 84 * px} stroke="#94a3b8" strokeWidth={1 * px} />
-              <text x={lp.x} y={groundY + 100 * px} textAnchor="middle" fontSize={10 * px} fill="#64748b">
+              <line x1={lp.x} y1={groundY + 0} x2={lp.x} y2={groundY + 124 * px} stroke="#94a3b8" strokeWidth={1 * px} />
+              <text x={lp.x} y={groundY + 140 * px} textAnchor="middle" fontSize={10 * px} fill="#64748b">
                 {`S${i + 1}·${lp.x}`}
               </text>
             </g>
           ))}
 
           {/* ukupna dužina */}
-          <DimLine x1={layout.posts[0].x - layout.posts[0].widthMm / 2} x2={layout.posts[layout.posts.length - 1].x + layout.posts[layout.posts.length - 1].widthMm / 2} y={groundY + 60 * px} text={`${fmtMm(layout.occupiedMm)} (ukupna dužina)`} fs={fs * 1.1} scale={scale} edit={interactive ? { kind: 'total', id: items[0].id } : undefined} />
+          <DimLine x1={layout.posts[0].x - layout.posts[0].widthMm / 2} x2={layout.posts[layout.posts.length - 1].x + layout.posts[layout.posts.length - 1].widthMm / 2} y={groundY + 100 * px} text={`${fmtMm(layout.occupiedMm)} (ukupna dužina)`} fs={fs * 1.1} scale={scale} edit={interactive ? { kind: 'total', id: items[0].id } : undefined} />
 
           {/* visina */}
           {/* visine: jedna kota za ogradu (od vrha podnožja do vrha ograde) i jedna za kapiju (od tla); podnožje ispod ograde ima svoju meru */}
@@ -539,8 +578,8 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
                   <text transform={`translate(${tx} ${(plinthY + baseY) / 2}) rotate(-90)`} textAnchor="middle" fontSize={fs * 0.85} fill="#64748b">{`${fmtMm(g.plinthMm)}`}</text>
                 )}
                 {interactive && (
-                  <rect x={tx - fs * 1.1} y={midY - 60 * px} width={fs * 1.7} height={120 * px} fill="#d71920" fillOpacity="0" pointerEvents="all" style={{ cursor: 'pointer' }} data-dim="height" data-id={g.id} data-testid={`dim-height-${g.id}`}>
-                    <title>Kliknite da promenite visinu</title>
+                  <rect x={tx - fs * 1.1} y={midY - 60 * px} width={fs * 1.7} height={120 * px} fill="#d71920" fillOpacity="0" pointerEvents="all" style={{ cursor: 'pointer' }} data-dim={`height-${g.kind}`} data-id={g.id} data-testid={`dim-height-${g.kind}`}>
+                    <title>{g.kind === 'post' ? 'Kliknite da promenite visinu svih stubova' : g.kind === 'gate' ? 'Kliknite da promenite visinu svih kapija' : 'Kliknite da promenite visinu svih platna'}</title>
                   </rect>
                 )}
               </g>

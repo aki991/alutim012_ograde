@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { FrontView } from '../../components/editor/FrontView';
 import { DemoBadge, EmptyState, Page, PageHeader, StatusPill } from '../../components/ui/Common';
+import { colorText } from '../../domain/models/catalog';
 import { buildBom, computePrice } from '../../domain/pricing/calc';
 import { describeItem } from '../../domain/pricing/production';
 import { downloadQuotePdf } from '../../services/pdf';
@@ -63,11 +64,11 @@ export default function QuotesPage() {
             <div><div className="label uppercase text-[11px] font-semibold">Kupac</div><div className="font-semibold">{customer?.name ?? 'Nije izabran'}</div><div className="text-muted">{customer?.address}</div><div className="text-muted">{[customer?.phone, customer?.email].filter(Boolean).join(' · ')}</div></div>
             <div><div className="label uppercase text-[11px] font-semibold">Projekat</div><div className="font-semibold">{project.name}</div><div className="text-muted">Ukupna dužina {fmtNum(computeLayout(project).occupiedMm, 0)} mm · {project.items.filter((i) => !isSpacer(i)).length} elemenata</div></div>
           </div>
-          <div className="mt-5 border border-line rounded-xl overflow-auto bg-white"><FrontView project={project} scale={0.075} /></div>
+          <div className="mt-5 border border-line rounded-xl bg-white p-2"><FrontView project={project} scale={0.075} className="block w-full h-auto max-h-[340px]" /></div>
           <h3 className="font-bold mt-6 mb-2">Lista elemenata</h3>
           <div className="overflow-x-auto"><table className="w-full min-w-[520px]">
             <thead><tr><th className="th">#</th><th className="th">Element</th><th className="th">Model</th><th className="th text-right">Širina</th><th className="th text-right">Visina</th><th className="th">Boja</th></tr></thead>
-            <tbody>{project.items.map((it, i) => isSpacer(it) ? null : <tr key={it.id}><td className="td">{itemNumber(project.items, i)}</td><td className="td">{itemLabel(project.items, i)}</td><td className="td text-slate-600">{describeItem(project, i)}</td><td className="td text-right tabular-nums">{fmtNum(outerWidthMm(project, i), 0)} mm</td><td className="td text-right tabular-nums">{fmtNum(it.heightMm, 0)} mm</td><td className="td">{it.kind === 'opening' ? '—' : it.color}</td></tr>)}</tbody>
+            <tbody>{project.items.map((it, i) => isSpacer(it) ? null : <tr key={it.id}><td className="td">{itemNumber(project.items, i)}</td><td className="td">{itemLabel(project.items, i)}</td><td className="td text-slate-600">{describeItem(project, i)}</td><td className="td text-right tabular-nums whitespace-nowrap">{fmtNum(outerWidthMm(project, i), 0)} mm</td><td className="td text-right tabular-nums whitespace-nowrap">{fmtNum(it.heightMm, 0)} mm</td><td className="td whitespace-nowrap">{it.kind === 'opening' ? '—' : colorText(it.color, it.finish)}</td></tr>)}</tbody>
           </table></div>
           <h3 className="font-bold mt-6 mb-2">Materijal ({bom.length} stavki)</h3>
           <div className="overflow-x-auto"><table className="w-full min-w-[520px]">

@@ -1,7 +1,7 @@
 import { isStair, stairGroupAt, stairGroupSummary } from '../geometry/stair';
 import { computeInfill } from '../geometry/infill';
 import { computeLayout, outerWidthMm } from '../geometry/layout';
-import { AUTOMATION_LABELS, HINGE_LABELS, LOCK_LABELS, MOUNTING_LABELS, POST_LABELS } from '../models/catalog';
+import { AUTOMATION_LABELS, colorText, HINGE_LABELS, LOCK_LABELS, MOUNTING_LABELS, POST_LABELS } from '../models/catalog';
 import type { ModelSpecs } from '../models/spec';
 import type { Material, Project } from '../models/types';
 import { indexOfNumber, itemLabel, itemNumber } from '../../utils/labels';
@@ -43,7 +43,7 @@ export interface WorkOrder {
 const SIDE = { left: 'levo', right: 'desno' } as const;
 const SLIDE = { left: 'ulevo', right: 'udesno' } as const;
 /** Boja za prikaz: RAL ključ, a posebna (heksadecimalna) boja sa oznakom. */
-const colorLabel = (key: string) => (key.startsWith('#') ? `posebna ${key.toUpperCase()}` : key);
+const colorLabel = colorText;
 const SWING = { inward: 'ka unutra', outward: 'ka spolja' } as const;
 
 export function positionOfItem(positions: CutPosition[], index: number): string | null {
@@ -103,7 +103,7 @@ export function buildWorkOrder(project: Project, specs: ModelSpecs | undefined, 
     const idx = /^\d+$/.test(pos.key) ? indexOfNumber(project.items, Number(pos.key)) : -1;
     const it = idx >= 0 ? project.items[idx] : undefined;
     if (it && it.kind !== 'opening') {
-      color = colorLabel(it.color);
+      color = colorLabel(it.color, it.finish);
       isGate = it.kind === 'gate';
       const modelId = it.kind === 'fence' ? it.modelId : it.infillModelId;
       const li = layout.items[idx];
@@ -111,7 +111,7 @@ export function buildWorkOrder(project: Project, specs: ModelSpecs | undefined, 
       facts.push(
         { label: 'Ukupna širina', value: `${Math.round(outerWidthMm(project, idx))} mm` },
         { label: 'Visina', value: `${Math.round(it.heightMm)} mm` },
-        { label: 'Boja', value: colorLabel(it.color) },
+        { label: 'Boja', value: colorLabel(it.color, it.finish) },
         { label: 'Profila ispune', value: String(geo.bars.filter((b) => b.tone === 'main').length) },
         ...(isStair(it) ? [{ label: 'Stepenište', value: stairGroupSummary(stairGroupAt(project.items, idx)!) }] : []),
       );
@@ -137,7 +137,7 @@ export function buildWorkOrder(project: Project, specs: ModelSpecs | undefined, 
     const spacerLeft = project.items[i - 1]?.kind === 'opening' && Boolean((project.items[i - 1] as { spacer?: boolean }).spacer);
     const where = i === 0 ? 'Početak (levo)' : i === n ? 'Kraj (desno)' : spacerRight ? `Stub ograde uz: ${itemLabel(project.items, i - 1)}` : spacerLeft ? `Svoj stub: ${itemLabel(project.items, i)}` : `Između: ${itemLabel(project.items, i - 1)} i ${itemLabel(project.items, i)}`;
     return {
-      name: `S${i + 1}`, where, type: POST_LABELS[p.type], widthMm: p.widthMm, heightMm: layout.posts[i]?.lengthMm ?? p.heightMm, mounting: MOUNTING_LABELS[p.mounting], color: colorLabel(p.color),
+      name: `S${i + 1}`, where, type: POST_LABELS[p.type], widthMm: p.widthMm, heightMm: layout.posts[i]?.lengthMm ?? p.heightMm, mounting: MOUNTING_LABELS[p.mounting], color: colorLabel(p.color, p.finish),
       plinthMm: p.type === 'concrete_plinth' ? p.plinthMm : undefined,
     };
   });

@@ -1,5 +1,8 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import { RAL_COLORS } from '../../domain/models/catalog';
+import { colorInfo, colorText, FINISHES } from '../../domain/models/catalog';
+import type { Finish } from '../../domain/models/types';
+import { useAppStore } from '../../store/useAppStore';
+import { ColorChartModal, normalizeFavorites, swatchBackground } from './ColorChartModal';
 import { validateRange, type Range } from '../../domain/validation/limits';
 
 export function Field({ label, children, hint, error, htmlFor, stacked }: { label: string; children: ReactNode; hint?: ReactNode; error?: string | null; htmlFor?: string; stacked?: boolean }) {
@@ -141,29 +144,56 @@ export function SegmentedField<T extends string>({ label, value, options, onChan
   );
 }
 
-/** Izbor boje kružićima (RAL boje): izabrana je uokvirena, a naziv boje se vidi kad se zadrži miš. */
-export function ColorField({ label = 'Boja', value, onChange, testId }: { label?: string; value: string; onChange: (key: string) => void; testId?: string; stacked?: boolean }) {
-  const cur = RAL_COLORS.find((c) => c.key === value);
-  const options = cur || value === '' ? RAL_COLORS : [{ key: value, name: value, hex: value.startsWith('#') ? value : '#383E42' }, ...RAL_COLORS];
+/**
+ * Izbor boje: pet boja za brzi izbor i jedan kružić sa trenutnom bojom. Klik na trenutnu boju otvara kartu boja (sve RAL boje),
+ * gde se može promeniti i koje se boje nude u brzom izboru. Ispod je završna obrada (mat / sjaj / struktura), ako je polje podržava.
+ */
+export function ColorField({ label = 'Boja', value, onChange, testId, finish, onFinishChange }: {
+  label?: string; value: string; onChange: (key: string) => void; testId?: string; stacked?: boolean;
+  finish?: Finish; onFinishChange?: (f: Finish) => void;
+}) {
+  const favorites = normalizeFavorites(useAppStore((s) => s.settings.favoriteColors));
+  const updateSettings = useAppStore((s) => s.updateSettings);
+  const [chart, setChart] = useState(false);
+  const known = value === '' || value.startsWith('#') || !!colorInfo(value);
   return (
     <div className="py-1.5">
       <div className="flex items-baseline justify-between gap-2 mb-1.5">
         <span className="label">{label}</span>
-        <span className="text-[12px] text-slate-600 tabular-nums" data-testid={testId ? `${testId}-value` : undefined}>{value || 'različite boje'}</span>
+        <span className="text-[12px] text-slate-600 tabular-nums" data-testid={testId ? `${testId}-value` : undefined}>{value ? colorText(value, finish) : 'različite boje'}</span>
       </div>
-      <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={label} data-testid={testId}>
-        {options.map((c) => {
-          const on = c.key === value;
+      <div className="flex items-center gap-1.5" role="radiogroup" aria-label={label} data-testid={testId}>
+        {favorites.map((k) => {
+          const on = k === value;
           return (
-            <button
-              key={c.key} type="button" role="radio" aria-checked={on} aria-label={`${c.key} — ${c.name}`} title={`${c.key} — ${c.name}`} data-color={c.key}
-              onClick={() => onChange(c.key)}
+            <button key={k} type="button" role="radio" aria-checked={on} aria-label={k} title={`${k}${colorInfo(k)?.name && colorInfo(k)!.name !== k ? ` — ${colorInfo(k)!.name}` : ''}`} data-color={k}
+              onClick={() => onChange(k)}
               className={`w-7 h-7 rounded-full shrink-0 transition-shadow ${on ? 'ring-2 ring-primary ring-offset-2' : 'ring-1 ring-black/15 hover:ring-2 hover:ring-slate-400'}`}
-              style={{ background: c.key === 'INOX' ? 'linear-gradient(135deg,#f1f3f5,#aab1b8 55%,#e6e9ec)' : c.key === 'DEKOR ORAH' ? 'linear-gradient(135deg,#7a5232,#5a3a22 60%,#8b6240)' : c.hex }}
-            />
+              style={{ background: swatchBackground(k) }} />
           );
         })}
+        <span className="w-px h-6 bg-line mx-1" aria-hidden="true" />
+        {/* trenutna boja: klik otvara kartu boja */}
+        <button type="button" data-testid={testId ? `${testId}-current` : 'color-current'} aria-label={`Trenutna boja${value ? `: ${value}` : ''}. Otvori kartu boja`} title="Trenutna boja — klik otvara kartu boja"
+          onClick={() => setChart(true)}
+          className="w-9 h-9 rounded-full shrink-0 ring-2 ring-slate-500 ring-offset-2 hover:ring-primary transition-shadow grid place-items-center"
+          style={{ background: value ? swatchBackground(value) : 'conic-gradient(#d71920,#f59e0b,#16a34a,#2563eb,#7c3aed,#d71920)' }}>
+          {!value && <span className="sr-only">različite boje</span>}
+        </button>
       </div>
+      {onFinishChange && (
+        <div className="flex items-center justify-between gap-2 mt-2" data-testid={testId ? `${testId}-finish` : undefined}>
+          <span className="text-[12px] text-slate-600">Završna obrada</span>
+          <div className="inline-flex rounded-lg border border-line p-0.5 bg-slate-50" role="radiogroup" aria-label="Završna obrada">
+            {FINISHES.map((f) => (
+              <button key={f.id} type="button" role="radio" aria-checked={finish === f.id} data-finish={f.id} onClick={() => onFinishChange(f.id)}
+                className={`px-2.5 py-1 text-[12.5px] rounded-md font-medium ${finish === f.id ? 'bg-white shadow-sm text-primary' : 'text-muted hover:text-ink'}`}>{f.label}</button>
+            ))}
+          </div>
+        </div>
+      )}
+      {!known && <div className="text-[11.5px] text-muted mt-1">Boja nije na karti boja.</div>}
+      {chart && <ColorChartModal value={value} finish={finish} favorites={favorites} onPick={onChange} onFinish={onFinishChange} onFavorites={(list) => updateSettings({ favoriteColors: list })} onClose={() => setChart(false)} />}
     </div>
   );
 }

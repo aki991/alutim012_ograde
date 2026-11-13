@@ -2,7 +2,7 @@ import { useGLTF } from '@react-three/drei';
 import { Component, useMemo, type ReactNode } from 'react';
 import { gateModelUrl } from '../../../assets/gates3d';
 import { mmToScene as s } from '../../../domain/geometry/gates';
-import { colorHex, FENCE_MODELS, panelArt, panelPeriodMm, panelTiles } from '../../../domain/models/catalog';
+import { colorHex, DEKOR_COLOR, FENCE_MODELS, INOX_COLOR, normalizeColorKey, panelArt, panelPeriodMm, panelTiles } from '../../../domain/models/catalog';
 import type { FenceModelId, GateType } from '../../../domain/models/types';
 import { adaptLeaf, LEAF_CLEARANCE, type LeafKind } from './gateGlb';
 
@@ -18,7 +18,6 @@ export interface GlbLeafProps {
   color: string;
 }
 
-const DEKOR = 'DEKOR ORAH';
 /** Osnovna širina polja ograde: po njoj se meri razmak vertikalnih letvica koji kapija preuzima. */
 const FENCE_REF_WIDTH_MM = 2000;
 
@@ -50,8 +49,8 @@ export function GlbLeaf({ modelId, gateType, extendDir, slideDir, widthMm, heigh
         height: s(heightMm),
         clearance: sliding ? LEAF_CLEARANCE.slide : LEAF_CLEARANCE.swing,
         hex: panelArt(modelId, color)?.bodyHex ?? colorHex(color),
-        keepDecor: color === DEKOR,
-        keepInox: color === 'INOX',
+        keepDecor: normalizeColorKey(color) === DEKOR_COLOR,
+        keepInox: normalizeColorKey(color) === INOX_COLOR,
       });
       if (!g) throw new Error(`Krilo nije pronađeno u 3D modelu (${url})`);
       return g;

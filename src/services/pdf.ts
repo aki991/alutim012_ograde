@@ -1,5 +1,5 @@
 import { buildRl10Sheet } from '../domain/pricing/rl10Spec';
-import { FENCE_MODELS, STATUS_LABELS } from '../domain/models/catalog';
+import { colorText, FENCE_MODELS, STATUS_LABELS } from '../domain/models/catalog';
 import type { AppSettings, Customer, Material, Project } from '../domain/models/types';
 import { buildBom, computePrice } from '../domain/pricing/calc';
 import { buildCutList, buildHardwareList, describeItem } from '../domain/pricing/production';
@@ -71,7 +71,7 @@ export async function buildQuotePdfBlob(project: Project, customer: Customer | n
     td(describeItem(project, i)),
     td(fmtNum(outerWidthMm(project, i), 0), 'right'),
     td(fmtNum(it.heightMm, 0), 'right'),
-    td(it.kind === 'opening' ? '—' : it.color),
+    td(it.kind === 'opening' ? '—' : colorText(it.color, it.finish)),
   ]]));
 
   const def: any = {
@@ -165,7 +165,7 @@ export async function buildProductionPdfBlob(project: Project, customer: Custome
     footer: (page: number, pages: number) => ({ text: `${settings.companyName} · Proizvodna specifikacija · Strana ${page} od ${pages}`, alignment: 'right', fontSize: 8, color: MUTED, margin: [30, 12, 30, 0] }),
     content: [
       { text: 'PROIZVODNA SPECIFIKACIJA', fontSize: 18, bold: true },
-      { text: 'OKVIRNA geometrijska specifikacija — nije finalna proizvodna dokumentacija niti optimizacija sečenja. Svi podaci su demonstracioni.', color: '#b45309', bold: true, fontSize: 9, margin: [0, 4, 0, 8] },
+      { text: 'OKVIRNA geometrijska specifikacija — nije finalna proizvodna dokumentacija niti optimizacija sečenja.', color: '#b45309', bold: true, fontSize: 9, margin: [0, 4, 0, 8] },
       { text: `${project.name} · Kupac: ${customer?.name ?? '—'} · Status: ${STATUS_LABELS[project.status]} · Ponuda: ${project.quoteNo || '—'}`, margin: [0, 0, 0, 8] },
       { image: sketch.dataUrl, width: 560, alignment: 'center', margin: [0, 0, 0, 8] },
       { text: 'Redosled elemenata i dimenzije', style: 'h2' },

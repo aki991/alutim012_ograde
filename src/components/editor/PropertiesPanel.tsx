@@ -2,7 +2,7 @@ import { PartsPanel } from './PartsPanel';
 import { allFenceModels } from '../../domain/models/customRegistry';
 import { AlertTriangle, ArrowLeft, ArrowRight, Copy, Trash2, Calculator, FileDown, Scissors, ClipboardList } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { autoFillToFixedTotal, changeColor, indexOfItem, resetPostHeights, setAllColors, setAllGatesOwnPosts, setAllPlinths, setRl10Params, resetRl10Params, setTubesParams, resetTubesParams, setPlinthWidth, setAllHeights, setOuterWidth, updateItem, updatePost } from '../../domain/geometry/operations';
+import { autoFillToFixedTotal, changeColor, changeFinish, indexOfItem, resetPostHeights, setAllColors, setAllFinishes, setAllGatesOwnPosts, setAllPlinths, removeItemPlinths, setItemPlinthHeight, setRl10Params, resetRl10Params, setTubesParams, resetTubesParams, setPlinthWidth, setAllHeights, setOuterWidth, updateItem, updatePost } from '../../domain/geometry/operations';
 import { computeInfill } from '../../domain/geometry/infill';
 import { MAX_TURN_DEG } from '../../domain/geometry/plan';
 import { cornerInfo } from '../../domain/geometry/corner';
@@ -143,9 +143,9 @@ function ProjectBasics({ project }: { project: Project }) {
       </div>
 
       <NumberField label="Visina (svi)" value={firstHeight} range={LIMITS.fenceHeight} testId="all-height" onCommit={(v) => mutate((p) => setAllHeights(p, v), 'allh')} />
-      <ColorField label="Boja (sve)" value={s.defaultColor} testId="all-color" onChange={(c) => mutate((p) => setAllColors(p, c))} />
+      <ColorField label="Boja (sve)" value={s.defaultColor} testId="all-color" onChange={(c) => mutate((p) => setAllColors(p, c))} finish={s.defaultFinish} onFinishChange={(f) => mutate((p) => setAllFinishes(p, f))} />
       {project.items.some((i) => i.kind === 'fence') && (
-        <ToggleField label="Podnožje ograda" testId="field-all-plinth" checked={project.items.every((i) => i.kind !== 'fence' || (i.plinthMm ?? 0) > 0)} onLabel="Sve ograde na podnožju" offLabel="Bez podnožja" onChange={(v) => mutate((p) => setAllPlinths(p, v))} />
+        <ToggleField label="Podnožje ograda" testId="field-all-plinth" checked={layout.items.every((l) => l.item.kind !== 'fence' || l.plinthMm > 0)} onLabel="Sve ograde na podnožju" offLabel="Bez podnožja" onChange={(v) => mutate((p) => setAllPlinths(p, v))} />
       )}
       {project.items.some((i) => i.kind === 'gate') && (
         <ToggleField label="Stubovi kapija" testId="field-all-gates-own-posts" checked={project.items.every((i) => i.kind !== 'gate' || Boolean(i.ownPosts))} onLabel="Sve kapije svoje stubove" offLabel="Zajednički stubovi" onChange={(v) => mutate((p) => setAllGatesOwnPosts(p, v))} />
@@ -229,7 +229,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
       <>
         {common}
         <ModelSelect value={it.modelId} onChange={(m) => st.setItemModel(id, m)} />
-        <ColorField stacked value={it.color} testId="field-color" onChange={(c) => st.setItemColor(id, c)} />
+        <ColorField stacked value={it.color} testId="field-color" onChange={(c) => st.setItemColor(id, c)} finish={it.finish} onFinishChange={(f) => st.setItemFinish(id, f)} />
         {def.hasBars && (
           <>
             <NumberField label={def.barLabel} testId="field-bar" value={it.params.barSizeMm} range={isRl10Model(it.modelId) ? { min: 8, max: 40 } : LIMITS.barSize}
@@ -253,12 +253,12 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
             range={def.style === 'tarabica' ? { min: 0, max: TARABICA.maxOverhangMm } : LIMITS.frame} onCommit={(v) => st.patchItemParams(id, { frameMm: v }, 'frame')}
             hint={def.style === 'tarabica' ? 'Koliko cev 30×30 viri iza krajnje tarabice sa svake strane' : undefined} />
         )}
-        <ToggleField label="Betonsko podnožje" testId="field-item-plinth-on" checked={(it.plinthMm ?? 0) > 0} onLabel="Sa podnožjem" offLabel="Bez podnožja" onChange={(v) => st.patchItem(id, v ? { plinthMm: PLINTH_DEFAULT_MM } : { plinthMm: undefined, plinthWidthMm: undefined })} />
-        {(it.plinthMm ?? 0) > 0 && (
-          <NumberField label="Visina podnožja" testId="field-item-plinth" value={it.plinthMm ?? 0} range={{ min: 50, max: 1200 }} onCommit={(v) => st.patchItem(id, { plinthMm: v }, 'plinth')}
+        <ToggleField label="Betonsko podnožje" testId="field-item-plinth-on" checked={li.plinthMm > 0} onLabel="Sa podnožjem" offLabel="Bez podnožja" onChange={(v) => (v ? st.patchItem(id, { plinthMm: PLINTH_DEFAULT_MM }) : st.mutate((p) => removeItemPlinths(p, [id])))} />
+        {li.plinthMm > 0 && (
+          <NumberField label="Visina podnožja" testId="field-item-plinth" value={li.plinthMm} range={{ min: 50, max: 1200 }} onCommit={(v) => st.mutate((p) => setItemPlinthHeight(p, id, v), `plinth:${id}`)}
             hint="Ograda i stubovi stoje na podnožju" />
         )}
-        {(it.plinthMm ?? 0) > 0 && (
+        {li.plinthMm > 0 && (
           <NumberField label="Širina podnožja" testId="field-item-plinth-width" value={Math.round(li.plinthX1 - li.plinthX0)} range={{ min: 100, max: Math.round(wRange.max + half) }}
             onCommit={(v) => st.mutate((p) => setPlinthWidth(p, id, v), `plinthw:${id}`)}
             hint={it.plinthWidthMm ? 'Kraće od polja: centrirano ispod njega' : 'Podrazumevano: ispod polja i stubova. Šire podnožje širi i ogradu (susedni elementi se pomeraju).'} />
@@ -331,7 +331,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
       <>
         {common}
         <ModelSelect value={g.infillModelId} onChange={(m) => st.setItemModel(id, m)} />
-        <ColorField stacked value={g.color} testId="field-color" onChange={(c) => st.setItemColor(id, c)} />
+        <ColorField stacked value={g.color} testId="field-color" onChange={(c) => st.setItemColor(id, c)} finish={g.finish} onFinishChange={(f) => st.setItemFinish(id, f)} />
         <ToggleField label="Stubovi kapije" testId="field-gate-own-posts" checked={Boolean(g.ownPosts)} onLabel="Svoji stubovi" offLabel="Zajednički stub" onChange={(v) => st.patchItem(id, { ownPosts: v })} />
         {g.ownPosts && <NumberField label="Razmak stubova" testId="field-gate-post-gap" value={g.postGapMm ?? OWN_POSTS_GAP_MM} range={{ min: 0, max: 500 }} onCommit={(v) => st.patchItem(id, { postGapMm: v }, 'postgap')} hint="Razmak između stuba ograde i stuba kapije" />}
         <SegmentedField label={g.gateType === 'sliding' ? 'Smer klizanja' : 'Strana šarki'} testId="field-opening" value={g.opening} options={[{ value: 'left', label: 'Levo' }, { value: 'right', label: 'Desno' }]} onChange={(v) => st.patchItem(id, { opening: v })} />
@@ -356,7 +356,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
             <ToggleField label="Prostor za povlačenje" checked={g.availableSpaceMm !== undefined} onLabel="Zadat" offLabel="Nije zadat" testId="field-space-known" onChange={(v) => st.patchItem(id, { availableSpaceMm: v ? Math.round(li.clearWidth) : undefined })} />
             {g.availableSpaceMm !== undefined && (
               <NumberField label="Raspoloživ prostor" testId="field-space" value={g.availableSpaceMm} range={{ min: 100, max: 20000 }} onCommit={(v) => st.patchItem(id, { availableSpaceMm: v }, 'space')}
-                hint={g.availableSpaceMm < li.clearWidth ? <span className="text-[#b42318]">Nedovoljno: za demonstracioni hod potrebno je ≈ {fmtMm(li.clearWidth)}. Orijentaciona provera, nije sertifikovana.</span> : `Dovoljno za demonstracioni hod od ${fmtMm(li.clearWidth)}.`} />
+                hint={g.availableSpaceMm < li.clearWidth ? <span className="text-[#b42318]">Nedovoljno: za hod kapije potrebno je ≈ {fmtMm(li.clearWidth)}. Orijentaciona provera, nije sertifikovana.</span> : `Dovoljno za hod kapije od ${fmtMm(li.clearWidth)}.`} />
             )}
           </>
         )}
@@ -392,6 +392,7 @@ function MultiPanel({ project, ids }: { project: Project; ids: string[] }) {
   const heights = [...new Set(items.map((i) => i.heightMm))];
   const colorable = items.filter((i) => i.kind !== 'opening');
   const colors = [...new Set(colorable.map((i) => i.color))];
+  const finishes = [...new Set(colorable.map((i) => i.finish ?? ''))];
   const sorted = [...items].sort((a, b) => indexOfItem(project, a.id) - indexOfItem(project, b.id));
   return (
     <Section title={`Izabrano polja: ${items.length}`} testId="panel-multi">
@@ -402,7 +403,8 @@ function MultiPanel({ project, ids }: { project: Project; ids: string[] }) {
         hint={heights.length > 1 ? `Sada različite visine: ${heights.map((h) => fmtMm(h)).join(', ')}` : undefined}
         onCommit={(v) => st.mutate((p) => ids.reduce((q, id) => updateItem(q, id, { heightMm: v }), p), 'multi-h')} />
       {colorable.length > 0 && (
-        <ColorField stacked label="Boja (izabrana)" testId="multi-color" value={colors.length === 1 ? colors[0] : ''} onChange={(c) => st.mutate((p) => ids.reduce((q, id) => changeColor(q, id, c), p))} />
+        <ColorField stacked label="Boja (izabrana)" testId="multi-color" value={colors.length === 1 ? colors[0] : ''} onChange={(c) => st.mutate((p) => ids.reduce((q, id) => changeColor(q, id, c), p))}
+          finish={finishes.length === 1 && finishes[0] ? (finishes[0] as import('../../domain/models/types').Finish) : undefined} onFinishChange={(f) => st.mutate((p) => ids.reduce((q, id) => changeFinish(q, id, f), p))} />
       )}
       <div className="flex flex-wrap gap-1.5 mt-2">
         <button className="btn btn-sm" data-testid="multi-clear" onClick={() => st.select(null)}>Poništi izbor</button>
@@ -464,7 +466,8 @@ function PostPanel({ project, id }: { project: Project; id: string }) {
       <NumberField label="Visina" value={p.heightMm} range={LIMITS.postHeight} onCommit={(v) => applyPatch({ heightMm: v }, 'ph')}
         hint={`${p.heightCustom ? 'Ručno zadata' : 'Automatska'} visina iznad podnožja ograde (ne zavisi od visine podnožja). Dužina stuba: ${fmtMm(lp.lengthMm)}${lp.baseMm > 0 ? ' (stoji na podnožju)' : ''}`} />
       {p.heightCustom && <button className="btn btn-sm mb-1.5" data-testid="post-height-auto" onClick={() => st.mutate((pr) => resetPostHeights(pr, targets))}>Vrati automatsku visinu</button>}
-      <ColorField testId="post-color" value={p.color} onChange={(c) => applyPatch({ color: c })} />
+      {/* betonski stub ima boju betona: izbor boje menjao bi boju aluminijumskog stuba koji nije ni postavljen */}
+      {!targets.every((tid) => { const t = project.posts.find((x) => x.id === tid)?.type; return t === 'concrete' || t === 'concrete_plinth'; }) && <ColorField testId="post-color" value={p.color} onChange={(c) => applyPatch({ color: c })} finish={p.finish} onFinishChange={(f) => applyPatch({ finish: f })} />}
       {tarabicaPost && (
         <div data-testid="post-caps">
           <SelectField label="Kapa na vrhu" testId="post-cap-top" value={postCaps(p).top} options={TOP_CAP_OPTIONS} onChange={(v) => applyPatch({ capTop: v })} />
@@ -503,14 +506,17 @@ function PriceSummary({ project }: { project: Project }) {
         <span className="font-bold">Ukupno</span>
         <span className="text-right"><span className="text-[19px] font-extrabold tabular-nums" data-testid="price-total">{money(price.grossTotal)}</span><span className="block text-[11px] text-muted">sa PDV-om · ≈ {fmtNum(price.grossTotal / settings.currencyRateToEur, 0)} €</span></span>
       </div>
-      <button className="btn btn-dark w-full mt-3" data-testid="btn-open-calc" onClick={() => window.dispatchEvent(new CustomEvent('open-calc'))}><Calculator size={16} />Izračunaj cenu</button>
+      <button className="btn btn-dark w-full mt-3" data-testid="btn-open-calc" onClick={() => window.dispatchEvent(new CustomEvent('open-calc'))}><Calculator size={16} />Detaljan obračun</button>
+      {/* dokumenti odmah uz cenu, da se ne skroluje do dna panela */}
+      <div className="grid grid-cols-3 gap-2 mt-2">
+        <button className="btn !px-1 !py-2 flex-col !gap-1 text-[12.5px]" data-testid="btn-pdf" onClick={() => setPdfOpen(true)}><FileDown size={17} />PDF ponuda</button>
+        <button className="btn !px-1 !py-2 flex-col !gap-1 text-[12.5px]" data-testid="btn-cutlist" onClick={() => setCutOpen(true)}><Scissors size={17} />Krojna lista</button>
+        <button className="btn !px-1 !py-2 flex-col !gap-1 text-[12.5px]" data-testid="btn-workorder" onClick={() => setOrderOpen(true)}><ClipboardList size={17} />Radni nalog</button>
+      </div>
     </Section>
-    <button className="btn w-full" data-testid="btn-pdf" onClick={() => setPdfOpen(true)}><FileDown size={16} />PDF ponuda</button>
-    <button className="btn w-full" data-testid="btn-cutlist" onClick={() => setCutOpen(true)}><Scissors size={16} />Krojna lista</button>
-    <button className="btn w-full" data-testid="btn-workorder" onClick={() => setOrderOpen(true)}><ClipboardList size={16} />Radni nalog</button>
     {pdfOpen && <PdfPreviewModal project={project} customer={customer} materials={materials} settings={settings} onClose={() => setPdfOpen(false)} />}
     {orderOpen && <PdfPreviewModal kind="workorder" project={project} customer={customer} materials={materials} settings={settings} onClose={() => setOrderOpen(false)} />}
-    {cutOpen && <PdfPreviewModal kind="cutlist" project={project} customer={customer} materials={materials} settings={settings} onClose={() => setCutOpen(false)} />}
+    {cutOpen && <PdfPreviewModal kind="cutlist" askOffcuts project={project} customer={customer} materials={materials} settings={settings} onClose={() => setCutOpen(false)} />}
     </>
   );
 }
@@ -523,8 +529,8 @@ export function PropertiesPanel({ project }: { project: Project }) {
       {selection?.type === 'item' && multi.length > 1 && <MultiPanel project={project} ids={multi} />}
       {selection?.type === 'item' && multi.length < 2 && <ItemPanel project={project} id={selection.id} />}
       {selection?.type === 'post' && <PostPanel project={project} id={selection.id} />}
-      <ProjectBasics project={project} />
       {project.items.length > 0 && <PriceSummary project={project} />}
+      <ProjectBasics project={project} />
     </div>
   );
 }

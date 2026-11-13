@@ -125,7 +125,7 @@ test.describe('3D prikaz', () => {
     // klik na stvarni objekat u 3D (drugi segment ograde)
     const pt = (await pointOf(page, ids[1]))!;
     await page.mouse.click(pt.x, pt.y);
-    await expect(page.getByTestId('panel-item')).toContainText('Ograda 2');
+    await expect(page.getByTestId('panel-item')).toContainText('Platno 2');
     await expect(page.getByTestId('selection-outline')).toBeVisible(); // ista selekcija u 2D
 
     // izmena iz panela dok je 3D aktivan — 2D kote i ukupna dužina se ažuriraju
@@ -146,14 +146,16 @@ test.describe('3D prikaz', () => {
     // selekcija ostaje pri prelasku 2D ↔ odozgo ↔ 3D
     await page.mouse.click(pt.x, pt.y);
     await page.getByTestId('tab-top').click();
-    await expect(page.getByTestId('panel-item')).toContainText('Ograda 2');
+    await expect(page.getByTestId('panel-item')).toContainText('Platno 2');
     await page.getByTestId('tab-three').click();
-    await expect(page.getByTestId('panel-item')).toContainText('Ograda 2');
+    await expect(page.getByTestId('panel-item')).toContainText('Platno 2');
     expect(errors).toEqual([]);
   });
 
   test('orbit ne menja projekat; režim uređivanja: prevlačenje, ručka, Escape i undo', async ({ page }) => {
     const errors = trackErrors(page);
+    // širi desni panel ostavlja manje mesta za 3D u podeljenom prikazu: ručke za širinu se hvataju samo kad su u kadru, pa širi prozor
+    await page.setViewportSize({ width: 1700, height: 900 });
     await openDemo(page);
     await page.getByTestId('tab-split').click();
     await page.waitForFunction(() => Boolean(window.__aluTest));
@@ -411,7 +413,7 @@ test.describe('raspored (D3, D4, D5)', () => {
     await page.locator('[data-hit="item"]').first().click();
     await page.getByRole('link', { name: 'Modeli ograda' }).click();
     await page.getByTestId('use-model-v_framed').click();
-    await expect(page.getByTestId('apply-target')).toContainText('Ograda 1');
+    await expect(page.getByTestId('apply-target')).toContainText('Platno 1');
     await page.getByTestId('apply-to-selected').click();
     await expect(page.getByTestId('field-model')).toHaveValue('v_framed');
   });

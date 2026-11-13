@@ -69,7 +69,7 @@ test('glavni scenario: projektovanje, kalkulacija, čuvanje, izvoz', async ({ pa
 
   // 7–8. promeni širinu prvog segmenta i proveri da se crtež promenio
   await page.locator('[data-hit="item"]').first().click();
-  await expect(page.getByTestId('panel-item')).toContainText('Ograda 1');
+  await expect(page.getByTestId('panel-item')).toContainText('Platno 1');
   const before = await page.getByTestId('front-view').innerHTML();
   await page.getByTestId('field-width').fill('1500');
   await expect(page.getByTestId('total-modular')).toContainText('9.960');
@@ -110,7 +110,9 @@ test('glavni scenario: projektovanje, kalkulacija, čuvanje, izvoz', async ({ pa
 
   // 11. promena boje izabranog elementa
   await page.locator('[data-hit="item"]').nth(1).click();
-  await page.getByTestId('field-color').locator('[data-color=\"RAL 5011\"]').click();
+  // RAL 5011 nije među pet boja za brzi izbor: bira se sa karte boja (klik na kružić trenutne boje)
+  await page.getByTestId('field-color-current').click();
+  await page.getByTestId('chart-color').and(page.locator('[data-color="RAL 5011"]')).click();
   await expect(page.getByTestId('field-color-value')).toHaveText('RAL 5011');
 
   // undo/redo
@@ -251,6 +253,7 @@ test('uvoz JSON prijavljuje grešku za neispravan format', async ({ page }) => {
 
 test('reset demo podataka traži potvrdu', async ({ page }) => {
   await page.goto('/podesavanja');
+  await page.getByTestId('danger-zone').locator('summary').click();
   await page.getByTestId('btn-reset-demo').click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.getByRole('button', { name: 'Otkaži' }).click();
@@ -345,30 +348,7 @@ test('ograda pod uglom: ugao skretanja na stubu, tlocrt i 3D', async ({ page }) 
   expect(errors).toEqual([]);
 });
 
-test('ugaoni spoj: savijanje cevi između dva stuba, sastavnica i krojna lista', async ({ page }) => {
-  const errors = trackErrors(page);
-  await page.goto('/');
-  await page.getByTestId('hero-new').first().click();
-  await page.getByTestId('catalog-model').selectOption('rail_black');
-  for (let i = 0; i < 2; i++) await page.getByTestId('cat-fence-add').click();
-  await page.getByTestId('add-end').click({ force: true });
-  await page.getByTestId('add-kind-corner').click();
-  await page.getByTestId('add-bend').fill('45');
-  await page.getByTestId('add-apply').click(); // novi element je izabran
-  await page.getByTestId('cat-fence-add').click();
-  await expect(page.getByTestId('count-items')).toHaveText('4');
-  await expect(page.getByTestId('count-posts')).toContainText('5'); // dva stuba uz spoj: ugao nije na stubu
-  await page.getByTestId('tab-three').click();
-  await expect(page.getByTestId('three-canvas')).toBeVisible();
-  await page.waitForTimeout(600);
-  await page.getByRole('button', { name: 'Sačuvaj' }).click();
-  await page.waitForTimeout(800);
-  await page.goto('/proizvodnja');
-  await page.locator('select').first().selectOption({ label: 'Novi projekat' });
-  await expect(page.getByTestId('rail04-cuts')).toContainText('savijanje: 45° udesno');
-  await expect(page.getByTestId('rail04-bom')).toContainText('Savijanje cevi');
-  expect(errors).toEqual([]);
-});
+// test „ugaoni spoj" je uklonjen: ugaoni spoj se više ne dodaje kao poseban element (ugao se pravi na stubu); obračun ugla pokrivaju jedinični testovi (rl10corner)
 
 test('model 08: radna sastavnica i krojna lista, polja za nepotvrđene podatke', async ({ page }) => {
   const errors = trackErrors(page);
@@ -526,10 +506,11 @@ test('PDF ponuda: prvo pregled, tek onda čuvanje', async ({ page }) => {
   await page.goto('/');
   await page.getByTestId('hero-new').first().click();
   await page.getByTestId('cat-fence-add').click();
-  // dugmad su u panelu: PDF ponuda ispod sekcije Kalkulacija cene, a u zaglavlju ih nema
+  // dugmad su u panelu, u okviru Kalkulacija cene (ispod ukupne cene), a u zaglavlju ih nema
   const priceBox = (await page.getByTestId('panel-price').boundingBox())!;
   const pdfBox = (await page.getByTestId('btn-pdf').boundingBox())!;
-  expect(pdfBox.y).toBeGreaterThanOrEqual(priceBox.y + priceBox.height);
+  expect(pdfBox.y).toBeGreaterThan(priceBox.y);
+  expect(pdfBox.y + pdfBox.height).toBeLessThanOrEqual(priceBox.y + priceBox.height);
   await expect(page.locator('header').getByTestId('btn-pdf')).toHaveCount(0);
   await expect(page.locator('header').getByRole('button', { name: /Izračunaj cenu/ })).toHaveCount(0);
   await page.getByTestId('btn-pdf').click();
@@ -584,7 +565,7 @@ test('klik na kotu ukupne dužine raspoređuje polja na zadatu dužinu; meni pri
   await expect(page.getByTestId('dim-apply')).toBeDisabled();
 });
 
-test('katalog: „Prikaži sve" otvara ugaoni spoj i sve vrste stubova', async ({ page }) => {
+test('katalog: „Prikaži sve" otvara sve vrste stubova, bez ugaonog spoja', async ({ page }) => {
   await page.goto('/');
   await page.getByTestId('hero-new').first().click();
   await page.getByTestId('cat-fence-add').click();
@@ -593,9 +574,9 @@ test('katalog: „Prikaži sve" otvara ugaoni spoj i sve vrste stubova', async (
   for (const t of ['aluminium', 'concrete', 'concrete_plinth']) await expect(page.getByTestId(`cat-post-${t}`)).toBeVisible();
   for (const t of ['decorative', 'gate']) await expect(page.getByTestId(`cat-post-${t}`)).toHaveCount(0); // dekorativni stub i stub kapije se ne nude
   await expect(page.getByTestId('cat-plinth')).toHaveCount(0); // podnožje se bira na ogradi
+  await expect(page.getByTestId('cat-corner')).toHaveCount(0); // ugao se pravi na stubu, ne kao poseban element
   await page.getByTestId('cat-post-concrete-add').click();
-  await page.getByTestId('cat-corner-add').click();
-  await expect(page.getByTestId('count-items')).toHaveText('2');
+  await expect(page.getByTestId('count-items')).toHaveText('1');
   await page.getByTestId('catalog-show-all').click();
   await expect(page.getByTestId('catalog-all')).toHaveCount(0);
 });
@@ -725,30 +706,36 @@ test('materijali: izvoz u PDF, meni se zatvara klikom van njega, izvezeni PDF se
   await expect(page.getByTestId('import-apply')).toBeDisabled();
 });
 
-test('materijali: klik na materijal sa crtežom otvara crtež ispod reda; ostali redovi nemaju crtež', async ({ page }) => {
+test('materijali: klik na bilo koji materijal otvara crtež i karakteristike ispod reda', async ({ page }) => {
   await page.goto('/materijali');
+  // cenovnik je prazan pa se dodaju dva materijala: jedan sa detaljnim crtežom dobavljača (šifra iz kataloga) i jedan običan
+  const add = async (sku: string, name: string) => {
+    await page.getByTestId('btn-add-material').click();
+    await page.getByTestId('material-sku').fill(sku);
+    await page.getByTestId('material-name').fill(name);
+    await page.getByTestId('material-save').click();
+  };
+  await add('KV000007', 'Pravougaona cev 80×20×1 mm, sirovo');
+  await add('TEST-ČEP', 'Čep tarabice pun 80×20 mm');
   await expect(page.getByTestId('profile-drawing')).toHaveCount(0);
   const withDrawing = page.locator('[data-testid="material-row"][data-has-drawing="true"]');
-  await expect(withDrawing).toHaveCount(5); // KV000007, KV000016, KZ000003, KZ000004, KU000002
-  const row = (sku: string) => withDrawing.filter({ hasText: sku });
-  await row('KV000007').click();
+  await expect(withDrawing).toHaveCount(1);
+  await withDrawing.first().click();
   await expect(page.getByTestId('profile-drawing')).toBeVisible();
-  await expect(page.getByTestId('material-drawing-row')).toContainText('KV000007');
   await expect(page.getByTestId('material-drawing-row')).toContainText('A — širina');
   // klik na polje sa cenom ne otvara/zatvara crtež
-  await row('KV000007').getByLabel(/^Cena:/).click();
+  await withDrawing.first().getByLabel(/^Cena:/).click();
   await expect(page.getByTestId('profile-drawing')).toBeVisible();
-  // drugi materijal zamenjuje prvi, ponovni klik zatvara
-  await row('KU000002').click();
-  await expect(page.getByTestId('material-drawing-row')).toContainText('KU000002');
-  await expect(page.getByTestId('profile-drawing')).toHaveCount(1);
-  await row('KZ000003').click();
-  await expect(page.getByTestId('material-drawing-row')).toContainText('KZ000003');
-  await row('KZ000003').click();
+  // drugi materijal zamenjuje prvi: crtež oblika iz crtanja modela sa karakteristikama
+  const plain = page.locator('[data-testid="material-row"]:not([data-has-drawing="true"])').first();
+  await plain.click();
   await expect(page.getByTestId('profile-drawing')).toHaveCount(0);
-  // materijal bez crteža: klik ne radi ništa
-  await page.getByTestId('material-row').first().click();
-  await expect(page.getByTestId('profile-drawing')).toHaveCount(0);
+  await expect(page.getByTestId('shape-drawing')).toBeVisible();
+  await expect(page.getByTestId('material-drawing-row')).toContainText('Grupa');
+  await expect(page.getByTestId('material-drawing-row')).toContainText('komadni deo');
+  // ponovni klik zatvara
+  await plain.click();
+  await expect(page.getByTestId('shape-drawing')).toHaveCount(0);
 });
 
 test('stranica za prijavu: bez podešenog Supabase-a kaže da prijava nije podešena i pušta dalje', async ({ page }) => {
@@ -765,12 +752,18 @@ test('krojna lista: dugme u panelu daje PDF za ogradu, a Proizvodnja prikazuje �
   await page.getByTestId('recent-row').filter({ hasText: 'Petrović' }).getByRole('link').click();
   await expect(page.getByTestId('count-items')).toHaveText('5');
 
-  // dugme je ispod PDF ponude; pregled pa čuvanje kao krojna-lista_*.pdf
+  // dugme je desno od PDF ponude (isti red); pregled pa čuvanje kao krojna-lista_*.pdf
   const pdfBox = (await page.getByTestId('btn-pdf').boundingBox())!;
   const cutBox = (await page.getByTestId('btn-cutlist').boundingBox())!;
-  expect(cutBox.y).toBeGreaterThan(pdfBox.y);
+  expect(cutBox.x).toBeGreaterThan(pdfBox.x);
   await page.getByTestId('btn-cutlist').click();
   await expect(page.getByRole('dialog')).toContainText('Pregled krojne liste');
+  // pre PDF-a se pita ima li ostataka; PDF se ne pravi dok se ne odgovori
+  await expect(page.getByTestId('offcuts-ask')).toBeVisible();
+  await expect(page.getByTestId('pdf-frame')).toHaveCount(0);
+  await expect(page.getByTestId('offcuts-continue')).toBeDisabled();
+  await page.getByTestId('offcuts-none').click();
+  await page.getByTestId('offcuts-continue').click();
   await expect(page.getByTestId('pdf-frame')).toBeVisible({ timeout: 30000 });
   const [dl] = await Promise.all([page.waitForEvent('download'), page.getByTestId('pdf-save').click()]);
   expect(dl.suggestedFilename()).toMatch(/^krojna-lista_.*\.pdf$/);
@@ -804,7 +797,7 @@ test('radni nalog: dugme u panelu i na strani Proizvodnja daje PDF sa elementima
   await expect(page.getByTestId('count-items')).toHaveText('5');
   const cutBox = (await page.getByTestId('btn-cutlist').boundingBox())!;
   const orderBox = (await page.getByTestId('btn-workorder').boundingBox())!;
-  expect(orderBox.y).toBeGreaterThan(cutBox.y);
+  expect(orderBox.x).toBeGreaterThan(cutBox.x);
   await page.getByTestId('btn-workorder').click();
   await expect(page.getByRole('dialog')).toContainText('Pregled radnog naloga');
   await expect(page.getByTestId('pdf-frame')).toBeVisible({ timeout: 30000 });
@@ -842,7 +835,7 @@ test('izbor više polja: Ctrl+klik, Shift+klik i okvir; visina i boja odjednom, 
   // Ctrl+klik na jedno preostalo vraća pojedinačni izbor
   await hits.nth(1).click({ modifiers: ['Control'] });
   await expect(page.getByTestId('panel-multi')).toHaveCount(0);
-  await expect(page.getByTestId('panel-item')).toContainText('Ograda 1');
+  await expect(page.getByTestId('panel-item')).toContainText('Platno 1');
 
   // Shift+klik: niz od prvog do trećeg polja
   await hits.nth(2).click({ modifiers: ['Shift'] });
@@ -891,8 +884,9 @@ test('modeli: kartice navode profile (vertikale i horizontale) po podacima radni
   await expect(page.getByTestId('construction-vertical-h_narrow')).toContainText('U profil 20×20');
   await expect(page.getByTestId('construction-horizontal-h_narrow')).toContainText('Kvadratna cev 30×20');
   await expect(page.getByTestId('construction-horizontal-h_white')).toContainText('20×20');
-  await expect(page.getByTestId('construction-note-louver_dark')).toContainText('Z profil');
-  await expect(page.getByTestId('construction-note-louver_dark')).toContainText('nije potvrđen');
+  await expect(page.getByTestId('construction-horizontal-louver_dark')).toContainText('Z profil');
+  // interne beleške (nepotvrđeni podaci, upućivanja na dokumentaciju) se ne prikazuju korisniku
+  await expect(page.getByTestId('construction-note-louver_dark')).toHaveCount(0);
   // modeli bez podatka radnika nemaju red sa profilima
   await expect(page.getByTestId('construction-vertical-h_wide')).toHaveCount(0);
 });
@@ -926,7 +920,7 @@ test('ograde za terase: bez kapija i kataloga stubova; model se ne menja dok ima
     for (const g of ['pedestrian', 'sliding', 'double', 'single', 'concrete']) await expect(page.getByTestId(`cat-gate-${g}`)).toHaveCount(0);
     await expect(page.getByTestId('catalog-terrace-note')).toBeVisible();
     await page.getByTestId('catalog-show-all').click();
-    await expect(page.getByTestId('cat-corner')).toBeVisible(); // ugaoni spoj ostaje
+    await expect(page.getByTestId('cat-corner')).toHaveCount(0); // ugaoni spoj se ne nudi
     await expect(page.getByTestId('cat-post-aluminium')).toHaveCount(0);
     await expect(page.getByTestId('cat-post-concrete')).toHaveCount(0);
     await page.getByTestId('catalog-show-all').click();
@@ -1036,7 +1030,8 @@ test('stubovi: Ctrl+klik bira više stubova (boja važi za sve izabrane), katalo
   await posts.nth(2).click({ modifiers: ['Control'] });
   await expect(page.getByTestId('panel-post')).toContainText('Izabrano stubova: 2');
   await expect(page.getByTestId('multi-post-outline')).toHaveCount(2);
-  await page.getByTestId('post-color').locator('[data-color="RAL 5011"]').click();
+  await page.getByTestId('post-color-current').click();
+  await page.getByTestId('chart-color').and(page.locator('[data-color="RAL 5011"]')).click();
   await posts.nth(0).click();
   await expect(page.getByTestId('post-color-value')).toHaveText('RAL 5011');
   await posts.nth(2).click();
@@ -1320,4 +1315,97 @@ test('tarabica: luk gornje ivice menja visine tarabica u 2D i 3D, i važi za kap
   await expect(page.getByTestId('three-canvas')).toBeVisible();
   await page.waitForTimeout(500);
   expect(errors).toEqual([]);
+});
+
+test('boja: pet boja za brzi izbor + kružić trenutne boje; karta boja, izmena brzog izbora i završna obrada', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('hero-new').first().click();
+  await page.getByTestId('cat-fence-add').click();
+  await page.locator('[data-hit="item"]').first().click();
+  const field = page.getByTestId('field-color');
+  // pet boja za brzi izbor (ne jedanaest) i poseban kružić trenutne boje
+  await expect(field.locator('[data-color]')).toHaveCount(5);
+  await expect(page.getByTestId('field-color-current')).toBeVisible();
+  // karta: sve RAL boje sa slike
+  await page.getByTestId('field-color-current').click();
+  await expect(page.getByTestId('chart-grid').getByTestId('chart-color')).toHaveCount(185);
+  // izmena brzog izbora: mesto 1 postaje RAL 8022
+  await page.getByTestId('chart-mode-edit').click();
+  await page.getByTestId('chart-color').and(page.locator('[data-color="RAL 8022"]')).click();
+  await expect(page.getByTestId('chart-fav').first()).toHaveAttribute('data-color', 'RAL 8022');
+  // završna obrada pa izbor boje: RAL 8022 mat
+  await page.getByTestId('chart-mode-pick').click();
+  await page.getByTestId('chart-finish-mat').click();
+  await page.getByTestId('chart-color').and(page.locator('[data-color="RAL 8022"]')).click();
+  await expect(page.getByTestId('chart-grid')).toHaveCount(0);
+  await expect(page.getByTestId('field-color-value')).toHaveText('RAL 8022 mat');
+  await expect(field.locator('[data-color]').first()).toHaveAttribute('data-color', 'RAL 8022');
+  // završna obrada se menja i u samom polju
+  await page.getByTestId('field-color-finish').getByRole('radio', { name: 'Struktura' }).click();
+  await expect(page.getByTestId('field-color-value')).toHaveText('RAL 8022 struktura');
+});
+
+test('kote osa–osa stubova ispod crteža za svako platno; nazivi su „Platno N", kapije zadržavaju svoje', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('hero-new').first().click();
+  for (let i = 0; i < 3; i++) await page.getByTestId('cat-fence-add').click();
+  await showDims(page);
+  await expect(page.getByTestId('dim-axis')).toHaveCount(3);
+  // osa–osa je spoljna mera platna: svetla širina plus polovine stubova, pa je veća od mere platna
+  const axis = ((await page.getByTestId('dim-axis').first().textContent()) ?? '').replace(/\s+/g, ' ');
+  expect(axis).toMatch(/^\d+ mm ?osa–osa$/);
+  await page.locator('[data-hit="item"]').nth(1).click();
+  await expect(page.getByTestId('panel-item')).toContainText('Platno 2');
+});
+
+test('betonski stub nema izbor boje; stub sa podnožjem daje ogradi podnožje, a „Bez podnožja" ga uklanja', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('hero-new').first().click();
+  for (let i = 0; i < 2; i++) await page.getByTestId('cat-fence-add').click();
+  await page.getByTestId('catalog-show-all').click();
+  await page.getByTestId('cat-post-concrete_plinth-add').click();
+  // ograda uz stubove sa podnožjem piše „Sa podnožjem"
+  await page.locator('[data-hit="item"]').first().click();
+  await expect(page.getByTestId('field-item-plinth-on')).toHaveAttribute('aria-checked', 'true');
+  // betonski stub: nema izbora boje (aluminijumski stub nije postavljen)
+  await page.locator('[data-hit="post"]').first().click();
+  await expect(page.getByTestId('panel-post')).toBeVisible();
+  await expect(page.getByTestId('post-color')).toHaveCount(0);
+  // bez podnožja: ograda ga gubi, a stubovi uz nju postaju obični betonski
+  await page.locator('[data-hit="item"]').first().click();
+  await page.getByTestId('field-item-plinth-on').click();
+  await expect(page.getByTestId('field-item-plinth-on')).toHaveAttribute('aria-checked', 'false');
+  await expect(page.getByTestId('field-item-plinth')).toHaveCount(0);
+});
+
+test('leve kote visine: jedna za platna, jedna za stubove i jedna za kapije; klik menja visinu svih te vrste', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('hero-new').first().click();
+  for (let i = 0; i < 2; i++) await page.getByTestId('cat-fence-add').click();
+  await page.getByTestId('cat-gate-sliding-add').click();
+  await showDims(page);
+  await expect(page.locator('[data-dim="height-fence"]')).toHaveCount(1);
+  await expect(page.locator('[data-dim="height-post"]')).toHaveCount(1);
+  await expect(page.locator('[data-dim="height-gate"]')).toHaveCount(1);
+  // visina svih platna
+  await page.locator('[data-dim="height-fence"]').click({ force: true });
+  await expect(page.getByRole('dialog')).toContainText('Visina svih platna');
+  await page.getByTestId('dim-input').fill('1300');
+  await page.getByTestId('dim-apply').click();
+  await expect(page.getByTestId('dim-height-fence')).toBeAttached();
+  await expect(page.locator('svg text', { hasText: /Ograda H: 1\.300 mm/ })).toHaveCount(1);
+  // kapije se ne menjaju dok se ne klikne njihova kota
+  await expect(page.locator('svg text', { hasText: /Kapija H/ })).toHaveCount(1);
+  await page.locator('[data-dim="height-gate"]').click({ force: true });
+  await expect(page.getByRole('dialog')).toContainText('Visina svih kapija');
+  await page.getByTestId('dim-input').fill('1900');
+  await page.getByTestId('dim-apply').click();
+  await expect(page.locator('svg text', { hasText: /Kapija H: 1\.900 mm/ })).toHaveCount(1);
+  await expect(page.locator('svg text', { hasText: /Ograda H: 1\.300 mm/ })).toHaveCount(1);
+  // visina svih stubova
+  await page.locator('[data-dim="height-post"]').click({ force: true });
+  await expect(page.getByRole('dialog')).toContainText('Visina svih stubova');
+  await page.getByTestId('dim-input').fill('2100');
+  await page.getByTestId('dim-apply').click();
+  await expect(page.locator('svg text', { hasText: /Stubovi H: 2\.100 mm/ })).toHaveCount(1);
 });

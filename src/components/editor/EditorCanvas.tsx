@@ -307,7 +307,7 @@ export function EditorCanvas({ project, svgRef, areaRef, drag, onBeginDrag, regi
     <div
       ref={areaRef}
       data-testid="canvas-area"
-      className={`relative overflow-auto scroll-thin ${view !== 'top' && hasLightFence(project.items) ? 'bg-[#b3bac3]' : 'bg-white'} ${view === 'top' ? 'h-[clamp(420px,68vh,760px)]' : paneHeight} ${view === 'top' ? 'cursor-grab active:cursor-grabbing' : 'cursor-crosshair'}`}
+      className={`relative overflow-auto scroll-thin ${view !== 'top' && hasLightFence(project.items) ? 'bg-[#b3bac3]' : 'bg-white'} ${view === 'top' ? 'h-[clamp(420px,68vh,760px)]' : paneHeight} ${view === 'top' ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'}`}
       onPointerDownCapture={(e) => { downOnHit.current = Boolean((e.target as Element).closest('[data-hit]')); }}
       onPointerDown={onPointerDown}
       onClick={onClickBackground}
@@ -372,9 +372,10 @@ export function EditorCanvas({ project, svgRef, areaRef, drag, onBeginDrag, regi
                 aria-selected={active}
                 data-testid={`tab-${t.id}`}
                 onClick={() => setView(t.id)}
-                className={`${t.desktopOnly ? 'hidden lg:flex' : 'flex'} items-center gap-2 px-3.5 py-2.5 text-[14px] font-medium border-b-2 whitespace-nowrap ${active ? 'border-primary text-primary' : 'border-transparent text-slate-600 hover:text-ink'}`}
+                className={`${t.desktopOnly ? 'hidden lg:flex' : 'flex'} items-center gap-2 px-3 2xl:px-3.5 py-2.5 text-[14px] font-medium border-b-2 whitespace-nowrap ${active ? 'border-primary text-primary' : 'border-transparent text-slate-600 hover:text-ink'}`}
               >
-                <t.icon size={17} />{t.label}
+                {/* ikonice samo na širokom ekranu: na 1440 px svih sedam kartica staje u red bez skrolovanja */}
+                <t.icon size={17} className="hidden 2xl:block" />{t.label}
               </button>
             );
           })}

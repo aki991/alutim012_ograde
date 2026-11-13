@@ -58,4 +58,16 @@ describe('radni nalog', () => {
     expect(svg).toContain('>P2<');
     expect(svg).toContain('S4'); // oznaka poslednjeg stuba
   });
+
+  it('boja u radnom nalogu: RAL sa završnom obradom (mat / sjaj / struktura), bez obrade samo RAL', () => {
+    const p = project();
+    const withFinish = { ...p, items: p.items.map((it, i) => (it.kind === 'opening' ? it : { ...it, color: 'RAL 8022', finish: (['mat', 'sjaj', 'struktura'] as const)[i] })) };
+    const wo = buildWorkOrder(withFinish, undefined, SEED_MATERIALS, OPTS);
+    expect(wo.elements.map((e) => e.color)).toEqual(['RAL 8022 mat', 'RAL 8022 sjaj', 'RAL 8022 struktura']);
+    expect(wo.elements[0].facts.find((f) => f.label === 'Boja')?.value).toBe('RAL 8022 mat');
+    const plain = buildWorkOrder({ ...p, items: p.items.map((it) => (it.kind === 'opening' ? it : { ...it, color: 'RAL 7016' })) }, undefined, SEED_MATERIALS, OPTS);
+    expect(plain.elements[0].color).toBe('RAL 7016');
+    const postWith = buildWorkOrder({ ...p, posts: p.posts.map((x) => ({ ...x, color: 'RAL 8022', finish: 'mat' as const })) }, undefined, SEED_MATERIALS, OPTS);
+    expect(postWith.posts[0].color).toBe('RAL 8022 mat');
+  });
 });

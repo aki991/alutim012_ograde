@@ -4,6 +4,7 @@ import { computeInfill, summarizeInfill } from '../geometry/infill';
 import { CALC_RULES } from '../pricing/rules';
 import { tarabicaCapHeight } from './tarabica';
 import { FENCE_MODELS } from './catalog';
+import { FALLBACK_MATERIAL_NAMES } from '../../data/materialNames';
 import type { BomGroup } from '../pricing/calc';
 import type { FenceModelId, FenceParams, Material } from './types';
 
@@ -318,4 +319,9 @@ export const specFor = (modelId: FenceModelId, specs?: ModelSpecs): SpecPart[] =
 /** Da li model ima izmenjenu specifikaciju (tada se zamenjuje i detaljna sastavnica modela 04 i 08). */
 export const hasCustomSpec = (modelId: FenceModelId, specs?: ModelSpecs): boolean => Boolean(specs?.[modelId]);
 
-export const materialName = (materials: Material[], id: string): string => materials.find((m) => m.id === id)?.name ?? id;
+/** Naziv materijala iz cenovnika; ako ga tamo nema, čitljiv naziv ugrađenog materijala, pa tek onda sam ID. */
+export const materialName = (materials: Material[], id: string): string => materials.find((m) => m.id === id)?.name ?? FALLBACK_MATERIAL_NAMES[id] ?? id;
+
+/** Obrnuto od `materialName`: ID materijala za naziv profila iz krojne liste (cenovnik, pa ugrađeni nazivi). */
+export const materialIdForName = (materials: Material[], name: string): string =>
+  materials.find((m) => m.name === name)?.id ?? Object.keys(FALLBACK_MATERIAL_NAMES).find((k) => FALLBACK_MATERIAL_NAMES[k] === name) ?? name;

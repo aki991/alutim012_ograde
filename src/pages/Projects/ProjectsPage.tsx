@@ -1,4 +1,4 @@
-import { Download, FileUp, Plus, Search } from 'lucide-react';
+import { Download, FileUp, Search } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { SelectField, TextField } from '../../components/forms/Fields';
@@ -17,7 +17,7 @@ export default function ProjectsPage() {
   const [params, setParams] = useSearchParams();
   const projects = useAppStore((s) => s.projects);
   const customers = useAppStore((s) => s.customers);
-  const { newProject, copyProject, removeProject, patchProject, importProject } = useAppStore.getState();
+  const { copyProject, removeProject, patchProject, importProject } = useAppStore.getState();
   const q = params.get('q') ?? '';
   const [status, setStatus] = useState<ProjectStatus | 'all'>('all');
   const [editing, setEditing] = useState<Project | null>(null);
@@ -49,11 +49,10 @@ export default function ProjectsPage() {
 
   return (
     <Page>
-      <PageHeader title="Projekti" subtitle={`${projects.length} projekata sačuvanih lokalno u ovom pregledaču`} actions={
+      <PageHeader title="Projekti" subtitle={`Ukupno projekata: ${projects.length}`} actions={
         <>
           <input ref={fileRef} type="file" accept="application/json,.json" className="hidden" data-testid="import-file" onChange={(e) => void onImport(e.target.files?.[0])} />
           <button className="btn" onClick={() => fileRef.current?.click()} data-testid="btn-import"><FileUp size={17} />Uvezi JSON</button>
-          <button className="btn btn-primary" data-testid="btn-new-project" onClick={() => navigate(`/editor/${newProject()}`)}><Plus size={17} />Novi projekat</button>
         </>
       } />
       {importError && <div role="alert" className="mb-3 rounded-lg bg-[#fef3f2] text-[#b42318] px-4 py-2.5 text-sm">{importError}</div>}

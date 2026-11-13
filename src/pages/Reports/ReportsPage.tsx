@@ -32,7 +32,7 @@ export default function ReportsPage() {
 
   return (
     <Page>
-      <PageHeader title="Izveštaji" subtitle="Pregled izveden iz lokalno sačuvanih (demonstracionih) projekata." />
+      <PageHeader title="Izveštaji" subtitle="Vrednost, dužina i status svih projekata." />
       <div className="grid gap-4 sm:grid-cols-3 mb-5">
         {[['Ukupna vrednost projekata', money(data.totalValue)], ['Ukupna dužina ograda', `${fmtNum(data.totalLen, 1)} m`], ['Broj projekata', String(projects.length)]].map(([l, v]) => (
           <div key={l} className="card p-5"><div className="text-sm text-muted">{l}</div><div className="text-2xl font-bold mt-1 tabular-nums">{v}</div></div>

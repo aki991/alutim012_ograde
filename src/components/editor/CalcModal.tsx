@@ -32,9 +32,6 @@ export function CalcModal({ project, onClose }: { project: Project; onClose: () 
         </>
       }
     >
-      <div role="note" className="text-[12.5px] bg-[#fffaeb] text-[#93370d] border border-[#fedf89] rounded-lg px-3 py-2 mb-3">
-        Demonstracioni obračun. Cene, otpad i pravila su ilustrativni — nisu stvarni podaci ni normativi firme ALU TIM 012.
-      </div>
       {empty && <div className="rounded-lg bg-slate-50 border border-line px-4 py-6 text-center text-sm text-muted mb-4" data-testid="calc-empty">Projekat je prazan — nema materijala ni cene. Dodajte elemente da biste dobili obračun.</div>}
       <div className="grid lg:grid-cols-[minmax(0,1.5fr)_minmax(320px,1fr)] gap-6">
         <div className="min-w-0">

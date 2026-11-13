@@ -20,7 +20,7 @@ const qty = (bom: ReturnType<typeof buildBom>, materialId: string) => bom.find((
 describe('model tarabica: raspored polja', () => {
   it('podrazumevane mere: tarabica 80, razmak 20, prepust 30', () => {
     expect(FENCE_MODELS.picket_wide.defaults).toEqual({ barSizeMm: 80, gapMm: 20, frameMm: 30, liftMm: 40 });
-    expect(FENCE_MODELS.picket_wide.defaultColor).toBe('BELA');
+    expect(FENCE_MODELS.picket_wide.defaultColor).toBe('RAL 9003');
   });
 
   it('početna veličina polja je 1000 × 1000 mm, stubovi su visine ograde; svetli otvor sa n tarabica', () => {
@@ -70,12 +70,12 @@ describe('model tarabica: raspored polja', () => {
   });
 
   it('bela boja je čista bela, a svetle boje daju sivu pozadinu u editoru', () => {
-    expect(FENCE_MODELS.picket_wide.defaultColor).toBe('BELA');
-    expect(isLightColor('BELA')).toBe(true);
+    expect(FENCE_MODELS.picket_wide.defaultColor).toBe('RAL 9003');
+    expect(isLightColor('RAL 9003')).toBe(true);
     expect(isLightColor('RAL 9016')).toBe(true);
     expect(isLightColor('RAL 7016')).toBe(false);
     expect(hasLightFence([{ kind: 'fence', color: 'RAL 7016' }, { kind: 'opening' }])).toBe(false);
-    expect(hasLightFence([{ kind: 'fence', color: 'RAL 7016' }, { kind: 'gate', color: 'BELA' }])).toBe(true);
+    expect(hasLightFence([{ kind: 'fence', color: 'RAL 7016' }, { kind: 'gate', color: 'RAL 9003' }])).toBe(true);
   });
 
   it('krajnje tarabice su tačno za prepust od ivice polja, a razmak se ravnomerno koriguje', () => {

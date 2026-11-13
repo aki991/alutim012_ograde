@@ -13,14 +13,13 @@ import { Modal } from '../ui/Modal';
 
 interface Kind { id: string; label: string; hint: string; thumb: ThumbKind; concrete?: true; gate?: GateType; fence?: true; opening?: true; corner?: true }
 const KINDS: Kind[] = [
-  { id: 'fence', label: 'Ograda', hint: 'Polje ograde izabranog modela', thumb: 'fence', fence: true },
+  { id: 'fence', label: 'Platno', hint: 'Platno ograde izabranog modela', thumb: 'fence', fence: true },
   { id: 'pedestrian', label: 'Pešačka kapija', hint: 'Kapija za prolaz ljudi', thumb: 'pedestrian', gate: 'pedestrian' },
   { id: 'single', label: 'Jednokrilna kapija', hint: 'Jedno krilo', thumb: 'single', gate: 'single' },
   { id: 'double', label: 'Dvokrilna kapija', hint: 'Dva krila', thumb: 'double', gate: 'double' },
   { id: 'sliding', label: 'Klizna kapija', hint: 'Kapija na klizanje', thumb: 'sliding', gate: 'sliding' },
   { id: 'concrete', label: 'Kapija sa betonskim stubom', hint: 'Jednokrilna kapija između betonskih stubova', thumb: 'concrete', gate: 'single', concrete: true },
   { id: 'opening', label: 'Prazan otvor', hint: 'Slobodan prostor bez ispune', thumb: 'opening', opening: true },
-  { id: 'corner', label: 'Ugaoni spoj', hint: 'Savijanje prečki i rukohvata između dva stuba', thumb: 'corner', corner: true },
 ];
 
 const specOf = (k: Kind, m: FenceModelId): NewItemSpec => (k.gate ? { kind: 'gate', gateType: k.gate, modelId: m } : k.corner ? { kind: 'corner' } : k.opening ? { kind: 'opening' } : { kind: 'fence', modelId: m });

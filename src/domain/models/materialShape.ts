@@ -252,6 +252,6 @@ export function sectionEdgeLines(section: Section, deg: number): number[] {
 export function materialOwnColor(name: string): string | null {
   const ral = /ral\s*(\d{4})/i.exec(name);
   if (ral) { const c = RAL_COLORS.find((x) => x.key === `RAL ${ral[1]}`); if (c) return c.hex; }
-  if (/inox|nerđaj|nerdjaj/i.test(name)) return RAL_COLORS.find((x) => x.key === 'INOX')!.hex;
+  if (/inox|nerđaj|nerdjaj/i.test(name)) return '#B7BEC6';
   return null;
 }

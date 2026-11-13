@@ -90,7 +90,7 @@ export default function DashboardPage() {
           <h2 className="text-xl font-bold">Popularni modeli ograda</h2>
           <Link to="/modeli" className="text-sm font-medium text-primary inline-flex items-center gap-1">Pogledaj sve modele <ArrowRight size={14} /></Link>
         </div>
-        <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
+        <div className={`grid gap-3 grid-cols-2 md:grid-cols-3 ${POPULAR.length === 5 ? 'xl:grid-cols-5' : 'xl:grid-cols-6'}`}>
           {POPULAR.map((m) => (
             <button key={m.name} data-testid="popular-model" className="text-left group" onClick={() => startNew({ modelId: m.modelId, name: m.name, startGate: m.gate })}>
               <div className="relative aspect-[4/2.7] rounded-xl overflow-hidden border border-line bg-slate-100"><div className="absolute inset-0"><ModelThumb photo={m.photo} modelId={m.modelId} className="group-hover:scale-[1.03] transition-transform duration-300" /></div></div>
@@ -144,9 +144,10 @@ export default function DashboardPage() {
               { icon: Wallet, tint: 'bg-green-50 text-green-600', v: fmtMoney(stats.offersValue, settings.currency, settings.currencyRateToEur), l: 'Vrednost ponuda', id: 'stat-offers' },
               { icon: CheckCircle2, tint: 'bg-blue-50 text-blue-600', v: String(stats.done), l: 'Završenih projekata', id: 'stat-done' },
             ].map((s) => (
-              <div key={s.l} className="border border-line rounded-xl p-4 flex items-center gap-3 min-w-0">
-                <span className={`w-12 h-12 rounded-xl grid place-items-center shrink-0 ${s.tint}`}><s.icon size={24} strokeWidth={1.7} /></span>
-                <div className="min-w-0"><div className="text-[22px] font-bold leading-tight truncate" data-testid={s.id}>{s.v}</div><div className="text-[13px] text-muted">{s.l}</div></div>
+              <div key={s.l} className="border border-line rounded-xl p-4 flex flex-col items-start gap-2 min-w-0">
+                <span className={`w-10 h-10 rounded-xl grid place-items-center shrink-0 ${s.tint}`}><s.icon size={21} strokeWidth={1.7} /></span>
+                {/* vrednost u jednom redu, bez sečenja (npr. 216.191 RSD): kartica je uspravna pa vrednost ima celu širinu */}
+                <div className="min-w-0 w-full"><div className="text-[20px] font-bold leading-tight whitespace-nowrap tabular-nums" data-testid={s.id}>{s.v}</div><div className="text-[13px] text-muted">{s.l}</div></div>
               </div>
             ))}
           </div>

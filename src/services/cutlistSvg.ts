@@ -17,6 +17,8 @@ export const BAR_VIEW_W = 1000;
 export const BAR_VIEW_H = 52;
 const TRACK_Y = 6;
 const TRACK_H = 34;
+const MITER_SLANT = TRACK_H; // pravi ugao 45°: kosina po širini jednaka visini (viewBox se ne izobličava)
+
 
 export function barSvg(bar: CutBar, stockMm: number, kerfMm: number, colors: Map<string, string>, uid: string): string {
   const barMm = bar.stockMm ?? stockMm;
@@ -33,17 +35,31 @@ export function barSvg(bar: CutBar, stockMm: number, kerfMm: number, colors: Map
     const fill = colors.get(p.pos) ?? '#475569';
     const gap = Math.max(1.5, kerfMm * scale);
     const rw = Math.max(1, w - 0);
-    const label = p.miter ? `${p.lengthMm} (45°)` : String(p.lengthMm);
+    const label = String(p.lengthMm);
     const fs = 15;
     const textW = label.length * fs * 0.6;
-    parts.push(`<rect x="${x.toFixed(2)}" y="${TRACK_Y}" width="${rw.toFixed(2)}" height="${TRACK_H}" rx="3" fill="${fill}"/>`);
+    if (p.miter) {
+      // rez 45° na oba kraja: komad je trapez, duža (spoljna) mera je gore
+      const sl = Math.min(MITER_SLANT, rw / 2);
+      const pts = [[x, TRACK_Y], [x + rw, TRACK_Y], [x + rw - sl, TRACK_Y + TRACK_H], [x + sl, TRACK_Y + TRACK_H]].map(([a, b]) => `${a.toFixed(2)},${b}`).join(' ');
+      parts.push(`<polygon points="${pts}" fill="${fill}" stroke="${fill}" stroke-width="1" stroke-linejoin="round"/>`);
+    } else parts.push(`<rect x="${x.toFixed(2)}" y="${TRACK_Y}" width="${rw.toFixed(2)}" height="${TRACK_H}" rx="3" fill="${fill}"/>`);
     const cx = x + rw / 2;
     const cy = TRACK_Y + TRACK_H / 2;
-    if (rw >= textW + 8) parts.push(`<text x="${cx.toFixed(2)}" y="${(cy + 5.5).toFixed(2)}" text-anchor="middle" font-family="${FONT}" font-size="${fs}" font-weight="700" fill="#ffffff">${esc(label)}</text>`);
+    const textRoom = p.miter ? rw - Math.min(MITER_SLANT, rw / 2) : rw; // kod trapeza tekst je na polovini visine
+    if (textRoom >= textW + 8) parts.push(`<text x="${cx.toFixed(2)}" y="${(cy + 5.5).toFixed(2)}" text-anchor="middle" font-family="${FONT}" font-size="${fs}" font-weight="700" fill="#ffffff">${esc(label)}</text>`);
     else if (rw >= 13) parts.push(`<text x="0" y="0" text-anchor="middle" font-family="${FONT}" font-size="11" font-weight="700" fill="#ffffff" transform="translate(${(cx + 4).toFixed(2)} ${cy.toFixed(2)}) rotate(-90)">${esc(label)}</text>`);
     // oznaka pozicije ispod komada
     const tag = /^\d/.test(p.pos) ? `P${p.pos}` : p.pos;
     if (rw >= tag.length * 6.2 + 4) parts.push(`<text x="${cx.toFixed(2)}" y="${BAR_VIEW_H - 3}" text-anchor="middle" font-family="${FONT}" font-size="10" font-weight="600" fill="${fill}">${esc(tag)}</text>`);
+    // oznake ugla (45) ispod oba kraja, uz donje uglove trapeza
+    if (p.miter) {
+      const sl = Math.min(MITER_SLANT, rw / 2);
+      if (rw - 2 * sl >= tag.length * 6.2 + 34) {
+        parts.push(`<text x="${(x + sl - 2).toFixed(2)}" y="${BAR_VIEW_H - 3}" text-anchor="end" font-family="${FONT}" font-size="10" font-weight="600" fill="#64748b">45</text>`);
+        parts.push(`<text x="${(x + rw - sl + 2).toFixed(2)}" y="${BAR_VIEW_H - 3}" text-anchor="start" font-family="${FONT}" font-size="10" font-weight="600" fill="#64748b">45</text>`);
+      }
+    }
     x += rw + gap;
   }
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${BAR_VIEW_W} ${BAR_VIEW_H}" width="${BAR_VIEW_W}" height="${BAR_VIEW_H}">${parts.join('')}</svg>`;

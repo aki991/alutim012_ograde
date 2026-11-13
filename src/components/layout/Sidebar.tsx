@@ -61,7 +61,8 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         <div className="my-5 mx-3 border-t border-white/10" />
         <div className="flex flex-col gap-1">{SECONDARY.map(renderItem)}</div>
       </nav>
-      <div className="relative flex-1 min-h-[140px] mt-4 overflow-hidden" aria-hidden="true" data-testid="sidebar-photo">
+      {/* ukrasna slika samo kad ima mesta: na nižem ekranu bi se sekla na dnu menija */}
+      <div className="relative flex-1 min-h-[160px] mt-4 overflow-hidden [@media(max-height:960px)]:hidden" aria-hidden="true" data-testid="sidebar-photo">
         <img src={PHOTOS['kapija-lamele'].full} alt="" className="absolute inset-0 w-full h-full object-cover object-[35%_70%]" />
         <div className="absolute inset-0 bg-gradient-to-b from-sidebar via-sidebar/55 to-sidebar/10" />
         <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/70 to-transparent" />

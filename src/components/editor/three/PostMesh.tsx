@@ -1,5 +1,5 @@
 import { mmToScene as s } from '../../../domain/geometry/gates';
-import { colorHex, RAIL_POST_MM } from '../../../domain/models/catalog';
+import { colorHex, INOX_COLOR, normalizeColorKey, RAIL_POST_MM } from '../../../domain/models/catalog';
 import { capTiers } from '../../../domain/models/tarabica';
 import type { Post, PostCap } from '../../../domain/models/types';
 import { boxGeometry, concreteMaterial, darkMaterial, metalMaterial, steelMaterial } from './materials';
@@ -83,7 +83,7 @@ export function PostMesh({ post, rails, caps, onPlinth }: { post: Post; rails?: 
           <coneGeometry args={[w * 0.78, w * 0.6, 4]} />
         </mesh>
       ) : (
-        <mesh geometry={boxGeometry} material={masonry ? concreteMaterial : post.color === 'INOX' ? steelMaterial : body} scale={[w + 0.03, capH, w + 0.03]} position={[0, h + capH / 2, 0]} castShadow />
+        <mesh geometry={boxGeometry} material={masonry ? concreteMaterial : normalizeColorKey(post.color) === INOX_COLOR ? steelMaterial : body} scale={[w + 0.03, capH, w + 0.03]} position={[0, h + capH / 2, 0]} castShadow />
       )}
       {post.type === 'gate' && <mesh geometry={boxGeometry} material={darkMaterial} scale={[w + 0.004, 0.06, w + 0.004]} position={[0, 0.03, 0]} />}
       {post.mounting === 'concrete_base' && <mesh geometry={boxGeometry} material={darkMaterial} scale={[w + 0.07, 0.012, w + 0.07]} position={[0, 0.006, 0]} receiveShadow />}

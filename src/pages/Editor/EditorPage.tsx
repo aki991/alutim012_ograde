@@ -154,7 +154,7 @@ function EditorWorkspace({ navigateAway }: { navigateAway: () => void }) {
           <TextField label="Napomena" multiline value={project.notes} testId="edit-notes" onChange={(v) => useAppStore.getState().mutate((p) => ({ ...p, notes: v, updatedAt: new Date().toISOString() }), 'notes')} />
         </Modal>
       )}
-      <div className={`grid gap-4 xl:grid-cols-[minmax(0,1fr)_290px] max-w-[1600px] mx-auto ${propsOpen ? 'sm:pr-[406px] xl:pr-0' : ''}`} data-props-open={propsOpen}>
+      <div className={`grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px] max-w-[1600px] mx-auto ${propsOpen ? 'sm:pr-[406px] xl:pr-0' : ''}`} data-props-open={propsOpen}>
         <div className="min-w-0 space-y-4">
           {fullscreen && <button className="btn btn-sm" onClick={toggleFullscreen}><X size={14} />Zatvori pun ekran</button>}
           <EditorCanvas project={project} svgRef={svgRef} areaRef={areaRef} drag={drag} onBeginDrag={begin} registerTarget={registerTarget} fullscreen={fullscreen} onToggleFullscreen={toggleFullscreen} />

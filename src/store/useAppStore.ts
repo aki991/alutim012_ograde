@@ -1,9 +1,10 @@
 import { create } from 'zustand';
 import { isBuiltinMaterial } from '../data/materials';
+import { missingModelMaterials } from '../data/modelMaterials';
 import { createSeedData } from '../data/seed';
 import { loadAll, saveAll, wipeAll } from '../db';
 import {
-  changeColor, changeModelAll, duplicateItem, indexOfItem, insertItem, moveItemBy, setOuterWidth, withConcretePosts, updateItem, updateItemParams, updatePost,
+  changeColor, changeFinish, changeModelAll, duplicateItem, indexOfItem, insertItem, moveItemBy, setOuterWidth, withConcretePosts, updateItem, updateItemParams, updatePost,
 } from '../domain/geometry/operations';
 import { newItemFor } from '../domain/geometry/newItem';
 import { computeLayout } from '../domain/geometry/layout';
@@ -90,6 +91,7 @@ interface AppState {
   patchPost: (id: string, patch: Partial<Post>, key?: string) => void;
   setItemModel: (id: string, modelId: FenceModelId) => void;
   setItemColor: (id: string, color: string) => void;
+  setItemFinish: (id: string, finish: import('../domain/models/types').Finish | undefined) => void;
 
   upsertCustomer: (c: Customer) => void;
   removeCustomer: (id: string) => void;
@@ -184,10 +186,26 @@ export const useAppStore = create<AppState>((set, get) => {
           set({ ...s, ready: true });
         } else {
           const settings = data.settings ?? seed.settings;
-          const materials = data.materials.filter((m) => !isBuiltinMaterial(m));
+          let materials = data.materials.filter((m) => !isBuiltinMaterial(m));
+          // jednokratno: materijali iz specifikacija modela koji još nisu u cenovniku dobijaju mesto u listi (okvirne cene)
+          const BACKFILL_KEY = 'alutim.modelMaterialsV1';
+          let backfilled = false;
+          try {
+            if (localStorage.getItem(BACKFILL_KEY) !== '1') {
+              materials = [...materials, ...missingModelMaterials(materials)];
+              backfilled = true;
+            }
+          } catch { /* bez localStorage-a: preskače se */ }
           // nacrtani modeli moraju biti u katalogu pre nego što se projekti učitaju
           registerCustomModels(settings.customModels, materials);
           set({ projects: data.projects.map(migrateProject).map(dropUnknownModels), customers: data.customers, materials, settings, ready: true });
+          if (backfilled) {
+            // autosave počinje tek posle init-a, pa se dodati materijali upisuju odmah; oznaka se postavlja tek kad je upis uspeo
+            try {
+              await saveAll({ projects: get().projects, customers: get().customers, materials, settings });
+              localStorage.setItem(BACKFILL_KEY, '1');
+            } catch { /* neuspeh ne sme da sakrije učitane podatke; pokušaće se opet pri sledećem pokretanju */ }
+          }
         }
       } catch (e) {
         // IndexedDB nedostupan (npr. privatni režim): radimo u memoriji i jasno prijavljujemo grešku
@@ -385,6 +403,7 @@ export const useAppStore = create<AppState>((set, get) => {
       }
       get().mutate((p) => changeModelAll(p, modelId)); set((s) => ({ editor: { ...s.editor, activeModelId: modelId } })); },
     setItemColor(id, color) { get().mutate((p) => changeColor(p, id, color)); },
+    setItemFinish(id, finish) { get().mutate((p) => changeFinish(p, id, finish)); },
 
     upsertCustomer(c) {
       set((s) => ({ customers: s.customers.some((x) => x.id === c.id) ? s.customers.map((x) => (x.id === c.id ? c : x)) : [...s.customers, c] }));

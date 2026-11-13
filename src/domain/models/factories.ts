@@ -199,6 +199,8 @@ export function applyPostRoles(input: Project): Project {
       ? postStyleFor(source.kind === 'fence' ? source.modelId : source.infillModelId, source.color, source.kind === 'gate')
       : null;
     const color = post.custom || !style ? post.color : style.color;
+    // završna obrada (mat / sjaj / struktura) prati susedni element kao i boja
+    const finish = post.custom || !source || source.kind === 'opening' ? post.finish : source.finish;
     const round = post.custom || !style ? post.round : style.round || undefined;
     const adjacentPlinth = (idx: number) => itemPlinthMm(project.items[idx], project.posts[idx], project.posts[idx + 1]);
     // ugaoni spoj nema svoju visinu: stub prati susednu ogradu
@@ -209,7 +211,7 @@ export function applyPostRoles(input: Project): Project {
     const plinthsAround = [i - 1, i].filter((idx) => project.items[idx] && !isSpacer(project.items[idx])).map(adjacentPlinth);
     const level = plinthsAround.length ? Math.max(...plinthsAround) : 0;
     const heightMm = post.heightCustom || adjacent.length === 0 ? post.heightMm : Math.max(...adjacent) - level + extra;
-    return type === post.type && widthMm === post.widthMm && heightMm === post.heightMm && color === post.color && round === post.round ? post : { ...post, type, widthMm, heightMm, color, round };
+    return type === post.type && widthMm === post.widthMm && heightMm === post.heightMm && color === post.color && finish === post.finish && round === post.round ? post : { ...post, type, widthMm, heightMm, color, finish, round };
   });
   // razmaknik je širine rastojanja osa dva stuba između kojih stoji
   const items = project.items.map((it, k) => {

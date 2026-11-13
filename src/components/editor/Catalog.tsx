@@ -153,7 +153,7 @@ export function Catalog({ onBeginDrag }: { onBeginDrag: (source: DragSource, e: 
         </button>
       </div>
       <div className="flex flex-wrap gap-3" data-testid="catalog-items">
-        <CatalogCard testId="cat-fence" title="Ograda" subtitle={def.name} thumb={<ElementThumb kind="fence" model={model} />} onAdd={() => addElement({ kind: 'fence', modelId: model })} onDragStart={startDrag({ kind: 'fence', modelId: model }, `Ograda — ${def.name}`)} />
+        <CatalogCard testId="cat-fence" title="Platno" subtitle={def.name} thumb={<ElementThumb kind="fence" model={model} />} onAdd={() => addElement({ kind: 'fence', modelId: model })} onDragStart={startDrag({ kind: 'fence', modelId: model }, `Platno — ${def.name}`)} />
         {!terrace && GATE_CARDS.map((g) => {
           const spec: NewElementSpec = { kind: 'gate', gateType: g.type, modelId: model, concrete: g.concrete };
           return (
@@ -172,13 +172,10 @@ export function Catalog({ onBeginDrag }: { onBeginDrag: (source: DragSource, e: 
       </div>
       {terrace && <p className="text-[12.5px] text-muted mt-3" data-testid="catalog-terrace-note">Ograda za terasu nema kapije ni zasebne stubove: stubovi su deo ograde.</p>}
       {postsAlways && postsBlock}
-      {showAll && (
+      {/* ugaoni spoj se ne nudi: ugao se pravi na stubu ograde (ugao skretanja stuba) */}
+      {showAll && !postsAlways && (
         <div data-testid="catalog-all">
-          <h3 className="font-semibold text-[14px] mt-4 mb-2">Uglovi</h3>
-          <div className="flex flex-wrap gap-3">
-            <CatalogCard testId="cat-corner" title="Ugaoni spoj" subtitle="Prečke i rukohvat se savijaju između dva stuba" thumb={<CornerThumb grey={isLightColor(def.defaultColor)} />} onAdd={() => addElement({ kind: 'corner' })} onDragStart={startDrag({ kind: 'corner' }, 'Ugaoni spoj')} />
-          </div>
-          {!postsAlways && postsBlock}
+          {postsBlock}
         </div>
       )}
     </section>

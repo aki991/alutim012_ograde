@@ -5,6 +5,8 @@ import { DemoBadge, Page, PageHeader } from '../../components/ui/Common';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
 import type { Material, MaterialCategory, MaterialUnit } from '../../domain/models/types';
 import { ProfileDrawing } from '../../components/models/ProfileDrawing';
+import { MaterialDrawing, materialFacts } from '../../components/models/MaterialDrawing';
+import { materialShape } from '../../domain/models/materialShape';
 import { profileGeometry, profileSpecFor } from '../../domain/models/profileDrawings';
 import { MaterialsImportModal } from '../../components/models/MaterialsImportModal';
 import { materialsToRows, parseCsv } from '../../domain/pricing/materialsIo';
@@ -105,31 +107,33 @@ export default function MaterialsPage() {
             <tbody>
               {list.map((m) => {
                 const spec = profileSpecFor(m);
-                const open = openId === m.id && !!spec;
-                const toggle = (e: React.SyntheticEvent) => { if (spec && !(e.target as Element).closest('input,select,button,a')) setOpenId(open ? null : m.id); };
+                // svaki materijal ima crtež: detaljan sa kotama dobavljača (ako ga ima), inače oblik iz crtanja modela
+                const open = openId === m.id;
+                const toggle = (e: React.SyntheticEvent) => { if (!(e.target as Element).closest('input,select,button,a')) setOpenId(open ? null : m.id); };
                 return (
                 <Fragment key={m.id}>
-                <tr data-testid="material-row" data-has-drawing={spec ? 'true' : undefined} aria-expanded={spec ? open : undefined} tabIndex={spec ? 0 : undefined}
-                  className={spec ? `cursor-pointer hover:bg-slate-50 ${open ? 'bg-primary-50' : ''}` : undefined}
-                  onClick={toggle} onKeyDown={(e) => { if (spec && (e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); toggle(e); } }}>
+                <tr data-testid="material-row" data-has-drawing={spec ? 'true' : undefined} aria-expanded={open} tabIndex={0}
+                  className={`cursor-pointer hover:bg-slate-50 ${open ? 'bg-primary-50' : ''}`}
+                  onClick={toggle} onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); toggle(e); } }}>
                   <td className="td text-xs text-muted">{m.sku}</td>
-                  <td className="td font-medium">{m.name}{spec && <span className="ml-2 inline-flex items-center gap-1 text-[11.5px] font-semibold text-primary align-middle" title="Ima crtež — kliknite na red"><Ruler size={13} />crtež</span>}{m.demo && <span className="ml-2"><DemoBadge>demo</DemoBadge></span>}</td>
+                  <td className="td font-medium">{m.name}<span className="ml-2 inline-flex items-center gap-1 text-[11.5px] font-semibold text-primary align-middle" title="Kliknite na red da vidite crtež i karakteristike"><Ruler size={13} />crtež</span>{m.demo && <span className="ml-2"><DemoBadge>demo</DemoBadge></span>}</td>
                   <td className="td text-slate-600">{CATS[m.category]}</td>
                   <td className="td"><select aria-label={`Jedinica: ${m.name}`} className="input !w-20 !py-1" value={m.unit} onChange={(e) => upsertMaterial({ ...m, unit: e.target.value as MaterialUnit })}>{UNITS.map((u) => <option key={u}>{u}</option>)}</select></td>
                   <td className="td"><input aria-label={`Cena: ${m.name}`} type="number" min={0} className="input !py-1 text-right tabular-nums" value={m.unitPrice} onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v >= 0) upsertMaterial({ ...m, unitPrice: v }); }} /></td>
                   <td className="td"><input aria-label={`Otpad: ${m.name}`} type="number" min={0} max={100} className="input !py-1 text-right tabular-nums" value={m.wastePercent} onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v >= 0 && v <= 100) upsertMaterial({ ...m, wastePercent: v }); }} /></td>
-                  <td className="td text-right whitespace-nowrap"><button className="btn btn-sm" onClick={() => { setIsNew(false); setForm(m); }}>Izmeni</button> <button className="btn btn-sm btn-icon btn-danger" aria-label={`Obriši ${m.name}`} onClick={() => setDel(m)}><Trash2 size={14} /></button></td>
+                  <td className="td text-right whitespace-nowrap"><button className="btn btn-sm" title="Naziv, šifra, kategorija i ostali podaci materijala (cena, jedinica i otpad se menjaju direktno u tabeli)" onClick={() => { setIsNew(false); setForm(m); }}>Naziv i šifra</button> <button className="btn btn-sm btn-icon btn-danger" aria-label={`Obriši ${m.name}`} onClick={() => setDel(m)}><Trash2 size={14} /></button></td>
                 </tr>
-                {open && spec && (
+                {open && (
                   <tr data-testid="material-drawing-row">
                     <td className="td !border-t-0 bg-slate-50" colSpan={7}>
                       <div className="flex flex-wrap gap-6 items-start py-1">
-                        <ProfileDrawing spec={spec} title={m.name} />
+                        {spec ? <ProfileDrawing spec={spec} title={m.name} /> : <MaterialDrawing shape={materialShape(m)} />}
                         <div className="min-w-[220px]">
-                          <div className="font-semibold mb-1">{m.sku}</div>
-                          <div className="text-sm text-slate-600 mb-2">Poprečni presek profila (mere u mm)</div>
-                          <table className="text-sm"><tbody>{profileGeometry(spec).facts.map((f) => <tr key={f.label}><td className="pr-4 py-0.5 text-muted">{f.label}</td><td className="py-0.5 font-medium tabular-nums">{f.value}</td></tr>)}</tbody></table>
-                          {profileGeometry(spec).note && <p className="text-[12px] text-muted mt-2 max-w-[300px]" data-testid="drawing-note">{profileGeometry(spec).note}</p>}
+                          <div className="font-semibold mb-0.5">{m.name}</div>
+                          <div className="font-semibold mb-1 text-muted text-[13px]">{m.sku}</div>
+                          <div className="text-sm text-slate-600 mb-2">{spec ? 'Poprečni presek profila (mere u mm)' : materialShape(m).type === 'linear' ? 'Poprečni presek profila (mere u mm)' : materialShape(m).type === 'sheet' ? 'Ploča' : 'Izgled dela spreda'}</div>
+                          <table className="text-sm"><tbody>{(spec ? profileGeometry(spec).facts : materialFacts(m)).map((f) => <tr key={f.label}><td className="pr-4 py-0.5 text-muted">{f.label}</td><td className="py-0.5 font-medium tabular-nums">{f.value}</td></tr>)}</tbody></table>
+                          {spec && profileGeometry(spec).note && <p className="text-[12px] text-muted mt-2 max-w-[300px]" data-testid="drawing-note">{profileGeometry(spec).note}</p>}
                         </div>
                       </div>
                     </td>

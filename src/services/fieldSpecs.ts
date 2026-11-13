@@ -38,7 +38,7 @@ async function call<T>(token: string, search = ''): Promise<T> {
 /** Spisak pristiglih specifikacija (najnovije prvo). */
 export async function fetchFieldSpecs(token: string): Promise<FieldSpec[]> {
   const body = await call<{ items?: FieldSpec[] }>(token);
-  if (!Array.isArray(body.items)) throw new Error('Specifikacije nisu dostupne (funkcija na serveru nije pokrenuta).');
+  if (!Array.isArray(body.items)) throw new Error('Specifikacije trenutno nisu dostupne. Proverite internet vezu i pokušajte ponovo.');
   return body.items;
 }
 

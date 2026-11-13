@@ -88,7 +88,7 @@ export function CutlistSection({ project, customer, materials }: { project: Proj
                   </div>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-x-5 gap-y-0.5 text-[12.5px] text-slate-600">
-                  {p.summary.map((s) => <span key={`${s.lengthMm}-${s.miter ? 'm' : 's'}`} data-miter={s.miter ? 'true' : undefined}><b className="tabular-nums">{fmtNum(s.lengthMm, 0)}</b>{s.miter ? <b className="text-primary"> (45°)</b> : null} × {s.qty} <span className="text-muted">({s.positions.map(posTag).join(', ')})</span></span>)}
+                  {p.summary.map((s) => <span key={`${s.lengthMm}-${s.miter ? 'm' : 's'}`} data-miter={s.miter ? 'true' : undefined}><b className="tabular-nums">{fmtNum(s.lengthMm, 0)}</b>{s.miter ? <svg viewBox="0 0 30 10" width="30" height="10" className="ml-1 inline-block text-primary" aria-label="rez 45° na oba kraja"><polygon points="0,0 30,0 20,10 10,10" fill="currentColor" /></svg> : null} × {s.qty} <span className="text-muted">({s.positions.map(posTag).join(', ')})</span></span>)}
                 </div>
               </div>
             ))}

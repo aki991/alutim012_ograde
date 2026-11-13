@@ -290,7 +290,7 @@ export function buildCuttingList(project: Project, specs: ModelSpecs | undefined
   if (louver) notes.push(louver.notes[0]);
   const rail = buildRail04Sheet(project, specs);
   if (rail) notes.push(rail.notes[0]);
-  if (profiles.some((p) => p.summary.some((s) => s.miter))) notes.push('Delovi rama (oznaka 45°) se seku pod uglom od 45° na oba kraja (gerung); navedena dužina je spoljna, duža mera komada.');
+  if (profiles.some((p) => p.summary.some((s) => s.miter))) notes.push('Delovi rama (prikazani kao trapez) se seku pod uglom od 45° na oba kraja (gerung); navedena dužina je spoljna, duža mera komada.');
   if (project.offcuts?.length) {
     const fm = (n: number) => String(Math.round(n));
     const usedTxt = profiles.filter((p) => p.offcutBars > 0).map((p) => `${p.profile}: ${p.bars.filter((b) => b.offcut).map((b) => fm(b.stockMm ?? 0)).join(', ')} mm`);

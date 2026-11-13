@@ -133,7 +133,7 @@ export function buildLouver08Sheet(project: Project, specs?: ModelSpecs): Louver
   const fill = FILL_PROFILES[spec.fillProfile];
 
   const bom: LouverRow[] = [
-    { pos: 1, part: 'Bočna vođica U 60 × 28', code: guide.code, qty: `${2 * nP} kom`, note: 'Podatak radnika; presek, zid i šifra za potvrdu' },
+    { pos: 1, part: 'Bočna vođica U 60 × 28', code: guide.code, qty: `${2 * nP} kom`, note: 'Bočne vođice, kanal okrenut ka lamelama' },
     { pos: 2, part: 'Horizontalna ispuna 80 × 20', code: fill.code, qty: `${nFill} kom`, note: 'Kutijasti profil po poruci radnika; debljina zida i tačna šifra nisu potvrđeni' },
     { pos: 3, part: 'Spoj / prihvat kraja letvice u vođici', code: 'Nije određeno', qty: `${2 * nFill} mesta spoja`, note: 'Nije isto što i 2N vijaka; vrsta i sadržaj spoja nisu poznati' },
     { pos: 4, part: 'Pričvršćenje panela na stvarne oslonce', code: spec.support || 'Prema projektu ugradnje', qty: 'prema projektu', note: 'Ne određivati ankere i njihov broj iz fotografije' },

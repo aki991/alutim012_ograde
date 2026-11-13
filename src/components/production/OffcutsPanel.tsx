@@ -2,7 +2,7 @@ import { PackageOpen, Plus, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Material, Offcut, Project, StockItem } from '../../domain/models/types';
-import { MaterialSelect } from '../../pages/Stock/StockPage';
+import { materialIdForName } from '../../domain/models/spec';
 import { fmtNum } from '../../utils/units';
 
 /**
@@ -20,6 +20,13 @@ export function OffcutsPanel({ project, materials, stock, profiles, onChange }: 
   const byId = useMemo(() => new Map(materials.map((m) => [m.id, m])), [materials]);
   const used = useMemo(() => new Set(profiles), [profiles]);
   const inProject = (m: Material) => used.has(m.name);
+  // izbor materijala = tačno profili ove krojne liste; profil koga nema u cenovniku ostaje pod svojim ID-em iz modela
+  // (krojna lista ostatak upari po nazivu, a `materialName` za taj ID daje isti čitljiv naziv)
+  const options = useMemo(() => profiles.map((name) => {
+    const m = materials.find((x) => x.name === name);
+    return { id: m?.id ?? materialIdForName(materials, name), label: m ? `${m.name}${m.sku ? ` (${m.sku})` : ''}` : `${name} (nije u cenovniku)` };
+  }).sort((a, b) => a.label.localeCompare(b.label, 'sr', { numeric: true })), [profiles, materials]);
+  const labelOf = (id: string) => options.find((o) => o.id === id)?.label ?? byId.get(id)?.name;
   const len = Number(form.lengthMm.replace(',', '.')); const qty = Number(form.qty);
   const valid = !!form.materialId && Number.isFinite(len) && len > 0 && len <= 20000 && Number.isInteger(qty) && qty > 0;
 
@@ -59,7 +66,7 @@ export function OffcutsPanel({ project, materials, stock, profiles, onChange }: 
               const m = byId.get(o.materialId);
               return (
                 <tr key={`${o.materialId}-${o.lengthMm}`} className="border-t border-line" data-testid="offcut-row">
-                  <td className="py-1.5 pr-2">{m?.name ?? 'Materijal je obrisan iz cenovnika'}{m && !inProject(m) && <span className="ml-2 text-[11.5px] text-[#b45309] font-semibold">ne koristi se u ovom projektu</span>}</td>
+                  <td className="py-1.5 pr-2">{labelOf(o.materialId) ?? 'Materijal je obrisan iz cenovnika'}{m && !inProject(m) && <span className="ml-2 text-[11.5px] text-[#b45309] font-semibold">ne koristi se u ovom projektu</span>}</td>
                   <td className="py-1.5 pr-2 text-right tabular-nums font-semibold whitespace-nowrap">{fmtNum(o.lengthMm, 0)} mm</td>
                   <td className="py-1.5 w-[90px]"><input aria-label="Komada" type="number" min={1} className="input !py-1 text-right tabular-nums" value={o.qty} onChange={(e) => { const v = Number(e.target.value); if (Number.isInteger(v) && v > 0) onChange(offcuts.map((x, k) => (k === i ? { ...x, qty: v } : x))); }} /></td>
                   <td className="py-1.5 pl-2 w-10 text-right"><button className="btn btn-sm btn-icon btn-danger" aria-label="Ukloni ostatak" onClick={() => onChange(offcuts.filter((_, k) => k !== i))}><Trash2 size={14} /></button></td>
@@ -70,7 +77,10 @@ export function OffcutsPanel({ project, materials, stock, profiles, onChange }: 
         </table>
       )}
       <div className="grid gap-2 md:grid-cols-[minmax(0,2fr)_120px_90px_auto] items-end mt-3">
-        <label className="grid gap-1"><span className="label">Materijal</span><MaterialSelect materials={materials} only={profiles.length ? inProject : undefined} value={form.materialId} testId="offcut-material" onChange={(v) => setForm({ ...form, materialId: v })} /></label>
+        <label className="grid gap-1"><span className="label">Materijal</span><select className="input" data-testid="offcut-material" value={form.materialId} onChange={(e) => setForm({ ...form, materialId: e.target.value })}>
+          <option value="">— izaberite materijal —</option>
+          {options.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+        </select></label>
         <label className="grid gap-1"><span className="label">Dužina (mm)</span><input className="input tabular-nums" inputMode="numeric" data-testid="offcut-length" placeholder="npr. 3300" value={form.lengthMm} onChange={(e) => setForm({ ...form, lengthMm: e.target.value })} /></label>
         <label className="grid gap-1"><span className="label">Komada</span><input className="input tabular-nums" inputMode="numeric" data-testid="offcut-qty" value={form.qty} onChange={(e) => setForm({ ...form, qty: e.target.value })} /></label>
         <button className="btn" data-testid="offcut-add" disabled={!valid} onClick={() => { addOffcut({ materialId: form.materialId, lengthMm: Math.round(len), qty }); setForm({ ...form, lengthMm: '', qty: '1' }); }}><Plus size={16} />Dodaj ostatak</button>

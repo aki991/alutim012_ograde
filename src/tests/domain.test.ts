@@ -263,15 +263,15 @@ describe('validacija dimenzija', () => {
 describe('stubovi prate model ograde i kapije', () => {
   it('srebrni model ima okrugle inox stubove do visine ograde, ostali stub u boji elementa', () => {
     const p = createProject('s', [createFence({ modelId: 'rail_black', heightMm: 1100 }), createFence({ modelId: 'h_boards' }), createFence({ modelId: 'picket_narrow' })]);
-    expect(p.posts[0]).toMatchObject({ color: 'INOX', round: true, heightMm: 1100 });
-    expect(p.posts[1]).toMatchObject({ color: 'INOX', round: true }); // stub između dva elementa prati levi
+    expect(p.posts[0]).toMatchObject({ color: 'RAL 9006', round: true, heightMm: 1100 });
+    expect(p.posts[1]).toMatchObject({ color: 'RAL 9006', round: true }); // stub između dva elementa prati levi
     expect(p.posts[2].color).toBe('#604840'); // dekor drveta: stub u boji sa slike modela
     expect(p.posts[3]).toMatchObject({ color: colorHex('RAL 9016'), round: undefined });
     expect(p.posts[3].heightMm).toBe(1600); // slika modela nema stub koji viri iznad polja
   });
   it('uz kapiju stub prati model kapije (srebrni četvrtasti), ručno izmenjen stub se ne dira', () => {
     const base = createProject('s', [createFence({ modelId: 'h_narrow' }), createGate('sliding', { infillModelId: 'rail_inox' })]);
-    expect(base.posts[1]).toMatchObject({ type: 'gate', color: 'INOX' });
+    expect(base.posts[1]).toMatchObject({ type: 'gate', color: 'RAL 9006' });
     expect(base.posts[1].round).toBeFalsy();
     const edited = updatePost(base, base.posts[0].id, { color: 'RAL 3020' });
     expect(changeModel(edited, edited.items[0].id, 'rail_black').posts[0].color).toBe('RAL 3020');
@@ -279,6 +279,6 @@ describe('stubovi prate model ograde i kapije', () => {
   it('promena modela menja i stubove', () => {
     const p = createProject('s', [createFence({ modelId: 'h_narrow' })]);
     const q = changeModel(p, p.items[0].id, 'rail_inox');
-    expect(q.posts.map((x) => [x.color, x.round])).toEqual([['INOX', true], ['INOX', true]]);
+    expect(q.posts.map((x) => [x.color, x.round])).toEqual([['RAL 9006', true], ['RAL 9006', true]]);
   });
 });

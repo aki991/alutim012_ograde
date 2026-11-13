@@ -85,10 +85,8 @@ export default function ModelsPage() {
                   </>
                 )}
               </dl>
-              {constructionOf(m.id) && (
-                <p className="text-[12px] text-muted mt-2" data-testid={`construction-note-${m.id}`}>
-                  Podatak radnika prema uzorcima, nije potvrđen u cenovniku.{constructionOf(m.id)!.note ? ` ${constructionOf(m.id)!.note}` : ''}
-                </p>
+              {constructionOf(m.id)?.note && (
+                <p className="text-[12px] text-muted mt-2" data-testid={`construction-note-${m.id}`}>{constructionOf(m.id)!.note}</p>
               )}
               <div className="flex flex-wrap gap-2 mt-auto pt-4">
                 <button className="btn btn-primary" data-testid={`use-model-${m.id}`} onClick={() => useModel(m.id)}>Koristi model</button>

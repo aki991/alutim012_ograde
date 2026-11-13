@@ -1,23 +1,36 @@
 import panelMeta from '../../assets/panels/meta.json';
-import type { FenceModelId, FenceParams, GateType, PostType, MountingType } from './types';
+import { RAL_CHART } from '../../data/ralChart';
+import type { FenceModelId, FenceParams, Finish, GateType, PostType, MountingType } from './types';
 
 export interface RalColor { key: string; name: string; hex: string }
 
-export const RAL_COLORS: RalColor[] = [
-  { key: 'RAL 7016', name: 'Antracit siva', hex: '#383E42' },
-  { key: 'RAL 9005', name: 'Duboka crna', hex: '#1B1B1D' },
-  { key: 'RAL 9016', name: 'Saobraćajna bela', hex: '#F1F0EA' },
-  { key: 'BELA', name: 'Bela (čista)', hex: '#FFFFFF' },
-  { key: 'RAL 7035', name: 'Svetlo siva', hex: '#C5C7C4' },
-  { key: 'RAL 8017', name: 'Čokoladno braon', hex: '#45322E' },
-  { key: 'RAL 6005', name: 'Mahovinasto zelena', hex: '#2F4538' },
-  { key: 'RAL 5011', name: 'Čelično plava', hex: '#1A2B3C' },
-  { key: 'RAL 7021', name: 'Crnosiva', hex: '#2F3234' },
-  { key: 'INOX', name: 'Nerđajući čelik (inox)', hex: '#B7BEC6' },
-  { key: 'DEKOR ORAH', name: 'Dekor drvo — orah', hex: '#6B4028' },
-];
+/** Jedine boje u aplikaciji: RAL boje sa RAL ton karte (slika karte koju koristi radionica). */
+export const COLOR_CHART: RalColor[] = RAL_CHART.map(([code, hex]) => ({ key: `RAL ${code}`, name: `RAL ${code}`, hex }));
+export const RAL_COLORS: RalColor[] = COLOR_CHART;
 
-export const colorHex = (key: string): string => (key.startsWith('#') ? key : RAL_COLORS.find((c) => c.key === key)?.hex ?? '#383E42');
+/** RAL boje koje zamenjuju stare nazive (bela, inox, dekor drvo): koriste ih početne boje modela i izgled stubova. */
+export const WHITE_COLOR = 'RAL 9003';
+export const INOX_COLOR = 'RAL 9006';
+export const DEKOR_COLOR = 'RAL 8011';
+/** Stari ključevi boja iz ranijih verzija: sačuvani projekti se pri učitavanju prebacuju na RAL boju. */
+export const LEGACY_COLORS: Readonly<Record<string, string>> = { BELA: WHITE_COLOR, INOX: INOX_COLOR, 'DEKOR ORAH': DEKOR_COLOR };
+export const normalizeColorKey = (key: string): string => LEGACY_COLORS[key] ?? key;
+
+const COLOR_INDEX = new Map<string, RalColor>(COLOR_CHART.map((c) => [c.key, c]));
+export const colorInfo = (key: string): RalColor | undefined => COLOR_INDEX.get(normalizeColorKey(key));
+
+export const colorHex = (key: string): string => (key.startsWith('#') ? key : colorInfo(key)?.hex ?? '#383E42');
+
+/** Boje za brzi izbor kad korisnik nije birao svoje (pet najčešćih). */
+export const DEFAULT_FAVORITE_COLORS: readonly string[] = ['RAL 7016', 'RAL 9005', 'RAL 9016', 'RAL 8017', 'RAL 7035'];
+export const FAVORITE_COLOR_COUNT = 5;
+
+/** Završne obrade boje, redosledom prikaza. */
+export const FINISHES: { id: Finish; label: string }[] = [{ id: 'mat', label: 'Mat' }, { id: 'sjaj', label: 'Sjaj' }, { id: 'struktura', label: 'Struktura' }];
+export const FINISH_LABELS: Record<Finish, string> = { mat: 'mat', sjaj: 'sjaj', struktura: 'struktura' };
+
+/** Boja za dokumente: RAL ključ i završna obrada (npr. „RAL 8022 mat"); posebna boja u heksa zapisu se navodi kao takva. */
+export const colorText = (key: string, finish?: Finish): string => `${key.startsWith('#') ? `posebna ${key.toUpperCase()}` : normalizeColorKey(key)}${finish ? ` ${FINISH_LABELS[finish]}` : ''}`;
 
 /** Svetla boja (bela, svetlosiva): na beloj pozadini se ne vidi, pa editor tada koristi sivu pozadinu. */
 export function isLightColor(key: string): boolean {
@@ -78,7 +91,7 @@ const MODEL_LIST: FenceModelDef[] = [
   }),
   model({
     id: 'h_boards', name: 'Braon — široke horizontalne daske', description: 'Široke daske u izgledu drveta', infill: 'Široke horizontalne daske', material: 'Aluminijum sa dekorom drveta',
-    image: '02', style: 'hbars', defaultColor: 'DEKOR ORAH', defaults: { barSizeMm: 300, gapMm: 50, frameMm: 30 }, barLabel: 'Visina daske', gapLabel: 'Razmak dasaka', hasBars: true,
+    image: '02', style: 'hbars', defaultColor: DEKOR_COLOR, defaults: { barSizeMm: 300, gapMm: 50, frameMm: 30 }, barLabel: 'Visina daske', gapLabel: 'Razmak dasaka', hasBars: true,
     materialId: 'mat_wpc_daska', parts: { main: 'Daska 300×20 (dekor drvo)' },
   }),
   model({
@@ -99,7 +112,7 @@ const MODEL_LIST: FenceModelDef[] = [
   }),
   model({
     id: 'rail_inox', name: 'Inox — horizontalne prečke', description: 'Inox rukohvat i okrugle prečke', infill: 'Inox rukohvat i okrugle prečke', material: 'Nerđajući čelik',
-    image: '06', style: 'rods', defaultColor: 'INOX', defaults: { barSizeMm: 16, gapMm: 400, frameMm: 0, barCount: 4 }, barLabel: 'Prečnik prečke (P-1146)', gapLabel: 'Razmak prečki', hasBars: true,
+    image: '06', style: 'rods', defaultColor: INOX_COLOR, defaults: { barSizeMm: 16, gapMm: 400, frameMm: 0, barCount: 4 }, barLabel: 'Prečnik prečke (P-1146)', gapLabel: 'Razmak prečki', hasBars: true,
     rods: { min: 1, max: 10, default: 4 }, defaultSize: { widthMm: 1000, heightMm: 1000 },
     materialId: 'mat_bts_p1146', railMaterialId: 'mat_bts_p1033', parts: { main: 'Prečka Ø16 (P-1146)', rail: 'Rukohvat Ø50 (P-1033)' },
   }),
@@ -135,7 +148,7 @@ const MODEL_LIST: FenceModelDef[] = [
   }),
   model({
     id: 'picket_wide', name: 'Bela — široke vertikalne letvice', description: 'Tarabica: letvice 80×20 sa čepom, spojene cevima 30×30', infill: 'Vertikalne tarabice 80×20 sa čepom na vrhu', material: 'Aluminijum',
-    image: '13', style: 'tarabica', defaultColor: 'BELA', defaults: { barSizeMm: 80, gapMm: 20, frameMm: 30, liftMm: 40 }, barLabel: 'Širina tarabice', gapLabel: 'Razmak između tarabica', frameLabel: 'Prepust cevi 30×30', hasBars: true,
+    image: '13', style: 'tarabica', defaultColor: WHITE_COLOR, defaults: { barSizeMm: 80, gapMm: 20, frameMm: 30, liftMm: 40 }, barLabel: 'Širina tarabice', gapLabel: 'Razmak između tarabica', frameLabel: 'Prepust cevi 30×30', hasBars: true,
     defaultSize: { widthMm: 1000, heightMm: 1000 },
     postExtraMm: 0,
     materialId: 'mat_ek_kv000007', railMaterialId: 'mat_ek_ktwm3899', parts: { main: 'Tarabica 80×20 (kvadratna cev)', rail: 'Spojna cev 30×30' },
@@ -173,7 +186,7 @@ const VERTICAL_UMASK = 'U profil sa maskom 25×30 ili U profil 25×20';
 
 export const MODEL_CONSTRUCTION: Partial<Record<FenceModelId, ModelConstruction>> = {
   h_narrow: { vertical: 'U profil 20×20×1,35 mm (dve bočne vođice, otvorene ka ispuni)', horizontal: 'Kvadratna cev 30×20×1 mm', note: 'Krajevi cevi ulaze u kanal U profila; mere zidova su usvojene i menjaju se u panelu.' },
-  h_combo: { vertical: VERTICAL_UMASK, horizontal: HORIZONTAL_BY_MODEL, note: 'Široke i uske letvice naizmenično: po radniku kombinacija više profila.' },
+  h_combo: { vertical: VERTICAL_UMASK, horizontal: HORIZONTAL_BY_MODEL, note: 'Široke i uske letvice naizmenično, od kombinacije više profila.' },
   panel_lines: { vertical: VERTICAL_UMASK, horizontal: HORIZONTAL_BY_MODEL },
   h_white: { vertical: VERTICAL_UMASK, horizontal: HORIZONTAL_BY_MODEL },
   louver_light: { vertical: 'U profil 60×28', horizontal: 'Kutijasti profil 80×20' },
@@ -185,7 +198,6 @@ export const MODEL_CONSTRUCTION: Partial<Record<FenceModelId, ModelConstruction>
   louver_dark: {
     vertical: 'U profil 60×28',
     horizontal: 'Kutijasti profil 80×20; uzorak tamnosive žaluzine sa Z profilom: U profil 60×28 i Z profil',
-    note: 'Za tamnosivu žaluzinu postoje dva podatka (Z profil i U 25×30 / 25×20); razjasniti sa radnikom (docs/konstrukcija-modela.md).',
   },
 };
 
@@ -232,10 +244,10 @@ export interface PostStyle {
  * srebrni četvrtasti uz kapiju tog modela, a inače stub u boji elementa (dekor drveta → braon).
  */
 export function postStyleFor(modelId: FenceModelId, color: string, isGate: boolean): PostStyle {
-  if (INOX_POST_MODELS.includes(modelId)) return { color: 'INOX', round: !isGate, extraRatio: isGate ? null : 0 };
+  if (INOX_POST_MODELS.includes(modelId)) return { color: INOX_COLOR, round: !isGate, extraRatio: isGate ? null : 0 };
   const art = panelArt(modelId, color);
   if (art) return { color: art.postHex ?? colorHex(color), round: false, extraRatio: art.postTopRatio };
-  return { color: color === 'DEKOR ORAH' ? 'RAL 8017' : color, round: false, extraRatio: null, extraMm: FENCE_MODELS[modelId].postExtraMm };
+  return { color: normalizeColorKey(color) === DEKOR_COLOR ? 'RAL 8017' : color, round: false, extraRatio: null, extraMm: FENCE_MODELS[modelId].postExtraMm };
 }
 /** Podaci o slici polja modela (izdvojenoj iz slike u katalogu): odnos strana, boja i visina stubova. */
 export interface PanelArtMeta {

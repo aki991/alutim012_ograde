@@ -46,7 +46,8 @@ export default function SettingsPage() {
   return (
     <Page>
       <PageHeader title="Podešavanja" subtitle="Opšta podešavanja aplikacije i podrazumevane vrednosti za nove projekte." />
-      <div className="grid gap-5 lg:grid-cols-2">
+      {/* parovi kartica slične visine u istom redu: firma i kalkulacija, pa sečenje i napredne opcije */}
+      <div className="grid gap-5 lg:grid-cols-2 items-start">
         <section className="card p-5">
           <h2 className="font-bold mb-2">Firma i korisnik</h2>
           <TextField label="Naziv firme" testId="set-company" value={settings.companyName} onChange={(v) => update({ companyName: v })} />
@@ -59,17 +60,6 @@ export default function SettingsPage() {
           <NumberField label="Kurs (RSD za 1 €)" unit="RSD" value={settings.currencyRateToEur} range={{ min: 1, max: 1000 }} integer={false} step={0.1} onCommit={(v) => update({ currencyRateToEur: v })} />
         </section>
         <section className="card p-5">
-          <h2 className="font-bold mb-2">Napredne opcije</h2>
-          <ToggleField label="Napredni prikaz dužina" checked={Boolean(settings.advancedLengths)} onLabel="Uključen" offLabel="Isključen" onChange={(v) => update({ advancedLengths: v })} testId="set-advanced" />
-          <ToggleField label="Simulacija na fotografiji" checked={settings.photoSimEnabled !== false} onLabel="Uključena" offLabel="Isključena" onChange={(v) => update({ photoSimEnabled: v })} testId="set-photosim" />
-        </section>
-        <section className="card p-5" data-testid="set-cutting">
-          <h2 className="font-bold mb-1">Sečenje materijala (krojna lista)</h2>
-          <p className="text-sm text-muted mb-2">Širina testere se dodaje na svaki rez, pa utiče na to koliko komada staje u jednu šipku i koliki je ostatak.</p>
-          <NumberField label="Širina testere" testId="set-kerf" value={cutOptions(settings).kerfMm} range={{ min: 0, max: 50 }} allowZero integer={false} step={0.5} onCommit={(v) => update({ cutting: { ...cutOptions(settings), kerfMm: v } })} hint="Debljina lista testere (rez). Uobičajeno 2–4 mm." />
-          <NumberField label="Dužina nabavne šipke" testId="set-stock" value={cutOptions(settings).stockMm} range={{ min: 500, max: 20000 }} onCommit={(v) => update({ cutting: { ...cutOptions(settings), stockMm: v } })} hint="Dužina cele šipke kako stiže od dobavljača (najčešće 6000 mm)." />
-        </section>
-        <section className="card p-5">
           <h2 className="font-bold mb-2">Podrazumevana kalkulacija (novi projekti)</h2>
           <SegmentedField label="Zarada" value={pr.profitMode} options={[{ value: 'margin', label: 'Marža' }, { value: 'markup', label: 'Uvećanje' }]} onChange={(v) => setPr({ profitMode: v })} />
           <NumberField label={pr.profitMode === 'margin' ? 'Marža' : 'Uvećanje'} unit="%" value={pr.profitPercent} range={{ min: 0, max: 99 }} allowZero integer={false} step={1} onCommit={(v) => setPr({ profitPercent: v })} />
@@ -79,18 +69,34 @@ export default function SettingsPage() {
           <NumberField label="Rad po m²" unit="RSD/m²" value={pr.laborPerM2Rsd} range={{ min: 0, max: 100000 }} allowZero onCommit={(v) => setPr({ laborPerM2Rsd: v })} />
           <NumberField label="Montaža po m" unit="RSD/m" value={pr.installPerMeterRsd} range={{ min: 0, max: 100000 }} allowZero onCommit={(v) => setPr({ installPerMeterRsd: v })} />
         </section>
+        <section className="card p-5" data-testid="set-cutting">
+          <h2 className="font-bold mb-1">Sečenje materijala (krojna lista)</h2>
+          <p className="text-sm text-muted mb-2">Širina testere se dodaje na svaki rez, pa utiče na to koliko komada staje u jednu šipku i koliki je ostatak.</p>
+          <NumberField label="Širina testere" testId="set-kerf" value={cutOptions(settings).kerfMm} range={{ min: 0, max: 50 }} allowZero integer={false} step={0.5} onCommit={(v) => update({ cutting: { ...cutOptions(settings), kerfMm: v } })} hint="Debljina lista testere (rez). Uobičajeno 2–4 mm." />
+          <NumberField label="Dužina nabavne šipke" testId="set-stock" value={cutOptions(settings).stockMm} range={{ min: 500, max: 20000 }} onCommit={(v) => update({ cutting: { ...cutOptions(settings), stockMm: v } })} hint="Dužina cele šipke kako stiže od dobavljača (najčešće 6000 mm)." />
+        </section>
+        <section className="card p-5">
+          <h2 className="font-bold mb-2">Napredne opcije</h2>
+          <ToggleField label="Napredni prikaz dužina" checked={Boolean(settings.advancedLengths)} onLabel="Uključen" offLabel="Isključen" onChange={(v) => update({ advancedLengths: v })} testId="set-advanced" />
+          <ToggleField label="Simulacija na fotografiji" checked={settings.photoSimEnabled !== false} onLabel="Uključena" offLabel="Isključena" onChange={(v) => update({ photoSimEnabled: v })} testId="set-photosim" />
+        </section>
         {auth.enabled && !auth.guest && auth.role === 'admin' && <UsersAdmin />}
         <section className="card p-5 lg:col-span-2">
-          <h2 className="font-bold mb-1">Lokalni podaci</h2>
+          <h2 className="font-bold mb-1">Podaci</h2>
           <div className="flex flex-wrap gap-2">
             <button className="btn" onClick={() => void saveNow()}>Sačuvaj sada</button>
-            <button className="btn btn-danger" data-testid="btn-reset-demo" onClick={() => setConfirm(true)}>Reset demonstracionih podataka</button>
           </div>
+          {/* brisanje svih podataka je sklonjeno u zatvoren deo, da se ne klikne slučajno */}
+          <details className="mt-3 rounded-lg border border-[#fecdca] bg-[#fffbfa] px-3 py-2" data-testid="danger-zone">
+            <summary className="cursor-pointer text-[13px] font-semibold text-[#b42318]">Napredno: brisanje svih podataka</summary>
+            <p className="text-[12.5px] text-slate-700 mt-2">Briše sve projekte, kupce, materijale i podešavanja na ovom računaru i vraća početne probne podatke. Koristi se samo za probu aplikacije.</p>
+            <button className="btn btn-danger btn-sm mt-2" data-testid="btn-reset-demo" onClick={() => setConfirm(true)}>Obriši sve i vrati probne podatke</button>
+          </details>
           {appVersion && <p className="text-sm text-muted mt-3" data-testid="app-version">Verzija aplikacije: {appVersion}</p>}
-          {done && <p role="status" className="text-sm text-[#067647] mt-3">Demonstracioni podaci su vraćeni na početno stanje.</p>}
+          {done && <p role="status" className="text-sm text-[#067647] mt-3">Podaci su obrisani i vraćeni probni podaci.</p>}
         </section>
       </div>
-      {confirm && <ConfirmDialog title="Reset demonstracionih podataka" danger confirmLabel="Resetuj" message="Svi projekti, kupci, materijali i podešavanja biće zamenjeni početnim demonstracionim podacima. Ovo se ne može poništiti." onCancel={() => setConfirm(false)} onConfirm={async () => { await resetDemo(); setConfirm(false); setDone(true); }} />}
+      {confirm && <ConfirmDialog title="Brisanje svih podataka" danger confirmLabel="Obriši sve" message="Svi projekti, kupci, materijali i podešavanja biće obrisani i zamenjeni početnim probnim podacima. Ovo se ne može poništiti." onCancel={() => setConfirm(false)} onConfirm={async () => { await resetDemo(); setConfirm(false); setDone(true); }} />}
     </Page>
   );
 }

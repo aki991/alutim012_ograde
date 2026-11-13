@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowLeft, Copy, Download, FileText, Link2, Link2Off, MousePointer2, Redo2, Rows3, Search, Trash2, Undo2, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Copy, Download, FileText, Link2, MousePointer2, Redo2, Rows3, Search, Trash2, Undo2, X } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Designer2D } from '../../components/designer/Designer2D';
@@ -6,16 +6,31 @@ import { GuideSection } from '../../components/designer/GuideSection';
 import { SketchSvg } from '../../components/designer/Sketch';
 import { downloadSketchPdf, downloadSketchSvg } from '../../services/pdfSketch';
 import { resolveParts, ShapeIcon } from '../../components/designer/PartsSvg';
-import { RAL_COLORS } from '../../domain/models/catalog';
-import { CUSTOM_KIND_LABELS, customBom, newCustomModel, repeatPart, type CustomModel, type CustomPart } from '../../domain/models/custom';
+import { colorHex, normalizeColorKey } from '../../domain/models/catalog';
+import { ColorChartModal } from '../../components/forms/ColorChartModal';
+import { clampToFrame, CUSTOM_KIND_LABELS, customBom, newCustomModel, repeatPart, type CustomModel, type CustomPart } from '../../domain/models/custom';
 import { applyGuides, attachToGuides, barLayoutInfo, gapRange, guideReport, layoutBars, type LayoutAuto } from '../../domain/models/guides';
 import type { Lufta } from '../../domain/models/custom';
 import { checkNewOverlap } from '../../domain/models/overlap';
+import { replaceMaterial, replaceOptions, replaceRole, replaceTargets } from '../../domain/models/replace';
+import { ConfirmDialog } from '../../components/ui/Modal';
 import { MATERIAL_GROUPS, materialShape, sectionFace, type MaterialGroupId } from '../../domain/models/materialShape';
 import type { Material } from '../../domain/models/types';
 import { useAppStore } from '../../store/useAppStore';
 import { uid } from '../../utils/id';
 import { fmtMoney } from '../../utils/units';
+
+/**
+ * Prečke u svoje U profile, delovi u okvir modela, pa prečke ponovo (ako su se bočne strane pomerile).
+ * `grow`: deo veći od okvira povećava širinu / visinu modela (okvir prati stvarnu ogradu); isključeno kad korisnik
+ * sam menja širinu ili visinu modela, da bi okvir mogao i da se smanji.
+ */
+function settle(model: CustomModel, materials: Material[], grow = true): CustomModel {
+  const byId = new Map(materials.map((m) => [m.id, m]));
+  const fitted = applyGuides(model, materials);
+  const framed = clampToFrame(fitted, (p) => { const m = byId.get(p.materialId); return m ? materialShape(m) : null; }, grow);
+  return framed === fitted ? fitted : applyGuides(framed, materials);
+}
 
 const Designer3D = lazy(() => import('../../components/designer/Designer3D'));
 
@@ -185,7 +200,9 @@ function Designer({ id }: { id: string }) {
   const [model, setModel] = useState<CustomModel>(() => useAppStore.getState().settings.customModels?.find((m) => m.id === id) ?? newCustomModel(id));
   const [hist, setHist] = useState<{ past: CustomModel[]; future: CustomModel[] }>({ past: [], future: [] });
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  /** izabrani delovi (Ctrl + klik ili okvir za više); jedan izabran deo ima pun panel, više delova zajednički */
+  const [selectedIdsRaw, setSelectedIds] = useState<string[]>([]);
+  const setSelectedId = useCallback((id: string | null) => setSelectedIds(id ? [id] : []), []);
   const [view, setView] = useState<ViewMode>('2d');
   const [ortho, setOrtho] = useState(true);
   const [grid, setGrid] = useState(5);
@@ -193,6 +210,9 @@ function Designer({ id }: { id: string }) {
   /** obaveštenje (napomena) zašto operacija nije izvršena */
   const [notice, setNotice] = useState<string | null>(null);
   const [sketchBusy, setSketchBusy] = useState(false);
+  const [chartOpen, setChartOpen] = useState(false);
+  /** izabrana zamena materijala koja čeka potvrdu (kad se menja i još neki deo) */
+  const [pendingSwap, setPendingSwap] = useState<{ ids: string[]; materialId: string } | null>(null);
   const modelRef = useRef(model);
   modelRef.current = model;
   const materialsRef = useRef(materials);
@@ -207,7 +227,7 @@ function Designer({ id }: { id: string }) {
     const cur = modelRef.current;
     const raw = fn(cur);
     if (raw === cur) return true;
-    const next = applyGuides(raw, materialsRef.current);
+    const next = settle(raw, materialsRef.current, raw.widthMm === cur.widthMm && raw.heightMm === cur.heightMm);
     const bad = checkNewOverlap(cur, next, materialsRef.current);
     if (bad) { setNotice(bad); return false; }
     if (keep) setHist((h) => ({ past: [...h.past.slice(-99), cur], future: [] }));
@@ -229,15 +249,20 @@ function Designer({ id }: { id: string }) {
     st.updateSettings({ customModels: saved ? list.map((m) => (m.id === model.id ? model : m)) : [...list, model] });
   }, [model]);
 
-  // promena materijala (npr. debljine zida U profila) menja kanal: uklopljene prečke se vraćaju u nove granice
+  // promena materijala (npr. debljine zida U profila) menja kanal: uklopljene prečke se vraćaju u nove granice, a delovi u okvir
   useEffect(() => {
-    const next = applyGuides(modelRef.current, materials);
+    // i pri otvaranju: model sačuvan pre pravila o okviru se odmah vraća u okvir
+    const next = settle(modelRef.current, materials, false);
     if (next !== modelRef.current) { modelRef.current = next; setModel(next); }
   }, [materials]);
 
   const parts = useMemo(() => resolveParts(model, materials), [model, materials]);
   const active = activeId ? materials.find((m) => m.id === activeId) ?? null : null;
+  // izbor posle poništavanja ili brisanja zadržava samo delove koji postoje
+  const selectedIds = useMemo(() => selectedIdsRaw.filter((x) => model.parts.some((p) => p.id === x)), [selectedIdsRaw, model.parts]);
+  const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
   const sel = parts.find((r) => r.part.id === selectedId) ?? null;
+  const multi = selectedIds.length > 1 ? parts.filter((r) => selectedIds.includes(r.part.id)) : [];
   const bom = useMemo(() => customBom(model, materials), [model, materials]);
   const total = bom.reduce((s, l) => s + l.total, 0);
 
@@ -255,7 +280,26 @@ function Designer({ id }: { id: string }) {
     return r.model;
   };
   const patchPart = (pid: string, patch: Partial<CustomPart>, keep = true) => change((m) => ({ ...m, parts: m.parts.map((p) => (p.id === pid ? { ...p, ...patch } : p)) }), keep);
-  const removeSel = useCallback(() => { if (!selectedId) return; change((m) => ({ ...m, parts: m.parts.filter((p) => p.id !== selectedId) })); setSelectedId(null); }, [selectedId, change]);
+  /** zamena materijala izabranog dela; delovi koji moraju zajedno (suprotni U profil, ostale prečke grupe) menjaju se uz potvrdu */
+  const swapMaterial = (ids: string[], materialId: string) => {
+    let m = modelRef.current;
+    for (const id of ids) {
+      const p = m.parts.find((x) => x.id === id);
+      if (!p || p.materialId === materialId) continue; // već zamenjen zajedno sa nekim drugim delom (par U profila, grupa prečki)
+      const r = replaceMaterial(m, id, materialId, materialsRef.current);
+      if ('error' in r) { setNotice(r.error); return; }
+      m = r.model;
+    }
+    change(() => m);
+  };
+  /** svi delovi koji bi se zamenili (izabrani i oni koji moraju sa njima); potvrda se traži kad ih je više od izabranih */
+  const swapTargets = (ids: string[]): string[] => [...new Set(ids.flatMap((id) => replaceTargets(modelRef.current, id)))];
+  const askSwap = (ids: string[], materialId: string) => {
+    if (!materialId) return;
+    const all = swapTargets(ids);
+    if (all.length > 1 && (ids.length === 1 || all.length > ids.length)) setPendingSwap({ ids, materialId }); else swapMaterial(ids, materialId);
+  };
+  const removeSel = useCallback(() => { if (!selectedIds.length) return; const del = new Set(selectedIds); change((m) => ({ ...m, parts: m.parts.filter((p) => !del.has(p.id)) })); setSelectedIds([]); }, [selectedIds, change]);
   const duplicateSel = useCallback(() => {
     const p = modelRef.current.parts.find((x) => x.id === selectedId);
     if (!p) return;
@@ -270,14 +314,14 @@ function Designer({ id }: { id: string }) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicateSel(); return; }
-      if (!selectedId) return;
+      if (!selectedIds.length) return;
       if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); removeSel(); return; }
       const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] }[e.key];
-      if (d) { e.preventDefault(); const p = modelRef.current.parts.find((x) => x.id === selectedId); if (p) change((m) => ({ ...m, parts: m.parts.map((x) => (x.id === selectedId ? { ...x, x: p.x + d[0] * grid, y: p.y + d[1] * grid } : x)) })); }
+      if (d) { e.preventDefault(); const ids = new Set(selectedIds); change((m) => ({ ...m, parts: m.parts.map((x) => (ids.has(x.id) ? { ...x, x: x.x + d[0] * grid, y: x.y + d[1] * grid } : x)) })); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedId, grid, undo, redo, removeSel, duplicateSel, change]);
+  }, [selectedIds, grid, undo, redo, removeSel, duplicateSel, change]);
 
   return (
     <div className="h-full flex flex-col min-h-0" data-testid="model-designer">
@@ -289,9 +333,10 @@ function Designer({ id }: { id: string }) {
         </select>
         <Num label="Širina" value={model.widthMm} min={100} max={20000} testId="designer-width" onChange={(v) => change((m) => ({ ...m, widthMm: Math.round(v) }))} />
         <Num label="Visina" value={model.heightMm} min={100} max={6000} testId="designer-height" onChange={(v) => change((m) => ({ ...m, heightMm: Math.round(v) }))} />
-        <select className="input !w-auto !py-1.5" aria-label="Boja" data-testid="designer-color" value={model.color} onChange={(e) => change((m) => ({ ...m, color: e.target.value }))}>
-          {RAL_COLORS.map((c) => <option key={c.key} value={c.key}>{c.key} — {c.name}</option>)}
-        </select>
+        <button type="button" className="input !w-auto !py-1.5 inline-flex items-center gap-2" aria-label={`Boja: ${normalizeColorKey(model.color)}. Otvori kartu boja`} data-testid="designer-color" onClick={() => setChartOpen(true)}>
+          <span className="w-5 h-5 rounded-full ring-1 ring-black/20" style={{ background: colorHex(model.color) }} />{normalizeColorKey(model.color)}
+        </button>
+        {chartOpen && <ColorChartModal value={normalizeColorKey(model.color)} favorites={settings.favoriteColors ?? []} onPick={(k) => change((m) => ({ ...m, color: k }))} onFavorites={(list) => useAppStore.getState().updateSettings({ favoriteColors: list })} onClose={() => setChartOpen(false)} />}
         <div className="flex-1" />
         <label className="flex items-center gap-1.5 text-[13px]" title="Profili se crtaju samo vodoravno ili uspravno"><input type="checkbox" checked={ortho} data-testid="designer-ortho" onChange={(e) => setOrtho(e.target.checked)} />Pod pravim uglom</label>
         <select className="input !w-auto !py-1.5" aria-label="Korak mreže" value={grid} onChange={(e) => setGrid(Number(e.target.value))}>
@@ -313,7 +358,7 @@ function Designer({ id }: { id: string }) {
           <button className="shrink-0 p-0.5 rounded hover:bg-[#fee4e2]" aria-label="Zatvori obaveštenje" onClick={() => setNotice(null)}><X size={15} /></button>
         </div>
       )}
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[270px_minmax(0,1fr)_300px]">
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[250px_minmax(0,1fr)_350px]">
         <aside className="border-r border-line bg-white min-h-0 max-h-[40vh] lg:max-h-none"><Palette materials={materials} activeId={activeId} onPick={(m) => { setActiveId(m); if (m) setSelectedId(null); }} /></aside>
 
         <section className={`min-h-[420px] lg:min-h-0 grid ${view === 'split' ? 'grid-rows-2 xl:grid-rows-1 xl:grid-cols-2' : ''}`}>
@@ -332,16 +377,16 @@ function Designer({ id }: { id: string }) {
             </div>
           )}
           {view !== '3d' && view !== 'skica' && (
-            <Designer2D model={model} parts={parts} active={active} selectedId={selectedId} ortho={ortho} gridMm={grid}
-              onSelect={setSelectedId}
+            <Designer2D model={model} parts={parts} active={active} selectedIds={selectedIds} ortho={ortho} gridMm={grid}
+              onSelect={setSelectedIds}
               onAdd={(p) => { const next = { ...modelRef.current, parts: [...modelRef.current.parts, p] }; const fitted = p.angleDeg === 0 ? attach(next, p.id, true) : null; if (change(() => fitted ?? next)) setSelectedId(p.id); }}
               onMoveStart={record}
-              onMove={(pid, x, y) => patchPart(pid, { x, y }, false)} />
+              onMove={(moves) => { const at = new Map(moves.map((v) => [v.id, v])); change((m) => ({ ...m, parts: m.parts.map((p) => { const v = at.get(p.id); return v ? { ...p, x: v.x, y: v.y } : p; }) }), false); }} />
           )}
           {view !== '2d' && view !== 'skica' && (
             <div className={`min-h-0 ${view === 'split' ? 'border-t xl:border-t-0 xl:border-l border-line' : ''}`}>
               <Suspense fallback={<div className="h-full grid place-items-center text-muted text-sm">Učitavanje 3D prikaza…</div>}>
-                <Designer3D model={model} parts={parts} selectedId={selectedId} />
+                <Designer3D model={model} parts={parts} selectedId={selectedId ?? selectedIds[0] ?? null} />
               </Suspense>
             </div>
           )}
@@ -349,11 +394,93 @@ function Designer({ id }: { id: string }) {
 
         <aside className="border-l border-line bg-white min-h-0 overflow-auto scroll-thin p-3">
           <h2 className="font-bold text-[15px] mb-1">Izabrani deo</h2>
-          {!sel && <p className="text-sm text-muted mb-4" data-testid="designer-no-selection">Izaberite materijal levo i nacrtajte ga na polju, ili kliknite na nacrtani deo da ga izmenite.</p>}
+          {!sel && !multi.length && <p className="text-sm text-muted mb-4" data-testid="designer-no-selection">Izaberite materijal levo i nacrtajte ga na polju, ili kliknite na nacrtani deo da ga izmenite. Ctrl + klik ili prevlačenje po praznom biraju više delova.</p>}
+          {multi.length > 0 && (() => {
+            const ids = multi.map((r) => r.part.id);
+            const first = multi[0];
+            const sameMat = multi.every((r) => r.part.materialId === first.part.materialId);
+            const linear = multi.every((r) => r.shape.type === 'linear');
+            const noPiece = multi.every((r) => r.shape.type !== 'piece');
+            const sheets = multi.every((r) => r.shape.type === 'sheet');
+            /** vrednost polja: zajednička ako je ista kod svih, inače vrednost prvog dela uz napomenu */
+            const common = (get: (p: CustomPart) => number) => { const v = get(first.part); return { value: v, same: multi.every((r) => Math.abs(get(r.part) - v) < 1e-6) }; };
+            const setAll = (patch: Partial<CustomPart>) => { const s = new Set(ids); change((m) => ({ ...m, parts: m.parts.map((p) => (s.has(p.id) ? { ...p, ...patch } : p)) })); };
+            const field = (label: string, get: (p: CustomPart) => number, apply: (v: number) => Partial<CustomPart>, o: { min?: number; max?: number; unit?: string; testId: string }) => {
+              const c = common(get);
+              return <Num key={o.testId} label={c.same ? label : `${label} (različito)`} value={c.value} min={o.min} max={o.max} unit={o.unit} testId={o.testId} onChange={(v) => setAll(apply(v))} />;
+            };
+            const options = sameMat ? replaceOptions(model, first.part.id, materials) : [];
+            const rot = common((p) => p.rot);
+            const cut = multi.filter((r) => r.part.cut45).length;
+            return (
+              <div className="mb-4" data-testid="designer-multi">
+                <div className="text-[13px] font-semibold">Izabrano delova: {multi.length}</div>
+                <div className="text-[11.5px] text-muted mb-2">{sameMat ? (first.material?.name ?? 'Materijal je obrisan iz cenovnika') : 'različiti materijali'}. Izmena važi za sve izabrane delove; polje sa oznakom „različito“ prikazuje vrednost prvog dela.</div>
+                {options.length > 0 && (
+                  <label className="grid gap-1 mb-2 text-[13px]">
+                    <span className="text-slate-600">Zameni materijal (svim izabranim)</span>
+                    <select className="input !py-1.5" data-testid="multi-swap" value="" aria-label="Zameni materijal svim izabranim" onChange={(e) => askSwap(ids, e.target.value)}>
+                      <option value="">— izaberite novi materijal —</option>
+                      {MATERIAL_GROUPS.map((g) => ({ ...g, items: options.filter((m) => materialShape(m).group === g.id) })).filter((g) => g.items.length).map((g) => <optgroup key={g.id} label={g.label}>{g.items.map((m) => <option key={m.id} value={m.id}>{m.name} ({m.sku})</option>)}</optgroup>)}
+                    </select>
+                  </label>
+                )}
+                {multi.every((r) => r.part.guides) && (() => {
+                  const fits = new Map(multi.map((r) => [r.part.id, guideReport(model, r.part, materials)?.fit.plus]));
+                  const ok = [...fits.values()].every((v) => v !== undefined);
+                  return (
+                    <button className="btn btn-sm btn-primary w-full mb-2" data-testid="multi-set-fit" disabled={!ok}
+                      onClick={() => change((m) => ({ ...m, parts: m.parts.map((p) => (fits.has(p.id) ? { ...p, tiltDeg: fits.get(p.id) } : p)) }))}>
+                      Postavi sve pod uglom uklapanja
+                    </button>
+                  );
+                })()}
+                {noPiece && field(sheets ? 'Širina' : 'Dužina', (p) => p.lengthMm, (v) => ({ lengthMm: v }), { min: 1, testId: 'multi-length' })}
+                {sheets && field('Visina', (p) => p.heightMm ?? 0, (v) => ({ heightMm: v }), { min: 1, testId: 'multi-height' })}
+                {!sheets && field('Ugao', (p) => p.angleDeg, (v) => ({ angleDeg: v }), { min: -360, max: 360, unit: '°', testId: 'multi-angle' })}
+                {linear && (
+                  <div className="grid gap-1 py-1 text-[13px]">
+                    <span className="text-slate-600">Okretanje preseka{rot.same ? '' : ' (različito)'}</span>
+                    <span className="grid grid-cols-4 rounded-lg border border-line overflow-hidden">
+                      {[0, 90, 180, 270].map((r) => <button key={r} data-testid={`multi-rot-${r}`} aria-pressed={rot.same && rot.value === r} className={`py-1 text-[12px] font-semibold ${rot.same && rot.value === r ? 'bg-brand-black text-white' : 'hover:bg-slate-50'}`} onClick={() => setAll({ rot: r })}>{r}°</button>)}
+                    </span>
+                  </div>
+                )}
+                {linear && field('Nagib preseka (koso)', (p) => p.tiltDeg ?? 0, (v) => ({ tiltDeg: v || undefined }), { min: -90, max: 90, unit: '°', testId: 'multi-tilt' })}
+                {linear && (
+                  <label className="flex items-center justify-between gap-2 py-1 text-[13px]">
+                    <span className="text-slate-600">Rez 45° (deo rama){cut > 0 && cut < multi.length ? ' (različito)' : ''}</span>
+                    <input type="checkbox" data-testid="multi-cut45" checked={cut === multi.length} onChange={(e) => setAll({ cut45: e.target.checked || undefined })} />
+                  </label>
+                )}
+                {field('Dubina (ka napred)', (p) => p.z, (v) => ({ z: v }), { min: -2000, max: 2000, testId: 'multi-z' })}
+                <div className="flex gap-2 mt-2">
+                  <button className="btn btn-sm flex-1" data-testid="multi-clear" onClick={() => setSelectedIds([])}>Poništi izbor</button>
+                  <button className="btn btn-sm btn-danger flex-1" data-testid="multi-delete" onClick={removeSel}><Trash2 size={14} />Obriši sve</button>
+                </div>
+                <p className="text-[11.5px] text-muted mt-1.5">Položaj (X, Y) se menja prevlačenjem izabranih delova ili strelicama na tastaturi.</p>
+              </div>
+            );
+          })()}
           {sel && (
             <div className="mb-4" data-testid="designer-props">
               <div className="text-[13px] font-medium leading-snug">{sel.material?.name ?? 'Materijal je obrisan iz cenovnika'}</div>
               <div className="text-[11.5px] text-muted mb-2">{sel.material?.sku}{sel.shape.type === 'linear' ? ` · presek ${sel.shape.section.w} × ${sel.shape.section.h} mm${sel.shape.exact ? '' : ' (približan oblik prema nazivu)'}` : ''}</div>
+              {sel.material && (() => {
+                const options = replaceOptions(model, sel.part.id, materials);
+                if (!options.length) return null;
+                const groups = MATERIAL_GROUPS.map((g) => ({ ...g, items: options.filter((m) => materialShape(m).group === g.id).sort((a, b) => a.name.localeCompare(b.name, 'sr', { numeric: true })) })).filter((g) => g.items.length);
+                return (
+                  <label className="grid gap-1 mb-2 text-[13px]">
+                    <span className="text-slate-600">Zameni materijal</span>
+                    <select className="input !py-1.5" data-testid="part-swap" value="" aria-label="Zameni materijal"
+                      onChange={(e) => askSwap([sel.part.id], e.target.value)}>
+                      <option value="">— izaberite novi materijal —</option>
+                      {groups.map((g) => <optgroup key={g.id} label={g.label}>{g.items.map((m) => <option key={m.id} value={m.id}>{m.name} ({m.sku})</option>)}</optgroup>)}
+                    </select>
+                  </label>
+                );
+              })()}
               {sel.shape.type === 'linear' && sel.shape.wall !== undefined && sel.material && (
                 <div className="mb-1">
                   <Num label="Debljina zida" value={sel.shape.wall} min={0.5} max={20} testId="part-wall" onChange={(v) => useAppStore.getState().upsertMaterial({ ...sel.material!, wallMm: v })} />
@@ -366,15 +493,15 @@ function Designer({ id }: { id: string }) {
               {sel.shape.type === 'sheet' && <Num label="Visina" value={sel.part.heightMm ?? 0} min={1} testId="part-height" onChange={(v) => patchPart(sel.part.id, { heightMm: v })} />}
               {sel.shape.type !== 'sheet' && <Num label="Ugao" unit="°" value={sel.part.angleDeg} min={-360} max={360} testId="part-angle" onChange={(v) => patchPart(sel.part.id, { angleDeg: v })} />}
               {sel.shape.type === 'linear' && (
-                <div className="flex items-center justify-between gap-2 py-1 text-[13px]">
+                <div className="grid gap-1 py-1 text-[13px]">
                   <span className="text-slate-600">Okretanje preseka</span>
-                  <span className="inline-flex rounded-lg border border-line overflow-hidden">
-                    {[0, 90, 180, 270].map((r) => <button key={r} data-testid={`part-rot-${r}`} aria-pressed={sel.part.rot === r} className={`px-2 py-1 text-[12px] font-semibold ${sel.part.rot === r ? 'bg-brand-black text-white' : 'hover:bg-slate-50'}`} onClick={() => patchPart(sel.part.id, { rot: r })}>{r}°</button>)}
+                  <span className="grid grid-cols-4 rounded-lg border border-line overflow-hidden">
+                    {[0, 90, 180, 270].map((r) => <button key={r} data-testid={`part-rot-${r}`} aria-pressed={sel.part.rot === r} className={`py-1 text-[12px] font-semibold ${sel.part.rot === r ? 'bg-brand-black text-white' : 'hover:bg-slate-50'}`} onClick={() => patchPart(sel.part.id, { rot: r })}>{r}°</button>)}
                   </span>
                 </div>
               )}
               {sel.shape.type === 'linear' && (
-                <Num label="Nagib preseka (koso)" unit="°" value={sel.part.tiltDeg ?? 0} min={-89.9} max={89.9} testId="part-tilt" onChange={(v) => patchPart(sel.part.id, { tiltDeg: v || undefined })} />
+                <Num label="Nagib preseka (koso)" unit="°" value={sel.part.tiltDeg ?? 0} min={-90} max={90} testId="part-tilt" onChange={(v) => patchPart(sel.part.id, { tiltDeg: v || undefined })} />
               )}
               {sel.shape.type === 'linear' && (
                 <label className="flex items-center justify-between gap-2 py-1 text-[13px]" title="Deo rama: oba kraja se seku pod 45°; u krojnoj listi dobija oznaku 45°">
@@ -395,10 +522,7 @@ function Designer({ id }: { id: string }) {
                     <tr><td className="text-slate-600 py-0.5">Visina prečke spreda</td><td className="text-right font-medium tabular-nums">{fmtDeg(sectionFace(report.section, sel.part.rot + (sel.part.tiltDeg ?? 0)).face)} mm</td></tr>
                     <tr><td className="text-slate-600 py-0.5">Ulazi u kanal (levo / desno)</td><td className="text-right font-medium tabular-nums" data-testid="guide-insert">{fmtDeg(report.L.mouthX - sel.part.x)} / {fmtDeg(sel.part.x + sel.part.lengthMm - report.R.mouthX)} mm</td></tr>
                   </tbody></table>
-                  <div className="flex gap-2 mt-2">
-                    <button className="btn btn-sm btn-primary flex-1" data-testid="guide-set-fit" onClick={() => patchPart(sel.part.id, { tiltDeg: report.fit.plus })}>Postavi pod uglom uklapanja</button>
-                    <button className="btn btn-sm" data-testid="guide-detach" title="Prečka više ne prati U profile" onClick={() => patchPart(sel.part.id, { guides: undefined })}><Link2Off size={14} />Odvoji</button>
-                  </div>
+                  <button className="btn btn-sm btn-primary w-full mt-2" data-testid="guide-set-fit" onClick={() => patchPart(sel.part.id, { tiltDeg: report.fit.plus })}>Postavi pod uglom uklapanja</button>
                   <p className="text-[11.5px] text-muted mt-1.5">Prečka ne može da izađe van U profila: dužina, položaj, dubina i nagib se ograničavaju na kanal.</p>
                 </div>
               )}
@@ -439,6 +563,19 @@ function Designer({ id }: { id: string }) {
           <p className="text-[11.5px] text-muted mt-2">Količine su tačne mere sa crteža, bez otpada. Model se čuva automatski.</p>
         </aside>
       </div>
+      {pendingSwap && (() => {
+        const role = pendingSwap.ids.some((x) => replaceRole(model, x) === 'guide') ? 'guide' : replaceRole(model, pendingSwap.ids[0]);
+        const n = swapTargets(pendingSwap.ids).length;
+        const to = materials.find((m) => m.id === pendingSwap.materialId);
+        return (
+          <ConfirmDialog title="Zameni materijal" confirmLabel={role === 'guide' ? 'Zameni oba U profila' : `Zameni svih ${n} prečki`}
+            message={role === 'guide'
+              ? <><p>Bočni U profili idu u paru: ograda se ne može napraviti sa različitim U profilima levo i desno. Zato se zamenjuje i U profil na suprotnoj strani, oba novim materijalom <b>{to?.name}</b>.</p><p className="mt-2 text-[13px] text-muted">Prečke se same prilagođavaju: ulaze do dna novog kanala, ugao uklapanja i razmak se računaju iznova, a broj prečki i odstojanja od vrha i dna ostaju. Ako prečke ne staju, ništa se ne menja.</p></>
+              : <><p>Prečke iste vrste između istih U profila moraju biti od istog materijala. Zamenjuje se svih {n} prečki novim materijalom <b>{to?.name}</b>.</p><p className="mt-2 text-[13px] text-muted">Ugao, dužina i razmak se prilagođavaju novom preseku. Ako prečke ne staju, ništa se ne menja.</p></>}
+            onConfirm={() => { const sw = pendingSwap; setPendingSwap(null); swapMaterial(sw.ids, sw.materialId); }}
+            onCancel={() => setPendingSwap(null)} />
+        );
+      })()}
     </div>
   );
 }

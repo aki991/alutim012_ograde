@@ -2,7 +2,7 @@ import { isSpacer } from '../domain/geometry/layout';
 import { GATE_LABELS } from '../domain/models/catalog';
 import type { LayoutItem } from '../domain/models/types';
 
-/** Čitljiv naziv elementa: „Ograda 2", „Klizna kapija", „Otvor 1". Numeracija po vrsti. */
+/** Čitljiv naziv elementa: „Platno 2" (deo ograde), „Klizna kapija", „Otvor 1". Numeracija po vrsti; kapije zadržavaju svoje nazive. */
 export function itemLabel(items: LayoutItem[], index: number): string {
   const it = items[index];
   if (!it) return '';
@@ -13,7 +13,7 @@ export function itemLabel(items: LayoutItem[], index: number): string {
   }
   const corner = (x: LayoutItem) => x.kind === 'opening' && x.bendDeg !== undefined;
   const same = items.filter((x) => x.kind === it.kind && corner(x) === corner(it) && !isSpacer(x));
-  const base = it.kind === 'fence' ? 'Ograda' : corner(it) ? 'Ugao' : 'Otvor';
+  const base = it.kind === 'fence' ? 'Platno' : corner(it) ? 'Ugao' : 'Otvor';
   return `${base} ${same.indexOf(it) + 1}`;
 }
 
@@ -33,6 +33,6 @@ export const shortLabel = (items: LayoutItem[], index: number): string => {
   const it = items[index];
   if (!it) return '';
   if (it.kind === 'gate') return GATE_LABELS[it.gateType].replace(' kapija', ' kap.');
-  if (it.kind === 'fence') return `Polje ${items.slice(0, index + 1).filter((x) => x.kind === 'fence').length}`;
+  if (it.kind === 'fence') return `Platno ${items.slice(0, index + 1).filter((x) => x.kind === 'fence').length}`;
   return it.bendDeg !== undefined ? 'Ugao' : 'Otvor';
 };

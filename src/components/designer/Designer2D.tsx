@@ -9,7 +9,8 @@ import { PartSvg, type ResolvedPart } from './PartsSvg';
 interface View { x: number; y: number; w: number }
 type Drag =
   | { mode: 'draw'; sx: number; sy: number }
-  | { mode: 'move'; id: string; sx: number; sy: number; ox: number; oy: number; moved: boolean }
+  | { mode: 'move'; sx: number; sy: number; origin: { id: string; x: number; y: number }[]; moved: boolean }
+  | { mode: 'box'; sx: number; sy: number; add: boolean; base: string[] }
   | { mode: 'pan'; cx: number; cy: number; view: View };
 
 interface Props {
@@ -17,14 +18,16 @@ interface Props {
   parts: ResolvedPart[];
   /** materijal kojim se crta; null = izbor i pomeranje */
   active: Material | null;
-  selectedId: string | null;
+  /** izabrani delovi (Ctrl + klik dodaje ili skida deo, prevlačenje levim tasterom po praznom bira okvirom) */
+  selectedIds: string[];
   /** samo vodoravno i uspravno */
   ortho: boolean;
   gridMm: number;
-  onSelect: (id: string | null) => void;
+  onSelect: (ids: string[]) => void;
   onAdd: (part: CustomPart) => void;
   onMoveStart: () => void;
-  onMove: (id: string, x: number, y: number) => void;
+  /** pomeranje svih izabranih delova odjednom (novi x i y svakog dela) */
+  onMove: (moves: { id: string; x: number; y: number }[]) => void;
 }
 
 const snap = (v: number, g: number): number => Math.round(v / g) * g;
@@ -47,8 +50,12 @@ export function partFromDrag(materialId: string, shape: MatShape, sx: number, sy
   return { ...base, x: sx, y: sy, lengthMm: len, angleDeg: Math.round((Math.atan2(dy, dx) * 180) / Math.PI) };
 }
 
-/** Platno za crtanje modela: pogled spreda u mm. Izabranim materijalom se crta povlačenjem, a delovi se pomeraju mišem. */
-export function Designer2D({ model, parts, active, selectedId, ortho, gridMm, onSelect, onAdd, onMoveStart, onMove }: Props) {
+/**
+ * Platno za crtanje modela: pogled spreda u mm. Izabranim materijalom se crta povlačenjem. Levi taster bira: klik na deo,
+ * Ctrl + klik dodaje ili skida deo iz izbora, prevlačenje po praznom bira sve delove koje okvir dotakne; prevlačenje izabranog
+ * dela pomera ceo izbor. Desni (ili srednji) taster pomera papir. Pokazivač je obična strelica.
+ */
+export function Designer2D({ model, parts, active, selectedIds, ortho, gridMm, onSelect, onAdd, onMoveStart, onMove }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ w: 800, h: 500 });
@@ -56,6 +63,9 @@ export function Designer2D({ model, parts, active, selectedId, ortho, gridMm, on
   const drag = useRef<Drag | null>(null);
   const [ghost, setGhost] = useState<CustomPart | null>(null);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
+  /** okvir izbora u toku (mm, y nagore) */
+  const [box, setBox] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const selected = useMemo(() => new Set(selectedIds), [selectedIds]);
   const activeShape = useMemo(() => (active ? materialShape(active) : null), [active]);
   const vh = (view.w * size.h) / size.w;
 
@@ -111,14 +121,22 @@ export function Designer2D({ model, parts, active, selectedId, ortho, gridMm, on
     e.currentTarget.setPointerCapture(e.pointerId);
     if (e.button === 1 || e.button === 2) { drag.current = { mode: 'pan', cx: e.clientX, cy: e.clientY, view }; return; }
     if (active) { drag.current = { mode: 'draw', sx: snap(p.x, gridMm), sy: snap(p.y, gridMm) }; return; }
+    if (e.button !== 0) return;
+    const add = e.ctrlKey || e.metaKey;
     const id = (e.target as Element).closest('[data-part-id]')?.getAttribute('data-part-id');
     const hit = id ? parts.find((r) => r.part.id === id) : undefined;
+    if (hit && add) {
+      // Ctrl + klik: deo ulazi u izbor ili izlazi iz njega, bez pomeranja
+      onSelect(selected.has(hit.part.id) ? selectedIds.filter((x) => x !== hit.part.id) : [...selectedIds, hit.part.id]);
+      return;
+    }
     if (hit) {
-      onSelect(hit.part.id);
-      drag.current = { mode: 'move', id: hit.part.id, sx: p.x, sy: p.y, ox: hit.part.x, oy: hit.part.y, moved: false };
+      const ids = selected.has(hit.part.id) ? selectedIds : [hit.part.id];
+      if (!selected.has(hit.part.id)) onSelect(ids);
+      const origin = ids.map((x) => parts.find((r) => r.part.id === x)?.part).filter((q): q is CustomPart => !!q).map((q) => ({ id: q.id, x: q.x, y: q.y }));
+      drag.current = { mode: 'move', sx: p.x, sy: p.y, origin, moved: false };
     } else {
-      onSelect(null);
-      drag.current = { mode: 'pan', cx: e.clientX, cy: e.clientY, view };
+      drag.current = { mode: 'box', sx: p.x, sy: p.y, add, base: selectedIds };
     }
   };
   const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
@@ -133,7 +151,9 @@ export function Designer2D({ model, parts, active, selectedId, ortho, gridMm, on
     } else if (d.mode === 'move') {
       const dx = snap(p.x - d.sx, gridMm); const dy = snap(p.y - d.sy, gridMm);
       if (!d.moved && (dx !== 0 || dy !== 0)) { d.moved = true; onMoveStart(); }
-      if (d.moved) onMove(d.id, d.ox + dx, d.oy + dy);
+      if (d.moved) onMove(d.origin.map((o) => ({ id: o.id, x: o.x + dx, y: o.y + dy })));
+    } else if (d.mode === 'box') {
+      setBox({ x0: Math.min(d.sx, p.x), y0: Math.min(d.sy, p.y), x1: Math.max(d.sx, p.x), y1: Math.max(d.sy, p.y) });
     } else if (active && activeShape) {
       setGhost(partFromDrag(active.id, activeShape, d.sx, d.sy, sp.x, sp.y, ortho, 'ghost'));
     }
@@ -141,6 +161,16 @@ export function Designer2D({ model, parts, active, selectedId, ortho, gridMm, on
   const onPointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
     const d = drag.current;
     drag.current = null;
+    if (d?.mode === 'box') {
+      const b = box;
+      setBox(null);
+      // klik bez prevlačenja po praznom: izbor se briše (sa Ctrl ostaje)
+      const tiny = !b || Math.max(b.x1 - b.x0, b.y1 - b.y0) < view.w / 300;
+      if (tiny) { if (!d.add) onSelect([]); return; }
+      const inBox = parts.filter((r) => { const q = partBounds(r.part, r.shape); return q.x1 >= b.x0 && q.x0 <= b.x1 && q.y1 >= b.y0 && q.y0 <= b.y1; }).map((r) => r.part.id);
+      onSelect(d.add ? [...new Set([...d.base, ...inBox])] : inBox);
+      return;
+    }
     if (d?.mode === 'draw' && active && activeShape) {
       const p = toWorld(e.clientX, e.clientY);
       const part = partFromDrag(active.id, activeShape, d.sx, d.sy, snap(p.x, gridMm), snap(p.y, gridMm), ortho, uid('part'));
@@ -165,14 +195,15 @@ export function Designer2D({ model, parts, active, selectedId, ortho, gridMm, on
   return (
     <div ref={wrapRef} className="relative h-full w-full bg-[#eef2f6] overflow-hidden select-none" style={{ touchAction: 'none' }} data-testid="designer-2d">
       <svg ref={svgRef} className="absolute inset-0 w-full h-full" viewBox={`${view.x} ${view.y} ${view.w} ${vh}`} style={{ cursor: active ? 'crosshair' : 'default' }}
-        onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={() => { setCursor(null); if (!drag.current) setGhost(null); }} onContextMenu={(e) => e.preventDefault()}>
+        onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={() => { setCursor(null); if (!drag.current) setGhost(null); }} onPointerCancel={() => { drag.current = null; setBox(null); }} onContextMenu={(e) => e.preventDefault()}>
         {lines}
         <line x1={view.x} y1={0} x2={view.x + view.w} y2={0} stroke="#64748b" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
         <rect x={0} y={-model.heightMm} width={model.widthMm} height={model.heightMm} fill="#fff" fillOpacity={0.55} stroke="#2563eb" strokeWidth={1.2} strokeDasharray="7 5" vectorEffect="non-scaling-stroke" />
         <text x={model.widthMm / 2} y={fs * 1.6} textAnchor="middle" fontSize={fs} fill="#2563eb" fontWeight="600">{model.widthMm} mm</text>
         <text x={-fs * 0.8} y={-model.heightMm / 2} textAnchor="middle" fontSize={fs} fill="#2563eb" fontWeight="600" transform={`rotate(-90 ${-fs * 0.8} ${-model.heightMm / 2})`}>{model.heightMm} mm</text>
         <g transform="scale(1,-1)">
-          {parts.map((r) => <PartSvg key={r.part.id} part={r.part} shape={r.shape} hex={r.hex} selected={r.part.id === selectedId} />)}
+          {parts.map((r) => <PartSvg key={r.part.id} part={r.part} shape={r.shape} hex={r.hex} selected={selected.has(r.part.id)} />)}
+          {box && <rect data-testid="designer-select-box" x={box.x0} y={box.y0} width={box.x1 - box.x0} height={box.y1 - box.y0} fill="#2563eb" fillOpacity={0.08} stroke="#2563eb" strokeWidth={1} strokeDasharray="5 4" vectorEffect="non-scaling-stroke" pointerEvents="none" />}
           {ghost && activeShape && <PartSvg part={ghost} shape={activeShape} hex="#d71920" ghost />}
         </g>
         {ghost && ghostLabel && <text x={ghost.x + fs} y={-(ghost.y + (ghost.heightMm ?? 0)) - fs * 1.2} fontSize={fs} fill="#d71920" fontWeight="700" data-testid="designer-ghost-label">{ghostLabel}</text>}

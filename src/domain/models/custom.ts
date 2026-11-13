@@ -76,6 +76,29 @@ export function partBounds(p: CustomPart, shape: MatShape): { x0: number; y0: nu
   return { x0: Math.min(...pts.map((q) => q[0])), y0: Math.min(...pts.map((q) => q[1])), x1: Math.max(...pts.map((q) => q[0])), y1: Math.max(...pts.map((q) => q[1])) };
 }
 
+/**
+ * Svi delovi staju u okvir modela (0 … širina, 0 … visina): deo koji viri pomera se nazad unutra, bez promene mere.
+ * Npr. bočni U profil 60 × 28 sa osom na x = 10 bi išao od −4; pomera se tako da počne na 0.
+ * Deo veći od okvira: sa `grow` okvir raste do mere dela (okvir prati stvarnu ogradu, npr. bočne strane produžene na 1200
+ * daju visinu 1200), a bez njega se deo samo poravnava sa početkom okvira. Delovi nepoznatog materijala ostaju gde jesu.
+ */
+export function clampToFrame(model: CustomModel, shapeOf: (p: CustomPart) => MatShape | null, grow = false): CustomModel {
+  const items = model.parts.map((p) => { const s = shapeOf(p); return { p, b: s ? partBounds(p, s) : null }; });
+  let W = model.widthMm; let H = model.heightMm;
+  if (grow) for (const { b } of items) if (b) { W = Math.max(W, Math.ceil(b.x1 - b.x0 - 1e-6)); H = Math.max(H, Math.ceil(b.y1 - b.y0 - 1e-6)); }
+  const shift = (lo: number, hi: number, max: number): number => (hi - lo >= max || lo < 0 ? -lo : hi > max ? max - hi : 0);
+  let changed = W !== model.widthMm || H !== model.heightMm;
+  const parts = items.map(({ p, b }) => {
+    if (!b) return p;
+    const dx = shift(b.x0, b.x1, W); const dy = shift(b.y0, b.y1, H);
+    if (Math.abs(dx) < 1e-9 && Math.abs(dy) < 1e-9) return p;
+    changed = true;
+    const r = (n: number) => Math.round(n * 1000) / 1000;
+    return { ...p, x: r(p.x + dx), y: r(p.y + dy) };
+  });
+  return changed ? { ...model, widthMm: W, heightMm: H, parts } : model;
+}
+
 export interface ResolvedPart { part: CustomPart; shape: MatShape; hex: string; material: Material | undefined }
 
 /**

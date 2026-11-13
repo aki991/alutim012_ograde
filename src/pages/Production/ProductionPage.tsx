@@ -102,7 +102,7 @@ export default function ProductionPage() {
         <SelectField label="Status" testId="prod-status" value={project.status} options={(Object.keys(STATUS_LABELS) as ProjectStatus[]).map((s) => ({ value: s, label: STATUS_LABELS[s] }))} onChange={(v) => patchProject(project.id, { status: v })} />
         <div className="py-1.5 text-sm"><span className="label">Kupac:</span> {customer?.name ?? '—'}</div>
       </div>
-      <div className="card p-4 mb-5 overflow-auto"><FrontView project={project} scale={0.07} /></div>
+      <div className="card p-4 mb-5"><FrontView project={project} scale={0.07} className="block w-full h-auto max-h-[360px]" /></div>
       <div className="grid gap-5 xl:grid-cols-2">
         <section className="card p-4 overflow-x-auto">
           <h2 className="font-bold mb-2">Redosled elemenata</h2>

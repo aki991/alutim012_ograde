@@ -1,6 +1,6 @@
-import { partBounds, type CustomModel, type CustomPart } from './custom';
+import { partAngle, partBounds, type CustomModel, type CustomPart } from './custom';
 import { barLayoutInfo, guideReport, type BarLayoutValues } from './guides';
-import { materialShape, type MatShape } from './materialShape';
+import { materialShape, rotateDeg, type MatShape } from './materialShape';
 import type { Material } from './types';
 
 /**
@@ -62,7 +62,7 @@ export interface Sketch {
   right: ColDim[];
   oblique: { id: string; x: number; y: number; angleDeg: number; text: string }[];
   groups: SketchGroup[];
-  /** mesta zavarivanja: visina od poda do gornje ivice svake prečke uklopljene u bočni U profil, odozgo naniže */
+  /** mesta zavarivanja: visina od poda do gornje linije naleganja svake prečke uklopljene u bočni U profil, odozgo naniže */
   welds: { id: string; y: number; value: number }[];
   /** delovi čiji je materijal obrisan iz cenovnika */
   missing: number;
@@ -109,6 +109,18 @@ function chain(intervals: { lo: number; hi: number }[], total: number, topDown: 
     push(maxHi, total, last, 'offset');
   }
   return out;
+}
+
+/**
+ * Gornja unutrašnja linija preseka prečke u pogledu spreda — druga po visini među uglovima preseka. Kod nagnutog preseka
+ * najviši ugao viri iznad ivice U profila, a prečka naleže (i vari se) na liniju ispod njega, koja je na crtežu tanka linija
+ * unutar prečke. Kod uspravnog preseka (bez nagiba) nema takve linije, pa je to gornja ivica. `top` je najviša tačka preseka.
+ */
+export function contactTopY(p: CustomPart, shape: MatShape, top: number): number {
+  if (shape.type !== 'linear') return top;
+  const c = Math.cos((p.angleDeg * Math.PI) / 180);
+  const ys = [...new Set(shape.section.polys.flatMap((poly) => poly.outline.map((pt) => Math.round((p.y + rotateDeg(pt, partAngle(p))[0] * c) * 1000) / 1000)))].sort((a, b) => b - a);
+  return ys.length >= 4 ? ys[1] : top;
 }
 
 export function buildSketch(model: CustomModel, materials: Material[]): Sketch {
@@ -192,7 +204,7 @@ export function buildSketch(model: CustomModel, materials: Material[]): Sketch {
       pitch: info.count >= 2 ? r2(info.h + gap) : null, opening: r2(rep.opening), fitDeg: r2(rep.fit.plus), tiltDeg: r2(Math.abs(it.p.tiltDeg ?? 0)),
     });
   }
-  // gornja ivica prečke (najviša tačka preseka, i kad je nagnut) merena od poda: tu se prečka vari za bočni U profil
-  const welds = items.filter((i) => i.p.guides && i.shape.type === 'linear').map((i) => ({ id: i.p.id, y: i.b.y1, value: r1(i.b.y1) })).sort((a, b) => b.y - a.y);
+  // gornja linija na kojoj prečka naleže na ivicu bočnog U profila, merena od poda: tu se prečka vari
+  const welds = items.filter((i) => i.p.guides && i.shape.type === 'linear').map((i) => { const y = contactTopY(i.p, i.shape, i.b.y1); return { id: i.p.id, y, value: r1(y) }; }).sort((a, b) => b.y - a.y);
   return { widthMm: W, heightMm: H, positions, noOf, left, bottom, top, right, oblique, groups, welds, missing };
 }
