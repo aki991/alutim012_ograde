@@ -1,7 +1,7 @@
 import { isRl10Post } from '../models/rl10';
 import { buildRl10Sheet, isRl10Item } from './rl10Spec';
 import { itemSlope } from '../geometry/stair';
-import { gateLeafPoses } from '../geometry/gates';
+import { gateLeafPoses, gateSpecWidth } from '../geometry/gates';
 import { computeLayout, type LaidOutItem } from '../geometry/layout';
 import type { FenceModelId, FenceSection, Gate, Material, PricingSettings, Project } from '../models/types';
 import { CALC_RULES } from './rules';
@@ -110,7 +110,7 @@ export function buildBom(project: Project, materials: Material[], specs?: ModelS
     if (isLouver08(it) && !hasCustomSpec(modelId, specs)) continue;
     if (isRl10Item(it) && !hasCustomSpec(modelId, specs)) continue;
     // elementi specifikacije modela (podrazumevani ili izmenjeni): količine i dužine po formulama
-    const vars = specVars({ modelId, slopeFactor: itemSlope(li).factor, widthMm: li.clearWidth, heightMm: it.heightMm, axisMm: li.axisEnd - li.axisStart, params: it.params, doubleGate: it.kind === 'gate' && it.gateType === 'double', leafWidthsMm: it.kind === 'gate' && it.gateType === 'double' ? gateLeafPoses(it, li.clearStart, li.clearEnd, 1).map((q) => q.widthMm) : undefined });
+    const vars = specVars({ modelId, slopeFactor: itemSlope(li).factor, widthMm: it.kind === 'gate' ? gateSpecWidth(it, li.clearWidth) : li.clearWidth, heightMm: it.heightMm, axisMm: li.axisEnd - li.axisStart, params: it.params, doubleGate: it.kind === 'gate' && it.gateType === 'double', leafWidthsMm: it.kind === 'gate' && it.gateType === 'double' ? gateLeafPoses(it, li.clearStart, li.clearEnd, 1).map((q) => q.widthMm) : undefined });
     // kapija sa merama: noseći ram krila ide iz mera kapije (izabrani profil), pa se ram iz specifikacije ispune ne broji dvaput
     const ownFrame = it.kind === 'gate' && Boolean(it.design?.profiles.some((p) => p.role === 'frame'));
     for (const ev of evaluateSpec(specFor(modelId, specs), vars)) if (!(ownFrame && ev.part.group === 'Ramovi')) add(ev.part.group, ev.part.materialId, ev.materialQty);

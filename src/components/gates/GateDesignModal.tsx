@@ -1,18 +1,17 @@
-import { AlertTriangle, CheckCircle2, FileDown, FlipHorizontal2, Info, Plus, Trash2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronRight, FileDown, FlipHorizontal2, Info, Plus, Trash2 } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
 import { NumInput, showNum } from '../forms/NumInput';
 import {
   applyExample, CONFIRM_LABELS, confirmationState, configHash, DIM_BY_KEY, dimsFor, emptyDesign, equationsFor, fmt, GROUP_LABELS, HW_EXAMPLES, HW_ROLE_LABELS, HW_STATUS_LABELS,
-  mirrorDesign, ORIGIN_LABELS, PROFILE_ROLE_LABELS, resolveGate, setDim, setDimStatus, setSolve, STATUS_LABELS, SYSTEM_LABELS, systemOf,
-  type ConfirmKind, type DimGroup, type DimStatus, type ExtraDim, type GateDesign, type GateHardware, type GateProfile, type HwRole, type HwStatus, type ProfileRole,
+  mirrorDesign, ORIGIN_LABELS, PROFILE_ROLE_LABELS, resolveGate, setDim, setSolve, SYSTEM_LABELS, systemOf,
+  type ConfirmKind, type DimGroup, type ExtraDim, type GateDesign, type GateHardware, type GateProfile, type HwRole, type HwStatus, type ProfileRole,
 } from '../../domain/gates/design';
 import { gateCutRows, gateMass } from '../../domain/gates/production';
 import { addVersion, applyTemplate, DEFAULT_INCLUDE, describeInclude, latest, newTemplate, type GateTemplate, type TemplateInclude } from '../../domain/gates/templates';
 import { computeLayout, postHalfSum } from '../../domain/geometry/layout';
 import { compareMaterials } from '../../domain/models/materialShape';
-import { FENCE_MODELS } from '../../domain/models/catalog';
 import { evaluateSpec, specFor, specVars } from '../../domain/models/spec';
-import { gateLeafPoses } from '../../domain/geometry/gates';
+import { gateLeafPoses, gateSpecWidth } from '../../domain/geometry/gates';
 import { gateBomLines } from '../../domain/pricing/calc';
 import type { Gate, Material, Project } from '../../domain/models/types';
 import { useAppStore } from '../../store/useAppStore';
@@ -27,7 +26,6 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 
-const ORIGIN_TONE: Record<string, string> = { rucno: 'bg-blue-50 text-blue-700', sablon: 'bg-violet-50 text-violet-700', katalog: 'bg-amber-50 text-amber-800', proracun: 'bg-emerald-50 text-emerald-700', projekat: 'bg-slate-100 text-slate-700', kota: 'bg-cyan-50 text-cyan-800' };
 
 function Badge({ children, tone, testId }: { children: ReactNode; tone: string; testId?: string }) {
   return <span data-testid={testId} className={`inline-block rounded px-1.5 py-0.5 text-[10.5px] font-semibold whitespace-nowrap ${tone}`}>{children}</span>;
@@ -44,6 +42,7 @@ export function GateDesignModal({ projectId, itemId, onClose }: { projectId: str
   const materials = useAppStore((s) => s.materials);
   const settings = useAppStore((s) => s.settings);
   const [tab, setTab] = useState<Tab>('mere');
+  const [showDims, setShowDims] = useState(true);
   const index = project ? project.items.findIndex((i) => i.id === itemId) : -1;
   const gate = project?.items[index] as (Gate | undefined);
   const layout = useMemo(() => (project ? computeLayout(project) : null), [project]);
@@ -68,10 +67,15 @@ export function GateDesignModal({ projectId, itemId, onClose }: { projectId: str
   return (
     <Modal title={`Mere kapije — ${label} (${SYSTEM_LABELS[sys]})`} onClose={onClose} fullscreen
       headerActions={<button className="btn btn-sm" data-testid="gd-pdf" onClick={async () => { const { downloadGatePdf } = await import('../../services/pdfGate'); await downloadGatePdf(project, itemId, materials, settings); }}><FileDown size={14} />PDF mera kapije</button>}>
-      <div className="grid lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] gap-4" data-testid="gate-design">
+      <div className={`grid lg:grid-cols-[minmax(0,1fr)_400px] gap-4`} data-testid="gate-design">
         {/* skica i provere ostaju na ekranu dok se lista kota skroluje */}
         <div className="min-w-0 lg:sticky lg:top-0 lg:self-start lg:max-h-[calc(100dvh-110px)] lg:overflow-auto scroll-thin" data-testid="gd-left">
-          <div className="card p-2 overflow-hidden"><GateSketch gate={g} res={res} onPick={pick} /></div>
+          <div className="mb-1 flex items-center gap-1 text-[12.5px]" data-testid="gd-view-toggle">
+            <span className="text-muted">Prikaz:</span>
+            <button className={`btn btn-sm ${!showDims ? 'btn-primary' : ''}`} data-testid="gd-view-2d" onClick={() => setShowDims(false)}>2D crtež</button>
+            <button className={`btn btn-sm ${showDims ? 'btn-primary' : ''}`} data-testid="gd-view-dims" onClick={() => setShowDims(true)}>Sa kotama</button>
+          </div>
+          <div className="card p-2 overflow-hidden"><GateSketch gate={g} res={res} onPick={pick} showDims={showDims} postHs={[project.posts[index]?.heightMm, project.posts[index + 1]?.heightMm]} postWs={[project.posts[index]?.widthMm, project.posts[index + 1]?.widthMm]} /></div>
           <div className="mt-2 flex flex-wrap gap-2 items-center text-[12.5px]">
             {design.template ? <Badge tone="bg-violet-50 text-violet-700" testId="gd-template-ref">Šablon „{design.template.name}“ v{design.template.version}</Badge> : <Badge tone="bg-slate-100 text-slate-600">bez šablona</Badge>}
             {(['mere'] as ConfirmKind[]).map((k) => { const s = confirmationState(g, li.clearWidth, k); return <Badge key={k} testId="gd-confirm-state" tone={s === 'valid' ? 'bg-emerald-50 text-emerald-700' : s === 'stale' ? 'bg-[#fef3f2] text-[#b42318]' : 'bg-slate-100 text-slate-600'}>{s === 'valid' ? 'Mere potvrđene' : s === 'stale' ? 'Potvrda mera ne važi (konfiguracija promenjena)' : 'Mere nisu potvrđene — radna verzija'}</Badge>; })}
@@ -101,6 +105,8 @@ type Update = (fn: (d: GateDesign) => GateDesign, key?: string) => void;
 /* ---------- Mere ---------- */
 function DimsTab({ project, index, g, design, res, update, patchGate, clearWidth }: { project: Project; index: number; g: Gate; design: GateDesign; res: ReturnType<typeof resolveGate>; update: Update; patchGate: (p: Partial<Gate>) => void; clearWidth: number }) {
   const sys = res.system;
+  // „Teren i merenje“ se retko koristi: zatvoreno je dok se ne otvori; kod klizne kapije tu je i raspoloživi prostor P, pa je otvoreno
+  const [terenOpen, setTerenOpen] = useState(sys === 'cantilever' || sys === 'rail');
   const st = useAppStore.getState();
   const defs = dimsFor(sys);
   const groups = [...new Set(defs.map((d) => d.group))] as DimGroup[];
@@ -109,7 +115,7 @@ function DimsTab({ project, index, g, design, res, update, patchGate, clearWidth
   const setW = (w: number | null) => { if (w !== null && w > 0) st.setWidth(g.id, w + 2 * half, `w:${g.id}`); };
   return (
     <div className="space-y-3" data-testid="gd-dims">
-      <div className="grid sm:grid-cols-2 gap-2 text-[13px]">
+      <div className="grid gap-2 text-[13px]">
         {g.gateType === 'sliding' && (
           <label className="flex flex-col gap-1">Izvedba klizne
             <select className="input !py-1" data-testid="gd-slide" value={design.slide ?? 'cantilever'} onChange={(e) => update((d) => ({ ...d, slide: e.target.value as GateDesign['slide'] }))}>
@@ -127,10 +133,6 @@ function DimsTab({ project, index, g, design, res, update, patchGate, clearWidth
         <label className="flex flex-col gap-1">Izrada rama
           <select className="input !py-1" data-testid="gd-build" value={design.build ?? ''} onChange={(e) => update((d) => ({ ...d, build: (e.target.value || undefined) as GateDesign['build'] }))}>
             <option value="">nije poznato</option><option value="zavaren">Zavaren alu ram</option><option value="mehanicki">Mehanički sklopljen</option><option value="celicni_ram">Čelični ram, alu ispuna</option>
-          </select></label>
-        <label className="flex flex-col gap-1">Ispuna (izgled)
-          <select className="input !py-1" data-testid="gd-infill" value={g.infillModelId} onChange={(e) => st.setItemModel(g.id, e.target.value as Gate['infillModelId'])}>
-            {Object.values(FENCE_MODELS).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select></label>
         <label className="flex flex-col gap-1">Strana gledanja
           <select className="input !py-1" value={design.viewFrom ?? 'dvoriste'} onChange={(e) => update((d) => ({ ...d, viewFrom: e.target.value as GateDesign['viewFrom'] }))}>
@@ -184,19 +186,22 @@ function DimsTab({ project, index, g, design, res, update, patchGate, clearWidth
 
       {groups.map((grp) => (
         <div key={grp}>
-          <div className="text-[12px] font-bold uppercase text-muted mb-1">{GROUP_LABELS[grp]}</div>
-          <div className="divide-y divide-line rounded-lg border border-line">
+          {grp === 'teren' ? (
+            <button type="button" className="flex w-full items-center gap-1 text-[12px] font-bold uppercase text-muted mb-1 hover:text-ink" data-testid="gd-teren-toggle" aria-expanded={terenOpen} onClick={() => setTerenOpen((o) => !o)}>
+              <ChevronRight size={14} className={`transition-transform ${terenOpen ? 'rotate-90' : ''}`} />{GROUP_LABELS[grp]}
+              {!terenOpen && defs.some((d) => d.group === 'teren' && res.values[d.key]?.v != null) && <span className="ml-1 normal-case font-normal">({defs.filter((d) => d.group === 'teren' && res.values[d.key]?.v != null).length} unetih)</span>}
+            </button>
+          ) : <div className="text-[12px] font-bold uppercase text-muted mb-1">{GROUP_LABELS[grp]}</div>}
+          <div className={`divide-y divide-line rounded-lg border border-line ${grp === 'teren' && !terenOpen ? 'hidden' : ''}`}>
             {defs.filter((d) => d.group === grp).map((def) => {
               const r = res.values[def.key];
-              const own = design.dims[def.key];
               const computed = r.origin === 'proracun';
-              const fromProject = r.origin === 'projekat';
               const sug = suggestions[def.key];
               const issues = res.issues.filter((i) => i.key === def.key && i.level !== 'info');
               const linked = design.extra.find((x) => x.link === def.key);
               return (
                 <div key={def.key} className="px-2.5 py-1.5" data-testid={`gd-row-${def.key}`}>
-                  <div className="grid grid-cols-[minmax(0,1fr)_110px_auto] gap-2 items-center">
+                  <div className="grid grid-cols-[minmax(0,1fr)_110px] gap-2 items-center">
                     <div className="min-w-0">
                       <div className="text-[13px] font-semibold leading-tight">{def.label}</div>
                       <div className="text-[11px] text-muted leading-tight">{def.part}{def.ref ? ` · ${def.ref}` : ''}</div>
@@ -206,13 +211,8 @@ function DimsTab({ project, index, g, design, res, update, patchGate, clearWidth
                         onCommit={(v) => (def.key === 'W' ? setW(v) : def.key === 'H' && v !== null ? (update((d) => setDim(d, 'H', v)), st.patchItem(g.id, { heightMm: v }, 'h')) : update((d) => setDim(d, def.key, v), `gd:${def.key}`))} />
                       <span className="text-[11px] text-muted w-5">{def.unit ?? 'mm'}</span>
                     </div>
-                    <div className="flex items-center gap-1 justify-end flex-wrap">
-                      <Badge tone={ORIGIN_TONE[r.origin]} testId={`gd-origin-${def.key}`}>{r.v === null && !computed ? 'nije uneto' : ORIGIN_LABELS[r.origin]}</Badge>
-                      <select className="input !py-0 !px-1 !w-auto text-[11px]" aria-label={`Status: ${def.label}`} data-testid={`gd-status-${def.key}`} value={own?.status ?? r.status ?? 'radna'} onChange={(e) => update((d) => setDimStatus(d, def.key, e.target.value as DimStatus))}>
-                        {Object.entries(STATUS_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-                      </select>
-                      {!fromProject && !computed && r.v !== null && <button className="btn btn-icon !w-6 !h-6" title="Obriši (nepoznato)" aria-label={`Obriši ${def.label}`} data-testid={`gd-clear-${def.key}`} onClick={() => update((d) => setDim(d, def.key, null))}><Trash2 size={12} /></button>}
-                    </div>
+                    {/* poreklo mere (ručno, proračun, šablon) ostaje samo u podacima i za čitače ekrana; brisanje = obrisati sadržaj polja */}
+                    <span className="sr-only" data-testid={`gd-origin-${def.key}`}>{r.v === null && !computed ? 'nije uneto' : ORIGIN_LABELS[r.origin]}</span>
                   </div>
                   {computed && r.shadow !== null && r.shadow !== undefined && <div className="text-[11.5px] text-muted">Vaš unos {fmt(r.shadow)} je sačuvan, a kotu sada računa aplikacija.</div>}
                   {linked && <div className="text-[11.5px] text-cyan-800">Zadaje je dodatna kota „{linked.name}“.</div>}
@@ -416,7 +416,7 @@ function ProductionTab({ project, index, g, design, res, update, materials, clea
   const layout = computeLayout(project);
   const li = layout.items[index];
   const infill = useMemo(() => {
-    const vars = specVars({ modelId: g.infillModelId, slopeFactor: 1, widthMm: li.clearWidth, heightMm: g.heightMm, axisMm: li.axisEnd - li.axisStart, params: g.params, doubleGate: g.gateType === 'double', leafWidthsMm: g.gateType === 'double' ? gateLeafPoses(g, clearStart, clearEnd, 1).map((q) => q.widthMm) : undefined });
+    const vars = specVars({ modelId: g.infillModelId, slopeFactor: 1, widthMm: gateSpecWidth(g, li.clearWidth), heightMm: g.heightMm, axisMm: li.axisEnd - li.axisStart, params: g.params, doubleGate: g.gateType === 'double', leafWidthsMm: g.gateType === 'double' ? gateLeafPoses(g, clearStart, clearEnd, 1).map((q) => q.widthMm) : undefined });
     const own = design.profiles.some((p) => p.role === 'frame');
     // isti materijal u više delova specifikacije sabira se u jedan red; redovi bez količine se ne prikazuju
     const acc = new Map<string, { name: string; qty: number; unit: string; kgPerM?: number; meters: number }>();

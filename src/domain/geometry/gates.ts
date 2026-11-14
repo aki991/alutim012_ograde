@@ -50,6 +50,29 @@ export function doubleLeafWidths(g: Pick<Gate, 'unequalLeaves' | 'leftLeafMm'> &
 }
 
 /** Položaj krila kapije za zadat procenat otvaranja (0–1) u okviru svetlog otvora [clearStart, clearEnd]. */
+/** širina krila za izradu: kod jednokrilne kapije sa merama to je „Širina krila“ (otvor − zazori), inače svetli otvor */
+export function gateSpecWidth(g: Gate, clear: Mm): Mm {
+  if (g.gateType === 'sliding' || g.gateType === 'double' || !g.design) return clear;
+  const wk = resolveGate(g, clear).values.Wk?.v;
+  return wk !== null && wk !== undefined && wk > 0 ? wk : clear;
+}
+
+/** krila krilne kapije sa merama, u odnosu na levo lice stuba (isto što crta skica mera); nepoznat zazor je 0, a nepoznata širina krila popunjava ostatak */
+export function swingLeafBoxes(g: Gate, clear: Mm): { x: Mm; w: Mm; hinge: 'left' | 'right' }[] | null {
+  if (!g.design || g.gateType === 'sliding') return null;
+  const r = resolveGate(g, clear);
+  const v = (k: string): number => r.values[k]?.v ?? 0;
+  if (g.gateType === 'double') {
+    const room = clear - v('gL') - v('gR') - v('gC');
+    const wl = r.values.WL?.v ?? (r.values.WR?.v != null ? room - r.values.WR.v : room / 2);
+    const wr = r.values.WR?.v ?? room - wl;
+    return [{ x: v('gL'), w: wl, hinge: 'left' }, { x: clear - v('gR') - wr, w: wr, hinge: 'right' }];
+  }
+  const left = g.opening === 'left';
+  const w = r.values.Wk?.v ?? Math.max(clear - v('gH') - v('gZ'), 0);
+  return [{ x: left ? v('gH') : clear - v('gH') - w, w, hinge: left ? 'left' : 'right' }];
+}
+
 export function gateLeafPoses(g: Gate, clearStart: Mm, clearEnd: Mm, open: number): LeafPose[] {
   const o = clamp01(open);
   const clear = Math.max(0, clearEnd - clearStart);
@@ -68,7 +91,8 @@ export function gateLeafPoses(g: Gate, clearStart: Mm, clearEnd: Mm, open: numbe
     ];
   }
   const left = g.opening === 'left';
-  return [{ pivotX: left ? clearStart : clearEnd, extendDir: left ? 1 : -1, widthMm: clear, rotationY: swingAngle(o, g.opening, g.swing), slideX: 0 }];
+  const gh = g.design ? resolveGate(g, clear).values.gH?.v ?? 0 : 0;
+  return [{ pivotX: left ? clearStart + gh : clearEnd - gh, extendDir: left ? 1 : -1, widthMm: gateSpecWidth(g, clear), rotationY: swingAngle(o, g.opening, g.swing), slideX: 0 }];
 }
 
 /** Da li je zadat raspoloživ prostor za povlačenje klizne kapije dovoljan. known=false: prostor nije zadat. */

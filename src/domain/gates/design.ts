@@ -56,7 +56,6 @@ export const DIM_DEFS: DimDef[] = [
   { key: 'slope', label: 'Pad podloge', part: 'Teren', ref: 'duž putanje krila ili trase', group: 'teren', systems: ALL, unit: '%', min: -100 },
   { key: 'H', label: 'Visina krila', part: 'Krilo', ref: 'spoljna mera rama, donja do gornje ivice', group: 'krila', systems: ALL, min: 1 },
   { key: 'gB', label: 'Donji zazor', part: 'Krilo', ref: 'gotova kota podloge do najniže ivice krila ili okova', group: 'zazori', systems: ALL },
-  { key: 'top', label: 'Kota vrha kapije', part: 'Krilo', ref: 'od gotove podloge do vrha krila', group: 'krila', systems: ALL },
   { key: 'face', label: 'Širina profila rama', part: 'Ram', ref: 'vidljiva širina profila u pogledu', group: 'ram', systems: ALL, min: 1 },
   // dvokrilna
   { key: 'gL', label: 'Levi bočni zazor', part: 'Levo krilo / levi stub', ref: 'montažno lice levog stuba do leve ivice zatvorenog rama', group: 'zazori', systems: ['swing_double'] },
@@ -326,6 +325,13 @@ export function resolveGate(g: Gate & { design?: GateDesign }, clearWidthMm: num
       continue;
     }
     const missing = eq.terms.filter((t) => v(t.key) === null).map((t) => t.key);
+    // ručni režim: ako nedostaje samo jedna kota jednačine, ona se sama izračuna (npr. svetli otvor − zazor − širina krila = drugi zazor)
+    if (missing.length === 1) {
+      const mk = missing[0]; const tm = eq.terms.find((t) => t.key === mk)!;
+      values[mk] = { v: -eq.terms.filter((t) => t.key !== mk).reduce((s, t) => s + t.c * v(t.key)!, 0) / tm.c, origin: 'proracun', status: values[mk].status };
+      equations.push({ id: eq.id, label: eq.label, solve: null, residual: 0, missing: [] });
+      continue;
+    }
     const residual = missing.length ? null : eq.terms.reduce((s, t) => s + t.c * v(t.key)!, 0);
     equations.push({ id: eq.id, label: eq.label, solve: null, residual, missing });
     if (residual !== null && Math.abs(residual) > 0.05) {

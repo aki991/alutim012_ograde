@@ -37,7 +37,7 @@ export interface GateTemplate {
 }
 
 /** kote koje su terenske (vezane za konkretno mesto), ne ponovljiva podešavanja */
-export const FIELD_KEYS = ['W', 'wTop', 'wMid', 'wBot', 'ground', 'slope', 'P', 'top', 'H'];
+export const FIELD_KEYS = ['W', 'wTop', 'wMid', 'wBot', 'ground', 'slope', 'P', 'H'];
 
 export const DEFAULT_INCLUDE: TemplateInclude = { dims: true, rules: true, parts: true, extra: true, field: false };
 

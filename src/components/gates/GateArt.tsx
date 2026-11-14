@@ -1,6 +1,8 @@
 import type { Gate } from '../../domain/models/types';
 import { InfillArt } from '../fences/InfillArt';
 import { ramInsets } from '../../domain/models/tubes';
+import { resolveGate } from '../../domain/gates/design';
+import { swingLeafBoxes } from '../../domain/geometry/gates';
 
 interface Props {
   gate: Gate;
@@ -31,13 +33,20 @@ function SwingMark({ x, y, w, h, hingeSide, px }: { x: number; y: number; w: num
   );
 }
 
-function Hinges({ x, y, w, h, side }: { x: number; y: number; w: number; h: number; side: 'left' | 'right' }) {
-  const hx = side === 'left' ? x - 8 : x + w - 30;
+function Hinges({ x, y, w, h, side, gate, clearX, clear }: { x: number; y: number; w: number; h: number; side: 'left' | 'right'; gate?: Gate; clearX?: number; clear?: number }) {
+  // mere kapije: položaj ose šarke od lica stuba, broj šarki, gornja šarka od vrha i razmak osa
+  const r = gate?.design && clear !== undefined ? resolveGate(gate, clear).values : null;
+  const val = (k: string) => r?.[k]?.v ?? null;
+  const axis = val('hingeAxis');
+  const hx = axis !== null && clearX !== undefined && clear !== undefined ? (side === 'left' ? clearX + axis : clearX + clear - axis) - 19 : side === 'left' ? x - 8 : x + w - 30;
+  const nH = Math.max(1, Math.round(val('hingeCount') ?? 2));
+  const spacing = val('hingeSpacing'); const top = val('hingeTop');
+  const cys = r && (spacing !== null || top !== null)
+    ? Array.from({ length: nH }, (_, j) => y + (top ?? 150) + (spacing !== null && nH >= 2 ? spacing * j : nH === 1 ? 0 : ((h - 2 * (top ?? 150)) / (nH - 1)) * j))
+    : [0.12, 0.88].map((t) => y + h * t);
   return (
     <g fill="#9aa4b0" stroke="#1b1f24" strokeWidth="3">
-      {[0.12, 0.88].map((t) => (
-        <rect key={t} x={hx} y={y + h * t - 45} width={38} height={90} rx="6" />
-      ))}
+      {cys.map((cy, i) => <rect key={i} x={hx} y={cy - 45} width={38} height={90} rx="6" />)}
     </g>
   );
 }
@@ -93,6 +102,26 @@ export function GateArt({ gate, x, y, w, h, hex, px, realistic }: Props & { real
     );
   }
 
+  const boxes = swingLeafBoxes(gate, w);
+  // donji zazor iz mera kapije podiže krilo od poda
+  const gB = gate.design ? resolveGate(gate, w).values.gB?.v ?? 0 : 0;
+  const yl = y - gB;
+  if (gate.gateType === 'double' && boxes) {
+    const [bl, br] = boxes;
+    return (
+      <g>
+        <Leaf gate={gate} x={x + bl.x} y={yl} w={bl.w} h={h} hex={hex} uid={`${gate.id}-l`} withHandle={false} handleSide="right" edge={[gate.params.frameMm, 0]} />
+        <Leaf gate={gate} x={x + br.x} y={yl} w={br.w} h={h} hex={hex} uid={`${gate.id}-r`} withHandle={false} handleSide="left" edge={[0, gate.params.frameMm]} />
+        {!realistic && <SwingMark x={x + bl.x} y={yl} w={bl.w} h={h} hingeSide="left" px={px} />}
+        {!realistic && <SwingMark x={x + br.x} y={yl} w={br.w} h={h} hingeSide="right" px={px} />}
+        <Hinges x={x + bl.x} y={yl} w={bl.w} h={h} side="left" gate={gate} clearX={x} clear={w} />
+        <Hinges x={x + br.x} y={yl} w={br.w} h={h} side="right" gate={gate} clearX={x} clear={w} />
+        <rect x={x + bl.x + bl.w - 30} y={yl + h * 0.5 - 40} width={80} height={80} rx="14" fill="#c3cbd5" stroke="#6b7380" strokeWidth="3" />
+        {gate.automation && <rect x={x + w / 2 - 60} y={yl - 70} width={120} height={50} rx="10" fill="#1b1f24" />}
+      </g>
+    );
+  }
+
   if (gate.gateType === 'double') {
     const total = w;
     const gapC = 20;
@@ -108,6 +137,19 @@ export function GateArt({ gate, x, y, w, h, hex, px, realistic }: Props & { real
         <Hinges x={x + leftW + gapC} y={y} w={rightW} h={h} side="right" />
         <rect x={x + leftW - 30} y={y + h * 0.5 - 40} width={80} height={80} rx="14" fill="#c3cbd5" stroke="#6b7380" strokeWidth="3" />
         {gate.automation && <rect x={x + w / 2 - 60} y={y - 70} width={120} height={50} rx="10" fill="#1b1f24" />}
+      </g>
+    );
+  }
+
+  // pešačka i jednokrilna sa merama kapije
+  if (boxes) {
+    const [b0] = boxes;
+    return (
+      <g>
+        <Leaf gate={gate} x={x + b0.x} y={yl} w={b0.w} h={h} hex={hex} uid={`${gate.id}-p`} withHandle handleSide={freeSide} />
+        {!realistic && <SwingMark x={x + b0.x} y={yl} w={b0.w} h={h} hingeSide={hingeSide} px={px} />}
+        <Hinges x={x + b0.x} y={yl} w={b0.w} h={h} side={hingeSide} gate={gate} clearX={x} clear={w} />
+        {gate.automation && <rect x={x + b0.x + b0.w / 2 - 60} y={yl - 70} width={120} height={50} rx="10" fill="#1b1f24" />}
       </g>
     );
   }

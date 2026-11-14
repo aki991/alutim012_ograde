@@ -1,6 +1,6 @@
 import { isRl10Item } from './rl10Spec';
 import { itemSlope } from '../geometry/stair';
-import { gateLeafPoses } from '../geometry/gates';
+import { gateLeafPoses, gateSpecWidth } from '../geometry/gates';
 import { computeInfill } from '../geometry/infill';
 import { computeLayout } from '../geometry/layout';
 import { FENCE_MODELS, GATE_LABELS } from '../models/catalog';
@@ -44,13 +44,13 @@ export function buildCutList(project: Project, specs?: ModelSpecs, materials?: M
     if ((isRail04(it) || isLouver08(it) || isRl10Item(it)) && !hasCustomSpec(modelId, specs)) continue;
     const slope = itemSlope(li);
     const stairNote = slope.factor > 1 ? `stepenište: krajevi pod uglom ${Math.round(slope.deg)}°` : '';
-    const vars = specVars({ modelId, slopeFactor: slope.factor, widthMm: li.clearWidth, heightMm: it.heightMm, axisMm: li.axisEnd - li.axisStart, params: it.params, doubleGate: it.kind === 'gate' && it.gateType === 'double', leafWidthsMm: it.kind === 'gate' && it.gateType === 'double' ? gateLeafPoses(it, li.clearStart, li.clearEnd, 1).map((q) => q.widthMm) : undefined });
-    const geo = computeInfill(modelId, li.clearWidth, it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount, it.params.liftMm, undefined, it.params.archMm);
+    const vars = specVars({ modelId, slopeFactor: slope.factor, widthMm: it.kind === 'gate' ? gateSpecWidth(it, li.clearWidth) : li.clearWidth, heightMm: it.heightMm, axisMm: li.axisEnd - li.axisStart, params: it.params, doubleGate: it.kind === 'gate' && it.gateType === 'double', leafWidthsMm: it.kind === 'gate' && it.gateType === 'double' ? gateLeafPoses(it, li.clearStart, li.clearEnd, 1).map((q) => q.widthMm) : undefined });
+    const geo = computeInfill(modelId, it.kind === 'gate' ? gateSpecWidth(it, li.clearWidth) : li.clearWidth, it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount, it.params.liftMm, undefined, it.params.archMm);
     if (geo.glass) {
       rows.push({ element: name, index: li.index, glass: true, part: 'Staklo', profile: FENCE_MODELS[modelId].parts.main, lengthMm: Math.round(geo.glass.w), qty: 1, note: slope.factor > 1 ? `paralelogram: ${Math.round(geo.glass.w)} mm horizontalno × ${Math.round(geo.glass.h)} mm vertikalno, nagib ${Math.round(slope.deg)}°` : `${Math.round(geo.glass.w)} × ${Math.round(geo.glass.h)} mm` });
     }
     const group = new Map<string, CutRow>();
-    const slats = slatCutLengths({ modelId, slopeFactor: slope.factor, widthMm: li.clearWidth, heightMm: it.heightMm, axisMm: li.axisEnd - li.axisStart, params: it.params, doubleGate: it.kind === 'gate' && it.gateType === 'double', leafWidthsMm: it.kind === 'gate' && it.gateType === 'double' ? gateLeafPoses(it, li.clearStart, li.clearEnd, 1).map((q) => q.widthMm) : undefined });
+    const slats = slatCutLengths({ modelId, slopeFactor: slope.factor, widthMm: it.kind === 'gate' ? gateSpecWidth(it, li.clearWidth) : li.clearWidth, heightMm: it.heightMm, axisMm: li.axisEnd - li.axisStart, params: it.params, doubleGate: it.kind === 'gate' && it.gateType === 'double', leafWidthsMm: it.kind === 'gate' && it.gateType === 'double' ? gateLeafPoses(it, li.clearStart, li.clearEnd, 1).map((q) => q.widthMm) : undefined });
     const ownFrame = it.kind === 'gate' && Boolean(it.design?.profiles.some((p) => p.role === 'frame'));
     if (it.kind === 'gate' && it.design) {
       // mere kapije: ram krila, noseći profil, rep, šina — red koji još nema meru ostaje u prozoru „Mere kapije“ (ne ide u plan rezanja)

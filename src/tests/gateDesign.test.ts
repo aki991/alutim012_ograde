@@ -8,6 +8,7 @@ import { applyExample, configHash, confirmationState, emptyDesign, HW_EXAMPLES, 
 import { addVersion, applyTemplate, DEFAULT_INCLUDE, latest, newTemplate } from '../domain/gates/templates';
 import { gateCutRows, gateMass } from '../domain/gates/production';
 import { doubleLeafWidths } from '../domain/geometry/gates';
+import { computeLayout } from '../domain/geometry/layout';
 
 const withDesign = (g: Gate, d: GateDesign): Gate => ({ ...g, design: d });
 const set = (d: GateDesign, vals: Record<string, number>) => Object.entries(vals).reduce((x, [k, v]) => setDim(x, k, v), d);
@@ -159,6 +160,19 @@ describe('kapija sa merama u obračunu projekta', () => {
     expect(hinge).toMatchObject({ missingPrice: true, purchaseQty: 2 });
     // stara pravila (šarke iz kataloga) se ne dodaju uz mere kapije
     expect(bom.some((l) => l.materialId === 'mat_hinge_standard')).toBe(false);
+  });
+  it('jednokrilna: dužina letvica ispune prati širinu krila iz mera, a ne svetli otvor', () => {
+    const tube = (design?: GateDesign) => {
+      const g = { ...createGate('pedestrian', { infillModelId: 'h_narrow' }), ...(design ? { design } : {}) } as Gate;
+      const p = createProject('t', [g]);
+      const rows = buildCutList(p, undefined, SEED_MATERIALS);
+      return { clear: computeLayout(p).items[0].clearWidth, len: rows.find((r) => r.part === 'Kvadratna cev (letvica)')!.lengthMm };
+    };
+    const base = tube();
+    const withGaps = tube(set(emptyDesign('swing_single'), { gH: 15, gZ: 15 }));
+    // krilo = otvor − 15 − 15, pa je i cev kraća za tačno 30 mm
+    expect(base.len - withGaps.len).toBe(30);
+    expect(base.clear).toBe(withGaps.clear);
   });
   it('promena ispune menja sastavnicu; postojeći projekat bez mera i dalje se obračunava', () => {
     const a = buildBom(project('h_white', d), SEED_MATERIALS).map((l) => l.key).sort();

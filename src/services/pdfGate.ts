@@ -1,5 +1,5 @@
 import { createElement } from 'react';
-import { GateSketch } from '../components/gates/GateSketch';
+import { GateSketchSvg } from '../components/gates/GateSketch';
 import { CONFIRM_LABELS, confirmationState, DIM_BY_KEY, dimsFor, emptyDesign, fmt, HW_ROLE_LABELS, HW_STATUS_LABELS, ORIGIN_LABELS, resolveGate, STATUS_LABELS, SYSTEM_LABELS, systemOf, type ConfirmKind } from '../domain/gates/design';
 import { gateCutRows } from '../domain/gates/production';
 import { computeLayout } from '../domain/geometry/layout';
@@ -27,7 +27,7 @@ export async function buildGatePdfBlob(project: Project, itemId: string, materia
   const res = resolveGate(g, li.clearWidth);
   const rows = gateCutRows(g, res, materials);
   const { renderToStaticMarkup } = await import('react-dom/server');
-  const svg = renderToStaticMarkup(createElement(GateSketch, { gate: g, res, width: 900 })).replace('width="100%"', 'width="900"');
+  const svg = renderToStaticMarkup(createElement(GateSketchSvg, { gate: g, res, width: 900, postHs: [project.posts[index]?.heightMm, project.posts[index + 1]?.heightMm], postWs: [project.posts[index]?.widthMm, project.posts[index + 1]?.widthMm] })).replace('width="100%"', 'width="900"');
   const m = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(svg);
   const h = m ? Number(m[2]) : 500;
   const png = await svgToPng(svg, 1800, Math.round(h * 2));
