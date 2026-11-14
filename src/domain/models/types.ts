@@ -109,6 +109,8 @@ export interface Gate {
   params: FenceParams;
   /** Mere kapije koje radnik zadaje ručno (zazori, krila, rep, kolica, okovi, profili, šablon); bez vrednosti važi stari okvirni obračun */
   design?: import('../gates/design').GateDesign;
+  /** klizna kapija kao parametarski sklop (šina ili samonoseća, ručna ili motorna); bez vrednosti važi stari prikaz klizne kapije */
+  sliding?: import('../gates/slidingAssembly').SlidingSpec;
 }
 
 export interface Opening {
@@ -212,6 +214,19 @@ export interface LouverSpec {
   support: string;
 }
 
+/** Sačuvana klizna kapija: nezavisna kopija sklopa koja se ubacuje u nov posao. */
+export interface SlidingTemplate {
+  id: string;
+  name: string;
+  createdAt: string;
+  spec: import('../gates/slidingAssembly').SlidingSpec;
+  /** širina rama (svetla širina elementa) i visina kapije od tla */
+  frameWidth: Mm;
+  heightMm: Mm;
+  opening: OpeningSide;
+  color: string;
+}
+
 export interface Project {
   id: string;
   schemaVersion: number;
@@ -307,6 +322,8 @@ export interface AppSettings {
   customModels?: import('./custom').CustomModel[];
   /** modeli iz kataloga (ograde i osnovne kapije) koje je korisnik obrisao; „Vrati obrisane modele“ ih vraća */
   hiddenModels?: string[];
+  /** korisnički šabloni kliznih kapija (sklop sa merama, smerom i stanjem potvrde) */
+  slidingTemplates?: SlidingTemplate[];
   /** sopstveni okovi radionice (šarke, brave, kolica …) za izbor u merama kapije */
   gateHardware?: import('../gates/design').GateHardware[];
   /** sopstveni profili radionice za ram, noseći profil i rep kapije */

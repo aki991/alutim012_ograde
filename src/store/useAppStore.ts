@@ -12,6 +12,7 @@ import { computeLayout } from '../domain/geometry/layout';
 import { removeStair, setStairGroup } from '../domain/geometry/stairOps';
 import { DEFAULT_MODEL_ID, FENCE_MODELS, TERRACE_NO_GATES, isTerraceModel, projectModelId } from '../domain/models/catalog';
 import { effectiveModelId, registerCustomModels, setHiddenModels } from '../domain/models/customRegistry';
+import { specFromPreset, type SlidingSpec } from '../domain/gates/slidingAssembly';
 import { defaultGateConfig, gateClearWidth, gateConfigFromGate, gateFieldsFromModel, GATE_TYPE_LABELS } from '../domain/gates/gateModels';
 import { postHalfSum } from '../domain/geometry/layout';
 import { builtinToCustom } from '../domain/models/fromBuiltin';
@@ -19,7 +20,7 @@ import { cleanMaterialName } from '../domain/models/materialTitle';
 import { createFence, createGate, createProject, nowIso } from '../domain/models/factories';
 import { emptyHistory, recordChange, redo as redoH, undo as undoH, type History } from '../domain/models/history';
 import type {
-  AppSettings, Customer, FenceModelId, FenceSection, Gate, GateType, LayoutItem, Material, Post, Project,
+  AppSettings, Customer, FenceModelId, FenceSection, Gate, GateType, LayoutItem, Material, Post, Project, SlidingTemplate,
 } from '../domain/models/types';
 import { migrateProject } from '../domain/validation/project';
 import { uid } from '../utils/id';
@@ -48,6 +49,8 @@ interface EditorState {
   activeModelId: FenceModelId;
   /** Poslednja poruka (upozorenje) koju editor prikazuje korisniku */
   notice: string | null;
+  /** proba hoda kliznih kapija (0–100 %) po ID-u kapije: samo prikaz, ne menja projekat */
+  slideTest: Record<string, number>;
 }
 
 interface AppState {
@@ -130,6 +133,15 @@ interface AppState {
   createGateDraft: (modelId: string) => { projectId: string; itemId: string } | null;
   /** zatvara privremen projekat: vraća podešavanja kapije (sa zadatom verzijom) i briše projekat */
   finishGateDraft: (projectId: string, version: number) => import('../domain/gates/gateModels').GateConfig | null;
+  /** klizna kapija kao sklop: dodaje varijantu (preset iz JSON-a) ili korisnički šablon na kraj niza; vraća ID kapije */
+  addSlidingGate: (source: { preset: import('../domain/gates/slidingAssembly').SlidingPresetId } | { template: string }) => string | null;
+  /** izmena sklopa klizne kapije (oslonac, pogon, hod, pozicije …) */
+  patchSliding: (itemId: string, patch: Partial<import('../domain/gates/slidingAssembly').SlidingSpec>, key?: string) => void;
+  /** proba hoda (0–100 %): pomera samo pokretne delove na crtežu */
+  setSlideTest: (itemId: string, pct: number) => void;
+  /** čuva kliznu kapiju kao imenovan šablon (nezavisna kopija); vraća ID šablona */
+  saveSlidingTemplate: (itemId: string, name: string) => string | null;
+  removeSlidingTemplate: (id: string) => void;
 }
 
 /** Element čiji model više ne postoji (obrisan nacrtani model) prelazi na podrazumevani model, da se projekat i dalje otvara. */
@@ -148,7 +160,7 @@ const dropUnknownModels = (p: Project): Project => {
 };
 
 const emptyEditor = (): EditorState => ({
-  projectId: null, selection: null, multi: [], multiPosts: [], history: emptyHistory<Project>(), view: 'front', zoom: 1, activeModelId: DEFAULT_MODEL_ID, notice: null,
+  projectId: null, selection: null, multi: [], multiPosts: [], history: emptyHistory<Project>(), view: 'front', zoom: 1, activeModelId: DEFAULT_MODEL_ID, notice: null, slideTest: {},
 });
 
 /** Izbor više polja ostaje samo za elemente koji i dalje postoje; sa manje od dva izabrana nema višestrukog izbora. */
@@ -593,6 +605,53 @@ export const useAppStore = create<AppState>((set, get) => {
       DRAFT_PREV.set(p.id, get().editor.projectId);
       set((s) => ({ projects: [p, ...s.projects], editor: { ...emptyEditor(), projectId: p.id, activeModelId: s.editor.activeModelId } }));
       return { projectId: p.id, itemId: gate.id };
+    },
+    addSlidingGate(source) {
+      const cur = currentProject();
+      if (!cur) return null;
+      let spec: SlidingSpec; let frameWidth: number; let heightMm: number; let opening: Gate['opening'] = 'right'; let color: string | undefined;
+      if ('preset' in source) {
+        const d = specFromPreset(source.preset);
+        spec = d.spec; frameWidth = d.frameWidth; heightMm = d.frameHeight + d.spec.frameBottomY;
+      } else {
+        const t = (get().settings.slidingTemplates ?? []).find((x) => x.id === source.template);
+        if (!t) return null;
+        // nezavisna kopija: kasnije izmene šablona ili ove kapije ne utiču jedna na drugu
+        spec = JSON.parse(JSON.stringify(t.spec)) as SlidingSpec; frameWidth = t.frameWidth; heightMm = t.heightMm; opening = t.opening; color = t.color;
+      }
+      const id = get().addElement({ kind: 'gate', gateType: 'sliding' });
+      if (!id) return null;
+      get().mutate((p) => {
+        const q = updateItem(p, id, { sliding: spec, heightMm, opening, automation: spec.actuation === 'motor', automationType: 'sliding_motor', ...(color ? { color } : {}) } as Partial<Gate>);
+        return setOuterWidth(q, id, frameWidth + 2 * postHalfSum(q, indexOfItem(q, id)));
+      });
+      return id;
+    },
+    patchSliding(itemId, patch, key) {
+      const cur = currentProject();
+      const g = cur?.items.find((i) => i.id === itemId);
+      if (!g || g.kind !== 'gate' || !g.sliding) return;
+      const next = { ...g.sliding, ...patch };
+      get().mutate((p) => updateItem(p, itemId, { sliding: next, automation: next.actuation === 'motor' } as Partial<Gate>), key ? `sl:${key}:${itemId}` : null);
+    },
+    setSlideTest(itemId, pct) {
+      set((s) => ({ editor: { ...s.editor, slideTest: { ...s.editor.slideTest, [itemId]: Math.max(0, Math.min(100, pct)) } } }));
+    },
+    saveSlidingTemplate(itemId, name) {
+      const cur = currentProject();
+      const index = cur ? cur.items.findIndex((i) => i.id === itemId) : -1;
+      const g = cur?.items[index];
+      if (!cur || !g || g.kind !== 'gate' || !g.sliding) return null;
+      const clear = computeLayout(cur).items[index].clearWidth;
+      const id = uid('slt');
+      const nm = name.trim() || g.sliding.name;
+      const spec = JSON.parse(JSON.stringify({ ...g.sliding, name: nm })) as SlidingSpec;
+      const t: SlidingTemplate = { id, name: nm, createdAt: new Date().toISOString(), spec, frameWidth: Math.round(clear), heightMm: g.heightMm, opening: g.opening, color: g.color };
+      set((s) => ({ settings: { ...s.settings, slidingTemplates: [...(s.settings.slidingTemplates ?? []), t] } }));
+      return id;
+    },
+    removeSlidingTemplate(id) {
+      set((s) => ({ settings: { ...s.settings, slidingTemplates: (s.settings.slidingTemplates ?? []).filter((t) => t.id !== id) } }));
     },
     finishGateDraft(projectId, version) {
       const proj = get().projects.find((x) => x.id === projectId);

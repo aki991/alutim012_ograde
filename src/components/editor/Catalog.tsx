@@ -6,8 +6,9 @@ import { createFence, createGate, createOpening, createProject } from '../../dom
 import { applyPostType, setOuterWidth } from '../../domain/geometry/operations';
 import { postHalfSum } from '../../domain/geometry/layout';
 import { gateClearWidth, gateFieldsFromModel, GATE_TYPE_LABELS } from '../../domain/gates/gateModels';
+import { presetTitle, SLIDING_PRESETS, specFromPreset, type SlidingPresetId } from '../../domain/gates/slidingAssembly';
 import type { CustomModel } from '../../domain/models/custom';
-import type { FenceModelId, Gate, GateType, PostType, Project } from '../../domain/models/types';
+import type { FenceModelId, Gate, GateType, PostType, Project, SlidingTemplate } from '../../domain/models/types';
 import type { DragSource } from '../../hooks/useDragController';
 import { useAppStore, useCurrentProject, type NewElementSpec } from '../../store/useAppStore';
 import { FrontView, frontViewMetrics } from './FrontView';
@@ -109,6 +110,18 @@ export function GateModelThumb({ model }: { model: CustomModel }) {
   return <MiniThumb project={mini} grey={isLightColor(model.color)} />;
 }
 
+/** Sličica klizne kapije (sklop iz polaznih mera varijante ili šablona), isti crtež kao u 2D prikazu. */
+export function SlidingThumb({ preset, template }: { preset?: SlidingPresetId; template?: SlidingTemplate }) {
+  const mini = useMini(() => {
+    const d = preset ? specFromPreset(preset) : null;
+    const spec = d?.spec ?? template!.spec;
+    const g = createGate('sliding', { sliding: spec, heightMm: d ? d.frameHeight + d.spec.frameBottomY : template!.heightMm, opening: template?.opening ?? 'right', automation: spec.actuation === 'motor', ...(template ? { color: template.color } : {}) });
+    const p = createProject('m', [g]);
+    return setOuterWidth(p, g.id, (d?.frameWidth ?? template!.frameWidth) + 2 * postHalfSum(p, 0));
+  }, `sl-${preset ?? template?.id}`);
+  return <MiniThumb project={mini} />;
+}
+
 const GATE_CARDS: { id: string; type: GateType; concrete?: boolean; title: string; subtitle: string }[] = [
   { id: 'pedestrian', type: 'pedestrian', title: GATE_LABELS.pedestrian, subtitle: 'Za prolaz ljudi' },
   { id: 'sliding', type: 'sliding', title: GATE_LABELS.sliding, subtitle: 'Otvara se klizanjem u stranu' },
@@ -129,6 +142,7 @@ export function Catalog({ onBeginDrag }: { onBeginDrag: (source: DragSource, e: 
   const [showAll, setShowAll] = useState(false);
   const customModels = useAppStore((s) => s.settings.customModels);
   const gateModels = customModels?.filter((m) => m.kind === 'gate' && !m.replaces);
+  const slidingTemplates = useAppStore((s) => s.settings.slidingTemplates);
   const hidden = useAppStore((s) => s.settings.hiddenModels);
   const def = FENCE_MODELS[model];
   const terrace = isTerraceModel(model); // ograda za terasu: bez kapija i bez kataloga stubova
@@ -181,6 +195,15 @@ export function Catalog({ onBeginDrag }: { onBeginDrag: (source: DragSource, e: 
             />
           );
         })}
+        {/* klizne kapije kao sklop: četiri polazne varijante i korisnički šabloni */}
+        {!terrace && SLIDING_PRESETS.map((p) => (
+          <CatalogCard key={p.id} testId={`cat-sliding-${p.id}`} title={presetTitle(p.id)} subtitle={`Klizna kapija · ${p.name}`} thumb={<SlidingThumb preset={p.id} />}
+            onAdd={() => useAppStore.getState().addSlidingGate({ preset: p.id })} />
+        ))}
+        {!terrace && slidingTemplates?.map((t) => (
+          <CatalogCard key={t.id} testId={`cat-slidingtpl-${t.id}`} title={t.name} subtitle={`Moj šablon · ${presetTitle(t.spec.presetId) === 'Klizna kapija' ? 'klizna kapija' : presetTitle(t.spec.presetId)}`} thumb={<SlidingThumb template={t} />}
+            onAdd={() => useAppStore.getState().addSlidingGate({ template: t.id })} />
+        ))}
         {!terrace && gateModels?.map((m) => (
           <CatalogCard key={m.id} testId={`cat-gatemodel-${m.id}`} title={m.name} subtitle={`Model kapije · ${GATE_TYPE_LABELS[m.gate?.gateType ?? 'pedestrian']}`} thumb={<GateModelThumb model={m} />}
             onAdd={() => useAppStore.getState().addGateFromModel(m.id)} />

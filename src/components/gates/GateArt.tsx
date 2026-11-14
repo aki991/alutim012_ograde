@@ -1,5 +1,6 @@
 import type { Gate } from '../../domain/models/types';
 import { InfillArt } from '../fences/InfillArt';
+import { SlidingAssemblyArt } from './SlidingAssemblyArt';
 import { ramInsets } from '../../domain/models/tubes';
 import { hingePositions, resolveGate } from '../../domain/gates/design';
 import { swingLeafBoxes } from '../../domain/geometry/gates';
@@ -69,7 +70,9 @@ function Leaf({ gate, x, y, w, h, hex, uid, withHandle, handleSide, edge, cy: cy
 }
 
 /** realistic: bez oznaka za crtež (smer otvaranja, strelica klizanja, oznaka motora) — za simulaciju na fotografiji */
-export function GateArt({ gate, x, y, w, h, hex, px, realistic }: Props & { realistic?: boolean }) {
+export function GateArt({ gate, x, y, w, h, hex, px, realistic, showDims }: Props & { realistic?: boolean; showDims?: boolean }) {
+  // klizna kapija kao parametarski sklop (šina ili samonoseća, ručna ili motorna)
+  if (gate.gateType === 'sliding' && gate.sliding) return <SlidingAssemblyArt gate={gate} clearStart={x} clearEnd={x + w} clearWidth={w} floorY={y + h} px={px} hex={hex} showDims={showDims} realistic={realistic} />;
   const hingeSide = gate.opening;
   const freeSide = hingeSide === 'left' ? 'right' : 'left';
 

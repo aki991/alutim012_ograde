@@ -26,6 +26,7 @@ import { ColorField, NumberField, SegmentedField, SelectField, TextField, Toggle
 import { ConfirmDialog } from '../ui/Modal';
 import { PdfPreviewModal } from './PdfPreviewModal';
 import { GateDesignModal } from '../gates/GateDesignModal';
+import { SlidingPanel } from '../gates/SlidingPanel';
 import { resolveGate, SYSTEM_LABELS } from '../../domain/gates/design';
 
 function Section({ title, children, testId }: { title: string; children: React.ReactNode; testId?: string }) {
@@ -354,7 +355,15 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
   } else {
     const g: Gate = it;
     const swing = g.gateType !== 'sliding';
-    body = (
+    // klizna kapija kao sklop: mere, pozicije, proba hoda i sastavnica u svom panelu (stara polja klizne kapije bi im protivrečila)
+    if (g.sliding) body = (
+      <>
+        <SlidingPanel project={project} gate={g} />
+        <ColorField stacked value={g.color} testId="field-color" onChange={(c) => st.setItemColor(id, c)} finish={g.finish} onFinishChange={(f) => st.setItemFinish(id, f)} />
+        <ToggleField label="Stubovi kapije" testId="field-gate-own-posts" checked={Boolean(g.ownPosts)} onLabel="Svoji stubovi" offLabel="Zajednički stub" onChange={(v) => st.patchItem(id, { ownPosts: v })} />
+      </>
+    );
+    else body = (
       <>
         <GateDesignEntry project={project} gate={g} />
         {common}

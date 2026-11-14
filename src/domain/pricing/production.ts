@@ -12,6 +12,7 @@ import { isLouver08 } from './louverSpec';
 import { isRail04 } from './railSpec';
 import { HW_ROLE_LABELS, missingHardware, resolveGate, systemOf, unknownHwLabel } from '../gates/design';
 import { gateCutRows } from '../gates/production';
+import { resolveSliding, slidingBom, variantTitle } from '../gates/slidingAssembly';
 
 export interface CutRow {
   element: string;
@@ -42,6 +43,16 @@ export function buildCutList(project: Project, specs?: ModelSpecs, materials?: M
     const modelId = it.kind === 'fence' ? it.modelId : it.infillModelId;
     // modeli 04 i 08 imaju zasebnu krojnu listu dok se njihova specifikacija ne izmeni
     if ((isRail04(it) || isLouver08(it) || isRl10Item(it)) && !hasCustomSpec(modelId, specs)) continue;
+    // klizna kapija kao sklop: u krojnu listu idu samo komadi sa poznatom krojnom merom (upisanom ili ravnim rezom šine/C-profila);
+    // komad čija mera zavisi od spoja čeka potvrdu u panelu kapije
+    if (it.kind === 'gate' && it.sliding) {
+      for (const b of slidingBom(resolveSliding(it.sliding, li.clearWidth, it.heightMm))) {
+        if (b.cutMm === null || b.cutMm <= 0 || b.unit !== 'kom') continue;
+        if (b.make !== 'izrada' && b.key !== 'rail' && b.key !== 'carrier') continue;
+        rows.push({ element: name, index: li.index, part: b.name, profile: b.name, lengthMm: b.cutMm, qty: b.qty, note: [b.note, b.shownMm !== null && b.shownMm !== b.cutMm ? `prikazano ${b.shownMm} mm` : ''].filter(Boolean).join(' · ') || undefined });
+      }
+      continue;
+    }
     const slope = itemSlope(li);
     const stairNote = slope.factor > 1 ? `stepenište: krajevi pod uglom ${Math.round(slope.deg)}°` : '';
     const vars = specVars({ modelId, slopeFactor: slope.factor, widthMm: it.kind === 'gate' ? gateSpecWidth(it, li.clearWidth) : li.clearWidth, heightMm: it.heightMm, axisMm: li.axisEnd - li.axisStart, params: it.params, doubleGate: it.kind === 'gate' && it.gateType === 'double', leafWidthsMm: it.kind === 'gate' && it.gateType === 'double' ? gateLeafPoses(it, li.clearStart, li.clearEnd, 1).map((q) => q.widthMm) : undefined });
@@ -92,10 +103,19 @@ export function buildCutList(project: Project, specs?: ModelSpecs, materials?: M
 export interface HardwareRow { element: string; item: string; qty: number }
 
 export function buildHardwareList(project: Project): HardwareRow[] {
+  const layout = computeLayout(project);
   const rows: HardwareRow[] = [];
   project.items.forEach((it, i) => {
     if (it.kind !== 'gate') return;
     const el = itemLabel(project.items, i);
+    if (it.sliding) {
+      // kupljeni delovi kliznog sklopa; delovi kompleta motora se ne ponavljaju, nepotvrđeni nose oznaku
+      for (const b of slidingBom(resolveSliding(it.sliding, layout.items[i].clearWidth, it.heightMm))) {
+        if (b.make !== 'kupovina' || b.kit || b.key === 'rail' || b.key === 'carrier') continue;
+        rows.push({ element: el, item: `${b.name}${b.confirm ? ' (potvrditi)' : ''}`, qty: b.qty });
+      }
+      return;
+    }
     if (it.design) {
       for (const h of it.design.hardware.filter((x) => x.name.trim())) rows.push({ element: el, item: `${HW_ROLE_LABELS[h.role]}: ${h.name}${h.code ? ` (${h.code})` : ''}`, qty: h.qty });
       // okov koji radnik nije upisao: nepoznata oznaka, sa količinom koja uz kapiju ide
@@ -115,5 +135,6 @@ export function describeItem(project: Project, index: number): string {
   const it = project.items[index];
   if (it.kind === 'opening') return it.bendDeg !== undefined ? `Ugaoni spoj ${Math.abs(it.bendDeg)}° (savijene prečke)` : 'Prazan otvor';
   if (it.kind === 'fence') return FENCE_MODELS[it.modelId].name;
+  if (it.sliding) return `${GATE_LABELS[it.gateType]} — ${variantTitle(it.sliding)}`;
   return `${GATE_LABELS[it.gateType]} — ${FENCE_MODELS[it.infillModelId].name}`;
 }

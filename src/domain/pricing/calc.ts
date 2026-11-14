@@ -11,11 +11,33 @@ import { buildRail04Sheet, isRail04, RAIL04 } from './railSpec';
 import { isTarabicaPost, tarabicaPostLines } from '../models/tarabica';
 import { missingHardware, resolveGate, systemOf, unknownHwLabel, type HwRole } from '../gates/design';
 import { gateCutRows } from '../gates/production';
+import { resolveSliding, slidingBom, type SlidingBomItem } from '../gates/slidingAssembly';
 
 const HW_GROUP: Record<HwRole, BomGroup> = {
   hinge_left: 'Šarke', hinge_right: 'Šarke', hinge: 'Šarke', lock: 'Brave', catch: 'Brave', drop_bolt: 'Brave', ground_stop: 'Nosači i spojnice', trolley: 'Točkići', carrier_kit: 'Točkići',
   guide: 'Nosači i spojnice', end_roller: 'Točkići', receiver: 'Nosači i spojnice', stopper: 'Nosači i spojnice', wheel: 'Točkići', rail: 'Nosači i spojnice', motor: 'Automatika', other: 'Nosači i spojnice',
 };
+
+const SLIDING_GROUP: Record<SlidingBomItem['group'], BomGroup> = { 'Ram i ispuna': 'Ramovi', 'Oslonac i vođenje': 'Točkići', Okov: 'Brave', 'Pogon i automatika': 'Automatika', 'Pričvršćenje': 'Vijci' };
+
+/**
+ * Stavke klizne kapije (sklop) za sastavnicu projekta: profili u metrima (krojna mera ako je upisana, inače prikazana), kupljeni delovi u
+ * komadima. Delovi kompleta motora (krajnji prekidači i sl.) se ne ponavljaju; stavke koje čekaju potvrdu nose oznaku „potvrditi“.
+ */
+export function slidingBomLines(g: Gate, clearWidthMm: number): { group: BomGroup; materialId: string; qty: number; label: string; unit: Material['unit'] }[] {
+  if (!g.sliding) return [];
+  const res = resolveSliding(g.sliding, clearWidthMm, g.heightMm);
+  const out: { group: BomGroup; materialId: string; qty: number; label: string; unit: Material['unit'] }[] = [];
+  for (const b of slidingBom(res)) {
+    if (b.kit) continue;
+    const label = `${b.name} — klizna kapija${b.confirm ? ' (potvrditi)' : ''}`;
+    const meters = b.totalM !== null && (b.make === 'izrada' || b.key === 'rail' || b.key === 'carrier');
+    out.push(meters
+      ? { group: SLIDING_GROUP[b.group], materialId: `gate-m:sliding:${g.id}:${b.key}`, qty: b.totalM!, label, unit: 'm' }
+      : { group: SLIDING_GROUP[b.group], materialId: `gate-hw:sliding:${g.id}:${b.key}`, qty: b.unit === 'par' ? b.qty * 2 : b.qty, label, unit: b.unit === 'par' ? 'kom' : b.unit });
+  }
+  return out;
+}
 
 /** stavke sastavnice iz mera kapije: profili (metri neto dužine) i okovi (komadi); deo bez veze sa cenovnikom nosi naziv radnika */
 export function gateBomLines(g: Gate, clearWidthMm: number, materials: Material[]): { group: BomGroup; materialId: string; qty: number; label?: string }[] {
@@ -88,19 +110,19 @@ export interface BomLine {
 export const netUnitPrice = (price: number, pricing: PricingSettings): number =>
   pricing.pricesIncludeVat ? price / (1 + pricing.vatPercent / 100) : price;
 
-interface Acc { group: BomGroup; materialId: string; qty: number; label?: string }
+interface Acc { group: BomGroup; materialId: string; qty: number; label?: string; unit?: Material['unit'] }
 
 export function buildBom(project: Project, materials: Material[], specs?: ModelSpecs): BomLine[] {
   const layout = computeLayout(project);
   const acc = new Map<string, Acc>();
-  const add = (group: BomGroup, originalId: string, qty: number, label?: string) => {
+  const add = (group: BomGroup, originalId: string, qty: number, label?: string, unit?: Material['unit']) => {
     if (qty <= 0) return;
     // deo zamenjen u projektu („Delovi ograde“): umesto materijala iz specifikacije ide izabrani
     const materialId = project.partMaterials?.[originalId] ?? originalId;
     const k = `${group}|${materialId}`;
     const cur = acc.get(k);
     if (cur) cur.qty += qty;
-    else acc.set(k, { group, materialId, qty, label });
+    else acc.set(k, { group, materialId, qty, label, unit });
   };
 
   for (const li of layout.items) {
@@ -111,6 +133,8 @@ export function buildBom(project: Project, materials: Material[], specs?: ModelS
     if (isRail04(it) && !hasCustomSpec(modelId, specs)) continue;
     if (isLouver08(it) && !hasCustomSpec(modelId, specs)) continue;
     if (isRl10Item(it) && !hasCustomSpec(modelId, specs)) continue;
+    // klizna kapija kao sklop: sve stavke iz njenog crteža (bez specifikacije modela i starih paušalnih stavki kapije)
+    if (it.kind === 'gate' && it.sliding) { for (const l of slidingBomLines(it, li.clearWidth)) add(l.group, l.materialId, l.qty, l.label, l.unit); continue; }
     // elementi specifikacije modela (podrazumevani ili izmenjeni): količine i dužine po formulama
     const vars = specVars({ modelId, slopeFactor: itemSlope(li).factor, widthMm: it.kind === 'gate' ? gateSpecWidth(it, li.clearWidth) : li.clearWidth, heightMm: it.heightMm, axisMm: li.axisEnd - li.axisStart, params: it.params, doubleGate: it.kind === 'gate' && it.gateType === 'double', leafWidthsMm: it.kind === 'gate' && it.gateType === 'double' ? gateLeafPoses(it, li.clearStart, li.clearEnd, 1).map((q) => q.widthMm) : undefined });
     for (const ev of evaluateSpec(specFor(modelId, specs), vars)) add(ev.part.group, ev.part.materialId, ev.materialQty);
@@ -201,7 +225,7 @@ export function buildBom(project: Project, materials: Material[], specs?: ModelS
     const mat = materials.find((x) => x.id === a.materialId);
     const line = toLine(a, mat, project.settings.pricing);
     // deo kapije bez veze sa cenovnikom (ručno zadat okov ili profil): naziv radnika, bez cene
-    if (!mat && a.label) { line.name = a.label; line.unit = a.materialId.startsWith('gate-m:') ? 'm' : 'kom'; }
+    if (!mat && a.label) { line.name = a.label; line.unit = a.unit ?? (a.materialId.startsWith('gate-m:') ? 'm' : 'kom'); }
     lines.push(line);
   }
   const materialSum = lines.reduce((s, l) => s + l.total, 0);

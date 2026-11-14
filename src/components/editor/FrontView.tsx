@@ -14,6 +14,7 @@ import { itemLabel } from '../../utils/labels';
 import { InfillArt, SvgDefs } from '../fences/InfillArt';
 import { CapArt } from '../fences/TarabicaArt';
 import { GateArt } from '../gates/GateArt';
+import { slidingOverflow } from '../../domain/gates/slidingLayout';
 
 export interface FrontViewOptions {
   showDimensions: boolean;
@@ -132,10 +133,12 @@ export function frontViewMetrics(project: Project, scale: number, showDimensions
   const padT = compact ? COMPACT_PAD : (showDimensions ? Math.max(vertical ? 116 : 74, 40 + overflow) : 40) / scale;
   const padB = compact ? COMPACT_PAD : (showDimensions ? 150 : 50) / scale; // dole: kote osa–osa, ukupna dužina i položaji stubova
   const groundY = compact ? Math.max(layout.maxTopMm, 400) : Math.max(layout.maxTopMm, 800);
-  const vx = -firstW / 2 - padL;
+  // klizni sklopovi izlaze van elemenata (šina, rep, otvoren položaj, graničnik): crtež se širi da ih obuhvati; dole ima mesta za njihove kote
+  const sl = slidingOverflow(layout.items, -firstW / 2, layout.occupiedMm - firstW / 2);
+  const vx = -firstW / 2 - padL - sl.left;
   const vy = -padT;
-  const vw = layout.occupiedMm + padL + padR;
-  const vh = groundY + (compact ? 40 : GROUND_BAND) + padT + padB;
+  const vw = layout.occupiedMm + padL + padR + sl.left + sl.right;
+  const vh = groundY + (compact ? 40 : GROUND_BAND) + padT + padB + (sl.any && showDimensions && !compact ? 130 / scale : 0) + (sl.any ? 300 : 0);
   return { layout, vx, vy, vw, vh, groundY, padT, padB, firstW, lastW, widthPx: vw * scale, heightPx: vh * scale };
 }
 
@@ -145,7 +148,9 @@ export function fitScale(project: Project, containerW: number, containerH: numbe
   const groundY = Math.max(layout.maxTopMm, 800);
   const padX = (showDimensions ? 56 + 38 * Math.max(1, heightGroups(project).length) : 40) + 120;
   const padY = (showDimensions ? 100 : 40) + (showDimensions ? 150 : 50);
-  const sw = (containerW - padX - 8) / Math.max(layout.occupiedMm, 1000);
+  const firstW = layout.posts[0]?.widthMm ?? 0;
+  const sl = slidingOverflow(layout.items, -firstW / 2, layout.occupiedMm - firstW / 2);
+  const sw = (containerW - padX - 8) / Math.max(layout.occupiedMm + sl.left + sl.right, 1000);
   const sh = (containerH - padY - 8) / (groundY + GROUND_BAND);
   return Math.min(0.5, Math.max(0.02, Math.min(sw, sh)));
 }
@@ -387,7 +392,7 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
             {it.kind === 'fence' && !isRl10Model(it.modelId) && (
               <InfillArt modelId={it.modelId} x={x} y={y} w={w} h={it.heightMm} frame={it.params.frameMm} barSize={it.params.barSizeMm} gap={it.params.gapMm} lift={it.params.liftMm} arch={it.params.archMm} hex={colorHex(it.color)} colorKey={it.color} skipLeftPost={leftPostShared(project.items, li.index) || isStairPost(project.items, li.index)} skipRightPost={isStairPost(project.items, li.index + 1)} sloped={li.floorStart !== li.floorEnd} axis={{ x: li.axisStart, w: li.axisEnd - li.axisStart }} rodCount={rodCountFor(it.modelId, it.params, it.heightMm) ?? undefined} ram={ramInsets(it.modelId, it.params)} uid={it.id} />
             )}
-            {it.kind === 'gate' && <GateArt gate={it} x={x} y={y} w={w} h={it.heightMm} hex={colorHex(it.color)} px={px} realistic={opts.transparent} />}
+            {it.kind === 'gate' && <GateArt gate={it} x={x} y={y} w={w} h={it.heightMm} hex={colorHex(it.color)} px={px} realistic={opts.transparent} showDims={opts.showDimensions && !compact} />}
             {it.kind === 'opening' && isCorner(it) && (() => {
               // ugaoni spoj: prečke i rukohvat se savijaju između dva stuba (u razvijenom prikazu — kratka cev sa oznakom ugla)
               const info = cornerInfo(project, li.index);
