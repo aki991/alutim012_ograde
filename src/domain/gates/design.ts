@@ -56,7 +56,6 @@ export const DIM_DEFS: DimDef[] = [
   { key: 'slope', label: 'Pad podloge', part: 'Teren', ref: 'duž putanje krila ili trase', group: 'teren', systems: ALL, unit: '%', min: -100 },
   { key: 'H', label: 'Visina krila', part: 'Krilo', ref: 'spoljna mera rama, donja do gornje ivice', group: 'krila', systems: ALL, min: 1 },
   { key: 'gB', label: 'Donji zazor', part: 'Krilo', ref: 'gotova kota podloge do najniže ivice krila ili okova', group: 'zazori', systems: ALL },
-  { key: 'face', label: 'Širina profila rama', part: 'Ram', ref: 'vidljiva širina profila u pogledu', group: 'ram', systems: ALL, min: 1 },
   // dvokrilna
   { key: 'gL', label: 'Levi bočni zazor', part: 'Levo krilo / levi stub', ref: 'montažno lice levog stuba do leve ivice zatvorenog rama', group: 'zazori', systems: ['swing_double'] },
   { key: 'WL', label: 'Širina levog krila', part: 'Levo krilo', ref: 'spoljna mera rama', group: 'krila', systems: ['swing_double'], min: 1 },
@@ -187,7 +186,6 @@ export interface Confirmation { kind: ConfirmKind; hash: string; at: string; by:
 export interface GateDesign {
   /** samo klizne: samonoseća ili po podnoj šini */
   slide?: SlideSystem;
-  build?: 'zavaren' | 'mehanicki' | 'celicni_ram';
   /** strana gledanja crteža */
   viewFrom?: 'dvoriste' | 'ulica';
   dims: Record<string, DimValue>;
@@ -280,6 +278,15 @@ const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinit
 const r1 = (v: number) => Math.round(v * 10) / 10;
 export const fmt = (v: number | null | undefined, unit = 'mm'): string => (v === null || v === undefined ? '—' : `${String(r1(v)).replace('.', ',')}${unit ? ` ${unit}` : ''}`);
 
+/** položaji šarki od vrha krila (mm): razmak je od prve do poslednje šarke, ostale su ravnomerno između; nikad van krila */
+export function hingePositions(H: number, count: number | null, spacing: number | null, top: number | null): number[] {
+  const n = Math.max(1, Math.round(count ?? 2));
+  const t = top ?? 150;
+  const span = spacing ?? Math.max(H - 2 * t, 0);
+  const pos = n === 1 ? [t] : Array.from({ length: n }, (_, j) => t + (span * j) / (n - 1));
+  return pos.map((q) => Math.min(Math.max(q, 0), H));
+}
+
 export function resolveGate(g: Gate & { design?: GateDesign }, clearWidthMm: number): GateResult {
   const sys = systemOf(g);
   const d = g.design ?? emptyDesign(sys);
@@ -295,8 +302,6 @@ export function resolveGate(g: Gate & { design?: GateDesign }, clearWidthMm: num
   // svetli otvor i visina dolaze iz projekta
   values.W = { v: clearWidthMm, origin: 'projekat', status: d.dims.W?.status };
   if (values.H.v === null) values.H = { v: g.heightMm, origin: 'projekat', status: values.H.status };
-  const face = d.profiles.find((p) => p.role === 'frame')?.faceMm;
-  if (values.face.v === null && num(face)) values.face = { v: face, origin: 'katalog' };
 
   const v = (k: string): number | null => values[k]?.v ?? null;
   const equations: EquationState[] = [];
@@ -338,6 +343,14 @@ export function resolveGate(g: Gate & { design?: GateDesign }, clearWidthMm: num
       const first = eq.terms[0];
       const sumOthers = eq.terms.slice(1).reduce((s, t) => s - t.c * v(t.key)!, 0);
       issues.push({ level: 'error', eq: eq.id, msg: `Kote se ne slažu (${eq.label}): ${DIM_BY_KEY[first.key].label} je ${fmt(v(first.key))}, a zbir ostalih ${fmt(sumOthers)} — razlika ${fmt(Math.abs(residual))}. Izaberite kotu koju aplikacija koriguje.` });
+    }
+  }
+
+  // šarke moraju da stanu u krilo: gornja šarka od vrha + razmak do donje ne sme preći visinu krila
+  if (sys === 'swing_single' || sys === 'swing_double') {
+    const Hh = v('H'); const sp = v('hingeSpacing'); const hT = v('hingeTop') ?? 150;
+    if (Hh !== null && sp !== null && Math.round(v('hingeCount') ?? 2) >= 2 && hT + sp > Hh + 1e-9) {
+      issues.push({ level: 'error', key: 'hingeSpacing', msg: `Šarke izlaze van krila: gornja šarka je ${fmt(hT)} od vrha, a razmak od prve do poslednje ${fmt(sp)} — donja šarka bi bila ${fmt(hT + sp - Hh)} ispod dna krila (visina krila ${fmt(Hh)}).` });
     }
   }
 
@@ -448,9 +461,6 @@ function checkGate(g: Gate, d: GateDesign, sys: GateSystem, values: Record<strin
       if (W !== null && T !== null && T > 0 && W > 0 && (T / W < 0.3 || T / W > 0.45)) issues.push({ level: 'info', key: 'T', msg: `Rep je ${Math.round((T / W) * 100)}% otvora; jedan katalog navodi tipično 30–40% — proverite sa konfiguracionim listom dobavljača.` });
     }
   }
-  if (d.path?.status !== 'ok') issues.push({ level: 'info', msg: sys === 'swing_double' || sys === 'swing_single' ? 'Putanja krila (ceo luk) nije potvrđena: mere u zatvorenom položaju ne pokrivaju proveru luka.' : 'Trasa klizanja nije potvrđena: mere u zatvorenom položaju ne pokrivaju proveru cele trase.' });
-  if (d.path?.status === 'problem') issues.push({ level: 'warn', msg: `Problem na putanji: ${d.path.note || 'bez opisa'}.` });
-  if (g.automation && d.drive?.risk !== 'uradjena') issues.push({ level: 'info', msg: 'Pogon: procena rizika i ispitivanje posle montaže nisu evidentirani.' });
 }
 
 const SL_SYS = (s: GateSystem) => s === 'cantilever' || s === 'rail';
@@ -515,20 +525,6 @@ export function confirmationState(g: Gate & { design?: GateDesign }, clearWidthM
   return c.hash === configHash(g, clearWidthMm) ? 'valid' : 'stale';
 }
 
-/* ---------- primeri iz istraživanja (jasno označeni, ne kao potvrđeni podaci) ---------- */
-
-export const HW_EXAMPLES: GateHardware[] = [
-  { id: 'ex_gbmu_x_m12', role: 'hinge', name: 'Locinox GBMU-X-M12', code: 'GBMU-X-M12', supplier: 'Locinox', source: 'locinox.com — minimalne mere (kota B)', status: 'primer', minGapMm: 6, qty: 2 },
-  { id: 'ex_boltonhd', role: 'hinge', name: 'Locinox BOLTONHD-4D-12', code: 'BOLTONHD-4D-12', supplier: 'Locinox', source: 'locinox.com — minimalne mere (kota B)', status: 'primer', minGapMm: 8, qty: 2 },
-  { id: 'ex_3dm', role: 'hinge', name: 'Locinox 3DM', code: '3DM', supplier: 'Locinox', source: 'Locinox 3DM tehnički list', status: 'primer', minGapMm: 16, qty: 2 },
-  { id: 'ex_gbmu4d12', role: 'hinge', name: 'Locinox GBMU4D12', code: 'GBMU4D12', supplier: 'Locinox', source: 'locinox.com — minimalne mere (kota B)', status: 'primer', minGapMm: 22, qty: 2 },
-  { id: 'ex_gbmu4d16', role: 'hinge', name: 'Locinox GBMU4D16', code: 'GBMU4D16', supplier: 'Locinox', source: 'locinox.com — minimalne mere (kota B)', status: 'primer', minGapMm: 35, qty: 2 },
-  { id: 'ex_longman', role: 'hinge', name: 'Longman Shrewsbury/Warwick — šarke', supplier: 'Longman', source: 'uputstvo za montažu (skica 20–30 mm po strani)', status: 'primer', minGapMm: 20, maxGapMm: 30, nominalGapMm: 25, qty: 2 },
-  { id: 'ex_longman_lock', role: 'lock', name: 'Longman Shrewsbury/Warwick — spoj krila', supplier: 'Longman', source: 'uputstvo za montažu (10 mm između krila)', status: 'primer', nominalGapMm: 10, qty: 1 },
-  { id: 'ex_sabo', role: 'ground_stop', name: 'Locinox SABO', code: 'SABO', supplier: 'Locinox', source: 'locinox.com — SABO (20–45 mm od gotovog tla)', status: 'primer', minGapMm: 20, maxGapMm: 45, qty: 1 },
-  { id: 'ex_joilart_s', role: 'carrier_kit', name: 'JoilArt set S za samonoseću kapiju', code: '8971', supplier: 'JoilArt', source: 'joilart.com — set S (do 450 kg, do 6 m)', status: 'primer', maxLeafKg: 450, maxOpeningMm: 6000, qty: 1 },
-];
-
 /** radne vrednosti iz računskih primera specifikacije (označene kao radna pretpostavka) */
 export const EXAMPLE_DIMS: Record<GateSystem, Record<string, number>> = {
   swing_double: { gL: 25, gC: 10, gR: 25 },
@@ -542,3 +538,27 @@ export function applyExample(d: GateDesign, sys: GateSystem): GateDesign {
   for (const [k, x] of Object.entries(EXAMPLE_DIMS[sys])) if (!dims[k] || dims[k].v === null) dims[k] = { v: x, origin: 'katalog', status: 'radna' };
   return { ...d, dims };
 }
+
+/* ---------- okovi koji uz kapiju moraju da postoje ---------- */
+
+export interface RequiredHw { role: HwRole; qty: number }
+
+/** okovi koje kapija ovog sistema mora da ima; radnik ih sam upisuje, a dok ne upiše, u sastavnici piše „nepoznata oznaka“ */
+export function requiredHardware(g: Pick<Gate, 'automation'>, sys: GateSystem): RequiredHw[] {
+  const base: RequiredHw[] = sys === 'swing_double'
+    ? [{ role: 'hinge_left', qty: 2 }, { role: 'hinge_right', qty: 2 }, { role: 'lock', qty: 1 }, { role: 'drop_bolt', qty: 1 }, { role: 'ground_stop', qty: 1 }]
+    : sys === 'swing_single'
+      ? [{ role: 'hinge', qty: 2 }, { role: 'lock', qty: 1 }, { role: 'ground_stop', qty: 1 }]
+      : sys === 'cantilever'
+        ? [{ role: 'trolley', qty: 2 }, { role: 'guide', qty: 1 }, { role: 'receiver', qty: 1 }, { role: 'stopper', qty: 1 }, { role: 'lock', qty: 1 }]
+        : [{ role: 'wheel', qty: 2 }, { role: 'rail', qty: 1 }, { role: 'guide', qty: 1 }, { role: 'receiver', qty: 1 }, { role: 'stopper', qty: 1 }, { role: 'lock', qty: 1 }];
+  return g.automation ? [...base, { role: 'motor', qty: 1 }] : base;
+}
+
+/** okovi koje radnik još nije upisao (nema ni jednog sa tom ulogom i nazivom) */
+export function missingHardware(g: Pick<Gate, 'automation'> & { design?: GateDesign }, sys: GateSystem): RequiredHw[] {
+  const have = new Set((g.design?.hardware ?? []).filter((h) => h.name.trim()).map((h) => h.role));
+  return requiredHardware(g, sys).filter((r) => !have.has(r.role));
+}
+
+export const unknownHwLabel = (role: HwRole): string => `${HW_ROLE_LABELS[role]} — nepoznata oznaka`;

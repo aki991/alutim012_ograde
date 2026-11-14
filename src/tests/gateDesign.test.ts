@@ -1,16 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { createFence, createGate, createProject } from '../domain/models/factories';
 import { buildBom } from '../domain/pricing/calc';
-import { buildCutList } from '../domain/pricing/production';
+import { buildCutList, buildHardwareList } from '../domain/pricing/production';
 import { SEED_MATERIALS } from './fixtures/materials';
 import type { Gate } from '../domain/models/types';
-import { applyExample, configHash, confirmationState, emptyDesign, HW_EXAMPLES, mirrorDesign, resolveGate, setDim, setSolve, type GateDesign } from '../domain/gates/design';
-import { addVersion, applyTemplate, DEFAULT_INCLUDE, latest, newTemplate } from '../domain/gates/templates';
+import { applyExample, configHash, confirmationState, emptyDesign, mirrorDesign, missingHardware, resolveGate, setDim, setSolve, type GateDesign, type GateHardware } from '../domain/gates/design';
 import { gateCutRows, gateMass } from '../domain/gates/production';
+import { gateFieldsFromModel, gateModelFromGate } from '../domain/gates/gateModels';
 import { doubleLeafWidths } from '../domain/geometry/gates';
 import { computeLayout } from '../domain/geometry/layout';
 
 const withDesign = (g: Gate, d: GateDesign): Gate => ({ ...g, design: d });
+const hw = (role: GateHardware['role'], name: string, extra: Partial<GateHardware> = {}): GateHardware => ({ id: `hw_${name}`, role, name, status: 'radna', qty: 1, ...extra });
 const set = (d: GateDesign, vals: Record<string, number>) => Object.entries(vals).reduce((x, [k, v]) => setDim(x, k, v), d);
 
 describe('dvokrilna: W = gL + WL + gC + WR + gR', () => {
@@ -55,7 +56,7 @@ describe('dvokrilna: W = gL + WL + gC + WR + gR', () => {
     expect(d.dims.gC.v).toBe(10);
   });
   it('nedostaje srednji zazor za izabranu bravu i prihvatnik', () => {
-    const d = { ...set(emptyDesign('swing_double'), { gL: 25, gR: 25 }), hardware: [{ ...HW_EXAMPLES.find((h) => h.id === 'ex_longman_lock')! }] };
+    const d = { ...set(emptyDesign('swing_double'), { gL: 25, gR: 25 }), hardware: [hw('lock', 'Brava radionice', { nominalGapMm: 10 })] };
     const r = resolveGate(withDesign(g, d), 4000);
     expect(r.issues.map((i) => i.msg)).toContain('Nedostaje srednji zazor za izabranu bravu i prihvatnik.');
   });
@@ -63,9 +64,9 @@ describe('dvokrilna: W = gL + WL + gC + WR + gR', () => {
 
 describe('šarka: kota B', () => {
   const g = createGate('double');
-  const bolton = HW_EXAMPLES.find((h) => h.code === 'BOLTONHD-4D-12')!;
-  const gbmu = HW_EXAMPLES.find((h) => h.code === 'GBMU-X-M12')!;
-  it('7 mm uz BOLTONHD-4D-12 (min 8) upozorava i ostaje ručni unos; 8 prolazi; nova šarka koristi svoje podatke', () => {
+  const bolton = hw('hinge', 'Šarka A', { code: 'A-12', minGapMm: 8, qty: 2 });
+  const gbmu = hw('hinge', 'Šarka B', { code: 'B-12', minGapMm: 6, qty: 2 });
+  it('7 mm uz šarku sa minimumom 8 upozorava i ostaje ručni unos; 8 prolazi; nova šarka koristi svoje podatke', () => {
     let d: GateDesign = { ...set(emptyDesign('swing_double'), { gL: 7, gC: 10, gR: 25 }), hardware: [{ ...bolton, role: 'hinge_left' }, { ...bolton, role: 'hinge_right' }] };
     let r = resolveGate(withDesign(g, d), 4000);
     expect(r.issues.some((i) => i.key === 'gL' && /manji od minimuma 8 mm/.test(i.msg))).toBe(true);
@@ -118,19 +119,14 @@ describe('samonoseća: L, Smin, Pmin', () => {
 });
 
 describe('krojna lista i masa iz ručnih mera', () => {
-  it('ram krila iz zadatog profila, nepoznate dužine ostaju prazne i označene', () => {
-    const g = createGate('double');
-    const d: GateDesign = {
-      ...set(emptyDesign('swing_double'), { gL: 25, gR: 25 }),
-      profiles: [{ id: 'p1', role: 'frame', name: 'Ram 60×40 (radionica)', faceMm: 60, kgPerM: 1.2, joint: 'butt' }],
-    };
-    let rows = gateCutRows(withDesign(g, d), resolveGate(withDesign(g, d), 4000), []);
-    expect(rows.find((r) => r.key === 'Levo krilo|horiz')).toMatchObject({ lengthMm: null, missing: ['WL'] });
-    const d2 = setDim(d, 'gC', 10);
-    rows = gateCutRows(withDesign(g, d2), resolveGate(withDesign(g, d2), 4000), []);
-    expect(rows.find((r) => r.key === 'Levo krilo|horiz')).toMatchObject({ lengthMm: 1970 - 120, profile: 'Ram 60×40 (radionica)' });
-    const m = gateMass(rows, d2, [{ name: 'letvice', meters: 10 }]);
-    expect(m.movingKg).toBeCloseTo(((2 * g.heightMm + 2 * 1850) * 2 * 1.2) / 1000, 5);
+  it('ram krila ne ulazi u krojnu listu mera (dolazi iz specifikacije modela); noseći profil klizne kapije ostaje, nepoznata dužina je označena', () => {
+    const g = createGate('sliding');
+    const d: GateDesign = { ...set(emptyDesign('cantilever'), { a: 50, b: 50, T: 1400 }), profiles: [{ id: 'c1', role: 'carrier', name: 'Noseći profil radionice', kgPerM: 3 }] };
+    const rows = gateCutRows(withDesign(g, d), resolveGate(withDesign(g, d), 4000), []);
+    expect(rows.some((r) => /Ram/.test(r.part))).toBe(false);
+    expect(rows.find((r) => r.key === 'Pokretni sklop|carrier')).toMatchObject({ lengthMm: 5500, profile: 'Noseći profil radionice' });
+    const m = gateMass(rows, d, [{ name: 'letvice', meters: 10 }]);
+    expect(m.movingKg).toBeCloseTo((5500 * 3) / 1000 + 0, 5);
     expect(m.unknown).toContain('Ispuna: letvice');
   });
   it('fiksna kolica i motor nisu u pokretnoj masi', () => {
@@ -148,13 +144,14 @@ describe('kapija sa merama u obračunu projekta', () => {
   };
   const d: GateDesign = {
     ...set(emptyDesign('swing_double'), { gL: 25, gC: 10, gR: 25 }),
-    profiles: [{ id: 'p', role: 'frame', name: 'Ram radionice', faceMm: 60 }],
     hardware: [{ id: 'h', role: 'hinge_left', name: 'Šarka bez šifre', status: 'radna', qty: 2 }],
   };
-  it('krojna lista projekta ima ram kapije iz mera, sastavnica okov radnika bez cene', () => {
+  it('ram kapije dolazi iz specifikacije modela (jednom), sastavnica okov radnika bez cene', () => {
     const p = project('h_white', d);
     const rows = buildCutList(p, undefined, SEED_MATERIALS);
-    expect(rows.some((r) => r.part === 'Levo krilo — Ram — horizontala' && r.profile === 'Ram radionice')).toBe(true);
+    const gateRows = rows.filter((r) => r.element !== 'Ograda 1');
+    expect(gateRows.some((r) => /Ram — horizontal/i.test(r.part))).toBe(true);
+    expect(gateRows.some((r) => /Profil rama (nije izabran)/.test(r.profile))).toBe(false);
     const bom = buildBom(p, SEED_MATERIALS);
     const hinge = bom.find((l) => l.name.startsWith('Šarka bez šifre'));
     expect(hinge).toMatchObject({ missingPrice: true, purchaseQty: 2 });
@@ -192,26 +189,56 @@ describe('potvrde i šabloni', () => {
     expect(confirmationState(withDesign(g, setDim(conf, 'gC', 12)), 4000, 'mere')).toBe('stale');
     expect(confirmationState(withDesign(g, conf), 3800, 'mere')).toBe('stale');
   });
-  it('šablon prenosi kote, pravilo i deo; zavisne kote se preračunaju za drugi otvor; nova verzija ne menja posao', () => {
-    const g = createGate('double');
-    let d = set(emptyDesign('swing_double'), { gL: 25, gR: 25, WL: 1200, wMid: 4005 });
-    d = setDim(d, 'gC', 10);
-    d = { ...d, profiles: [{ id: 'p', role: 'frame', name: 'Moj profil', faceMm: 50 }] };
-    const tpl = newTemplate('t1', 'Dvokrilna ALU TIM', 'gate', 'swing_double', d, DEFAULT_INCLUDE, 'radnik');
-    expect(tpl.versions[0].data.dims?.wMid).toBeUndefined(); // terenske mere ne idu bez izbora
-    const job = applyTemplate(emptyDesign('swing_double'), tpl, latest(tpl));
-    const r = resolveGate(withDesign(g, job), 3500);
-    expect(r.values.WL).toMatchObject({ v: 1200, origin: 'sablon' });
+  it('model kapije čuva celu kapiju (kote, okove, ispunu); primena na drugu kapiju je prenosi i zavisne kote se preračunavaju', () => {
+    const g = { ...createGate('double'), heightMm: 1500, color: 'RAL 9005' } as Gate;
+    let d = set(emptyDesign('swing_double'), { gL: 25, gR: 25, WL: 1200 });
+    d = { ...setDim(d, 'gC', 10), hardware: [hw('hinge_left', 'Moja šarka', { qty: 2 })] };
+    const model = gateModelFromGate(withDesign(g, d), 4000, 'Dvokrilna ALU TIM', 'gm1', 1);
+    expect(model).toMatchObject({ name: 'Dvokrilna ALU TIM', version: 1, gateType: 'double', clearWidthMm: 4000, heightMm: 1500, color: 'RAL 9005' });
+    expect(model.design.template).toEqual({ id: 'gm1', name: 'Dvokrilna ALU TIM', version: 1 });
+    // izmena kapije posle čuvanja ne menja sačuvan model (kopija)
+    d.hardware[0].name = 'Izmenjeno';
+    expect(model.design.hardware[0].name).toBe('Moja šarka');
+    const fields = gateFieldsFromModel(model);
+    const job = { ...createGate('double'), ...fields } as Gate;
+    expect(job.design?.template?.version).toBe(1);
+    const r = resolveGate(job, 3500);
+    expect(r.values.WL.v).toBe(1200);
     expect(r.values.WR.v).toBe(3500 - 25 - 10 - 25 - 1200);
-    expect(job.profiles[0].name).toBe('Moj profil');
-    expect(job.template).toEqual({ id: 't1', name: 'Dvokrilna ALU TIM', version: 1 });
-    const t2 = addVersion(tpl, setDim(d, 'gC', 20), DEFAULT_INCLUDE, 'radnik');
-    expect(latest(t2).version).toBe(2);
-    expect(job.dims.gC.v).toBe(10);
+    expect(job.design?.hardware[0].name).toBe('Moja šarka');
+    expect(job.heightMm).toBe(1500);
   });
   it('primer iz istraživanja popunjava samo prazne kote kao radnu pretpostavku', () => {
     const d = applyExample(setDim(emptyDesign('cantilever'), 'T', 1500), 'cantilever');
     expect(d.dims.T.v).toBe(1500);
     expect(d.dims.a).toMatchObject({ v: 50, origin: 'katalog', status: 'radna' });
+  });
+});
+
+describe('okovi koji uz kapiju moraju da postoje', () => {
+  it('bez upisanog okova: nepoznata oznaka za šarke (2), bravu i graničnik; upisana šarka je više ne traži', () => {
+    const g = createGate('single');
+    const miss = missingHardware(g, 'swing_single');
+    expect(miss.map((m) => [m.role, m.qty])).toEqual([['hinge', 2], ['lock', 1], ['ground_stop', 1]]);
+    const d = { ...emptyDesign('swing_single'), hardware: [hw('hinge', 'Moja šarka', { qty: 2 })] };
+    expect(missingHardware(withDesign(g, d), 'swing_single').map((m) => m.role)).toEqual(['lock', 'ground_stop']);
+    // okov bez naziva se ne računa kao upisan
+    const e = { ...emptyDesign('swing_single'), hardware: [hw('hinge', '')] };
+    expect(missingHardware(withDesign(g, e), 'swing_single').some((m) => m.role === 'hinge')).toBe(true);
+  });
+  it('dvokrilna traži po 2 leve i desne šarke, zasun i graničnik; motor samo ako je kapija motorizovana', () => {
+    const g = createGate('double');
+    const roles = (x: Gate) => missingHardware(x, 'swing_double').map((m) => m.role);
+    expect(roles(g)).toEqual(['hinge_left', 'hinge_right', 'lock', 'drop_bolt', 'ground_stop']);
+    expect(roles({ ...g, automation: true })).toContain('motor');
+  });
+  it('sastavnica i lista okova imaju red „nepoznata oznaka“ za neupisan okov', () => {
+    const g = { ...createGate('single'), design: emptyDesign('swing_single') } as Gate;
+    const p = createProject('t', [g]);
+    const bom = buildBom(p, SEED_MATERIALS);
+    const hinge = bom.find((l) => /Šarka — nepoznata oznaka/.test(l.name));
+    expect(hinge).toMatchObject({ purchaseQty: 2, missingPrice: true });
+    expect(bom.some((l) => /Brava i prihvatnik — nepoznata oznaka/.test(l.name))).toBe(true);
+    expect(buildHardwareList(p).filter((r) => /nepoznata oznaka/.test(r.item)).map((r) => r.qty)).toEqual([2, 1, 1]);
   });
 });

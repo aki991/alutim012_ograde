@@ -8,14 +8,14 @@ import { colorText } from '../../domain/models/catalog';
 import { buildBom, computePrice } from '../../domain/pricing/calc';
 import { describeItem } from '../../domain/pricing/production';
 import { downloadQuotePdf } from '../../services/pdf';
-import { useAppStore } from '../../store/useAppStore';
+import { useAppStore, useListedProjects } from '../../store/useAppStore';
 import { itemLabel, itemNumber } from '../../utils/labels';
 import { fmtDate, fmtMoney, fmtNum } from '../../utils/units';
 
 export default function QuotesPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const projects = useAppStore((s) => s.projects);
+  const projects = useListedProjects();
   const customers = useAppStore((s) => s.customers);
   const materials = useAppStore((s) => s.materials);
   const specs = useAppStore((s) => s.settings.modelSpecs);

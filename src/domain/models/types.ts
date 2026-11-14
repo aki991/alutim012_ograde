@@ -237,6 +237,8 @@ export interface Project {
   partMaterials?: Record<string, string>;
   /** simulacija na fotografiji: slika dvorišta (data URL) i četiri ugla ograde (gore levo, gore desno, dole desno, dole levo) kao udeo širine/visine slike */
   photoSim?: PhotoSim;
+  /** privremen projekat u kome se uređuje model kapije (strana Modeli kapija): ne prikazuje se u spiskovima projekata */
+  modelDraft?: { modelId: string | null };
 }
 
 export interface PhotoSim {
@@ -303,8 +305,10 @@ export interface AppSettings {
   modelSpecs?: Record<string, import('./spec').SpecPart[]>;
   /** ručno nacrtani modeli ograda i kapija (strana Modeli ograda → Napravi model) */
   customModels?: import('./custom').CustomModel[];
-  /** šabloni kapija i detalja radionice (sa verzijama); posao čuva svoje vrednosti i verziju primenjenog šablona */
-  gateTemplates?: import('../gates/templates').GateTemplate[];
+  /** modeli kapija (strana Modeli kapija): sačuvane kapije sa merama i okovima */
+  gateModels?: import('../gates/gateModels').GateModel[];
+  /** modeli iz kataloga (ograde i osnovne kapije) koje je korisnik obrisao; „Vrati obrisane modele“ ih vraća */
+  hiddenModels?: string[];
   /** sopstveni okovi radionice (šarke, brave, kolica …) za izbor u merama kapije */
   gateHardware?: import('../gates/design').GateHardware[];
   /** sopstveni profili radionice za ram, noseći profil i rep kapije */

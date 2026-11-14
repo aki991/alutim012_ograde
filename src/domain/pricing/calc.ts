@@ -9,7 +9,7 @@ import { evaluateSpec, hasCustomSpec, specFor, specVars, type ModelSpecs } from 
 import { buildLouver08Sheet, FILL_PROFILES, GUIDE_PROFILES, isLouver08, louverSpecOf } from './louverSpec';
 import { buildRail04Sheet, isRail04, RAIL04 } from './railSpec';
 import { isTarabicaPost, tarabicaPostLines } from '../models/tarabica';
-import { resolveGate, type HwRole } from '../gates/design';
+import { missingHardware, resolveGate, systemOf, unknownHwLabel, type HwRole } from '../gates/design';
 import { gateCutRows } from '../gates/production';
 
 const HW_GROUP: Record<HwRole, BomGroup> = {
@@ -30,6 +30,8 @@ export function gateBomLines(g: Gate, clearWidthMm: number, materials: Material[
     if (h.qty <= 0) continue;
     out.push({ group: HW_GROUP[h.role], materialId: h.materialId ?? `gate-hw:${h.name}`, qty: h.qty, label: h.materialId ? undefined : `${h.name}${h.code ? ` (${h.code})` : ' (bez fabričke šifre)'}` });
   }
+  // okov koji radnik nije upisao: red sa nepoznatom oznakom (bez cene), da se vidi da uz kapiju ide
+  for (const r of missingHardware(g, systemOf(g))) out.push({ group: HW_GROUP[r.role], materialId: `gate-unknown:${r.role}`, qty: r.qty, label: unknownHwLabel(r.role) });
   // isti materijal u istoj grupi (npr. stubovi rama oba krila) je jedan red
   const merged = new Map<string, (typeof out)[number]>();
   for (const l of out) {
@@ -111,9 +113,7 @@ export function buildBom(project: Project, materials: Material[], specs?: ModelS
     if (isRl10Item(it) && !hasCustomSpec(modelId, specs)) continue;
     // elementi specifikacije modela (podrazumevani ili izmenjeni): količine i dužine po formulama
     const vars = specVars({ modelId, slopeFactor: itemSlope(li).factor, widthMm: it.kind === 'gate' ? gateSpecWidth(it, li.clearWidth) : li.clearWidth, heightMm: it.heightMm, axisMm: li.axisEnd - li.axisStart, params: it.params, doubleGate: it.kind === 'gate' && it.gateType === 'double', leafWidthsMm: it.kind === 'gate' && it.gateType === 'double' ? gateLeafPoses(it, li.clearStart, li.clearEnd, 1).map((q) => q.widthMm) : undefined });
-    // kapija sa merama: noseći ram krila ide iz mera kapije (izabrani profil), pa se ram iz specifikacije ispune ne broji dvaput
-    const ownFrame = it.kind === 'gate' && Boolean(it.design?.profiles.some((p) => p.role === 'frame'));
-    for (const ev of evaluateSpec(specFor(modelId, specs), vars)) if (!(ownFrame && ev.part.group === 'Ramovi')) add(ev.part.group, ev.part.materialId, ev.materialQty);
+    for (const ev of evaluateSpec(specFor(modelId, specs), vars)) add(ev.part.group, ev.part.materialId, ev.materialQty);
 
     if (it.kind === 'gate' && it.design) {
       for (const l of gateBomLines(it, li.clearWidth, materials)) add(l.group, l.materialId, l.qty, l.label);

@@ -1,16 +1,18 @@
 import { allFenceModels } from '../../domain/models/customRegistry';
 import { ChevronDown, ChevronUp, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { FENCE_MODELS, GATE_LABELS, POST_LABELS, isLightColor, isTerraceModel, projectModelId } from '../../domain/models/catalog';
+import { DEFAULT_MODEL_ID, FENCE_MODELS, GATE_LABELS, POST_LABELS, isLightColor, isTerraceModel, projectModelId } from '../../domain/models/catalog';
 import { createFence, createGate, createOpening, createProject } from '../../domain/models/factories';
-import { applyPostType } from '../../domain/geometry/operations';
-import type { FenceModelId, GateType, PostType, Project } from '../../domain/models/types';
+import { applyPostType, setOuterWidth } from '../../domain/geometry/operations';
+import { postHalfSum } from '../../domain/geometry/layout';
+import { gateFieldsFromModel, GATE_TYPE_LABELS, type GateModel } from '../../domain/gates/gateModels';
+import type { FenceModelId, Gate, GateType, PostType, Project } from '../../domain/models/types';
 import type { DragSource } from '../../hooks/useDragController';
 import { useAppStore, useCurrentProject, type NewElementSpec } from '../../store/useAppStore';
 import { FrontView, frontViewMetrics } from './FrontView';
 
 /** Sličica je isti crtež kao u 2D prikazu; za svetle (bele) ograde pozadina je siva kao u editoru da se vidi bela boja. */
-function MiniThumb({ project, width = 150, grey = false }: { project: Project; width?: number; grey?: boolean }) {
+export function MiniThumb({ project, width = 150, grey = false }: { project: Project; width?: number; grey?: boolean }) {
   const m = frontViewMetrics(project, 1, false, true);
   return (
     <div className={`rounded-lg overflow-hidden border border-line pointer-events-none ${grey ? 'bg-[#b3bac3]' : 'bg-white'}`} style={{ width, height: 118 }} aria-hidden="true">
@@ -95,6 +97,16 @@ export function ElementThumb({ kind, model }: { kind: ThumbKind; model: FenceMod
   return <MiniThumb project={mini} grey={grey} />;
 }
 
+/** Sličica modela kapije: kapija iz modela između stubova, isti crtež kao u 2D prikazu. */
+export function GateModelThumb({ model }: { model: GateModel }) {
+  const mini = useMini(() => {
+    const g = { ...createGate(model.gateType, { infillModelId: (model.infillModelId in FENCE_MODELS ? model.infillModelId : DEFAULT_MODEL_ID) as FenceModelId }), ...(gateFieldsFromModel(model) as Partial<Gate>) } as Gate;
+    const p = createProject('m', [g]);
+    return setOuterWidth(p, g.id, model.clearWidthMm + 2 * postHalfSum(p, 0));
+  }, `gm-${model.id}-${model.version}`);
+  return <MiniThumb project={mini} grey={isLightColor(model.color)} />;
+}
+
 const GATE_CARDS: { id: string; type: GateType; concrete?: boolean; title: string; subtitle: string }[] = [
   { id: 'pedestrian', type: 'pedestrian', title: GATE_LABELS.pedestrian, subtitle: 'Za prolaz ljudi' },
   { id: 'sliding', type: 'sliding', title: GATE_LABELS.sliding, subtitle: 'Otvara se klizanjem u stranu' },
@@ -113,6 +125,8 @@ export function Catalog({ onBeginDrag }: { onBeginDrag: (source: DragSource, e: 
   const { addElement, mutate } = useAppStore.getState();
   const selection = useAppStore((s) => s.editor.selection);
   const [showAll, setShowAll] = useState(false);
+  const gateModels = useAppStore((s) => s.settings.gateModels);
+  const hidden = useAppStore((s) => s.settings.hiddenModels);
   const def = FENCE_MODELS[model];
   const terrace = isTerraceModel(model); // ograda za terasu: bez kapija i bez kataloga stubova
   // tarabica: svi stubovi i podnožje su uvek na raspolaganju (betonski stub sa podnožjem, samo podnožje)
@@ -145,7 +159,7 @@ export function Catalog({ onBeginDrag }: { onBeginDrag: (source: DragSource, e: 
         <label className="flex items-center gap-2 text-sm font-medium">
           Model ograde
           <select className="input !w-auto !py-1.5 min-w-[260px]" data-testid="catalog-model" value={model} onChange={(e) => changeModel(e.target.value as FenceModelId)}>
-            {allFenceModels().map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            {allFenceModels(model).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
         </label>
         <button className="btn btn-sm ml-auto" aria-expanded={showAll} data-testid="catalog-show-all" onClick={() => setShowAll((v) => !v)}>
@@ -154,7 +168,7 @@ export function Catalog({ onBeginDrag }: { onBeginDrag: (source: DragSource, e: 
       </div>
       <div className="flex flex-wrap gap-3" data-testid="catalog-items">
         <CatalogCard testId="cat-fence" title="Platno" subtitle={def.name} thumb={<ElementThumb kind="fence" model={model} />} onAdd={() => addElement({ kind: 'fence', modelId: model })} onDragStart={startDrag({ kind: 'fence', modelId: model }, `Platno — ${def.name}`)} />
-        {!terrace && GATE_CARDS.map((g) => {
+        {!terrace && GATE_CARDS.filter((g) => g.concrete || !hidden?.includes(`gate:${g.type}`)).map((g) => {
           const spec: NewElementSpec = { kind: 'gate', gateType: g.type, modelId: model, concrete: g.concrete };
           return (
             <CatalogCard
@@ -164,6 +178,10 @@ export function Catalog({ onBeginDrag }: { onBeginDrag: (source: DragSource, e: 
             />
           );
         })}
+        {!terrace && gateModels?.map((m) => (
+          <CatalogCard key={m.id} testId={`cat-gatemodel-${m.id}`} title={m.name} subtitle={`Model kapije · ${GATE_TYPE_LABELS[m.gateType]}`} thumb={<GateModelThumb model={m} />}
+            onAdd={() => useAppStore.getState().addGateFromModel(m.id)} />
+        ))}
         {terrace && (
           <CatalogCard testId="cat-stair" title="Stepenište" subtitle="Ograda koja prati stepenice" thumb={<ElementThumb kind="stair" model={model} />}
             onAdd={() => addElement({ kind: 'fence', modelId: model, stair: true })} onDragStart={startDrag({ kind: 'fence', modelId: model, stair: true }, 'Stepenište')} />

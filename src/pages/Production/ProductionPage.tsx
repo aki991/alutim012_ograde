@@ -15,12 +15,12 @@ import { buildLouver08Sheet, FILL_PROFILES, GUIDE_PROFILES } from '../../domain/
 import { buildRail04Sheet } from '../../domain/pricing/railSpec';
 import { downloadCsv, safeFilename } from '../../services/exports';
 import { downloadProductionPdf } from '../../services/pdf';
-import { useAppStore } from '../../store/useAppStore';
+import { useAppStore, useListedProjects } from '../../store/useAppStore';
 import { itemLabel, itemNumber } from '../../utils/labels';
 import { fmtNum } from '../../utils/units';
 
 export default function ProductionPage() {
-  const projects = useAppStore((s) => s.projects);
+  const projects = useListedProjects();
   const customers = useAppStore((s) => s.customers);
   const materials = useAppStore((s) => s.materials);
   const specs = useAppStore((s) => s.settings.modelSpecs);

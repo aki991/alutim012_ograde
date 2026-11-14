@@ -1,7 +1,7 @@
 import type { Gate } from '../../domain/models/types';
 import { InfillArt } from '../fences/InfillArt';
 import { ramInsets } from '../../domain/models/tubes';
-import { resolveGate } from '../../domain/gates/design';
+import { hingePositions, resolveGate } from '../../domain/gates/design';
 import { swingLeafBoxes } from '../../domain/geometry/gates';
 
 interface Props {
@@ -42,7 +42,7 @@ function Hinges({ x, y, w, h, side, gate, clearX, clear }: { x: number; y: numbe
   const nH = Math.max(1, Math.round(val('hingeCount') ?? 2));
   const spacing = val('hingeSpacing'); const top = val('hingeTop');
   const cys = r && (spacing !== null || top !== null)
-    ? Array.from({ length: nH }, (_, j) => y + (top ?? 150) + (spacing !== null && nH >= 2 ? spacing * j : nH === 1 ? 0 : ((h - 2 * (top ?? 150)) / (nH - 1)) * j))
+    ? hingePositions(h, nH, spacing, top).map((mm) => y + mm)
     : [0.12, 0.88].map((t) => y + h * t);
   return (
     <g fill="#9aa4b0" stroke="#1b1f24" strokeWidth="3">
@@ -51,16 +51,17 @@ function Hinges({ x, y, w, h, side, gate, clearX, clear }: { x: number; y: numbe
   );
 }
 
-function Leaf({ gate, x, y, w, h, hex, uid, withHandle, handleSide, edge }: { gate: Gate; x: number; y: number; w: number; h: number; hex: string; uid: string; withHandle: boolean; handleSide: 'left' | 'right'; edge?: [number, number] }) {
+function Leaf({ gate, x, y, w, h, hex, uid, withHandle, handleSide, edge, cy: cyProp }: { cy?: number; gate: Gate; x: number; y: number; w: number; h: number; hex: string; uid: string; withHandle: boolean; handleSide: 'left' | 'right'; edge?: [number, number] }) {
+  const cy = cyProp ?? y + h * 0.5;
   const hxPos = handleSide === 'left' ? x + gate.params.frameMm + 50 : x + w - gate.params.frameMm - 80;
   return (
     <g>
       <InfillArt modelId={gate.infillModelId} x={x} y={y} w={w} h={h} frame={gate.params.frameMm} barSize={gate.params.barSizeMm} gap={gate.params.gapMm} lift={gate.params.liftMm} arch={gate.params.archMm} edgeOverhang={edge} hex={hex} colorKey={gate.color} ram={ramInsets(gate.infillModelId, gate.params)} uid={uid} />
       {withHandle && (
         <g>
-          <rect x={hxPos} y={y + h * 0.5 - 220} width={22} height={440} rx="8" fill="#d8dee6" stroke="#6b7380" strokeWidth="3" />
-          <rect x={hxPos - 22} y={y + h * 0.5 - 40} width={60} height={80} rx="12" fill="#c3cbd5" stroke="#6b7380" strokeWidth="3" />
-          <circle cx={hxPos + 11} cy={y + h * 0.5 + 12} r="9" fill="#2b3036" />
+          <rect x={hxPos} y={cy - 220} width={22} height={440} rx="8" fill="#d8dee6" stroke="#6b7380" strokeWidth="3" />
+          <rect x={hxPos - 22} y={cy - 40} width={60} height={80} rx="12" fill="#c3cbd5" stroke="#6b7380" strokeWidth="3" />
+          <circle cx={hxPos + 11} cy={cy + 12} r="9" fill="#2b3036" />
         </g>
       )}
     </g>
@@ -103,6 +104,9 @@ export function GateArt({ gate, x, y, w, h, hex, px, realistic }: Props & { real
   }
 
   const boxes = swingLeafBoxes(gate, w);
+  // visina brave iz mera kapije: od donje ivice krila do ose brave (bez mere — na sredini)
+  const lockMm = gate.design ? resolveGate(gate, w).values.lockH?.v ?? null : null;
+  const lockAt = (yLeaf: number) => (lockMm !== null ? yLeaf + h - Math.min(Math.max(lockMm, 0), h) : yLeaf + h * 0.5);
   // donji zazor iz mera kapije podiže krilo od poda
   const gB = gate.design ? resolveGate(gate, w).values.gB?.v ?? 0 : 0;
   const yl = y - gB;
@@ -116,7 +120,7 @@ export function GateArt({ gate, x, y, w, h, hex, px, realistic }: Props & { real
         {!realistic && <SwingMark x={x + br.x} y={yl} w={br.w} h={h} hingeSide="right" px={px} />}
         <Hinges x={x + bl.x} y={yl} w={bl.w} h={h} side="left" gate={gate} clearX={x} clear={w} />
         <Hinges x={x + br.x} y={yl} w={br.w} h={h} side="right" gate={gate} clearX={x} clear={w} />
-        <rect x={x + bl.x + bl.w - 30} y={yl + h * 0.5 - 40} width={80} height={80} rx="14" fill="#c3cbd5" stroke="#6b7380" strokeWidth="3" />
+        <rect x={x + bl.x + bl.w - 30} y={lockAt(yl) - 40} width={80} height={80} rx="14" fill="#c3cbd5" stroke="#6b7380" strokeWidth="3" />
         {gate.automation && <rect x={x + w / 2 - 60} y={yl - 70} width={120} height={50} rx="10" fill="#1b1f24" />}
       </g>
     );
@@ -146,7 +150,7 @@ export function GateArt({ gate, x, y, w, h, hex, px, realistic }: Props & { real
     const [b0] = boxes;
     return (
       <g>
-        <Leaf gate={gate} x={x + b0.x} y={yl} w={b0.w} h={h} hex={hex} uid={`${gate.id}-p`} withHandle handleSide={freeSide} />
+        <Leaf gate={gate} x={x + b0.x} y={yl} w={b0.w} h={h} hex={hex} uid={`${gate.id}-p`} withHandle handleSide={freeSide} cy={lockAt(yl)} />
         {!realistic && <SwingMark x={x + b0.x} y={yl} w={b0.w} h={h} hingeSide={hingeSide} px={px} />}
         <Hinges x={x + b0.x} y={yl} w={b0.w} h={h} side={hingeSide} gate={gate} clearX={x} clear={w} />
         {gate.automation && <rect x={x + b0.x + b0.w / 2 - 60} y={yl - 70} width={120} height={50} rx="10" fill="#1b1f24" />}

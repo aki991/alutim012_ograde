@@ -53,6 +53,25 @@ function NoProject({ missing }: { missing?: boolean }) {
   );
 }
 
+/** Traka za uređivanje modela kapije: sačuvaj kao prepravku modela ili kao nov model, odnosno odustani. */
+function GateModelBanner({ project }: { project: NonNullable<ReturnType<typeof useCurrentProject>> }) {
+  const navigate = useNavigate();
+  const models = useAppStore((s) => s.settings.gateModels);
+  const base = project.modelDraft?.modelId ? models?.find((m) => m.id === project.modelDraft!.modelId) : undefined;
+  const [name, setName] = useState(base?.name ?? '');
+  const done = (id: string | null) => { if (id) navigate('/modeli-kapija'); };
+  return (
+    <div className="card p-3 mb-3 flex flex-wrap items-center gap-2 border-primary" data-testid="gate-model-banner">
+      <b className="text-[14px]">{base ? `Uređujete model kapije „${base.name}“ (v${base.version})` : 'Pravite nov model kapije'}</b>
+      <span className="text-[12.5px] text-muted">Podesite kapiju i njene mere u „Mere kapije“, pa sačuvajte model.</span>
+      <input className="input !w-auto !py-1.5 min-w-[220px]" data-testid="gate-model-name-input" aria-label="Naziv modela kapije" placeholder="Naziv modela kapije" value={name} onChange={(e) => setName(e.target.value)} />
+      {base && <button className="btn btn-primary" data-testid="gate-model-save" onClick={() => done(useAppStore.getState().commitGateModelEdit('overwrite', name || base.name))}>Sačuvaj prepravku modela</button>}
+      <button className={`btn ${base ? '' : 'btn-primary'}`} data-testid="gate-model-save-new" disabled={!name.trim()} onClick={() => done(useAppStore.getState().commitGateModelEdit('new', name))}>Sačuvaj kao nov model</button>
+      <button className="btn" data-testid="gate-model-discard" onClick={() => { useAppStore.getState().discardGateModelEdit(project.id); navigate('/modeli-kapija'); }}>Odustani</button>
+    </div>
+  );
+}
+
 function EditorWorkspace({ navigateAway }: { navigateAway: () => void }) {
   void navigateAway;
   const project = useCurrentProject()!;
@@ -156,11 +175,12 @@ function EditorWorkspace({ navigateAway }: { navigateAway: () => void }) {
       )}
       <div className={`grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px] max-w-[1600px] mx-auto ${propsOpen ? 'sm:pr-[406px] xl:pr-0' : ''}`} data-props-open={propsOpen}>
         <div className="min-w-0 space-y-4">
+          {project.modelDraft && <GateModelBanner project={project} />}
           {fullscreen && <button className="btn btn-sm" onClick={toggleFullscreen}><X size={14} />Zatvori pun ekran</button>}
           <EditorCanvas project={project} svgRef={svgRef} areaRef={areaRef} drag={drag} onBeginDrag={begin} registerTarget={registerTarget} fullscreen={fullscreen} onToggleFullscreen={toggleFullscreen} />
-          <Catalog onBeginDrag={begin} />
+          {!project.modelDraft && <Catalog onBeginDrag={begin} />}
           <div className="grid gap-4">
-            <section className="card p-4 min-w-0" data-testid="project-data">
+            {!project.modelDraft && <section className="card p-4 min-w-0" data-testid="project-data">
               <div className="flex items-center justify-between mb-2"><h3 className="font-bold text-[15px]">Podaci o projektu / kupcu</h3>
                 <button className="text-sm text-primary font-medium inline-flex items-center gap-1 hover:underline" data-testid="project-edit" onClick={() => setEditData(true)}><Pencil size={13} />Uredi</button></div>
               <SelectField label="Kupac" testId="project-customer" value={project.customerId ?? ''} options={[{ value: '', label: '— nije izabran —' }, ...customers.map((c) => ({ value: c.id, label: c.name }))]}
@@ -171,7 +191,7 @@ function EditorWorkspace({ navigateAway }: { navigateAway: () => void }) {
               <Field label="Datum"><span className="text-sm">{fmtDate(project.updatedAt)}</span></Field>
               <Field label="Broj ponude"><span className="text-sm">{project.quoteNo || '—'}</span></Field>
               <TextField label="Napomena" multiline value={project.notes} testId="project-notes" onChange={(v) => useAppStore.getState().mutate((p) => ({ ...p, notes: v, updatedAt: new Date().toISOString() }), 'notes')} />
-            </section>
+            </section>}
           </div>
         </div>
 

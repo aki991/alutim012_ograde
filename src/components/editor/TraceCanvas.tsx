@@ -200,7 +200,7 @@ export function TraceCanvas({ modelId, onModel, onFinish, onCancel }: {
         <b>{mode === 'draw' ? 'Crtanje ograde' : 'Izmena nacrtane ograde'}</b>
         <label className="flex items-center gap-1.5">Model:
           <select className="input !w-auto !py-1" aria-label="Model ograde za crtanje" data-testid="trace-model" value={modelId} onChange={(e) => onModel(e.target.value as FenceModelId)}>
-            {allFenceModels().map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            {allFenceModels(modelId).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
         </label>
         <span className="tabular-nums text-slate-700" data-testid="trace-total">Ukupno {fmtMm(total)}</span>

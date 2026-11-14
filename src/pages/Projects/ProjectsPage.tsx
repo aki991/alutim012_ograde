@@ -9,13 +9,13 @@ import type { Project, ProjectStatus } from '../../domain/models/types';
 import { computeLayout } from '../../domain/geometry/layout';
 import { parseProject } from '../../domain/validation/project';
 import { exportProjectJson } from '../../services/exports';
-import { useAppStore } from '../../store/useAppStore';
+import { useAppStore, useListedProjects } from '../../store/useAppStore';
 import { fmtDate, fmtM } from '../../utils/units';
 
 export default function ProjectsPage() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const projects = useAppStore((s) => s.projects);
+  const projects = useListedProjects();
   const customers = useAppStore((s) => s.customers);
   const { copyProject, removeProject, patchProject, importProject } = useAppStore.getState();
   const q = params.get('q') ?? '';

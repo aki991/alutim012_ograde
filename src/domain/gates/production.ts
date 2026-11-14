@@ -47,31 +47,8 @@ export function gateCutRows(g: Gate & { design?: GateDesign }, res: GateResult, 
       lengthMm: has ? manual : r.geometricMm, manual: has, missing: has ? [] : r.missing,
     });
   };
-  const frame = prof('frame');
   const H = v('H');
-  const face = v('face');
-  const miter = frame?.joint === 'miter';
-  const leafRows = (assembly: string, wKey: string | null, W: number | null, moving = true) => {
-    const missW = W === null ? [wKey ?? 'W'] : [];
-    const missH = H === null ? ['H'] : [];
-    if (miter) {
-      push({ key: `${assembly}|vert`, assembly, part: 'Ram — vertikala', qty: 2, geometricMm: H, ref: 'spoljna visina krila, duža ivica', ends: '45° / 45°', moving, missing: missH, p: frame, fallback: 'Profil rama (nije izabran)', miter: true });
-      push({ key: `${assembly}|horiz`, assembly, part: 'Ram — horizontala', qty: 2, geometricMm: W, ref: 'spoljna širina krila, duža ivica', ends: '45° / 45°', moving, missing: missW, p: frame, fallback: 'Profil rama (nije izabran)', miter: true });
-    } else {
-      push({ key: `${assembly}|vert`, assembly, part: 'Ram — stub rama', qty: 2, geometricMm: H, ref: 'spoljna visina krila (stubovi rama celom visinom)', ends: '90° / 90°', moving, missing: missH, p: frame, fallback: 'Profil rama (nije izabran)' });
-      const hz = W !== null && face !== null ? W - 2 * face : null;
-      push({ key: `${assembly}|horiz`, assembly, part: 'Ram — horizontala', qty: 2, geometricMm: hz, ref: 'Wkrila − širina levog − širina desnog profila', ends: '90° / 90°', moving, missing: [...missW, ...(face === null ? ['face'] : [])], p: frame, fallback: 'Profil rama (nije izabran)' });
-    }
-  };
-  if (res.system === 'swing_double') {
-    leafRows('Levo krilo', 'WL', v('WL'));
-    leafRows('Desno krilo', 'WR', v('WR'));
-  } else if (res.system === 'swing_single') {
-    leafRows('Krilo', 'Wk', v('Wk'));
-  } else {
-    const lw = res.derived.leafFrameW ?? null;
-    leafRows('Krilo', null, lw);
-    if (rows.length) for (const r of rows.slice(-2)) if (lw === null) r.missing = [...new Set([...r.missing.filter((x) => x !== 'W'), ...['a', 'b'].filter((k) => v(k) === null)])];
+  if (res.system !== 'swing_double' && res.system !== 'swing_single') {
     const L = v('L');
     if (res.system === 'cantilever') {
       push({ key: 'Pokretni sklop|carrier', assembly: 'Pokretni sklop', part: 'Noseći (klizni) profil', qty: 1, geometricMm: L, ref: 'pokretni gabarit L (prednja ivica do kraja repa)', ends: '90° / 90°', moving: true, missing: L === null ? ['L'] : [], p: prof('carrier'), fallback: 'Noseći profil (nije izabran)' });

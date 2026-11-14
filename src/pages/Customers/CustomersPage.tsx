@@ -5,7 +5,7 @@ import { TextField } from '../../components/forms/Fields';
 import { EmptyState, Page, PageHeader, StatusPill } from '../../components/ui/Common';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
 import type { Customer } from '../../domain/models/types';
-import { useAppStore } from '../../store/useAppStore';
+import { useAppStore, useListedProjects } from '../../store/useAppStore';
 import { uid } from '../../utils/id';
 import { fmtDate } from '../../utils/units';
 
@@ -13,7 +13,7 @@ const blank = (): Customer => ({ id: uid('cust'), name: '', phone: '', email: ''
 
 export default function CustomersPage() {
   const customers = useAppStore((s) => s.customers);
-  const projects = useAppStore((s) => s.projects);
+  const projects = useListedProjects();
   const { upsertCustomer, removeCustomer } = useAppStore.getState();
   const [q, setQ] = useState('');
   const [form, setForm] = useState<Customer | null>(null);

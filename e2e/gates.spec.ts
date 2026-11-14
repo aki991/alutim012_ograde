@@ -75,16 +75,13 @@ test('dvokrilna: ručne mere, prazan cenovnik, okov bez šifre, dodatna kota, po
 
   // šarka bez fabričke šifre sa minimumom B = 8; zazor 7 upozorava i ostaje sačuvan
   await page.getByTestId('gd-tab-delovi').click();
+  await expect(page.getByTestId('gd-hw-missing')).toContainText('Leva šarka × 2');
   await page.getByTestId('gd-hw-role').selectOption('hinge_left');
+  await page.getByTestId('gd-hw-new-name').fill('Šarka radionice M12');
   await page.getByTestId('gd-hw-add').click();
-  await page.getByTestId('gd-hw-name-0').fill('Šarka radionice M12');
+  await expect(page.getByTestId('gd-hw-name-0')).toContainText('Šarka radionice M12');
   const min = page.getByTestId('gd-hw-min-0');
   await min.fill('8'); await min.press('Enter');
-  // ručno zadat profil rama
-  await page.getByTestId('gd-profile-add').click();
-  await page.getByTestId('gd-profile-name-0').fill('Ram 60×40 radionica');
-  const face = page.getByTestId('gd-profile-face-0'); await face.fill('60'); await face.press('Enter');
-  const kg = page.getByTestId('gd-profile-kg-0'); await kg.fill('1,5'); await kg.press('Enter');
   await page.getByTestId('gd-tab-mere').click();
   await setDim(page, 'gL', '7');
   await expect(page.getByTestId('gd-row-gL')).toContainText('manji od minimuma 8 mm');
@@ -101,21 +98,17 @@ test('dvokrilna: ručne mere, prazan cenovnik, okov bez šifre, dodatna kota, po
 
   // sastavnica i krojna lista koriste ručne podatke; donji zazor ostaje nepoznat
   await page.getByTestId('gd-tab-izrada').click();
-  await expect(page.getByTestId('gd-cut-len-Levo krilo|horiz')).toHaveAttribute('placeholder', String(1200 - 120));
-  await expect(page.getByTestId('gd-cut-len-Desno krilo|horiz')).toHaveAttribute('placeholder', String(2758 - 120));
-  await expect(page.getByTestId('gd-cut-table')).toContainText('Ram 60×40 radionica');
-  await expect(page.getByTestId('gd-bom')).toContainText('Šarka radionice M12 (bez fabričke šifre)');
-  await expect(page.getByTestId('gd-mass-moving')).not.toHaveText('0,0 kg');
-  // ručna rezna mera sa razlikom od geometrijske
-  const cut = page.getByTestId('gd-cut-len-Levo krilo|horiz'); await cut.fill('1078'); await cut.press('Enter');
-  await expect(page.getByTestId('gd-cut-diff-Levo krilo|horiz')).toContainText('-2 mm');
+  // ram krila dolazi iz specifikacije modela (nije u listi mera); okov koji nije upisan ima nepoznatu oznaku
+  await expect(page.getByTestId('gd-tab-izrada')).toHaveText('Sastavnica');
+  await expect(page.getByTestId('gd-tab-delovi')).toHaveText('Okovi');
+  await expect(page.getByTestId('gd-tab-provere')).toHaveCount(0);
+  await expect(page.getByTestId('gd-cut-table')).toHaveCount(0);
+  await expect(page.getByTestId('gd-mass')).toHaveCount(0);
+  await expect(page.getByTestId('gd-bom')).toContainText('Šarka radionice M12');
+  await expect(page.getByTestId('gd-bom')).toContainText('Desna šarka — nepoznata oznaka');
+  await expect(page.getByTestId('gd-bom')).toContainText('Brava i prihvatnik — nepoznata oznaka');
   await page.getByTestId('gd-tab-mere').click();
   await expect(val(page, 'gB')).toHaveValue('');
-
-  // potvrda mera
-  await page.getByTestId('gd-tab-provere').click();
-  await page.getByTestId('gd-confirm-btn-mere').click();
-  await expect(page.getByTestId('gd-confirm-state')).toHaveText('Mere potvrđene');
 
   // snimanje i ponovno otvaranje projekta
   await page.keyboard.press('Escape');
@@ -130,15 +123,8 @@ test('dvokrilna: ručne mere, prazan cenovnik, okov bez šifre, dodatna kota, po
   await expect(val(page, 'gB')).toHaveValue('');
   await expect(page.getByTestId('gd-row-gL')).toContainText('manji od minimuma 8 mm');
   await expect(page.getByTestId('gd-extra-name-0')).toHaveValue('Bušenje gornje šarke od vrha');
-  await expect(page.getByTestId('gd-confirm-state')).toHaveText('Mere potvrđene');
   await page.getByTestId('gd-tab-izrada').click();
-  await expect(page.getByTestId('gd-cut-len-Levo krilo|horiz')).toHaveValue('1078');
   await expect(page.getByTestId('gd-bom')).toContainText('Šarka radionice M12');
-
-  // potvrda stare konfiguracije ne važi za promenjenu
-  await page.getByTestId('gd-tab-mere').click();
-  await setDim(page, 'gC', '12');
-  await expect(page.getByTestId('gd-confirm-state')).toContainText('ne važi');
 
   // PDF mera kapije
   const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), page.getByTestId('gd-pdf').click()]);
@@ -204,13 +190,13 @@ test('samonoseća: L 5500, Pmin 5600, nedostaje 100 mm, preslikano iste dužine,
   await setDim(page, 'tD', '900');
   await expect(val(page, 't2')).toHaveValue('1200');
   await expect(page.getByTestId('gd-origin-t2')).toHaveText('proračun');
-  // krojna lista: noseći profil = L, rep po √(T² + H²)
+  // sastavnica klizne kapije: okovi bez oznake su nepoznati
   await page.getByTestId('gd-tab-izrada').click();
-  await expect(page.getByTestId('gd-cut-len-Pokretni sklop|carrier')).toHaveAttribute('placeholder', '5500');
+  await expect(page.getByTestId('gd-bom')).toContainText('Kolica — nepoznata oznaka');
   expect(errors).toEqual([]);
 });
 
-test('šablon: sačuvaj ručne kote, pravilo i deo; ponovo pokreni; učitaj na novom poslu sa drugim otvorom; nova verzija ne menja stari posao', async ({ page }) => {
+test('model kapije: sačuvaj iz Mere kapije, nov posao sa modelom, prepravka modela (nova verzija) ne menja stari posao', async ({ page }) => {
   await newProjectWithGate(page, 'double');
   const firstUrl = page.url();
   await setDim(page, 'W', '4000');
@@ -219,45 +205,111 @@ test('šablon: sačuvaj ručne kote, pravilo i deo; ponovo pokreni; učitaj na n
   await setDim(page, 'gR', '25');
   await setDim(page, 'WL', '1200');
   await page.getByTestId('gd-tab-delovi').click();
-  await page.getByTestId('gd-profile-add').click();
-  await page.getByTestId('gd-profile-name-0').fill('Moj ram 50×50');
-  const face = page.getByTestId('gd-profile-face-0'); await face.fill('50'); await face.press('Enter');
-  await page.getByTestId('gd-tab-sabloni').click();
-  await page.getByTestId('gd-tpl-name').fill('Dvokrilna ALU TIM');
-  await page.getByTestId('gd-tpl-save').click();
-  await expect(page.getByTestId('gd-tpl-msg')).toContainText('sačuvan (v1)');
+  await page.getByTestId('gd-hw-role').selectOption('lock');
+  await page.getByTestId('gd-hw-new-name').fill('Moja brava');
+  await page.getByTestId('gd-hw-add').click();
+  // tab Šabloni više ne postoji; kapija se čuva kao model
+  await expect(page.getByTestId('gd-tab-sabloni')).toHaveCount(0);
+  await page.getByTestId('gd-save-model').click();
+  await page.getByTestId('gm-name').fill('Dvokrilna ALU TIM');
+  await page.getByTestId('gm-save-confirm').click();
+  await expect(page.getByTestId('gd-model-msg')).toContainText('sačuvan (v1)');
   await expect(page.getByTestId('gd-template-ref')).toContainText('v1');
   await page.keyboard.press('Escape');
   await save(page);
 
-  // ponovno pokretanje aplikacije
+  // ponovno pokretanje aplikacije; model je na strani Modeli kapija
   await page.reload();
-  await newProjectWithGate(page, 'double');
-  await setDim(page, 'W', '3500');
-  await page.getByTestId('gd-tab-sabloni').click();
-  await expect(page.getByTestId('gd-tpl-row')).toContainText('Dvokrilna ALU TIM');
-  await page.getByTestId('gd-tpl-apply').click();
-  await page.getByTestId('gd-tab-mere').click();
+  await page.goto('/modeli-kapija');
+  await expect(page.getByTestId('gate-model-name')).toHaveText('Dvokrilna ALU TIM');
+  await page.getByTestId('use-gate-model').click();
+  await expect(page).toHaveURL(/editor.proj_/);
+  await page.locator('[data-hit="item"]').last().click();
+  await page.getByTestId('btn-gate-design').click();
+  await expect(val(page, 'W')).toHaveValue('4000');
   await expect(val(page, 'WL')).toHaveValue('1200');
-  await expect(page.getByTestId('gd-origin-WL')).toHaveText('šablon');
+  await expect(val(page, 'gC')).toHaveValue('10');
+  await setDim(page, 'W', '3500');
   await expect(val(page, 'WR')).toHaveValue(String(3500 - 25 - 10 - 25 - 1200));
   await expect(page.getByTestId('gd-template-ref')).toContainText('v1');
   await page.getByTestId('gd-tab-izrada').click();
-  await expect(page.getByTestId('gd-cut-table')).toContainText('Moj ram 50×50');
-  // nova verzija šablona sa drugim srednjim zazorom
+  await expect(page.getByTestId('gd-bom')).toContainText('Moja brava');
+  // prepravka modela: nova verzija sa drugim srednjim zazorom
   await page.getByTestId('gd-tab-mere').click();
   await setDim(page, 'gC', '20');
-  await page.getByTestId('gd-tab-sabloni').click();
-  await page.getByTestId('gd-tpl-version').click();
-  await expect(page.getByTestId('gd-tpl-msg')).toContainText('v2');
+  await page.getByTestId('gd-save-model').click();
+  await expect(page.getByTestId('gm-mode-overwrite')).toBeChecked();
+  await page.getByTestId('gm-save-confirm').click();
+  await expect(page.getByTestId('gd-model-msg')).toContainText('v2');
   await page.keyboard.press('Escape');
   await save(page);
 
-  // prvi posao zadržava svoje mere i verziju šablona
+  // prvi posao zadržava svoje mere i verziju modela
   await page.goto(firstUrl);
   await page.locator('[data-hit="item"]').last().click();
   await page.getByTestId('btn-gate-design').click();
   await expect(val(page, 'gC')).toHaveValue('10');
   await expect(val(page, 'WR')).toHaveValue('2740');
   await expect(page.getByTestId('gd-template-ref')).toContainText('v1');
+});
+
+test('modeli kapija: pravljenje u editoru, uređivanje, dodavanje iz kataloga i brisanje; osnovne kapije se brišu i vraćaju', async ({ page }) => {
+  const errors = trackErrors(page);
+  await page.goto('/modeli-kapija');
+  await expect(page.getByTestId('gate-models-empty')).toBeVisible();
+  await page.getByTestId('btn-create-gate-model').click();
+  await page.getByTestId('new-gate-model-pedestrian').click();
+  await expect(page).toHaveURL(/editor.proj_/);
+  await expect(page.getByTestId('gate-model-banner')).toBeVisible();
+  await page.locator('[data-hit="item"]').last().click();
+  await page.getByTestId('btn-gate-design').click();
+  await setDim(page, 'gH', '15');
+  await page.keyboard.press('Escape');
+  await page.getByTestId('gate-model-name-input').fill('Pešačka 15');
+  await page.getByTestId('gate-model-save-new').click();
+  await expect(page).toHaveURL(/modeli-kapija/);
+  await expect(page.getByTestId('gate-model-name')).toHaveText('Pešačka 15');
+  // privremen projekat se ne vidi u spisku projekata
+  await page.goto('/projekti');
+  await expect(page.getByText('Nov model kapije')).toHaveCount(0);
+  // uređivanje: prepravka istog modela
+  await page.goto('/modeli-kapija');
+  await page.getByTestId('edit-gate-model').click();
+  await expect(page.getByTestId('gate-model-banner')).toContainText('Pešačka 15');
+  await page.getByTestId('gate-model-save').click();
+  await expect(page.getByTestId('gate-model-card')).toContainText('v2');
+  // model je u katalogu editora
+  await page.getByTestId('use-gate-model').click();
+  await expect(page.getByTestId('catalog').getByText('Pešačka 15')).toBeVisible();
+  // brisanje modela
+  await page.goto('/modeli-kapija');
+  await page.getByTestId('delete-gate-model').click();
+  await page.getByRole('button', { name: 'Obriši', exact: true }).last().click();
+  await expect(page.getByTestId('gate-models-empty')).toBeVisible();
+  // osnovna kapija: brisanje i vraćanje
+  await page.getByTestId('delete-basic-sliding').click();
+  await page.getByRole('button', { name: 'Obriši', exact: true }).last().click();
+  await expect(page.getByTestId('basic-gate-sliding')).toHaveCount(0);
+  await page.getByTestId('restore-basic-gates').click();
+  await expect(page.getByTestId('basic-gate-sliding')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('modeli ograda: svaki model iz kataloga može da se obriše i vrati', async ({ page }) => {
+  const errors = trackErrors(page);
+  await page.goto('/modeli');
+  await expect(page.getByTestId('model-card-h_wide')).toBeVisible();
+  await page.getByTestId('delete-model-h_wide').click();
+  await page.getByRole('button', { name: 'Obriši', exact: true }).last().click();
+  await expect(page.getByTestId('model-card-h_wide')).toHaveCount(0);
+  // obrisan model se ne nudi u editoru, a ostali ostaju (prelazak bez ponovnog učitavanja strane)
+  await page.getByRole('link', { name: 'Početna' }).click();
+  await page.getByTestId('hero-new').click();
+  await expect(page.getByTestId('catalog-model').locator('option', { hasText: 'Antracit — široke horizontalne letvice' })).toHaveCount(0);
+  await expect(page.getByTestId('catalog-model').locator('option').first()).toBeAttached();
+  // vraćanje obrisanih modela
+  await page.getByRole('link', { name: 'Modeli ograda' }).click();
+  await page.getByTestId('restore-hidden-models').click();
+  await expect(page.getByTestId('model-card-h_wide')).toBeVisible();
+  expect(errors).toEqual([]);
 });

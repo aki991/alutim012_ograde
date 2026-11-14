@@ -11,6 +11,7 @@ import LoginPage from '../pages/Login/LoginPage';
 import MaterialsPage from '../pages/Materials/MaterialsPage';
 import ModelDesignerPage from '../pages/Models/ModelDesignerPage';
 import ModelsPage from '../pages/Models/ModelsPage';
+import GateModelsPage from '../pages/GateModels/GateModelsPage';
 import ProductionPage from '../pages/Production/ProductionPage';
 import ProjectsPage from '../pages/Projects/ProjectsPage';
 import QuotesPage from '../pages/Quotes/QuotesPage';
@@ -61,6 +62,7 @@ export default function App() {
             <Route path="/editor/:id" element={<EditorPage />} />
             <Route path="/projekti" element={<ProjectsPage />} />
             <Route path="/modeli" element={<ModelsPage />} />
+            <Route path="/modeli-kapija" element={<GateModelsPage />} />
             <Route path="/modeli/crtanje" element={<ModelDesignerPage />} />
             <Route path="/modeli/crtanje/:id" element={<ModelDesignerPage />} />
             <Route path="/materijali" element={<MaterialsPage />} />

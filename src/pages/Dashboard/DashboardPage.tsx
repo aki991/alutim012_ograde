@@ -6,7 +6,7 @@ import { ActionsMenu, ModelThumb, ProjectThumb, StatusPill } from '../../compone
 import { ConfirmDialog } from '../../components/ui/Modal';
 import { computePrice } from '../../domain/pricing/calc';
 import type { FenceModelId, GateType } from '../../domain/models/types';
-import { useAppStore } from '../../store/useAppStore';
+import { useAppStore, useListedProjects } from '../../store/useAppStore';
 import { fmtDate, fmtMoney } from '../../utils/units';
 
 const POPULAR: { name: string; modelId: FenceModelId; photo: string | null; gate?: GateType }[] = [
@@ -19,7 +19,7 @@ const POPULAR: { name: string; modelId: FenceModelId; photo: string | null; gate
 
 export default function DashboardPage() {
   const navigate = useNavigate();
-  const projects = useAppStore((s) => s.projects);
+  const projects = useListedProjects();
   const customers = useAppStore((s) => s.customers);
   const materials = useAppStore((s) => s.materials);
   const specs = useAppStore((s) => s.settings.modelSpecs);

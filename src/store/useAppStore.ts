@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { create } from 'zustand';
 import { isBuiltinMaterial } from '../data/materials';
 import { missingModelMaterials } from '../data/modelMaterials';
@@ -10,7 +11,9 @@ import { newItemFor } from '../domain/geometry/newItem';
 import { computeLayout } from '../domain/geometry/layout';
 import { removeStair, setStairGroup } from '../domain/geometry/stairOps';
 import { DEFAULT_MODEL_ID, FENCE_MODELS, TERRACE_NO_GATES, isTerraceModel, projectModelId } from '../domain/models/catalog';
-import { effectiveModelId, registerCustomModels } from '../domain/models/customRegistry';
+import { effectiveModelId, registerCustomModels, setHiddenModels } from '../domain/models/customRegistry';
+import { gateFieldsFromModel, gateModelFromGate, type GateModel } from '../domain/gates/gateModels';
+import { postHalfSum } from '../domain/geometry/layout';
 import { builtinToCustom } from '../domain/models/fromBuiltin';
 import { createFence, createGate, createProject, nowIso } from '../domain/models/factories';
 import { emptyHistory, recordChange, redo as redoH, undo as undoH, type History } from '../domain/models/history';
@@ -110,6 +113,22 @@ interface AppState {
   replaceBuiltin: (customId: string) => void;
   /** vraća originalni model iz kataloga; dorađen crtež ostaje kao poseban model */
   restoreBuiltin: (customId: string) => void;
+  /** sakriva model iz kataloga (brisanje): projekti koji ga koriste rade i dalje */
+  hideModel: (id: string) => void;
+  restoreHiddenModels: () => void;
+  /** modeli kapija */
+  saveGateModel: (m: GateModel) => void;
+  removeGateModel: (id: string) => void;
+  /** postavlja kapiju u otvorenom projektu prema modelu (tip, ispuna, mere, okovi); svetli otvor ostaje onaj iz modela */
+  applyGateModel: (itemId: string, modelId: string) => boolean;
+  /** dodaje kapiju iz modela na kraj niza u otvorenom projektu; vraća ID kapije */
+  addGateFromModel: (modelId: string) => string | null;
+  /** pravi privremen projekat sa jednom kapijom (iz modela ili prazan) za uređivanje modela; vraća ID projekta */
+  startGateModelEdit: (modelId: string | null, gateType?: GateType) => string;
+  /** upisuje kapiju iz privremenog projekta u model (prepravka postojećeg ili nov) i briše privremen projekat; vraća ID modela */
+  commitGateModelEdit: (mode: 'overwrite' | 'new', name: string) => string | null;
+  /** odbacuje privremen projekat */
+  discardGateModelEdit: (projectId: string) => void;
 }
 
 /** Element čiji model više ne postoji (obrisan nacrtani model) prelazi na podrazumevani model, da se projekat i dalje otvara. */
@@ -214,7 +233,9 @@ export const useAppStore = create<AppState>((set, get) => {
           } catch { /* bez localStorage-a: preskače se */ }
           // nacrtani modeli moraju biti u katalogu pre nego što se projekti učitaju
           registerCustomModels(settings.customModels, materials);
-          set({ projects: data.projects.map(migrateProject).map(dropUnknownModels), customers: data.customers, materials, settings, ready: true });
+          setHiddenModels(settings.hiddenModels);
+          // privremeni projekti za uređivanje modela ne preživljavaju ponovno pokretanje
+          set({ projects: data.projects.filter((p) => !p.modelDraft).map(migrateProject).map(dropUnknownModels), customers: data.customers, materials, settings, ready: true });
           if (backfilled) {
             // autosave počinje tek posle init-a, pa se dodati materijali upisuju odmah; oznaka se postavlja tek kad je upis uspeo
             try {
@@ -496,13 +517,86 @@ export const useAppStore = create<AppState>((set, get) => {
         editor: { ...s.editor, history: emptyHistory<Project>(), activeModelId: s.editor.activeModelId === id ? DEFAULT_MODEL_ID : s.editor.activeModelId },
       }));
     },
+    hideModel(id) {
+      const hidden = [...new Set([...(get().settings.hiddenModels ?? []), id])];
+      setHiddenModels(hidden);
+      set((s) => ({ settings: { ...s.settings, hiddenModels: hidden } }));
+    },
+    restoreHiddenModels() {
+      setHiddenModels([]);
+      set((s) => ({ settings: { ...s.settings, hiddenModels: [] } }));
+    },
+    saveGateModel(m) {
+      const list = get().settings.gateModels ?? [];
+      const gateModels = list.some((x) => x.id === m.id) ? list.map((x) => (x.id === m.id ? m : x)) : [...list, m];
+      set((s) => ({ settings: { ...s.settings, gateModels } }));
+    },
+    removeGateModel(id) {
+      set((s) => ({ settings: { ...s.settings, gateModels: (s.settings.gateModels ?? []).filter((x) => x.id !== id) } }));
+    },
+    applyGateModel(itemId, modelId) {
+      const m = (get().settings.gateModels ?? []).find((x) => x.id === modelId);
+      if (!m || !currentProject()) return false;
+      get().mutate((p) => {
+        const q = updateItem(p, itemId, gateFieldsFromModel(m) as Partial<Gate>);
+        return setOuterWidth(q, itemId, m.clearWidthMm + 2 * postHalfSum(q, indexOfItem(q, itemId)));
+      });
+      return true;
+    },
+    addGateFromModel(modelId) {
+      const m = (get().settings.gateModels ?? []).find((x) => x.id === modelId);
+      const cur = currentProject();
+      if (!m || !cur) return null;
+      const id = get().addElement({ kind: 'gate', gateType: m.gateType, modelId: m.infillModelId as FenceModelId });
+      if (!id) return null;
+      get().applyGateModel(id, modelId);
+      return id;
+    },
+    startGateModelEdit(modelId, gateType = 'pedestrian') {
+      const m = modelId ? (get().settings.gateModels ?? []).find((x) => x.id === modelId) : undefined;
+      let gate = createGate(m?.gateType ?? gateType);
+      if (m) gate = { ...gate, ...(gateFieldsFromModel(m) as Partial<Gate>) } as Gate;
+      let p = createProject(m ? `Model kapije — ${m.name}` : 'Nov model kapije', [gate]);
+      p.modelDraft = { modelId: m?.id ?? null };
+      p.settings.pricing = { ...get().settings.pricing };
+      const clear = m?.clearWidthMm ?? null;
+      if (clear !== null) p = setOuterWidth(p, gate.id, clear + 2 * postHalfSum(p, 0));
+      set((s) => ({ projects: [p, ...s.projects], editor: { ...emptyEditor(), projectId: p.id, activeModelId: s.editor.activeModelId } }));
+      return p.id;
+    },
+    commitGateModelEdit(mode, name) {
+      const cur = currentProject();
+      if (!cur?.modelDraft) return null;
+      const index = cur.items.findIndex((i) => i.kind === 'gate');
+      const g = cur.items[index];
+      if (!g || g.kind !== 'gate') return null;
+      const clear = computeLayout(cur).items[index].clearWidth;
+      const list = get().settings.gateModels ?? [];
+      const base = cur.modelDraft.modelId ? list.find((x) => x.id === cur.modelDraft!.modelId) : undefined;
+      const overwrite = mode === 'overwrite' && base;
+      const id = overwrite ? base!.id : uid('gm');
+      const model = gateModelFromGate(g, clear, name.trim() || base?.name || 'Model kapije', id, overwrite ? base!.version + 1 : 1);
+      get().saveGateModel(model);
+      get().discardGateModelEdit(cur.id);
+      return id;
+    },
+    discardGateModelEdit(projectId) {
+      set((s) => ({ projects: s.projects.filter((p) => p.id !== projectId), editor: s.editor.projectId === projectId ? { ...emptyEditor() } : s.editor }));
+    },
   };
 });
 
 // katalog prati nacrtane modele i cenovnik (pretplata na nivou modula se izvršava pre osvežavanja komponenti)
 useAppStore.subscribe((s, prev) => {
   if (s.settings.customModels !== prev.settings.customModels || s.materials !== prev.materials) registerCustomModels(s.settings.customModels, s.materials);
+  if (s.settings.hiddenModels !== prev.settings.hiddenModels) setHiddenModels(s.settings.hiddenModels);
 });
 
 export const useCurrentProject = (): Project | undefined =>
   useAppStore((s) => (s.editor.projectId ? s.projects.find((p) => p.id === s.editor.projectId) : undefined));
+
+/** projekti za spiskove: privremeni projekti za uređivanje modela kapije se ne prikazuju */
+export function useListedProjects(): Project[] {
+  const projects = useAppStore((s) => s.projects);
+  return useMemo(() => projects.filter((p) => !p.modelDraft), [projects]);
+}

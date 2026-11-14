@@ -164,7 +164,7 @@ function ProjectBasics({ project }: { project: Project }) {
 /* ---------- Model (padajući meni; menja se za sve elemente) ---------- */
 function ModelSelect({ value, onChange }: { value: FenceModelId; onChange: (m: FenceModelId) => void }) {
   return (
-    <SelectField stacked label="Model (menja se na svim elementima)" testId="field-model" value={value} options={allFenceModels().map((m) => ({ value: m.id, label: m.name }))} onChange={onChange} />
+    <SelectField stacked label="Model (menja se na svim elementima)" testId="field-model" value={value} options={allFenceModels(value).map((m) => ({ value: m.id, label: m.name }))} onChange={onChange} />
   );
 }
 

@@ -4,13 +4,13 @@ import { STATUS_LABELS } from '../../domain/models/catalog';
 import { computeLayout } from '../../domain/geometry/layout';
 import type { ProjectStatus } from '../../domain/models/types';
 import { computePrice } from '../../domain/pricing/calc';
-import { useAppStore } from '../../store/useAppStore';
+import { useAppStore, useListedProjects } from '../../store/useAppStore';
 import { fmtMoney, fmtNum } from '../../utils/units';
 
 const COLORS: Record<ProjectStatus, string> = { nacrt: '#94a3b8', ponuda: '#7a0d14', u_izradi: '#f59e0b', zavrseno: '#16a34a' };
 
 export default function ReportsPage() {
-  const projects = useAppStore((s) => s.projects);
+  const projects = useListedProjects();
   const customers = useAppStore((s) => s.customers);
   const materials = useAppStore((s) => s.materials);
   const specs = useAppStore((s) => s.settings.modelSpecs);

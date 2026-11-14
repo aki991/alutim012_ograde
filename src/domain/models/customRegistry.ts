@@ -28,6 +28,11 @@ export function registerCustomModels(models: CustomModel[] | undefined, material
   for (const m of models ?? []) { REG.set(m.id, m); all[m.id] = defOf(m); }
 }
 
+/** modeli iz kataloga koje je korisnik obrisao: ne nude se za izbor, ali projekti koji ih koriste i dalje rade */
+const HIDDEN = new Set<string>();
+export const setHiddenModels = (ids?: string[]): void => { HIDDEN.clear(); for (const i of ids ?? []) HIDDEN.add(i); };
+export const isHiddenModel = (id: string): boolean => HIDDEN.has(id);
+
 export const customModelOf = (id: string): CustomModel | undefined => REG.get(id);
 export const isCustomModel = (id: string): boolean => REG.has(id);
 
@@ -38,9 +43,9 @@ export const replacementOf = (builtinId: string): CustomModel | undefined => [..
 export const effectiveModelId = <T extends string>(id: T): T => (replacementOf(id)?.id as T | undefined) ?? id;
 
 /** Svi modeli za izbor u editoru: katalog (dorađen model stoji umesto originala), pa ostali ručno nacrtani. */
-export const allFenceModels = (): FenceModelDef[] => {
+export const allFenceModels = (keep?: string): FenceModelDef[] => {
   const all = FENCE_MODELS as Record<string, FenceModelDef>;
-  const catalog = FENCE_MODEL_LIST.map((d) => { const r = replacementOf(d.id); return r ? all[r.id] : d; });
+  const catalog = FENCE_MODEL_LIST.filter((d) => !HIDDEN.has(d.id) || d.id === keep).map((d) => { const r = replacementOf(d.id); return r ? all[r.id] : d; });
   return [...catalog, ...[...REG.values()].filter((m) => !m.replaces).map((m) => all[m.id])];
 };
 

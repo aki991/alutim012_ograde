@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
 import type { Gate } from '../../domain/models/types';
-import { DIM_BY_KEY, fmt, type GateDesign, type GateResult } from '../../domain/gates/design';
+import { DIM_BY_KEY, fmt, hingePositions, type GateDesign, type GateResult } from '../../domain/gates/design';
 
 /**
  * Skica kapije uz mere: zatvoren i otvoren položaj, referentne ivice (montažna lica stubova, ivice otvora), kote i zazori.
@@ -12,9 +12,10 @@ import { DIM_BY_KEY, fmt, type GateDesign, type GateResult } from '../../domain/
 function ZoomPan({ children }: { children: ReactNode }) {
   const box = useRef<HTMLDivElement>(null);
   const outer = useRef<HTMLDivElement>(null);
+  const inner = useRef<HTMLDivElement>(null);
   const [t, setT] = useState({ z: 1, x: 0, y: 0 });
   const drag = useRef<{ px: number; py: number; moved: boolean } | null>(null);
-  const zoomAt = (f: number, cx: number, cy: number) => setT((o) => { const z = Math.min(Math.max(o.z * f, 0.3), 12); const r = z / o.z; return { z, x: cx - (cx - o.x) * r, y: cy - (cy - o.y) * r }; });
+  const zoomAt = (f: number, cx: number, cy: number) => setT((o) => { const z = Math.min(Math.max(o.z * f, 0.3), 12); const r = z / o.z; if (z <= 1) return { z, x: ((box.current?.clientWidth ?? 0) * (1 - z)) / 2, y: 0 }; return { z, x: cx - (cx - o.x) * r, y: cy - (cy - o.y) * r }; });
   useEffect(() => {
     const el = outer.current; if (!el) return;
     // jedan „klik“ točkića = isti korak bez obzira na uređaj (miš, touchpad); gore = uvećaj, dole = umanji
@@ -22,20 +23,31 @@ function ZoomPan({ children }: { children: ReactNode }) {
     el.addEventListener('wheel', h, { passive: false });
     return () => el.removeEventListener('wheel', h);
   }, []);
+  // „cela kapija“: skica se smanji toliko da se cela vidi zajedno sa statusom i napomenama ispod nje, bez skrolovanja kolone
+  const fit = () => {
+    const b = box.current; const n = inner.current; if (!b || !n) return;
+    const col = b.closest<HTMLElement>('[data-testid="gd-left"]');
+    const natH = n.offsetHeight; if (!natH) return;
+    const maxH = col ? parseFloat(getComputedStyle(col).maxHeight) : NaN;
+    const colMax = Number.isFinite(maxH) ? maxH : window.innerHeight - 160;
+    const extra = col ? col.scrollHeight - b.offsetHeight : 0;
+    const z = Math.min(1, Math.max(0.3, (colMax - extra - 6) / natH));
+    setT({ z, x: (b.clientWidth * (1 - z)) / 2, y: 0 });
+  };
   const center = (f: number) => { const r = box.current!.getBoundingClientRect(); zoomAt(f, r.width / 2, r.height / 2); };
   return (
     <div ref={outer} className="relative" data-testid="sk-zoom" data-zoom={t.z.toFixed(2)}>
-      <div ref={box} className="overflow-hidden touch-none select-none" style={{ cursor: t.z !== 1 ? 'grab' : undefined }}
+      <div ref={box} className="overflow-hidden touch-none select-none" style={{ cursor: t.z !== 1 ? 'grab' : undefined, height: t.z < 1 && inner.current ? inner.current.offsetHeight * t.z : undefined }}
         onPointerDown={(e) => { drag.current = { px: e.clientX, py: e.clientY, moved: false }; }}
         onPointerMove={(e) => { const d = drag.current; if (!d) return; const dx = e.clientX - d.px, dy = e.clientY - d.py; if (!d.moved && Math.hypot(dx, dy) < 4) return; d.moved = true; d.px = e.clientX; d.py = e.clientY; setT((o) => ({ ...o, x: o.x + dx, y: o.y + dy })); }}
         onPointerUp={() => { setTimeout(() => { drag.current = null; }, 0); }} onPointerLeave={() => { drag.current = null; }}
         onClickCapture={(e) => { if (drag.current?.moved) { e.stopPropagation(); e.preventDefault(); } }}>
-        <div style={{ transform: `translate(${t.x}px, ${t.y}px) scale(${t.z})`, transformOrigin: '0 0' }}>{children}</div>
+        <div ref={inner} style={{ transform: `translate(${t.x}px, ${t.y}px) scale(${t.z})`, transformOrigin: '0 0' }}>{children}</div>
       </div>
       <div className="absolute right-2 top-2 flex flex-col gap-1">
         <button className="btn btn-sm !px-1.5" aria-label="Uvećaj" data-testid="sk-zoom-in" onClick={() => center(1.4)}><ZoomIn size={14} /></button>
         <button className="btn btn-sm !px-1.5" aria-label="Umanji" data-testid="sk-zoom-out" onClick={() => center(1 / 1.4)}><ZoomOut size={14} /></button>
-        <button className="btn btn-sm !px-1.5" aria-label="Cela kapija" data-testid="sk-zoom-reset" onClick={() => setT({ z: 1, x: 0, y: 0 })}><Maximize2 size={14} /></button>
+        <button className="btn btn-sm !px-1.5" aria-label="Cela kapija" data-testid="sk-zoom-reset" onClick={fit}><Maximize2 size={14} /></button>
       </div>
     </div>
   );
@@ -203,15 +215,14 @@ function SwingSketch({ gate, res, W, H, from, onPick, width, showDims, postHs, p
           const nH = Math.max(1, Math.round(v('hingeCount') ?? 2));
           const spacing = v('hingeSpacing');
           const hTop = v('hingeTop') ?? 150;
-          // šarke: gornja na hingeTop od vrha, ostale na razmaku osa (ako nije zadat, ravnomerno do iste mere od dna)
-          const hy = Array.from({ length: nH }, (_, j) => {
-            const mm = spacing !== null && nH >= 2 ? hTop + spacing * j : nH === 1 ? hTop : hTop + ((H - 2 * hTop) / (nH - 1)) * j;
-            return top + mm * ys;
-          });
+          // šarke: razmak je od prve do poslednje, ostale ravnomerno između; nikad van krila
+          const hy = hingePositions(H, nH, spacing, hTop).map((mm) => top + mm * ys);
           const ax = (v('hingeAxis') ?? 0) * s;
           const hx = l.hinge === 'left' ? x - ax : x + w + ax;
           const slats = Math.max(Math.floor(hPx / 7), 1);
           const lockX = l.hinge === 'left' ? x + w - 7 : x + 7;
+          const lockH = v('lockH');
+          const lockCy = lockH !== null ? bottom - Math.min(Math.max(lockH, 0), H) * ys : top + hPx / 2;
           const edge = l.assumed ? MISS : INK;
           return (
             <g key={i} data-testid={`sk-leaf-${i}`}>
@@ -223,8 +234,10 @@ function SwingSketch({ gate, res, W, H, from, onPick, width, showDims, postHs, p
               {Array.from({ length: slats }, (_, j) => <rect key={j} x={x + 3} y={top + 3 + j * ((hPx - 6) / slats)} width={Math.max(w - 6, 0)} height={((hPx - 6) / slats) * 0.62} fill="#374151" />)}
               <rect x={x} y={top} width={w} height={hPx} fill="none" stroke={l.assumed ? MISS : '#dc2626'} strokeWidth={2} strokeDasharray={l.assumed ? '5 4' : undefined} />
               {l.hinge && <path d={`M ${l.hinge === 'left' ? x + w : x} ${top} L ${l.hinge === 'left' ? x : x + w} ${top + hPx / 2} L ${l.hinge === 'left' ? x + w : x} ${top + hPx}`} fill="none" stroke="#fff" strokeDasharray="6 4" strokeWidth={1.2} />}
-              <rect x={lockX - 2} y={top + hPx / 2 - 14} width={4} height={28} rx={2} fill="#d1d5db" stroke={edge} strokeWidth={0.6} />
               </>)}
+              {/* brava: na visini „Visina brave“ od donje ivice krila (bez mere — na sredini) */}
+              <rect data-testid={`sk-lock-${i}`} x={lockX - 2} y={lockCy - 14} width={4} height={28} rx={2} fill="#d1d5db" stroke={edge} strokeWidth={0.6} />
+              {showDims && lockH !== null && i === 0 && <DimPx k="lockH" vertical x={lockX + (l.hinge === 'left' ? -22 : 22)} y={bottom} len={Math.min(Math.max(lockH, 0), H) * ys} text={fmt(lockH, '')} sub="visina brave" onPick={onPick} tip="Visina brave: donja ivica krila do ose brave" />}
               {l.hinge && hy.map((yy, j) => <rect key={j} data-testid={`sk-hinge-${i}-${j}`} data-x={Math.round(hx)} x={hx - 3} y={yy - 6} width={6} height={12} fill={INK} />)}
             </g>
           );

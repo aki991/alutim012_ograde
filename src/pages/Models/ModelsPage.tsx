@@ -8,7 +8,7 @@ import { ConfirmDialog, Modal } from '../../components/ui/Modal';
 import { FENCE_MODEL_LIST, FENCE_MODELS, constructionOf } from '../../domain/models/catalog';
 import { CUSTOM_KIND_LABELS, type CustomModel } from '../../domain/models/custom';
 import type { FenceModelId } from '../../domain/models/types';
-import { useAppStore } from '../../store/useAppStore';
+import { useAppStore, useListedProjects } from '../../store/useAppStore';
 import { itemLabel } from '../../utils/labels';
 
 export default function ModelsPage() {
@@ -17,11 +17,14 @@ export default function ModelsPage() {
   const [specFor, setSpecFor] = useState<FenceModelId | null>(null);
   const [del, setDel] = useState<CustomModel | null>(null);
   const [restore, setRestore] = useState<CustomModel | null>(null);
+  const [delBuiltin, setDelBuiltin] = useState<FenceModelId | null>(null);
+  const hiddenModels = useAppStore((s) => s.settings.hiddenModels);
+  const hiddenFence = (hiddenModels ?? []).filter((id) => id in FENCE_MODELS);
   const modelSpecs = useAppStore((s) => s.settings.modelSpecs);
   const customModels = useAppStore((s) => s.settings.customModels);
   const materials = useAppStore((s) => s.materials);
   const projectId = useAppStore((s) => s.editor.projectId);
-  const projects = useAppStore((s) => s.projects);
+  const projects = useListedProjects();
   const selection = useAppStore((s) => s.editor.selection);
   const current = projects.find((p) => p.id === projectId);
   const selected = selection?.type === 'item' ? current?.items.find((i) => i.id === selection.id) : undefined;
@@ -46,7 +49,7 @@ export default function ModelsPage() {
   return (
     <Page>
       <PageHeader title="Modeli ograda" subtitle="Svi modeli ograde i pripadajućih kapija. Model se menja bez promene ukupne širine segmenta; boja se postavlja prema slici modela."
-        actions={<button className="btn btn-primary" data-testid="btn-create-model" onClick={() => navigate('/modeli/crtanje')}><PencilRuler size={17} />Napravi model</button>} />
+        actions={<>{hiddenFence.length > 0 && <button className="btn" data-testid="restore-hidden-models" onClick={() => useAppStore.getState().updateSettings({ hiddenModels: (hiddenModels ?? []).filter((id) => !(id in FENCE_MODELS)) })}><RotateCcw size={16} />Vrati obrisane modele ({hiddenFence.length})</button>}<button className="btn btn-primary" data-testid="btn-create-model" onClick={() => navigate('/modeli/crtanje')}><PencilRuler size={17} />Napravi model</button></>} />
       {!!customModels?.some((m) => !m.replaces) && (
         <section className="mb-7" data-testid="custom-models">
           <h2 className="font-bold text-lg mb-3">Moji modeli (ručno nacrtani)</h2>
@@ -70,7 +73,7 @@ export default function ModelsPage() {
         </section>
       )}
       <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-        {FENCE_MODEL_LIST.map((m) => {
+        {FENCE_MODEL_LIST.filter((m) => !hiddenModels?.includes(m.id)).map((m) => {
           // dorađen model koji zamenjuje original: kartica prikazuje dorađen crtež, uz mogućnost vraćanja originala
           const rep = customModels?.find((c) => c.replaces === m.id);
           if (rep) return (
@@ -81,7 +84,10 @@ export default function ModelsPage() {
                 <h2 className="font-bold text-[17px]">{m.name}</h2>
                 <p className="text-sm text-muted mt-0.5">Dorađen crtež modela iz kataloga · {rep.parts.length} delova. Projekti sa ovim modelom koriste dorađen crtež.</p>
                 <div className="flex flex-wrap gap-2 mt-auto pt-4">
-                  <button className="btn w-full" data-testid={`rework-model-${m.id}`} onClick={() => navigate(`/modeli/crtanje/${rep.id}`, { state: { dorada: true } })}><Wrench size={16} />Doradi</button>
+                  <div className="w-full flex gap-2">
+                    <button className="btn flex-1" data-testid={`rework-model-${m.id}`} onClick={() => navigate(`/modeli/crtanje/${rep.id}`, { state: { dorada: true } })}><Wrench size={16} />Doradi</button>
+                    <button className="btn btn-danger shrink-0" data-testid={`delete-model-${m.id}`} aria-label={`Obriši model ${m.name}`} title="Obriši model" onClick={() => setDelBuiltin(m.id)}><Trash2 size={16} /></button>
+                  </div>
                   <button className="btn btn-primary" data-testid={`use-model-${m.id}`} onClick={() => useModel(rep.id as FenceModelId)}>Koristi model</button>
                   <button className="btn" data-testid={`restore-model-${m.id}`} onClick={() => setRestore(rep)}><RotateCcw size={16} />Vrati original</button>
                 </div>
@@ -109,7 +115,10 @@ export default function ModelsPage() {
               )}
               <div className="flex flex-wrap gap-2 mt-auto pt-4">
                 {/* dorada: crtež modela u crtanju, gde se menja svaki deo (red iznad, da glavna dugmad ostanu u istoj liniji) */}
-                <button className="btn w-full" data-testid={`rework-model-${m.id}`} title="Otvara crtež modela u crtanju, gde se menja svaki deo" onClick={() => navigate(`/modeli/crtanje/${useAppStore.getState().startDorada(m.id)}`, { state: { dorada: true } })}><Wrench size={16} />Doradi</button>
+                <div className="w-full flex gap-2">
+                  <button className="btn flex-1" data-testid={`rework-model-${m.id}`} title="Otvara crtež modela u crtanju, gde se menja svaki deo" onClick={() => navigate(`/modeli/crtanje/${useAppStore.getState().startDorada(m.id)}`, { state: { dorada: true } })}><Wrench size={16} />Doradi</button>
+                  <button className="btn btn-danger shrink-0" data-testid={`delete-model-${m.id}`} aria-label={`Obriši model ${m.name}`} title="Obriši model" onClick={() => setDelBuiltin(m.id)}><Trash2 size={16} /></button>
+                </div>
                 <button className="btn btn-primary" data-testid={`use-model-${m.id}`} onClick={() => useModel(m.id)}>Koristi model</button>
                 <button className="btn" data-testid={`spec-model-${m.id}`} onClick={() => setSpecFor(m.id)}><ListChecks size={16} />Specifikacija{modelSpecs?.[m.id] ? ' (izmenjena)' : ''}</button>
               </div>
@@ -123,6 +132,12 @@ export default function ModelsPage() {
         <ConfirmDialog title="Vrati originalni model" confirmLabel="Vrati original"
           message={<>Model <b>{FENCE_MODELS[restore.replaces as FenceModelId]?.name}</b> se vraća na original iz kataloga, a projekti koji ga koriste ponovo dobijaju originalni crtež. Dorađen crtež ostaje sačuvan kao poseban model u „Moji modeli“.</>}
           onCancel={() => setRestore(null)} onConfirm={() => { useAppStore.getState().restoreBuiltin(restore.id); setRestore(null); }} />
+      )}
+      {delBuiltin && (
+        <ConfirmDialog title="Brisanje modela" danger confirmLabel="Obriši"
+          message={<>{usedBy(delBuiltin).length ? <>Model <b>{FENCE_MODELS[delBuiltin].name}</b> koriste projekti: <b>{usedBy(delBuiltin).join(', ')}</b>; oni ostaju isti. </> : <>Model <b>{FENCE_MODELS[delBuiltin].name}</b> se uklanja iz kataloga. </>}Obrisane modele možete vratiti dugmetom „Vrati obrisane modele“.</>}
+          onCancel={() => setDelBuiltin(null)}
+          onConfirm={() => { const rep = customModels?.find((c) => c.replaces === delBuiltin); if (rep) useAppStore.getState().removeCustomModel(rep.id); useAppStore.getState().hideModel(delBuiltin); setDelBuiltin(null); }} />
       )}
       {specFor && <SpecEditor modelId={specFor} onClose={() => setSpecFor(null)} />}
       {choice && current && (

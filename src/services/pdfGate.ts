@@ -1,6 +1,6 @@
 import { createElement } from 'react';
 import { GateSketchSvg } from '../components/gates/GateSketch';
-import { CONFIRM_LABELS, confirmationState, DIM_BY_KEY, dimsFor, emptyDesign, fmt, HW_ROLE_LABELS, HW_STATUS_LABELS, ORIGIN_LABELS, resolveGate, STATUS_LABELS, SYSTEM_LABELS, systemOf, type ConfirmKind } from '../domain/gates/design';
+import { DIM_BY_KEY, dimsFor, emptyDesign, fmt, HW_ROLE_LABELS, missingHardware, HW_STATUS_LABELS, ORIGIN_LABELS, resolveGate, STATUS_LABELS, SYSTEM_LABELS, systemOf } from '../domain/gates/design';
 import { gateCutRows } from '../domain/gates/production';
 import { computeLayout } from '../domain/geometry/layout';
 import { FENCE_MODELS } from '../domain/models/catalog';
@@ -26,13 +26,13 @@ export async function buildGatePdfBlob(project: Project, itemId: string, materia
   const g: Gate = { ...gate, design: gate.design ?? emptyDesign(sys) };
   const res = resolveGate(g, li.clearWidth);
   const rows = gateCutRows(g, res, materials);
+  const miss = missingHardware(g, sys);
   const { renderToStaticMarkup } = await import('react-dom/server');
   const svg = renderToStaticMarkup(createElement(GateSketchSvg, { gate: g, res, width: 900, postHs: [project.posts[index]?.heightMm, project.posts[index + 1]?.heightMm], postWs: [project.posts[index]?.widthMm, project.posts[index + 1]?.widthMm] })).replace('width="100%"', 'width="900"');
   const m = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(svg);
   const h = m ? Number(m[2]) : 500;
   const png = await svgToPng(svg, 1800, Math.round(h * 2));
   const logos = await loadHeaderLogos();
-  const forProduction = confirmationState(g, li.clearWidth, 'mere') === 'valid';
   const label = itemLabel(project.items, index);
   const cell = (t: string, o: any = {}) => ({ text: t, fontSize: 8.5, ...o });
   const d = g.design!;
@@ -40,10 +40,9 @@ export async function buildGatePdfBlob(project: Project, itemId: string, materia
     pageSize: 'A4', pageMargins: [28, 26, 28, 38],
     defaultStyle: { font: 'Roboto', fontSize: 9, color: INK },
     info: { title: `Mere kapije — ${project.name}`, author: settings.companyName },
-    footer: (p: number, n: number) => ({ text: `${settings.companyName}  ·  ${project.name}  ·  ${label}  ·  ${forProduction ? 'mere potvrđene' : 'RADNA VERZIJA — nije za izradu'}  ·  ${p}/${n}`, fontSize: 8, color: MUTED, margin: [28, 12, 28, 0] }),
+    footer: (p: number, n: number) => ({ text: `${settings.companyName}  ·  ${project.name}  ·  ${label}  ·  ${p}/${n}`, fontSize: 8, color: MUTED, margin: [28, 12, 28, 0] }),
     content: [
       docHeader('MERE KAPIJE', `${project.name}  ·  ${label}  ·  ${SYSTEM_LABELS[sys]}  ·  ${fmtDate(new Date().toISOString())}`, settings.companyName, '', logos),
-      { text: forProduction ? 'Unete mere su potvrđene za ovaj posao.' : 'RADNA VERZIJA: unete mere nisu potvrđene za ovu konfiguraciju — nije za izradu.', bold: true, color: forProduction ? '#15803d' : '#b42318', margin: [0, 6, 0, 2] },
       { text: `Ispuna: ${FENCE_MODELS[g.infillModelId]?.name ?? g.infillModelId} · ${g.automation ? 'motorizovana' : 'ručna'} · ${g.gateType === 'sliding' ? `otvaranje ${g.opening === 'left' ? 'ulevo' : 'udesno'}` : `šarke ${g.opening === 'left' ? 'levo' : 'desno'}`} · ${d.viewFrom === 'ulica' ? 'gledano sa ulice' : 'gledano iz dvorišta'}${d.template ? ` · šablon „${d.template.name}“ v${d.template.version}` : ''}`, color: MUTED, margin: [0, 0, 0, 6] },
       { image: png, width: 539 },
       { text: 'Kote', bold: true, margin: [0, 8, 0, 3] },
@@ -60,8 +59,8 @@ export async function buildGatePdfBlob(project: Project, itemId: string, materia
         layout: { hLineColor: () => LINE, vLineColor: () => LINE },
       },
       { text: 'Okovi', bold: true, margin: [0, 8, 0, 3] },
-      d.hardware.length ? {
-        table: { headerRows: 1, widths: [80, '*', 30, '*'], body: [['Uloga', 'Naziv / šifra', 'Kom.', 'Granice / status'].map((t) => cell(t, { bold: true })), ...d.hardware.map((x) => [cell(HW_ROLE_LABELS[x.role]), cell(`${x.name}${x.code ? ` (${x.code})` : ' (bez fabričke šifre)'}${x.supplier ? ` · ${x.supplier}` : ''}`), cell(String(x.qty)), cell(`${x.minGapMm !== undefined ? `min ${x.minGapMm} mm ` : ''}${x.maxGapMm !== undefined ? `max ${x.maxGapMm} mm ` : ''}${x.nominalGapMm !== undefined ? `nom. ${x.nominalGapMm} mm ` : ''}· ${HW_STATUS_LABELS[x.status]}${x.doc ? ` · ${x.doc}` : ''}`)])] },
+      d.hardware.length || miss.length ? {
+        table: { headerRows: 1, widths: [80, '*', 30, '*'], body: [['Uloga', 'Naziv / šifra', 'Kom.', 'Granice / status'].map((t) => cell(t, { bold: true })), ...[...d.hardware.map((x) => [cell(HW_ROLE_LABELS[x.role]), cell(`${x.name}${x.code ? ` (${x.code})` : ' (bez fabričke šifre)'}${x.supplier ? ` · ${x.supplier}` : ''}`), cell(String(x.qty)), cell(`${x.minGapMm !== undefined ? `min ${x.minGapMm} mm ` : ''}${x.maxGapMm !== undefined ? `max ${x.maxGapMm} mm ` : ''}${x.nominalGapMm !== undefined ? `nom. ${x.nominalGapMm} mm ` : ''}· ${HW_STATUS_LABELS[x.status]}${x.doc ? ` · ${x.doc}` : ''}`)]), ...miss.map((r) => [cell(HW_ROLE_LABELS[r.role]), cell('nepoznata oznaka'), cell(String(r.qty)), cell('—')])]] },
         layout: { hLineColor: () => LINE, vLineColor: () => LINE },
       } : { text: 'Okovi nisu zadati.', color: MUTED },
       { text: 'Krojna lista kapije', bold: true, margin: [0, 8, 0, 3] },
@@ -77,8 +76,6 @@ export async function buildGatePdfBlob(project: Project, itemId: string, materia
       },
       { text: 'Provere i otvorene stavke', bold: true, margin: [0, 8, 0, 3] },
       { ul: res.issues.length ? res.issues.map((i) => ({ text: i.msg, color: i.level === 'error' ? '#b42318' : i.level === 'warn' ? '#93370d' : MUTED, fontSize: 8.5 })) : [{ text: 'Nema otvorenih stavki.', fontSize: 8.5 }] },
-      { text: 'Potvrde', bold: true, margin: [0, 8, 0, 3] },
-      { ul: (Object.keys(CONFIRM_LABELS) as ConfirmKind[]).map((k) => { const s = confirmationState(g, li.clearWidth, k); const c = [...d.confirmations].reverse().find((x) => x.kind === k); return { text: `${CONFIRM_LABELS[k]}: ${s === 'valid' ? `potvrdio ${c?.by}, ${fmtDate(c!.at)}` : s === 'stale' ? 'potvrda ne važi za izmenjenu konfiguraciju' : 'nije potvrđeno'}`, fontSize: 8.5 }; }) },
       ...(d.configDoc || d.notes ? [{ text: [d.configDoc ? `Konfiguracioni dokument: ${d.configDoc}. ` : '', d.notes ?? ''].join(''), margin: [0, 6, 0, 0], fontSize: 8.5 }] : []),
     ],
   };

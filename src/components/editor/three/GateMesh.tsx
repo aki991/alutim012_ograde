@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber';
 import { Suspense, useLayoutEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import type { LaidOutItem } from '../../../domain/geometry/layout';
+import { resolveGate } from '../../../domain/gates/design';
 import { gateLeafPoses, mmToScene as s, slidingSpaceStatus } from '../../../domain/geometry/gates';
 import type { Gate } from '../../../domain/models/types';
 import { useViewStore } from '../../../store/useViewStore';
@@ -41,6 +42,9 @@ function SwingZone({ pivotX, ext, width, angle, color }: { pivotX: number; ext: 
 export function GateMesh({ gate, li, showZones }: { gate: Gate; li: LaidOutItem; showZones: boolean }) {
   const height = s(gate.heightMm);
   const sliding = gate.gateType === 'sliding';
+  // visina brave iz mera kapije (od donje ivice krila do ose brave); bez mere ostaje podrazumevana
+  const lockMm = useMemo(() => (gate.design ? resolveGate(gate, li.clearWidth).values.lockH?.v ?? null : null), [gate, li.clearWidth]);
+  const lockY = lockMm !== null ? s(Math.min(Math.max(lockMm, 0), gate.heightMm)) : Math.min(1.0, height * 0.55);
   const closed = useMemo(() => gateLeafPoses(gate, li.clearStart, li.clearEnd, 0), [gate, li.clearStart, li.clearEnd]);
   const outer = useRef<(THREE.Group | null)[]>([]);
   const inner = useRef<(THREE.Group | null)[]>([]);
@@ -72,7 +76,7 @@ export function GateMesh({ gate, li, showZones }: { gate: Gate; li: LaidOutItem;
         overhangs={gate.gateType === 'double' ? (p.extendDir === 1 ? [gate.params.frameMm, 0] : [0, gate.params.frameMm]) : undefined} />
       {/* ručka i brava prate krilo (na slobodnoj ivici) */}
       {!sliding && (lockSide === 1 || gate.gateType === 'double') && (
-        <group position={[p.extendDir * (w / 2 - 0.1), Math.min(1.0, height * 0.55), 0]}>
+        <group position={[p.extendDir * (w / 2 - 0.1), lockY, 0]}>
           <mesh geometry={boxGeometry} material={steelMaterial} scale={[0.022, 0.38, 0.026]} position={[0, 0, 0.034]} castShadow />
           <mesh geometry={boxGeometry} material={steelMaterial} scale={[0.022, 0.38, 0.026]} position={[0, 0, -0.034]} castShadow />
           <mesh geometry={boxGeometry} material={darkMaterial} scale={[0.05, 0.09, 0.02]} position={[0, -0.28, 0.03]} />
