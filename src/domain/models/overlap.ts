@@ -1,4 +1,4 @@
-import { partAngle, type CustomModel, type CustomPart } from './custom';
+import { partAngle, partBounds, type CustomModel, type CustomPart } from './custom';
 import { materialShape, rotateDeg, sectionFace, type Section } from './materialShape';
 import type { Material } from './types';
 
@@ -130,7 +130,48 @@ export function checkNewOverlap(prev: CustomModel, next: CustomModel, materials:
   const before = new Set(findOverlaps(prev, materials).map(pairKey));
   const added = findOverlaps(next, materials).filter((o) => !before.has(pairKey(o)));
   if (!added.length) return null;
+  return explainOverlap(prev, added, materials);
+}
+
+const fmt = (n: number): string => String(Math.round(n * 10) / 10).replace('.', ',');
+
+/**
+ * Objašnjenje preklapanja razumljivo radniku: koji deo je izmenjen, u koji deo bi zašao i za koliko mm (po širini / visini),
+ * šta je uzrok (širi materijal, pomeranje, duži deo) i šta može da se uradi.
+ */
+function explainOverlap(prev: CustomModel, added: Overlap[], materials: Material[]): string {
+  const byId = new Map(materials.map((m) => [m.id, m]));
+  const old = new Map(prev.parts.map((p) => [p.id, p]));
+  // izmenjen deo je onaj koji se razlikuje od pre izmene (ili je nov); drugi deo je onaj u koji zalazi
+  const changedOf = (o: Overlap): [CustomPart, string, CustomPart, string] => {
+    const aChanged = old.get(o.a.id) !== o.a; const bChanged = old.get(o.b.id) !== o.b;
+    return aChanged || !bChanged ? [o.a, o.nameA, o.b, o.nameB] : [o.b, o.nameB, o.a, o.nameA];
+  };
   const o = added[0];
-  const more = added.length > 1 ? ` (i još ${added.length - 1} ${added.length === 2 ? 'preklapanje' : 'preklapanja'})` : '';
-  return `Operacija nije izvršena: „${o.nameA}“ bi se preklopio sa „${o.nameB}“${more}. Delovi ne mogu da stoje jedan preko drugog; ostavite razmak ili ih pomerite.`;
+  const [ch, chName, other, otherName] = changedOf(o);
+  const shapeOf = (p: CustomPart) => { const m = byId.get(p.materialId); return m ? materialShape(m) : null; };
+  const bb = (p: CustomPart) => { const s = shapeOf(p); return s ? partBounds(p, s) : null; };
+  const A = bb(ch); const B = bb(other);
+  const dx = A && B ? Math.max(0, Math.min(A.x1, B.x1) - Math.max(A.x0, B.x0)) : 0;
+  const dy = A && B ? Math.max(0, Math.min(A.y1, B.y1) - Math.max(A.y0, B.y0)) : 0;
+  // za koliko zalazi: manja od dve mere (po drugoj osi delovi prolaze jedan pored drugog celom dužinom)
+  const into = dx > 0 && dy > 0 ? Math.min(dx, dy) : Math.max(dx, dy);
+  const axis = dx > 0 && dy > 0 ? (dx <= dy ? 'po širini' : 'po visini') : '';
+  const more = added.length > 1 ? ` Isto važi i za još ${added.length - 1} ${added.length === 2 ? 'deo' : 'dela'}.` : '';
+  const head = `Nije moguće: „${chName}“ bi zašao ${into > 0 ? `${fmt(into)} mm ${axis} ` : ''}u „${otherName}“.`;
+  const before = old.get(ch.id);
+  if (before && before.materialId !== ch.materialId) {
+    // zamena materijala: novi presek je širi ili viši od starog, a susedni deo dolazi do same ivice
+    const s0 = shapeOf(before); const s1 = shapeOf(ch);
+    const f0 = s0 && s0.type === 'linear' ? sectionFace(s0.section, partAngle(before)).face : 0;
+    const f1 = s1 && s1.type === 'linear' ? sectionFace(s1.section, partAngle(ch)).face : 0;
+    const wider = f1 > f0 + 0.05 ? ` Novi materijal je širi od starog (${fmt(f1)} mm umesto ${fmt(f0)} mm), a „${otherName}“ dolazi do same ivice starog dela, pa za novi nema mesta.` : '';
+    const guideHint = ch.angleDeg % 180 !== 0 && s1?.type === 'linear' && s1.u ? ' Ako je to prečka između bočnih U profila, uklopite je u U profile („Uklopi u bočne U profile“): tada ulazi u kanal i sama se prilagođava širini U profila.' : '';
+    return `${head}${wider} Prvo skratite ili pomerite „${otherName}“${into > 0 ? ` za najmanje ${fmt(into)} mm` : ''}, pa ponovo zamenite materijal.${guideHint}${more}`;
+  }
+  if (!before) return `${head} Nov deo ne može da stoji preko postojećeg. Nacrtajte ga pored, sa razmakom${into > 0 ? ` od najmanje ${fmt(into)} mm` : ''}.${more}`;
+  if (before.lengthMm !== ch.lengthMm || before.heightMm !== ch.heightMm) return `${head} Deo je postao duži nego što ima mesta. Skratite ga${into > 0 ? ` za najmanje ${fmt(into)} mm` : ''} ili prvo pomerite „${otherName}“.${more}`;
+  if (before.x !== ch.x || before.y !== ch.y || before.z !== ch.z) return `${head} Deo ne može da se pomeri preko drugog dela. Pomerite ga manje${into > 0 ? ` (najviše do ${fmt(into)} mm bliže)` : ''} ili prvo pomerite „${otherName}“.${more}`;
+  if (before.rot !== ch.rot || before.tiltDeg !== ch.tiltDeg || before.angleDeg !== ch.angleDeg) return `${head} Okrenut ili nagnut presek zauzima više mesta i dodiruje susedni deo. Ostavite više razmaka oko njega ili smanjite nagib.${more}`;
+  return `${head} Delovi ne mogu da stoje jedan preko drugog; ostavite razmak ili ih pomerite.${more}`;
 }

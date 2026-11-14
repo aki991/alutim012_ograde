@@ -38,7 +38,15 @@ describe('zamena materijala dela', () => {
   it('za vođicu se nude samo U profili, za prečku profili', () => {
     const m = fence();
     expect(replaceOptions(m, 'L', MATS).map((x) => x.id).sort()).toEqual(['u28', 'u40']);
-    expect(replaceOptions(m, barsOf(m)[0].id, MATS).map((x) => x.id).sort()).toEqual(['kv60', 'u20', 'u28', 'u40']);
+    // prečka: podrazumevano samo ista grupa (kvadratne cevi); „prikaži sve“ nudi svaki profil
+    expect(replaceOptions(m, barsOf(m)[0].id, MATS).map((x) => x.id).sort()).toEqual(['kv60']);
+    expect(replaceOptions(m, barsOf(m)[0].id, MATS, true).map((x) => x.id).sort()).toEqual(['kv60', 'u20', 'u28', 'u40']);
+    // vođica je uvek samo U profil, i sa „prikaži sve“
+    expect(replaceOptions(m, 'L', MATS, true).map((x) => x.id).sort()).toEqual(['u28', 'u40']);
+    // uspravan U profil koji nije vođica: podrazumevano samo U profili, sa „prikaži sve“ svi profili
+    const free: CustomModel = { ...newCustomModel('cm_f'), widthMm: 1000, heightMm: 1000, parts: [part('U', U20.id, 10, 0, 1000, 90)] };
+    expect(replaceOptions(free, 'U', MATS).map((x) => x.id).sort()).toEqual(['u28', 'u40']);
+    expect(replaceOptions(free, 'U', MATS, true).map((x) => x.id).sort()).toEqual(['kv60', 'kv80', 'u28', 'u40']);
   });
 
   it('zamena levog U profila menja i desni; prečke se prilagođavaju (broj, odstojanja, ulaz do dna)', () => {
@@ -104,5 +112,27 @@ describe('delovi u okviru modela', () => {
   it('deo koji je već unutra ostaje isti objekat', () => {
     const m = fence();
     expect(clampToFrame(m, shapeOf)).toBe(m);
+  });
+});
+
+describe('U profili ka unutra i prečke u kanal', () => {
+  it('levi U profil je pod 270°, desni pod 90° (i kad je nacrtan obrnuto)', async () => {
+    const { orientGuides } = await import('../domain/models/guides');
+    const m: CustomModel = { ...newCustomModel('cm_o'), widthMm: 1000, heightMm: 1000, parts: [{ ...part('L', U20.id, 10, 0, 1000, 90), rot: 90 }, { ...part('R', U20.id, 990, 0, 1000, 90), rot: 270 }] };
+    const o = orientGuides(m, MATS);
+    expect(o.parts.find((p) => p.id === 'L')!.rot).toBe(270);
+    expect(o.parts.find((p) => p.id === 'R')!.rot).toBe(90);
+  });
+
+  it('prečka nacrtana između dva U profila sama ulazi u kanal (i kad je nacrtana pre U profila)', async () => {
+    const { autoAttachBars, orientGuides, guidesOf } = await import('../domain/models/guides');
+    const m: CustomModel = { ...newCustomModel('cm_a'), widthMm: 1000, heightMm: 1000, parts: [part('b', KV60.id, 20, 500, 960, 0), part('L', U20.id, 10, 0, 1000, 90), part('R', U20.id, 990, 0, 1000, 90)] };
+    const out = autoAttachBars(orientGuides(m, MATS), MATS);
+    const bar = out.parts.find((p) => p.id === 'b')!;
+    expect(bar.guides).toEqual(['L', 'R']);
+    const g = guidesOf(out, bar, MATS)!;
+    // krajevi prečke su u kanalu (do dna), a ne ispred U profila
+    expect(bar.x).toBeLessThan(g[0].mouthX);
+    expect(bar.x + bar.lengthMm).toBeGreaterThan(g[1].mouthX);
   });
 });

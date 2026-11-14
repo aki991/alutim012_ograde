@@ -208,6 +208,19 @@ function PostArt({ post, x, groundY, hex, caps, plinthMm = 0 }: { post: Post; x:
   );
 }
 
+/** Katanac na koti: klik zaključava ili otključava meru (širinu platna ili ukupnu dužinu). Crveni je zaključan. */
+function LockIcon({ x, y, size, locked, kind, id, scale }: { x: number; y: number; size: number; locked: boolean; kind: 'item' | 'total'; id: string; scale: number }) {
+  const s = size; const col = locked ? '#d71920' : '#94a3b8';
+  return (
+    <g transform={`translate(${x} ${y})`} data-lock={kind} data-id={id} data-locked={locked ? 'true' : 'false'} data-testid={kind === 'total' ? 'lock-total' : `lock-item-${id}`} pointerEvents="all" style={{ cursor: 'pointer' }}>
+      <title>{locked ? 'Zaključano — klik otključava' : 'Klik zaključava meru'}</title>
+      <rect x={-s * 0.9} y={-s * 1.0} width={s * 1.8} height={s * 2.0} fill="#fff" fillOpacity="0.001" />
+      <path d={`M${-s * 0.38} ${-s * 0.05} V${-s * 0.35} a${s * 0.38} ${s * 0.38} 0 0 1 ${s * 0.76} 0 V${-s * 0.05}`} fill="none" stroke={col} strokeWidth={1.6 / scale} transform={locked ? undefined : `translate(${s * 0.42} 0)`} />
+      <rect x={-s * 0.55} y={-s * 0.05} width={s * 1.1} height={s * 0.8} rx={s * 0.12} fill={col} />
+    </g>
+  );
+}
+
 function DimLine({ x1, x2, y, text, sub, fs, scale, edit, color = '#17212e' }: { x1: number; x2: number; y: number; text: string; sub?: string; fs: number; scale: number; edit?: { kind: 'width' | 'clear' | 'height' | 'total'; id: string }; color?: string }) {
   const t = 5 / scale;
   const mid = (x1 + x2) / 2;
@@ -522,6 +535,9 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
               return (
                 <g key={`d-${li.item.id}`} data-testid="dim-panel">
                   <DimLine x1={d.x1} x2={d.x2} y={dy} text={fmtMm(d.x2 - d.x1)} sub={li.item.kind === 'opening' ? 'otvor' : 'platno'} fs={fs} scale={scale} edit={interactive ? { kind: 'clear', id: li.item.id } : undefined} />
+                  {interactive && (li.item.kind === 'fence' || (li.item.kind === 'opening' && li.item.bendDeg === undefined)) && (
+                    <LockIcon x={(d.x1 + d.x2) / 2 + fs * 2.6} y={dy + fs * 0.75} size={fs * 0.62} locked={Boolean((li.item as { widthLocked?: boolean }).widthLocked)} kind="item" id={li.item.id} scale={scale} />
+                  )}
                 </g>
               );
             });
@@ -553,6 +569,11 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
 
           {/* ukupna dužina */}
           <DimLine x1={layout.posts[0].x - layout.posts[0].widthMm / 2} x2={layout.posts[layout.posts.length - 1].x + layout.posts[layout.posts.length - 1].widthMm / 2} y={groundY + 100 * px} text={`${fmtMm(layout.occupiedMm)} (ukupna dužina)`} fs={fs * 1.1} scale={scale} edit={interactive ? { kind: 'total', id: items[0].id } : undefined} />
+          {interactive && (() => {
+            const x1 = layout.posts[0].x - layout.posts[0].widthMm / 2; const x2 = layout.posts[layout.posts.length - 1].x + layout.posts[layout.posts.length - 1].widthMm / 2;
+            const label = `${fmtMm(layout.occupiedMm)} (ukupna dužina)`;
+            return <LockIcon x={(x1 + x2) / 2 + (label.length * fs * 1.1 * 0.32) + fs * 1.4} y={groundY + 100 * px - fs * 0.5} size={fs * 0.7} locked={project.settings.totalMode === 'fixed'} kind="total" id={items[0].id} scale={scale} />;
+          })()}
 
           {/* visina */}
           {/* visine: jedna kota za ogradu (od vrha podnožja do vrha ograde) i jedna za kapiju (od tla); podnožje ispod ograde ima svoju meru */}

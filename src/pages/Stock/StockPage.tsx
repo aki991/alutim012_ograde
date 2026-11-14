@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Page, PageHeader } from '../../components/ui/Common';
 import { ConfirmDialog } from '../../components/ui/Modal';
-import { MATERIAL_GROUPS, materialShape } from '../../domain/models/materialShape';
+import { compareMaterials, MATERIAL_GROUPS, materialShape } from '../../domain/models/materialShape';
 import { cutOptions } from '../../domain/pricing/cutting';
 import type { Material, StockItem } from '../../domain/models/types';
 import { useAppStore } from '../../store/useAppStore';
@@ -14,7 +14,7 @@ import { fmtNum } from '../../utils/units';
 export function MaterialSelect({ materials, value, onChange, testId, only }: { materials: Material[]; value: string; onChange: (id: string) => void; testId?: string; only?: (m: Material) => boolean }) {
   const groups = useMemo(() => {
     const list = only ? materials.filter(only) : materials;
-    return MATERIAL_GROUPS.map((g) => ({ ...g, items: list.filter((m) => materialShape(m).group === g.id).sort((a, b) => a.name.localeCompare(b.name, 'sr', { numeric: true })) })).filter((g) => g.items.length);
+    return MATERIAL_GROUPS.map((g) => ({ ...g, items: list.filter((m) => materialShape(m).group === g.id).sort(compareMaterials) })).filter((g) => g.items.length);
   }, [materials, only]);
   return (
     <select className="input" data-testid={testId} value={value} onChange={(e) => onChange(e.target.value)}>

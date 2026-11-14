@@ -28,7 +28,7 @@ describe('preklapanje prečki', () => {
     expect(findOverlaps(m, MATS)).toEqual([]);
     const dup = { ...m, parts: [...m.parts, { ...bar(m), id: 'b2', y: bar(m).y + 30 }] };
     expect(findOverlaps(dup, MATS)).toHaveLength(1);
-    expect(checkNewOverlap(m, dup, MATS)).toMatch(/Operacija nije izvršena.*preklopio/);
+    expect(checkNewOverlap(m, dup, MATS)).toMatch(/Nije moguće.*zašao/);
     // dodir (razmak 0) nije preklapanje
     const touch = { ...m, parts: [...m.parts, { ...bar(m), id: 'b3', y: bar(m).y + 80 }] };
     expect(findOverlaps(touch, MATS)).toEqual([]);

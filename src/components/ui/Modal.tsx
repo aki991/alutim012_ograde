@@ -42,7 +42,7 @@ export function Modal({ title, onClose, children, footer, width = 480, fullscree
 
   return (
     <div className={`fixed inset-0 z-[100] grid place-items-center bg-[#0b1119]/50 ${fullscreen ? 'p-0' : 'p-3 sm:p-4'}`} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} className={`card w-full flex flex-col outline-none ${fullscreen ? 'h-full max-h-none !rounded-none' : 'max-h-[94vh]'}`} style={{ maxWidth: fullscreen ? 'none' : width }}>
+      <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} className={`card w-full flex flex-col outline-none ${fullscreen ? 'h-[100dvh] max-h-[100dvh] !rounded-none' : 'max-h-[94vh]'}`} style={{ maxWidth: fullscreen ? 'none' : width }}>
         <div className="flex items-center justify-between px-5 pt-4 pb-2 shrink-0 border-b border-line">
           <h2 className="text-lg font-bold">{title}</h2>
           <div className="flex items-center gap-2">

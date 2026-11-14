@@ -139,6 +139,43 @@ export function applyGuides(model: CustomModel, materials: Material[]): CustomMo
   return changed ? { ...model, parts } : model;
 }
 
+/**
+ * Bočni U profili su uvek okrenuti ka unutra (kanal ka ispuni): levi pod 270°, desni pod 90° (za uspravan profil nacrtan
+ * odozdo naviše). Strana se određuje po položaju u odnosu na sredinu modela. Nagnut U profil se ne dira.
+ */
+export function orientGuides(model: CustomModel, materials: Material[]): CustomModel {
+  const shapeOf = shapeLookup(materials);
+  let changed = false;
+  const parts = model.parts.map((p) => {
+    const s = shapeOf(p);
+    if (!s || !isGuideCandidate(p, s)) return p;
+    const dirX: 1 | -1 = p.x < model.widthMm / 2 ? 1 : -1;
+    const rot = (norm(p.angleDeg) === 90) === (dirX === 1) ? 270 : 90;
+    if (p.rot === rot) return p;
+    changed = true;
+    return { ...p, rot };
+  });
+  return changed ? { ...model, parts } : model;
+}
+
+/**
+ * Vodoravna prečka čiji krajevi su uz dva bočna U profila sama se uklapa u njih (ulazi u kanal do dna), kao da je uklopljena
+ * dugmetom. Prečka koja ne staje u otvor U profila ostaje gde je.
+ */
+export function autoAttachBars(model: CustomModel, materials: Material[]): CustomModel {
+  const shapeOf = shapeLookup(materials);
+  if (!model.parts.some((p) => { const s = shapeOf(p); return !!s && isGuideCandidate(p, s); })) return model;
+  let out = model;
+  for (const p of model.parts) {
+    if (p.guides || (norm(p.angleDeg) !== 0 && norm(p.angleDeg) !== 180)) continue;
+    const s = shapeOf(p);
+    if (!s || s.type !== 'linear' || s.u) continue;
+    const r = attachToGuides(out, p.id, materials);
+    if (!('error' in r)) out = r.model;
+  }
+  return out;
+}
+
 export type AttachResult = { model: CustomModel; fit: TiltFit } | { error: string };
 
 /**
@@ -220,6 +257,8 @@ export interface BarGroup {
   /** vodoravni opseg vođica po visini: gornja i donja ivica prostora za prečke */
   yTop: number;
   yBot: number;
+  /** grupa nije uklopljena u U profile: prostor je visina modela između ramova */
+  free?: boolean;
   /** najmanji razmak između dve susedne prečke (mm): 0 za uspravan presek, negativan kad se nagnute prečke uvlače jedna u drugu */
   gapMin: number;
 }
@@ -235,9 +274,10 @@ export function minGap(section: Section, deg: number, face: number): number {
 }
 
 export function barGroup(model: CustomModel, bar: CustomPart, materials: Material[]): BarGroup | null {
-  const g = guidesOf(model, bar, materials);
   const shape = shapeLookup(materials)(bar);
-  if (!g || !shape || shape.type !== 'linear' || !bar.guides) return null;
+  if (!bar.guides) return freeBarGroup(model, bar, shape, materials);
+  const g = guidesOf(model, bar, materials);
+  if (!g || !shape || shape.type !== 'linear') return null;
   const sec = shape.section;
   const e = sectionFace(sec, partAngle(bar));
   const top = (p: CustomPart) => p.y + sectionFace(sec, partAngle(p)).u1;
@@ -247,6 +287,33 @@ export function barGroup(model: CustomModel, bar: CustomPart, materials: Materia
   return { bars, h: e.face, u0: e.u0, u1: e.u1, yTop: Math.min(g[0].y1, g[1].y1), yBot: Math.max(g[0].y0, g[1].y0), gapMin: minGap(sec, partAngle(bar), e.face) };
 }
 
+/**
+ * Prečke koje nisu u bočnim U profilima (nacrtane ili dorađene): grupa su vodoravne prečke istog materijala, preseka i nagiba,
+ * jedna iznad druge (isti početak i dužina). Prostor za raspored je visina modela između ramova uz donju i gornju ivicu.
+ */
+function freeBarGroup(model: CustomModel, bar: CustomPart, shape: MatShape | null, materials: Material[]): BarGroup | null {
+  if (!shape || shape.type !== 'linear' || (norm(bar.angleDeg) !== 0 && norm(bar.angleDeg) !== 180)) return null;
+  const sec = shape.section;
+  const e = sectionFace(sec, partAngle(bar));
+  const top = (p: CustomPart) => p.y + sectionFace(sec, partAngle(p)).u1;
+  const same = (p: CustomPart) => !p.guides && p.materialId === bar.materialId && norm(p.angleDeg) === norm(bar.angleDeg) && Math.abs(partAngle(p) - partAngle(bar)) < 1e-6
+    && Math.abs(p.x - bar.x) < 1 && Math.abs(p.lengthMm - bar.lengthMm) < 1;
+  const bars = model.parts.filter(same).sort((a, b) => top(b) - top(a));
+  // ramovi uz ivice (vodoravni delovi koji nisu u grupi i dodiruju donju ili gornju ivicu) ograničavaju prostor za prečke
+  const shapeOf = shapeLookup(materials);
+  let yBot = 0; let yTop = model.heightMm;
+  for (const p of model.parts) {
+    if (same(p) || (norm(p.angleDeg) !== 0 && norm(p.angleDeg) !== 180)) continue;
+    const s = shapeOf(p);
+    if (!s || s.type !== 'linear') continue;
+    const x = sectionFace(s.section, partAngle(p));
+    const lo = p.y + x.u0; const hi = p.y + x.u1;
+    if (lo < 1) yBot = Math.max(yBot, hi);
+    if (hi > model.heightMm - 1) yTop = Math.min(yTop, lo);
+  }
+  return { bars, h: e.face, u0: e.u0, u1: e.u1, yTop, yBot, gapMin: minGap(sec, partAngle(bar), e.face), free: true };
+}
+
 const r2 = (n: number): number => Math.round(n * 100) / 100;
 const f = (n: number): string => String(r2(n)).replace('.', ',');
 
@@ -254,7 +321,7 @@ export interface BarLayoutValues { count: number; top: number; bottom: number; g
 export type LayoutAuto = 'gap' | 'bottom' | 'top';
 
 /** Trenutni raspored grupe prečki: broj, odstojanje prve od vrha, poslednje od dna i prosečan razmak (bez vrednosti za jednu prečku). */
-export function barLayoutInfo(model: CustomModel, bar: CustomPart, materials: Material[]): (Omit<BarLayoutValues, 'gap'> & { H: number; h: number; gap: number | null; gapMin: number; lufta: Lufta }) | null {
+export function barLayoutInfo(model: CustomModel, bar: CustomPart, materials: Material[]): (Omit<BarLayoutValues, 'gap'> & { H: number; h: number; gap: number | null; gapMin: number; lufta: Lufta; free: boolean }) | null {
   const grp = barGroup(model, bar, materials);
   if (!grp) return null;
   const sec = (shapeLookup(materials)(bar) as Extract<MatShape, { type: 'linear' }>).section;
@@ -264,7 +331,7 @@ export function barLayoutInfo(model: CustomModel, bar: CustomPart, materials: Ma
   const gap = n >= 2 ? r2((first.t - last.b - n * grp.h) / (n - 1)) : null;
   return {
     H: r2(grp.yTop - grp.yBot), h: r2(grp.h), gapMin: grp.gapMin, count: n, top: r2(grp.yTop - first.t), bottom: r2(last.b - grp.yBot), gap,
-    lufta: bar.lufta ?? (gap !== null && gap < 0 ? 'bez' : 'sa'),
+    lufta: bar.lufta ?? (gap !== null && gap < 0 ? 'bez' : 'sa'), free: Boolean(grp.free),
   };
 }
 

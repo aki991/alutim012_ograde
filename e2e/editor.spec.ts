@@ -1439,3 +1439,190 @@ test('leve kote visine: jedna za platna, jedna za stubove i jedna za kapije; kli
   await page.getByTestId('dim-apply').click();
   await expect(page.locator('svg text', { hasText: /Stubovi H: 2\.100 mm/ })).toHaveCount(1);
 });
+
+test('zaključavanje: ukupna dužina i širina svakog platna; ostala platna se sama prilagođavaju', async ({ page }) => {
+  await page.goto('/');
+  await enableAdvanced(page);
+  await page.getByTestId('hero-new').first().click();
+  await page.getByTestId('catalog-model').selectOption('h_white');
+  for (let i = 0; i < 5; i++) await page.getByTestId('cat-fence-add').click();
+  await showDims(page);
+  const total = (await page.getByTestId('total-modular').textContent())!;
+  // katanac na koti ukupne dužine zaključava je
+  await page.getByTestId('lock-total').click();
+  await expect(page.getByTestId('lock-total')).toHaveAttribute('data-locked', 'true');
+  // zaključavanje jednog platna (katanac na njegovoj koti)
+  const ids = await page.locator('[data-hit="item"]').evaluateAll((els) => els.map((e) => e.getAttribute('data-id')!));
+  await page.getByTestId(`lock-item-${ids[1]}`).click();
+  await expect(page.getByTestId(`lock-item-${ids[1]}`)).toHaveAttribute('data-locked', 'true');
+  // izmena prvog platna: ukupna dužina ostaje ista, zaključano platno se ne menja, ostala se prilagođavaju
+  await page.locator('[data-hit="item"]').first().click();
+  await page.getByTestId('field-width').fill('1500');
+  await page.getByTestId('field-width').press('Enter');
+  await expect(page.getByTestId('total-modular')).toHaveText(total);
+  await page.locator('[data-hit="item"]').nth(1).click();
+  await expect(page.getByTestId('panel-item')).toContainText('Platno 2');
+  await expect(page.getByTestId('field-width-lock')).toBeVisible();
+  await expect(page.getByTestId('field-width')).toHaveValue('2000'); // zaključano platno se nije promenilo
+  await page.locator('[data-hit="item"]').nth(2).click();
+  await expect(page.getByTestId('panel-item')).toContainText('Platno 3');
+  await expect.poll(async () => Number(await page.getByTestId('field-width').inputValue())).toBeGreaterThan(2000); // slobodno platno je preuzelo razliku
+  // kad su sva ostala zaključana, izmena se odbija uz objašnjenje
+  for (const id of [ids[2], ids[3], ids[4]]) await page.getByTestId(`lock-item-${id}`).click();
+  await page.locator('[data-hit="item"]').first().click();
+  await page.getByTestId('field-width').fill('1000');
+  await page.getByTestId('field-width').press('Enter');
+  await expect(page.getByTestId('panel-basics')).toContainText('zaključana');
+  // otključavanje ukupne dužine vraća staro ponašanje
+  await page.getByTestId('lock-total').click();
+  await expect(page.getByTestId('lock-total')).toHaveAttribute('data-locked', 'false');
+  await page.getByTestId('field-width').fill('1000');
+  await page.getByTestId('field-width').press('Enter');
+  await expect(page.getByTestId('total-modular')).not.toHaveText(total);
+});
+
+test('dorada modela iz kataloga: crtež od delova, nov tip ili isti tip (projekti prelaze), pa vraćanje originala', async ({ page }) => {
+  const errors = trackErrors(page);
+  await seedMaterials(page, '/modeli');
+  // „Doradi“ otvara crtanje sa delovima modela; izmene se čuvaju kao nov tip
+  await page.getByTestId('rework-model-h_boards').click();
+  await expect(page).toHaveURL(/\/modeli\/crtanje\//);
+  await expect(page.getByTestId('rework-bar')).toContainText('nov tip');
+  await expect(page.getByTestId('designer-part').first()).toBeVisible();
+  expect(await page.getByTestId('designer-part').count()).toBeGreaterThan(5);
+  await page.getByTestId('designer-back').click();
+  await expect(page.getByTestId('custom-model-card')).toHaveCount(1);
+  await expect(page.getByTestId('custom-model-card')).toContainText('dorada');
+  // kasnije otvaranje crteža je običan model: nema trake dorade
+  await page.getByTestId('open-custom-model').click();
+  await expect(page.getByTestId('designer-part').first()).toBeVisible();
+  await expect(page.getByTestId('rework-bar')).toHaveCount(0);
+  await page.getByTestId('designer-back').click();
+  // isti tip: odmah posle „Doradi“; model iz kataloga postaje dorađen crtež, a projekat koji ga koristi prelazi na njega
+  await page.getByTestId('rework-model-louver_dark').click();
+  await page.getByTestId('rework-replace').click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Sačuvaj na istom tipu' }).click();
+  await expect(page.getByTestId('rework-bar')).toContainText('isti tip');
+  await page.getByTestId('designer-back').click();
+  await expect(page.getByTestId('model-card-louver_dark')).toHaveAttribute('data-replaced', 'true');
+  await expect(page.getByTestId('custom-model-card')).toHaveCount(1);
+  await page.getByRole('link', { name: 'Projekti' }).click(); // u aplikaciji (bez ponovnog učitavanja, koje bi preteklo automatsko čuvanje)
+  await page.getByText('Ograda oko dvorišta').click();
+  await page.locator('[data-hit="item"]').first().click();
+  await expect(page.getByTestId('field-model').locator('option:checked')).toHaveText('Antracit — horizontalne žaluzine');
+  const custom = await page.getByTestId('field-model').inputValue();
+  expect(custom).toMatch(/^cm/);
+  // vraćanje originala: projekat ponovo koristi model iz kataloga, a dorada ostaje kao poseban model
+  await page.getByRole('link', { name: 'Modeli ograda' }).click();
+  await page.getByTestId('restore-model-louver_dark').click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Vrati original' }).click();
+  await expect(page.getByTestId('model-card-louver_dark')).not.toHaveAttribute('data-replaced', 'true');
+  await expect(page.getByTestId('custom-model-card')).toHaveCount(2); // dorada ostaje kao poseban model
+  await page.getByRole('link', { name: 'Projekti' }).click(); // u aplikaciji (bez ponovnog učitavanja, koje bi preteklo automatsko čuvanje)
+  await page.getByText('Ograda oko dvorišta').click();
+  await page.locator('[data-hit="item"]').first().click();
+  await expect(page.getByTestId('field-model')).toHaveValue('louver_dark');
+  expect(errors).toEqual([]);
+});
+
+test('crtanje modela: promena širine i visine razvlači crtež (prečke se prilagođavaju), bez greške o preklapanju', async ({ page }) => {
+  await seedMaterials(page, '/modeli');
+  await page.getByTestId('rework-model-h_narrow').click();
+  await page.getByTestId('designer-part').first().waitFor();
+  const before = await page.getByTestId('designer-part').count();
+  const w = page.getByTestId('designer-width');
+  await w.fill('1000');
+  await w.press('Enter');
+  await expect(page.getByTestId('designer-notice')).toHaveCount(0);
+  await expect(w).toHaveValue('1000');
+  await expect(page.getByTestId('designer-part')).toHaveCount(before);
+  const h = page.getByTestId('designer-height');
+  await h.fill('1800');
+  await h.press('Enter');
+  await expect(page.getByTestId('designer-notice')).toHaveCount(0);
+  await expect(h).toHaveValue('1800');
+  await expect(page.getByTestId('designer-part')).toHaveCount(before);
+});
+
+test('crtanje modela: raspored prečki i za prečke koje nisu u U profilima (dorađen model), za jednu i za više izabranih', async ({ page }) => {
+  await seedMaterials(page, '/modeli');
+  await page.getByTestId('rework-model-h_narrow').click();
+  await page.getByTestId('designer-part').first().waitFor();
+  const before = await page.getByTestId('designer-part').count();
+  // jedna prečka: panel ima raspored prečki (broj, odstojanja, razmak)
+  await page.getByTestId('designer-part').nth(8).click({ force: true });
+  await expect(page.getByTestId('bar-layout')).toBeVisible();
+  const count = Number(await page.getByTestId('layout-count').inputValue());
+  expect(count).toBeGreaterThan(10);
+  await page.getByTestId('layout-count').fill(String(count - 5));
+  await page.getByTestId('layout-count').press('Enter');
+  await expect(page.getByTestId('designer-part')).toHaveCount(before - 5);
+  // više prečki (okvir preko cele ograde): raspored važi za celu grupu
+  const box = (await page.getByTestId('designer-2d').boundingBox())!;
+  await page.mouse.move(box.x + 10, box.y + 70);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width - 10, box.y + box.height - 30, { steps: 10 });
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  await expect(page.getByTestId('designer-multi')).toBeVisible();
+  // izabrana je cela grupa prečki (uz bočne profile): raspored prečki je u panelu i menja celu grupu
+  await expect(page.getByTestId('bar-layout')).toBeVisible();
+  const n = Number(await page.getByTestId('layout-count').inputValue());
+  await page.getByTestId('layout-count').fill(String(n - 3));
+  await page.getByTestId('layout-count').press('Enter');
+  await expect(page.getByTestId('designer-part')).toHaveCount(before - 8);
+});
+
+test('materijali: sortirani po grupi i merama; u evrima se cene prikazuju i unose preračunate po kursu', async ({ page }) => {
+  await seedMaterials(page, '/materijali');
+  // kvadratne cevi idu od najmanjih mera ka najvećim
+  const names = await page.getByTestId('material-row').locator('td:nth-child(2)').allInnerTexts();
+  const tubes = names.filter((n) => /^Kvadratna cev \d+×\d+/.test(n)).map((n) => n.match(/(\d+)×(\d+)/)!.slice(1).map(Number));
+  for (let i = 1; i < tubes.length; i++) expect(tubes[i][0] > tubes[i - 1][0] || (tubes[i][0] === tubes[i - 1][0] && tubes[i][1] >= tubes[i - 1][1])).toBe(true);
+  // dinari
+  const price = page.getByLabel('Cena: Aluminijumski profil 100×20 (horizontalna letvica)');
+  await expect(price).toHaveValue('520');
+  // evri: ista cena preračunata po kursu 117,2
+  await page.getByRole('link', { name: 'Podešavanja' }).click();
+  await page.getByRole('radio', { name: 'EUR' }).click();
+  await page.getByRole('link', { name: 'Materijali i cene' }).click();
+  await expect(price).toHaveValue('4.44');
+  await price.fill('5');
+  await page.getByRole('link', { name: 'Podešavanja' }).click();
+  await page.getByRole('radio', { name: 'RSD' }).click();
+  await page.getByRole('link', { name: 'Materijali i cene' }).click();
+  await expect(price).toHaveValue('586'); // 5 € × 117,2
+});
+
+test('zamena materijala: lista ne izlazi iz panela, podrazumevano nudi samo materijale iste grupe, „Prikaži sve“ nudi sve', async ({ page }) => {
+  await seedMaterials(page, '/modeli');
+  await page.getByTestId('rework-model-h_narrow').click();
+  await page.getByTestId('designer-part').first().waitFor();
+  await page.getByTestId('designer-part').nth(8).click({ force: true }); // cev 30×20 (kvadratna cev)
+  const btn = page.getByTestId('part-swap');
+  await btn.click();
+  const list = page.getByTestId('part-swap-list');
+  await expect(list).toBeVisible();
+  // lista je unutar prozora i nije šira od dozvoljenog
+  const vp = page.viewportSize()!;
+  const b = (await list.boundingBox())!;
+  expect(b.x).toBeGreaterThanOrEqual(0);
+  expect(b.x + b.width).toBeLessThanOrEqual(vp.width);
+  expect(b.y + b.height).toBeLessThanOrEqual(vp.height);
+  // podrazumevano: samo kvadratne cevi (ni U profili, ni stubovi)
+  const names = await page.getByTestId('part-swap-option').allInnerTexts();
+  expect(names.length).toBeGreaterThan(3);
+  expect(names.every((n) => /Kvadratna cev|Pravougaona cev/i.test(n))).toBe(true);
+  // pretraga
+  await list.getByLabel('Pretraga materijala').fill('80×20×1 mm');
+  await expect(page.getByTestId('part-swap-option').first()).toBeVisible();
+  expect(await page.getByTestId('part-swap-option').count()).toBeLessThan(names.length);
+  await list.getByLabel('Pretraga materijala').fill('');
+  // „Prikaži sve materijale“: dolaze i ostali profili
+  const before = await page.getByTestId('part-swap-option').count();
+  await page.getByTestId('swap-show-all').check();
+  expect(await page.getByTestId('part-swap-option').count()).toBeGreaterThan(before);
+  // izbor zatvara listu
+  await page.getByTestId('part-swap-option').first().click();
+  await expect(list).toHaveCount(0);
+});

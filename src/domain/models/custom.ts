@@ -47,6 +47,10 @@ export interface CustomModel {
   color: string;
   parts: CustomPart[];
   updatedAt: string;
+  /** model nastao doradom modela iz kataloga (ID tog modela) */
+  baseModelId?: string;
+  /** model zamenjuje model iz kataloga („sačuvaj na istom tipu“): u izboru modela stoji umesto njega, a projekti ga koriste */
+  replaces?: string;
 }
 
 export const CUSTOM_KIND_LABELS = { fence: 'Ograda', gate: 'Kapija' } as const;

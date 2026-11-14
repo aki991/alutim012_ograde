@@ -102,7 +102,43 @@ export function updateItem(p: Project, id: string, patch: Partial<FenceSection> 
 export function setOuterWidth(p: Project, id: string, outerMm: number): Project {
   const i = indexOfItem(p, id);
   if (i < 0) return p;
-  return updateItem(p, id, { widthMm: Math.max(1, Math.round(outerMm - postHalfSum(p, i))) });
+  const q = updateItem(p, id, { widthMm: Math.max(1, Math.round(outerMm - postHalfSum(p, i))) });
+  // zaključana ukupna dužina: ostala (nezaključana) platna se sama prilagođavaju; ako ne mogu, ništa se ne menja
+  if (!isTotalLocked(q)) return q;
+  const res = autoFillToFixedTotal(q, q.settings.fillStrategy, [id]);
+  return res.remainingMm === 0 ? res.project : p;
+}
+
+/** Ukupna dužina je zaključana (režim „Fiksna"): zbir mera osa–osa je zadata vrednost. */
+export const isTotalLocked = (p: Project): boolean => p.settings.totalMode === 'fixed';
+
+/**
+ * Zašto zadata spoljna širina platna ne može da se primeni dok je ukupna dužina zaključana (ostala platna ne mogu da popune
+ * razliku); null kad može. Bez zaključane dužine uvek može.
+ */
+export function widthChangeProblem(p: Project, id: string, outerMm: number): string | null {
+  if (!isTotalLocked(p)) return null;
+  const i = indexOfItem(p, id);
+  if (i < 0) return null;
+  const q = updateItem(p, id, { widthMm: Math.max(1, Math.round(outerMm - postHalfSum(p, i))) });
+  const res = autoFillToFixedTotal(q, q.settings.fillStrategy, [id]);
+  if (res.remainingMm === 0) return null;
+  const free = q.items.filter((it) => it.id !== id && it.kind !== 'gate' && !(it.kind === 'opening' && it.bendDeg !== undefined) && !('widthLocked' in it && it.widthLocked));
+  return free.length === 0
+    ? 'ukupna dužina je zaključana, a nijedno drugo platno nije slobodno da se prilagodi (ostala su zaključana). Otključajte neko platno ili ukupnu dužinu.'
+    : `ukupna dužina je zaključana, a ostala platna ne mogu da popune razliku (${res.reason ?? 'granice širine'}). Otključajte ukupnu dužinu ili neko platno.`;
+}
+
+/** Zaključava ili otključava ukupnu dužinu; pri zaključavanju zadata dužina je trenutni zbir mera osa–osa. */
+export function setTotalLock(p: Project, locked: boolean): Project {
+  if (locked === isTotalLocked(p)) return p;
+  return touch({ ...p, settings: { ...p.settings, totalMode: locked ? 'fixed' : 'auto', fixedTotalMm: locked ? sumModularWidths(p.items) : p.settings.fixedTotalMm } });
+}
+
+/** Zaključava ili otključava širinu jednog platna (polja ograde ili otvora). */
+export function setItemWidthLock(p: Project, id: string, locked: boolean): Project {
+  const items = p.items.map((it) => (it.id === id && (it.kind === 'fence' || it.kind === 'opening') ? ({ ...it, widthLocked: locked || undefined } as LayoutItem) : it));
+  return touch({ ...p, items });
 }
 
 /**
@@ -350,15 +386,16 @@ export interface FillResult {
 
 /**
  * Automatski raspoređuje razliku do fiksne ukupne dužine samo između elemenata koji smeju da se menjaju
- * (segmenti ograde i otvori). Kapije se nikad ne dotiču. Poštuje min/max i vraća razlog ako ne uspe.
+ * (segmenti ograde i otvori). Kapije, zaključana platna i elementi iz `exclude` (npr. platno koje je korisnik upravo izmenio)
+ * se nikad ne dotiču. Poštuje min/max i vraća razlog ako ne uspe.
  */
-export function autoFillToFixedTotal(p: Project, strategy: 'proportional' | 'even' = p.settings.fillStrategy): FillResult {
+export function autoFillToFixedTotal(p: Project, strategy: 'proportional' | 'even' = p.settings.fillStrategy, exclude: string[] = []): FillResult {
   const diff = p.settings.fixedTotalMm - sumModularWidths(p.items);
   if (diff === 0) return { project: p, appliedMm: 0, remainingMm: 0 };
   const grow = diff > 0;
   const widths = new Map<string, number>();
   // ugaoni spoj ima svoj razmak za savijanje i ne učestvuje u raspodeli
-  const adjustable = p.items.filter((i) => i.kind !== 'gate' && !(i.kind === 'opening' && i.bendDeg !== undefined));
+  const adjustable = p.items.filter((i) => i.kind !== 'gate' && !(i.kind === 'opening' && i.bendDeg !== undefined) && !('widthLocked' in i && i.widthLocked) && !exclude.includes(i.id));
   adjustable.forEach((i) => widths.set(i.id, i.widthMm));
 
   if (adjustable.length === 0) {
@@ -423,12 +460,14 @@ export function setTotalLength(p: Project, occupiedMm: number): FillResult {
   const lay = computeLayout(p);
   const ends = lay.occupiedMm - lay.totalModularMm; // polovine krajnjih stubova
   const targetModular = Math.round(occupiedMm - ends);
-  const fences = p.items.map((it, i) => ({ it, i })).filter((x) => x.it.kind === 'fence');
-  if (fences.length === 0) {
+  // zaključana platna zadržavaju svoju širinu; ostala dele preostalo
+  const fences = p.items.map((it, i) => ({ it, i })).filter((x) => x.it.kind === 'fence' && !(x.it as FenceSection).widthLocked);
+  if (fences.length === 0 && !p.items.some((it) => it.kind === 'fence')) {
     const res = autoFillToFixedTotal({ ...p, settings: { ...p.settings, fixedTotalMm: targetModular } }, 'proportional');
     return { ...res, project: { ...res.project, settings: p.settings } };
   }
-  const fixed = p.items.reduce((sum, it) => sum + (it.kind === 'fence' ? 0 : it.widthMm), 0);
+  if (fences.length === 0) return { project: p, appliedMm: 0, remainingMm: targetModular - lay.totalModularMm, reason: 'Sva platna ograde su zaključana, pa nema šta da se prilagodi. Otključajte neko platno.' };
+  const fixed = p.items.reduce((sum, it) => sum + (it.kind === 'fence' && !(it as FenceSection).widthLocked ? 0 : it.widthMm), 0);
   const halves = fences.map((f) => postHalfSum(p, f.i));
   const room = targetModular - fixed; // osa–osa koju dele polja ograde
   const outer = Math.floor((room + halves.reduce((a, b) => a + b, 0)) / fences.length);
@@ -450,5 +489,7 @@ export function setTotalLength(p: Project, occupiedMm: number): FillResult {
   }
   const byId = new Map(fences.map((f, k) => [f.it.id, widths[k]]));
   const items = p.items.map((it) => (byId.has(it.id) ? ({ ...it, widthMm: byId.get(it.id)! } as LayoutItem) : it));
-  return { project: touch({ ...p, items }), appliedMm: applied, remainingMm: 0 };
+  // zaključana ukupna dužina prati novu meru
+  const settings = isTotalLocked(p) ? { ...p.settings, fixedTotalMm: targetModular } : p.settings;
+  return { project: touch({ ...p, items, settings }), appliedMm: applied, remainingMm: 0 };
 }

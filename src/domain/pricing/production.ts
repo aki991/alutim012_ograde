@@ -10,6 +10,8 @@ import { Material } from '../models/types';
 import { evaluateSpec, hasCustomSpec, materialName, slatCutLengths, specFor, specVars, type ModelSpecs } from '../models/spec';
 import { isLouver08 } from './louverSpec';
 import { isRail04 } from './railSpec';
+import { HW_ROLE_LABELS, resolveGate } from '../gates/design';
+import { gateCutRows } from '../gates/production';
 
 export interface CutRow {
   element: string;
@@ -49,8 +51,21 @@ export function buildCutList(project: Project, specs?: ModelSpecs, materials?: M
     }
     const group = new Map<string, CutRow>();
     const slats = slatCutLengths({ modelId, slopeFactor: slope.factor, widthMm: li.clearWidth, heightMm: it.heightMm, axisMm: li.axisEnd - li.axisStart, params: it.params, doubleGate: it.kind === 'gate' && it.gateType === 'double', leafWidthsMm: it.kind === 'gate' && it.gateType === 'double' ? gateLeafPoses(it, li.clearStart, li.clearEnd, 1).map((q) => q.widthMm) : undefined });
+    const ownFrame = it.kind === 'gate' && Boolean(it.design?.profiles.some((p) => p.role === 'frame'));
+    if (it.kind === 'gate' && it.design) {
+      // mere kapije: ram krila, noseći profil, rep, šina — red koji još nema meru ostaje u prozoru „Mere kapije“ (ne ide u plan rezanja)
+      for (const r of gateCutRows(it, resolveGate(it, li.clearWidth), materials ?? [])) {
+        if (r.lengthMm === null || r.lengthMm <= 0) continue;
+        const diff = r.manual && r.geometricMm !== null ? Math.round(r.lengthMm - r.geometricMm) : 0;
+        rows.push({
+          element: name, index: li.index, part: `${r.assembly} — ${r.part}`, profile: r.profile, lengthMm: Math.round(r.lengthMm), qty: r.qty, miter: r.miter,
+          note: [r.ends, r.ref, r.manual ? `ručna rezna mera${diff ? ` (geometrijski ${Math.round(r.geometricMm!)} mm, razlika ${diff > 0 ? '+' : ''}${diff} mm)` : ''}` : ''].filter(Boolean).join(' · '),
+        });
+      }
+    }
     for (const ev of evaluateSpec(specFor(modelId, specs), vars)) {
-      if (ev.lengthMm === null) continue; // delovi bez dužine reza (vijci, nosači) nisu u krojnoj listi
+      if (ev.lengthMm === null) continue;
+      if (ownFrame && ev.part.group === 'Ramovi') continue; // delovi bez dužine reza (vijci, nosači) nisu u krojnoj listi
       const len = Math.round(ev.lengthMm);
       const qty = Math.round(ev.qty);
       if (qty <= 0 || len <= 0) continue;
@@ -83,6 +98,10 @@ export function buildHardwareList(project: Project): HardwareRow[] {
   project.items.forEach((it, i) => {
     if (it.kind !== 'gate') return;
     const el = itemLabel(project.items, i);
+    if (it.design) {
+      for (const h of it.design.hardware) rows.push({ element: el, item: `${HW_ROLE_LABELS[h.role]}: ${h.name}${h.code ? ` (${h.code})` : ''}`, qty: h.qty });
+      return;
+    }
     const hinges = { pedestrian: 2, single: 2, double: 4, sliding: 0 }[it.gateType];
     if (hinges) rows.push({ element: el, item: `Šarke (${it.hinge})`, qty: hinges });
     rows.push({ element: el, item: `Brava (${it.lock})`, qty: 1 });

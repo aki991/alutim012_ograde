@@ -1,4 +1,4 @@
-import { ListChecks, PencilRuler, Trash2 } from 'lucide-react';
+import { ListChecks, PencilRuler, RotateCcw, Trash2, Wrench } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CustomModelThumb } from '../../components/designer/PartsSvg';
@@ -16,6 +16,7 @@ export default function ModelsPage() {
   const [choice, setChoice] = useState<FenceModelId | null>(null);
   const [specFor, setSpecFor] = useState<FenceModelId | null>(null);
   const [del, setDel] = useState<CustomModel | null>(null);
+  const [restore, setRestore] = useState<CustomModel | null>(null);
   const modelSpecs = useAppStore((s) => s.settings.modelSpecs);
   const customModels = useAppStore((s) => s.settings.customModels);
   const materials = useAppStore((s) => s.materials);
@@ -46,11 +47,11 @@ export default function ModelsPage() {
     <Page>
       <PageHeader title="Modeli ograda" subtitle="Svi modeli ograde i pripadajućih kapija. Model se menja bez promene ukupne širine segmenta; boja se postavlja prema slici modela."
         actions={<button className="btn btn-primary" data-testid="btn-create-model" onClick={() => navigate('/modeli/crtanje')}><PencilRuler size={17} />Napravi model</button>} />
-      {!!customModels?.length && (
+      {!!customModels?.some((m) => !m.replaces) && (
         <section className="mb-7" data-testid="custom-models">
           <h2 className="font-bold text-lg mb-3">Moji modeli (ručno nacrtani)</h2>
           <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-            {customModels.map((m) => (
+            {customModels!.filter((m) => !m.replaces).map((m) => (
               <article key={m.id} className="card overflow-hidden flex flex-col" data-testid="custom-model-card">
                 <div className="relative aspect-[16/10] bg-[#eef2f6] overflow-hidden border-b border-line p-3"><CustomModelThumb model={m} materials={materials} /></div>
                 <div className="p-4 flex-1 flex flex-col">
@@ -69,7 +70,25 @@ export default function ModelsPage() {
         </section>
       )}
       <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-        {FENCE_MODEL_LIST.map((m) => (
+        {FENCE_MODEL_LIST.map((m) => {
+          // dorađen model koji zamenjuje original: kartica prikazuje dorađen crtež, uz mogućnost vraćanja originala
+          const rep = customModels?.find((c) => c.replaces === m.id);
+          if (rep) return (
+            <article key={m.id} className="card overflow-hidden flex flex-col" data-testid={`model-card-${m.id}`} data-replaced="true">
+              <div className="relative aspect-[16/10] bg-[#eef2f6] overflow-hidden border-b border-line p-3"><CustomModelThumb model={rep} materials={materials} />
+                <span className="absolute left-3 top-3 pill !text-[12px] bg-primary text-white" data-testid="badge-reworked">Dorađen</span></div>
+              <div className="p-4 flex-1 flex flex-col">
+                <h2 className="font-bold text-[17px]">{m.name}</h2>
+                <p className="text-sm text-muted mt-0.5">Dorađen crtež modela iz kataloga · {rep.parts.length} delova. Projekti sa ovim modelom koriste dorađen crtež.</p>
+                <div className="flex flex-wrap gap-2 mt-auto pt-4">
+                  <button className="btn w-full" data-testid={`rework-model-${m.id}`} onClick={() => navigate(`/modeli/crtanje/${rep.id}`, { state: { dorada: true } })}><Wrench size={16} />Doradi</button>
+                  <button className="btn btn-primary" data-testid={`use-model-${m.id}`} onClick={() => useModel(rep.id as FenceModelId)}>Koristi model</button>
+                  <button className="btn" data-testid={`restore-model-${m.id}`} onClick={() => setRestore(rep)}><RotateCcw size={16} />Vrati original</button>
+                </div>
+              </div>
+            </article>
+          );
+          return (
           <article key={m.id} className="card overflow-hidden flex flex-col" data-testid={`model-card-${m.id}`}>
             <div className="relative aspect-[16/10] bg-white overflow-hidden border-b border-line"><div className="absolute inset-0"><ModelThumb modelId={m.id} full /></div></div>
             <div className="p-4 flex-1 flex flex-col">
@@ -89,14 +108,22 @@ export default function ModelsPage() {
                 <p className="text-[12px] text-muted mt-2" data-testid={`construction-note-${m.id}`}>{constructionOf(m.id)!.note}</p>
               )}
               <div className="flex flex-wrap gap-2 mt-auto pt-4">
+                {/* dorada: crtež modela u crtanju, gde se menja svaki deo (red iznad, da glavna dugmad ostanu u istoj liniji) */}
+                <button className="btn w-full" data-testid={`rework-model-${m.id}`} title="Otvara crtež modela u crtanju, gde se menja svaki deo" onClick={() => navigate(`/modeli/crtanje/${useAppStore.getState().startDorada(m.id)}`, { state: { dorada: true } })}><Wrench size={16} />Doradi</button>
                 <button className="btn btn-primary" data-testid={`use-model-${m.id}`} onClick={() => useModel(m.id)}>Koristi model</button>
                 <button className="btn" data-testid={`spec-model-${m.id}`} onClick={() => setSpecFor(m.id)}><ListChecks size={16} />Specifikacija{modelSpecs?.[m.id] ? ' (izmenjena)' : ''}</button>
               </div>
             </div>
           </article>
-        ))}
+          );
+        })}
       </div>
       {del && <ConfirmDialog title="Brisanje modela" danger confirmLabel="Obriši" message={usedBy(del.id).length ? <>Model <b>{del.name}</b> koriste projekti: <b>{usedBy(del.id).join(', ')}</b>. Ako ga obrišete, ti projekti prelaze na podrazumevani model iz kataloga. Crtež se ne može vratiti.</> : <>Obrisati nacrtani model <b>{del.name}</b>? Crtež se ne može vratiti.</>} onCancel={() => setDel(null)} onConfirm={() => { useAppStore.getState().removeCustomModel(del.id); setDel(null); }} />}
+      {restore && restore.replaces && (
+        <ConfirmDialog title="Vrati originalni model" confirmLabel="Vrati original"
+          message={<>Model <b>{FENCE_MODELS[restore.replaces as FenceModelId]?.name}</b> se vraća na original iz kataloga, a projekti koji ga koriste ponovo dobijaju originalni crtež. Dorađen crtež ostaje sačuvan kao poseban model u „Moji modeli“.</>}
+          onCancel={() => setRestore(null)} onConfirm={() => { useAppStore.getState().restoreBuiltin(restore.id); setRestore(null); }} />
+      )}
       {specFor && <SpecEditor modelId={specFor} onClose={() => setSpecFor(null)} />}
       {choice && current && (
         <Modal title="Kako želite da koristite model?" onClose={() => setChoice(null)}>

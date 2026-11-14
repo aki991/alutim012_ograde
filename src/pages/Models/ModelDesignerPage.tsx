@@ -1,21 +1,23 @@
 import { AlertTriangle, ArrowLeft, Copy, Download, FileText, Link2, MousePointer2, Redo2, Rows3, Search, Trash2, Undo2, X } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Designer2D } from '../../components/designer/Designer2D';
 import { GuideSection } from '../../components/designer/GuideSection';
+import { MaterialPicker } from '../../components/designer/MaterialPicker';
 import { SketchSvg } from '../../components/designer/Sketch';
 import { downloadSketchPdf, downloadSketchSvg } from '../../services/pdfSketch';
 import { resolveParts, ShapeIcon } from '../../components/designer/PartsSvg';
-import { colorHex, normalizeColorKey } from '../../domain/models/catalog';
+import { colorHex, FENCE_MODELS, normalizeColorKey } from '../../domain/models/catalog';
 import { ColorChartModal } from '../../components/forms/ColorChartModal';
 import { clampToFrame, CUSTOM_KIND_LABELS, customBom, newCustomModel, repeatPart, type CustomModel, type CustomPart } from '../../domain/models/custom';
-import { applyGuides, attachToGuides, barLayoutInfo, gapRange, guideReport, layoutBars, type LayoutAuto } from '../../domain/models/guides';
+import { applyGuides, attachToGuides, autoAttachBars, barGroup, barLayoutInfo, orientGuides, gapRange, guideReport, layoutBars, type LayoutAuto } from '../../domain/models/guides';
+import { resizeModel } from '../../domain/models/resize';
 import type { Lufta } from '../../domain/models/custom';
 import { checkNewOverlap } from '../../domain/models/overlap';
 import { replaceMaterial, replaceOptions, replaceRole, replaceTargets } from '../../domain/models/replace';
 import { ConfirmDialog } from '../../components/ui/Modal';
-import { MATERIAL_GROUPS, materialShape, sectionFace, type MaterialGroupId } from '../../domain/models/materialShape';
-import type { Material } from '../../domain/models/types';
+import { compareMaterials, MATERIAL_GROUPS, materialShape, sectionFace, type MaterialGroupId } from '../../domain/models/materialShape';
+import type { FenceModelId, Material } from '../../domain/models/types';
 import { useAppStore } from '../../store/useAppStore';
 import { uid } from '../../utils/id';
 import { fmtMoney } from '../../utils/units';
@@ -27,7 +29,9 @@ import { fmtMoney } from '../../utils/units';
  */
 function settle(model: CustomModel, materials: Material[], grow = true): CustomModel {
   const byId = new Map(materials.map((m) => [m.id, m]));
-  const fitted = applyGuides(model, materials);
+  // U profili ka unutra, prečke između njih u kanal, pa sve u okvir modela
+  const oriented = autoAttachBars(orientGuides(model, materials), materials);
+  const fitted = applyGuides(oriented, materials);
   const framed = clampToFrame(fitted, (p) => { const m = byId.get(p.materialId); return m ? materialShape(m) : null; }, grow);
   return framed === fitted ? fitted : applyGuides(framed, materials);
 }
@@ -105,7 +109,7 @@ function BarLayoutBox({ model, bar, materials, onApply, onError }: { model: Cust
   return (
     <div className="mt-2 rounded-lg border border-line p-2" data-testid="bar-layout">
       <div className="text-[12.5px] font-semibold mb-1 flex items-center gap-1.5"><Rows3 size={14} />Raspored prečki</div>
-      <p className="text-[11.5px] text-muted mb-1">Visina bočnih strana <b data-testid="layout-height">{String(info.H).replace('.', ',')} mm</b>, visina prečke <b>{String(info.h).replace('.', ',')} mm</b>. Prečke se rasporede same.</p>
+      <p className="text-[11.5px] text-muted mb-1">{info.free ? 'Prostor za prečke (visina modela između ramova)' : 'Visina bočnih strana'} <b data-testid="layout-height">{String(info.H).replace('.', ',')} mm</b>, visina prečke <b>{String(info.h).replace('.', ',')} mm</b>. Prečke se rasporede same.</p>
       <div className="flex items-center justify-between gap-2 py-1 text-[13px]">
         <span className="text-slate-600">Tip ograde</span>
         <span className="inline-flex rounded-lg border border-line overflow-hidden" role="group" aria-label="Tip ograde">
@@ -132,7 +136,7 @@ function BarLayoutBox({ model, bar, materials, onApply, onError }: { model: Cust
           : eff === 'gap' ? <>Razmak se računa: <b>{fmtR(range.min)} mm</b>.{lufta === 'bez' && info.gapMin < 0 ? <> Najmanji mogući je <b>{fmtR(info.gapMin)} mm</b>.</> : null}</>
             : <>Dozvoljen razmak: od <b>{fmtR(range.min)}</b> do <b>{fmtR(range.max)} mm</b>{lufta === 'bez' && info.gapMin >= 0 ? ' (prečke bez nagiba ne mogu da se uvuku, pa je razmak 0)' : ''}.</>}
       </p>
-      <p className="text-[11.5px] text-muted">Izmena broja prečki dodaje kopije izabrane prečke ili skida prečke pri dnu. Ako prečke ne staju u visinu bočnih strana, izmena se ne primenjuje i obaveštenje navodi razlog.</p>
+      <p className="text-[11.5px] text-muted">Izmena broja prečki dodaje kopije izabrane prečke ili skida prečke pri dnu. Ako prečke ne staju u {info.free ? 'raspoloživu visinu' : 'visinu bočnih strana'}, izmena se ne primenjuje i obaveštenje navodi razlog.</p>
     </div>
   );
 }
@@ -147,7 +151,7 @@ function Palette({ materials, activeId, onPick }: { materials: Material[]; activ
       const g = materialShape(m).group;
       by.set(g, [...(by.get(g) ?? []), m]);
     }
-    return MATERIAL_GROUPS.filter((g) => by.has(g.id)).map((g) => ({ ...g, items: by.get(g.id)!.sort((a, b) => a.name.localeCompare(b.name, 'sr', { numeric: true })) }));
+    return MATERIAL_GROUPS.filter((g) => by.has(g.id)).map((g) => ({ ...g, items: by.get(g.id)!.sort(compareMaterials) }));
   }, [materials, q]);
   return (
     <div className="flex flex-col h-full min-h-0" data-testid="designer-palette">
@@ -211,6 +215,11 @@ function Designer({ id }: { id: string }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [sketchBusy, setSketchBusy] = useState(false);
   const [chartOpen, setChartOpen] = useState(false);
+  /** u izboru za zamenu materijala prikazuju se i materijali koji podrazumevano nisu ponuđeni */
+  const [showAllSwap, setShowAllSwap] = useState(false);
+  /** potvrda za „sačuvaj na istom tipu“ / „vrati original“ kod dorade modela iz kataloga */
+  const fromDorada = Boolean((useLocation().state as { dorada?: boolean } | null)?.dorada);
+  const [typeAction, setTypeAction] = useState<'replace' | 'restore' | null>(null);
   /** izabrana zamena materijala koja čeka potvrdu (kad se menja i još neki deo) */
   const [pendingSwap, setPendingSwap] = useState<{ ids: string[]; materialId: string } | null>(null);
   const modelRef = useRef(model);
@@ -331,8 +340,8 @@ function Designer({ id }: { id: string }) {
         <select className="input !w-auto !py-1.5" aria-label="Vrsta" data-testid="designer-kind" value={model.kind} onChange={(e) => change((m) => ({ ...m, kind: e.target.value as CustomModel['kind'] }))}>
           {Object.entries(CUSTOM_KIND_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <Num label="Širina" value={model.widthMm} min={100} max={20000} testId="designer-width" onChange={(v) => change((m) => ({ ...m, widthMm: Math.round(v) }))} />
-        <Num label="Visina" value={model.heightMm} min={100} max={6000} testId="designer-height" onChange={(v) => change((m) => ({ ...m, heightMm: Math.round(v) }))} />
+        <Num label="Širina" value={model.widthMm} min={100} max={20000} testId="designer-width" onChange={(v) => change((m) => resizeModel(m, Math.round(v), m.heightMm, materialsRef.current))} />
+        <Num label="Visina" value={model.heightMm} min={100} max={6000} testId="designer-height" onChange={(v) => change((m) => resizeModel(m, m.widthMm, Math.round(v), materialsRef.current))} />
         <button type="button" className="input !w-auto !py-1.5 inline-flex items-center gap-2" aria-label={`Boja: ${normalizeColorKey(model.color)}. Otvori kartu boja`} data-testid="designer-color" onClick={() => setChartOpen(true)}>
           <span className="w-5 h-5 rounded-full ring-1 ring-black/20" style={{ background: colorHex(model.color) }} />{normalizeColorKey(model.color)}
         </button>
@@ -351,6 +360,30 @@ function Designer({ id }: { id: string }) {
         </div>
       </div>
 
+      {/* traka dorade se vidi samo odmah posle klika na „Doradi“ (i dok dorađen crtež zamenjuje original); kasnije otvaranje crteža je običan model */}
+      {model.baseModelId && FENCE_MODELS[model.baseModelId as FenceModelId] && (fromDorada || model.replaces) && (() => {
+        const baseName = FENCE_MODELS[model.baseModelId as FenceModelId].name;
+        // posle zamene ili vraćanja crtež se ponovo učitava iz podešavanja (naziv i oznaka zamene)
+        const reload = () => { const saved = useAppStore.getState().settings.customModels?.find((m) => m.id === modelRef.current.id); if (saved) { modelRef.current = saved; setModel(saved); } };
+        return (
+          <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-[#eff8ff] border-b border-[#b2ddff] text-[13px]" data-testid="rework-bar">
+            {model.replaces
+              ? <span className="flex-1 min-w-[240px]">Dorada modela <b>{baseName}</b>: ovaj crtež je sada taj model iz kataloga (isti tip). Projekti sa ovim modelom koriste dorađen crtež.</span>
+              : <span className="flex-1 min-w-[240px]">Dorada modela <b>{baseName}</b>: izmene se čuvaju kao <b>nov tip</b> „{model.name}“, a original ostaje. Ako želite da ovo bude isti model, sačuvajte na istom tipu.</span>}
+            {model.replaces
+              ? <button className="btn btn-sm" data-testid="rework-restore" onClick={() => setTypeAction('restore')}>Vrati originalni model</button>
+              : <button className="btn btn-sm btn-primary" data-testid="rework-replace" onClick={() => setTypeAction('replace')}>Sačuvaj na istom tipu</button>}
+            {typeAction && (
+              <ConfirmDialog title={typeAction === 'replace' ? 'Sačuvaj na istom tipu' : 'Vrati originalni model'} confirmLabel={typeAction === 'replace' ? 'Sačuvaj na istom tipu' : 'Vrati original'}
+                message={typeAction === 'replace'
+                  ? <>Dorađen crtež postaje model <b>{baseName}</b>: stoji umesto originala u izboru modela, a <b>projekti koji koriste ovaj model prelaze na dorađen crtež</b>. Original se može vratiti na strani Modeli ograda.</>
+                  : <>Model <b>{baseName}</b> se vraća na original iz kataloga i projekti ponovo dobijaju originalni crtež. Ovaj crtež ostaje kao nov tip „{baseName} — dorada“.</>}
+                onCancel={() => setTypeAction(null)}
+                onConfirm={() => { const st = useAppStore.getState(); if (typeAction === 'replace') st.replaceBuiltin(model.id); else st.restoreBuiltin(model.id); setTypeAction(null); reload(); }} />
+            )}
+          </div>
+        );
+      })()}
       {notice && (
         <div className="flex items-start gap-2 px-3 py-2 bg-[#fef3f2] border-b border-[#fecdca] text-[13px] text-[#b42318]" role="alert" data-testid="designer-notice">
           <AlertTriangle size={16} className="mt-0.5 shrink-0" />
@@ -409,7 +442,8 @@ function Designer({ id }: { id: string }) {
               const c = common(get);
               return <Num key={o.testId} label={c.same ? label : `${label} (različito)`} value={c.value} min={o.min} max={o.max} unit={o.unit} testId={o.testId} onChange={(v) => setAll(apply(v))} />;
             };
-            const options = sameMat ? replaceOptions(model, first.part.id, materials) : [];
+            const options = sameMat ? replaceOptions(model, first.part.id, materials, showAllSwap) : [];
+            const moreOptions = sameMat && replaceOptions(model, first.part.id, materials, true).length > replaceOptions(model, first.part.id, materials, false).length;
             const rot = common((p) => p.rot);
             const cut = multi.filter((r) => r.part.cut45).length;
             return (
@@ -417,13 +451,10 @@ function Designer({ id }: { id: string }) {
                 <div className="text-[13px] font-semibold">Izabrano delova: {multi.length}</div>
                 <div className="text-[11.5px] text-muted mb-2">{sameMat ? (first.material?.name ?? 'Materijal je obrisan iz cenovnika') : 'različiti materijali'}. Izmena važi za sve izabrane delove; polje sa oznakom „različito“ prikazuje vrednost prvog dela.</div>
                 {options.length > 0 && (
-                  <label className="grid gap-1 mb-2 text-[13px]">
+                  <div className="grid gap-1 mb-2 text-[13px]">
                     <span className="text-slate-600">Zameni materijal (svim izabranim)</span>
-                    <select className="input !py-1.5" data-testid="multi-swap" value="" aria-label="Zameni materijal svim izabranim" onChange={(e) => askSwap(ids, e.target.value)}>
-                      <option value="">— izaberite novi materijal —</option>
-                      {MATERIAL_GROUPS.map((g) => ({ ...g, items: options.filter((m) => materialShape(m).group === g.id) })).filter((g) => g.items.length).map((g) => <optgroup key={g.id} label={g.label}>{g.items.map((m) => <option key={m.id} value={m.id}>{m.name} ({m.sku})</option>)}</optgroup>)}
-                    </select>
-                  </label>
+                    <MaterialPicker materials={options} testId="multi-swap" ariaLabel="Zameni materijal svim izabranim" onPick={(id) => askSwap(ids, id)} showAll={{ checked: showAllSwap, onChange: setShowAllSwap, visible: moreOptions || showAllSwap }} />
+                  </div>
                 )}
                 {multi.every((r) => r.part.guides) && (() => {
                   const fits = new Map(multi.map((r) => [r.part.id, guideReport(model, r.part, materials)?.fit.plus]));
@@ -454,6 +485,17 @@ function Designer({ id }: { id: string }) {
                   </label>
                 )}
                 {field('Dubina (ka napred)', (p) => p.z, (v) => ({ z: v }), { min: -2000, max: 2000, testId: 'multi-z' })}
+                {/* izabrana je cela grupa prečki (isti materijal, jedna iznad druge), možda uz druge delove: raspored prečki važi za grupu */}
+                {(() => {
+                  for (const r of multi) {
+                    const grp = barGroup(model, r.part, materials);
+                    if (!grp || grp.bars.length < 2 || !grp.bars.every((b) => ids.includes(b.id))) continue;
+                    const lead = r.part; const old = new Set(grp.bars.map((b) => b.id));
+                    return <BarLayoutBox key={`grp-${grp.bars.length}-${lead.id}`} model={model} bar={lead} materials={materials} onError={setNotice}
+                      onApply={(m) => { if (change(() => m)) { const g = barGroup(m, lead, materials); if (g) setSelectedIds([...ids.filter((x) => !old.has(x)), ...g.bars.map((b) => b.id)]); } }} />;
+                  }
+                  return null;
+                })()}
                 <div className="flex gap-2 mt-2">
                   <button className="btn btn-sm flex-1" data-testid="multi-clear" onClick={() => setSelectedIds([])}>Poništi izbor</button>
                   <button className="btn btn-sm btn-danger flex-1" data-testid="multi-delete" onClick={removeSel}><Trash2 size={14} />Obriši sve</button>
@@ -467,18 +509,14 @@ function Designer({ id }: { id: string }) {
               <div className="text-[13px] font-medium leading-snug">{sel.material?.name ?? 'Materijal je obrisan iz cenovnika'}</div>
               <div className="text-[11.5px] text-muted mb-2">{sel.material?.sku}{sel.shape.type === 'linear' ? ` · presek ${sel.shape.section.w} × ${sel.shape.section.h} mm${sel.shape.exact ? '' : ' (približan oblik prema nazivu)'}` : ''}</div>
               {sel.material && (() => {
-                const options = replaceOptions(model, sel.part.id, materials);
-                if (!options.length) return null;
-                const groups = MATERIAL_GROUPS.map((g) => ({ ...g, items: options.filter((m) => materialShape(m).group === g.id).sort((a, b) => a.name.localeCompare(b.name, 'sr', { numeric: true })) })).filter((g) => g.items.length);
+                const options = replaceOptions(model, sel.part.id, materials, showAllSwap);
+                const moreOptions = replaceOptions(model, sel.part.id, materials, true).length > replaceOptions(model, sel.part.id, materials, false).length;
+                if (!options.length && !moreOptions) return null;
                 return (
-                  <label className="grid gap-1 mb-2 text-[13px]">
+                  <div className="grid gap-1 mb-2 text-[13px]">
                     <span className="text-slate-600">Zameni materijal</span>
-                    <select className="input !py-1.5" data-testid="part-swap" value="" aria-label="Zameni materijal"
-                      onChange={(e) => askSwap([sel.part.id], e.target.value)}>
-                      <option value="">— izaberite novi materijal —</option>
-                      {groups.map((g) => <optgroup key={g.id} label={g.label}>{g.items.map((m) => <option key={m.id} value={m.id}>{m.name} ({m.sku})</option>)}</optgroup>)}
-                    </select>
-                  </label>
+                    <MaterialPicker materials={options} testId="part-swap" ariaLabel="Zameni materijal" onPick={(id) => askSwap([sel.part.id], id)} showAll={{ checked: showAllSwap, onChange: setShowAllSwap, visible: moreOptions || showAllSwap }} />
+                  </div>
                 );
               })()}
               {sel.shape.type === 'linear' && sel.shape.wall !== undefined && sel.material && (
@@ -526,7 +564,7 @@ function Designer({ id }: { id: string }) {
                   <p className="text-[11.5px] text-muted mt-1.5">Prečka ne može da izađe van U profila: dužina, položaj, dubina i nagib se ograničavaju na kanal.</p>
                 </div>
               )}
-              {report && <BarLayoutBox key={sel.part.id} model={model} bar={sel.part} materials={materials} onApply={(m) => change(() => m)} onError={setNotice} />}
+              {barGroup(model, sel.part, materials) && <BarLayoutBox key={sel.part.id} model={model} bar={sel.part} materials={materials} onApply={(m) => change(() => m)} onError={setNotice} />}
               {sel.shape.type === 'linear' && !report && sel.part.angleDeg % 180 === 0 && (
                 <div className="mt-2">
                   <button className="btn btn-sm w-full" data-testid="guide-attach" onClick={() => { const fitted = attach(modelRef.current, sel.part.id, false); if (fitted) change(() => fitted); }}><Link2 size={14} />Uklopi u bočne U profile</button>

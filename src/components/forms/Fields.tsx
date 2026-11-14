@@ -4,6 +4,7 @@ import type { Finish } from '../../domain/models/types';
 import { useAppStore } from '../../store/useAppStore';
 import { ColorChartModal, normalizeFavorites, swatchBackground } from './ColorChartModal';
 import { validateRange, type Range } from '../../domain/validation/limits';
+import { fromCurrency, toCurrency } from '../../utils/units';
 
 export function Field({ label, children, hint, error, htmlFor, stacked }: { label: string; children: ReactNode; hint?: ReactNode; error?: string | null; htmlFor?: string; stacked?: boolean }) {
   return (
@@ -206,5 +207,24 @@ export function TextField({ label, value, onChange, placeholder, testId, multili
         ? <textarea id={id} data-testid={testId} className="input min-h-[64px]" value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
         : <input id={id} data-testid={testId} className="input" value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />}
     </Field>
+  );
+}
+
+/**
+ * Polje za cenu u izabranoj valuti: cena se čuva u dinarima, a prikazuje i unosi u valuti iz podešavanja (evri preračunati po
+ * kursu). Dok se kuca, tekst se ne prepisuje (decimale ostaju), a izmena se upisuje čim je broj ispravan.
+ */
+export function PriceInput({ rsd, onChange, label, testId, className = '' }: { rsd: number; onChange: (rsd: number) => void; label: string; testId?: string; className?: string }) {
+  const currency = useAppStore((s) => s.settings.currency);
+  const rate = useAppStore((s) => s.settings.currencyRateToEur);
+  const shown = toCurrency(rsd, currency, rate);
+  const [text, setText] = useState(String(shown));
+  const focused = useRef(false);
+  useEffect(() => { if (!focused.current) setText(String(shown)); }, [shown]);
+  return (
+    <input aria-label={label} data-testid={testId} type="number" min={0} step={currency === 'EUR' ? 0.01 : 1} className={`input text-right tabular-nums ${className}`} value={text}
+      onFocus={() => { focused.current = true; }}
+      onBlur={() => { focused.current = false; setText(String(toCurrency(rsd, currency, rate))); }}
+      onChange={(e) => { setText(e.target.value); const v = Number(e.target.value); if (e.target.value.trim() !== '' && Number.isFinite(v) && v >= 0) onChange(fromCurrency(v, currency, rate)); }} />
   );
 }

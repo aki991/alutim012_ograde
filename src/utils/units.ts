@@ -25,3 +25,8 @@ export function initialsOf(name: string): string {
   if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
   return (words[0][0] + words[1][0]).toUpperCase();
 }
+
+/** Cena u izabranoj valuti: cene se čuvaju u dinarima, a u evrima se prikazuju preračunate po kursu (na 2 decimale). */
+export const toCurrency = (rsd: number, currency = 'RSD', rateToEur = 117.2): number => (currency === 'EUR' ? Math.round((rsd / rateToEur) * 100) / 100 : rsd);
+/** Unesena cena u izabranoj valuti → dinari (kako se čuva). */
+export const fromCurrency = (value: number, currency = 'RSD', rateToEur = 117.2): number => (currency === 'EUR' ? value * rateToEur : value);

@@ -4,13 +4,14 @@ import { missingModelMaterials } from '../data/modelMaterials';
 import { createSeedData } from '../data/seed';
 import { loadAll, saveAll, wipeAll } from '../db';
 import {
-  changeColor, changeFinish, changeModelAll, duplicateItem, indexOfItem, insertItem, moveItemBy, setOuterWidth, withConcretePosts, updateItem, updateItemParams, updatePost,
+  changeColor, changeFinish, changeModelAll, widthChangeProblem, duplicateItem, indexOfItem, insertItem, moveItemBy, setOuterWidth, withConcretePosts, updateItem, updateItemParams, updatePost,
 } from '../domain/geometry/operations';
 import { newItemFor } from '../domain/geometry/newItem';
 import { computeLayout } from '../domain/geometry/layout';
 import { removeStair, setStairGroup } from '../domain/geometry/stairOps';
 import { DEFAULT_MODEL_ID, FENCE_MODELS, TERRACE_NO_GATES, isTerraceModel, projectModelId } from '../domain/models/catalog';
-import { registerCustomModels } from '../domain/models/customRegistry';
+import { effectiveModelId, registerCustomModels } from '../domain/models/customRegistry';
+import { builtinToCustom } from '../domain/models/fromBuiltin';
 import { createFence, createGate, createProject, nowIso } from '../domain/models/factories';
 import { emptyHistory, recordChange, redo as redoH, undo as undoH, type History } from '../domain/models/history';
 import type {
@@ -92,6 +93,8 @@ interface AppState {
   setItemModel: (id: string, modelId: FenceModelId) => void;
   setItemColor: (id: string, color: string) => void;
   setItemFinish: (id: string, finish: import('../domain/models/types').Finish | undefined) => void;
+  /** zadaje spoljnu širinu platna; sa zaključanom ukupnom dužinom se ostala platna prilagođavaju, a ako ne može — obaveštenje i bez izmene */
+  setWidth: (id: string, outerMm: number, key?: string) => boolean;
 
   upsertCustomer: (c: Customer) => void;
   removeCustomer: (id: string) => void;
@@ -101,6 +104,12 @@ interface AppState {
   updateSettings: (patch: Partial<AppSettings>) => void;
   /** briše ručno nacrtan model; projekti koji ga koriste prelaze na podrazumevani model iz kataloga */
   removeCustomModel: (id: string) => void;
+  /** dorada modela iz kataloga: pravi crtež od njegovih delova kao nov model (nov tip) i vraća njegov ID */
+  startDorada: (builtinId: FenceModelId) => string;
+  /** dorađen model zamenjuje model iz kataloga („sačuvaj na istom tipu“): projekti sa originalom prelaze na njega */
+  replaceBuiltin: (customId: string) => void;
+  /** vraća originalni model iz kataloga; dorađen crtež ostaje kao poseban model */
+  restoreBuiltin: (customId: string) => void;
 }
 
 /** Element čiji model više ne postoji (obrisan nacrtani model) prelazi na podrazumevani model, da se projekat i dalje otvara. */
@@ -159,6 +168,13 @@ export function currentProjectId(): string | null {
 }
 
 const seed = createSeedData();
+
+/** Elementi projekta sa modelom iz skupa `from` prelaze na model `to` (ograde i ispuna kapija); mere i boje ostaju. */
+function switchModel(p: Project, from: Set<string>, to: string): Project {
+  if (!p.items.some((it) => (it.kind === 'fence' && from.has(it.modelId)) || (it.kind === 'gate' && from.has(it.infillModelId)))) return p;
+  const items = p.items.map((it) => (it.kind === 'fence' && from.has(it.modelId) ? { ...it, modelId: to as FenceModelId } : it.kind === 'gate' && from.has(it.infillModelId) ? { ...it, infillModelId: to as FenceModelId } : it));
+  return { ...p, items, updatedAt: new Date().toISOString() };
+}
 
 export const useAppStore = create<AppState>((set, get) => {
   const currentProject = (): Project | undefined => {
@@ -226,6 +242,8 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     newProject(opts = {}) {
+      // model iz kataloga koji je zamenjen dorađenim: koristi se dorađen
+      if (opts.modelId) opts = { ...opts, modelId: effectiveModelId(opts.modelId) };
       const items: LayoutItem[] = [];
       if (opts.modelId) items.push(createFence({ modelId: opts.modelId }));
       if (opts.startGate && !isTerraceModel(opts.modelId ?? DEFAULT_MODEL_ID)) items.push(createGate(opts.startGate, { infillModelId: opts.modelId ?? DEFAULT_MODEL_ID }));
@@ -404,6 +422,14 @@ export const useAppStore = create<AppState>((set, get) => {
       get().mutate((p) => changeModelAll(p, modelId)); set((s) => ({ editor: { ...s.editor, activeModelId: modelId } })); },
     setItemColor(id, color) { get().mutate((p) => changeColor(p, id, color)); },
     setItemFinish(id, finish) { get().mutate((p) => changeFinish(p, id, finish)); },
+    setWidth(id, outerMm, key) {
+      const cur = currentProject();
+      if (!cur) return false;
+      const problem = widthChangeProblem(cur, id, outerMm);
+      if (problem) { get().setNotice(`Nije moguće: ${problem}`); return false; }
+      get().mutate((p) => setOuterWidth(p, id, outerMm), key);
+      return true;
+    },
 
     upsertCustomer(c) {
       set((s) => ({ customers: s.customers.some((x) => x.id === c.id) ? s.customers.map((x) => (x.id === c.id ? c : x)) : [...s.customers, c] }));
@@ -420,7 +446,47 @@ export const useAppStore = create<AppState>((set, get) => {
     setMaterials(materials) { set({ materials }); },
     removeMaterial(id) { set((s) => ({ materials: s.materials.filter((x) => x.id !== id) })); },
     updateSettings(patch) { set((s) => ({ settings: { ...s.settings, ...patch } })); },
+    startDorada(builtinId) {
+      const id = uid('cm');
+      const model = builtinToCustom(builtinId, get().materials, id);
+      const customModels = [...(get().settings.customModels ?? []), model];
+      registerCustomModels(customModels, get().materials);
+      set((s) => ({ settings: { ...s.settings, customModels } }));
+      return id;
+    },
+    replaceBuiltin(customId) {
+      const list = get().settings.customModels ?? [];
+      const m = list.find((x) => x.id === customId);
+      const base = m?.baseModelId;
+      if (!m || !base || !(base in FENCE_MODELS)) return;
+      // samo jedan dorađen model zamenjuje isti model iz kataloga: prethodni postaje običan model, a njegovi projekti prelaze na novi
+      const prev = list.find((x) => x.replaces === base && x.id !== customId);
+      const customModels = list.map((x) => (x.id === customId ? { ...x, replaces: base, name: FENCE_MODELS[base as FenceModelId].name, updatedAt: new Date().toISOString() } : x.id === prev?.id ? { ...x, replaces: undefined } : x));
+      registerCustomModels(customModels, get().materials);
+      const from = new Set([base, ...(prev ? [prev.id] : [])]);
+      set((s) => ({
+        settings: { ...s.settings, customModels },
+        projects: s.projects.map((p) => switchModel(p, from, customId)),
+        editor: { ...s.editor, history: emptyHistory<Project>(), activeModelId: from.has(s.editor.activeModelId) ? (customId as FenceModelId) : s.editor.activeModelId },
+      }));
+    },
+    restoreBuiltin(customId) {
+      const list = get().settings.customModels ?? [];
+      const m = list.find((x) => x.id === customId);
+      const base = m?.replaces;
+      if (!m || !base) return;
+      const customModels = list.map((x) => (x.id === customId ? { ...x, replaces: undefined, name: `${FENCE_MODELS[base as FenceModelId]?.name ?? x.name} — dorada`, updatedAt: new Date().toISOString() } : x));
+      registerCustomModels(customModels, get().materials);
+      set((s) => ({
+        settings: { ...s.settings, customModels },
+        projects: s.projects.map((p) => switchModel(p, new Set([customId]), base)),
+        editor: { ...s.editor, history: emptyHistory<Project>(), activeModelId: s.editor.activeModelId === customId ? (base as FenceModelId) : s.editor.activeModelId },
+      }));
+    },
     removeCustomModel(id) {
+      // brisanje dorađenog modela koji zamenjuje original: projekti se vraćaju na original iz kataloga
+      const gone = (get().settings.customModels ?? []).find((m) => m.id === id);
+      if (gone?.replaces) get().restoreBuiltin(id);
       const customModels = (get().settings.customModels ?? []).filter((m) => m.id !== id);
       // katalog se osvežava pre izmene projekata, da nijedan prikaz ne zatekne element sa nepostojećim modelom
       registerCustomModels(customModels, get().materials);

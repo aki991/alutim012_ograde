@@ -38,17 +38,28 @@ export function replaceTargets(model: CustomModel, partId: string): string[] {
   return [partId];
 }
 
-/** Materijali kojima se deo može zameniti: ista vrsta oblika (profil, ploča, komad), a vođica mora biti U profil. */
-export function replaceOptions(model: CustomModel, partId: string, materials: Material[]): Material[] {
+/**
+ * Materijali kojima se deo može zameniti. Podrazumevano se nude samo oni koji dolaze u obzir: uspravan U profil → U profili,
+ * ostali delovi → materijali iste grupe i kategorije (kvadratna cev → kvadratne cevi, okrugla → okrugle …). Sa `all` se nude svi materijali
+ * iste vrste oblika (profil, ploča, komad); vođica prečki je i tada samo U profil, jer prečke ne mogu da uđu u drugi oblik.
+ */
+export function replaceOptions(model: CustomModel, partId: string, materials: Material[], all = false): Material[] {
   const p = model.parts.find((x) => x.id === partId);
   const cur = p && materials.find((m) => m.id === p.materialId);
   if (!p || !cur) return [];
-  const type = materialShape(cur).type;
+  const curShape = materialShape(cur);
+  const type = curShape.type;
   const needU = replaceRole(model, partId) === 'guide';
+  const upright = ((p.angleDeg % 180) + 180) % 180 === 90;
+  const uProfile = curShape.type === 'linear' && !!curShape.u && upright;
   return materials.filter((m) => {
     if (m.id === p.materialId) return false;
     const s = materialShape(m);
-    return s.type === type && (!needU || (s.type === 'linear' && !!s.u));
+    if (s.type !== type) return false;
+    if (needU && !(s.type === 'linear' && s.u)) return false;
+    if (all) return true;
+    if (uProfile) return s.type === 'linear' && !!s.u;
+    return s.group === curShape.group && m.category === cur.category; // npr. stubovi iz cenovnika nisu „kvadratne cevi“ iako imaju slične mere
   });
 }
 
@@ -61,7 +72,7 @@ export function replaceMaterial(model: CustomModel, partId: string, newMaterialI
   const cur = part && materials.find((m) => m.id === part.materialId);
   const mat = materials.find((m) => m.id === newMaterialId);
   if (!part || !cur || !mat) return fail('materijal nije pronađen.');
-  if (!replaceOptions(model, partId, materials).some((m) => m.id === mat.id)) return fail('izabrani materijal ne odgovara ovom delu (vrsta oblika, a bočna strana mora biti U profil).');
+  if (!replaceOptions(model, partId, materials, true).some((m) => m.id === mat.id)) return fail('izabrani materijal ne odgovara ovom delu (vrsta oblika, a bočna strana mora biti U profil).');
   const ids = replaceTargets(model, partId);
   const idSet = new Set(ids);
   const role = replaceRole(model, partId);

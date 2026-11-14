@@ -9,6 +9,36 @@ import { evaluateSpec, hasCustomSpec, specFor, specVars, type ModelSpecs } from 
 import { buildLouver08Sheet, FILL_PROFILES, GUIDE_PROFILES, isLouver08, louverSpecOf } from './louverSpec';
 import { buildRail04Sheet, isRail04, RAIL04 } from './railSpec';
 import { isTarabicaPost, tarabicaPostLines } from '../models/tarabica';
+import { resolveGate, type HwRole } from '../gates/design';
+import { gateCutRows } from '../gates/production';
+
+const HW_GROUP: Record<HwRole, BomGroup> = {
+  hinge_left: 'Šarke', hinge_right: 'Šarke', hinge: 'Šarke', lock: 'Brave', catch: 'Brave', drop_bolt: 'Brave', ground_stop: 'Nosači i spojnice', trolley: 'Točkići', carrier_kit: 'Točkići',
+  guide: 'Nosači i spojnice', end_roller: 'Točkići', receiver: 'Nosači i spojnice', stopper: 'Nosači i spojnice', wheel: 'Točkići', rail: 'Nosači i spojnice', motor: 'Automatika', other: 'Nosači i spojnice',
+};
+
+/** stavke sastavnice iz mera kapije: profili (metri neto dužine) i okovi (komadi); deo bez veze sa cenovnikom nosi naziv radnika */
+export function gateBomLines(g: Gate, clearWidthMm: number, materials: Material[]): { group: BomGroup; materialId: string; qty: number; label?: string }[] {
+  const res = resolveGate(g, clearWidthMm);
+  const out: { group: BomGroup; materialId: string; qty: number; label?: string }[] = [];
+  for (const r of gateCutRows(g, res, materials)) {
+    if (r.lengthMm === null) continue;
+    const m = (r.qty * r.lengthMm) / 1000;
+    out.push({ group: 'Ramovi', materialId: r.materialId ?? `gate-m:${r.profile}`, qty: m, label: r.materialId ? undefined : `${r.profile}${r.code ? ` (${r.code})` : ''} — kapija`.trim() });
+  }
+  for (const h of g.design?.hardware ?? []) {
+    if (h.qty <= 0) continue;
+    out.push({ group: HW_GROUP[h.role], materialId: h.materialId ?? `gate-hw:${h.name}`, qty: h.qty, label: h.materialId ? undefined : `${h.name}${h.code ? ` (${h.code})` : ' (bez fabričke šifre)'}` });
+  }
+  // isti materijal u istoj grupi (npr. stubovi rama oba krila) je jedan red
+  const merged = new Map<string, (typeof out)[number]>();
+  for (const l of out) {
+    const k = `${l.group}|${l.materialId}`;
+    const cur = merged.get(k);
+    if (cur) cur.qty += l.qty; else merged.set(k, { ...l });
+  }
+  return [...merged.values()];
+}
 
 /* ---------- Osnovne geometrijske funkcije ---------- */
 
@@ -61,14 +91,14 @@ interface Acc { group: BomGroup; materialId: string; qty: number; label?: string
 export function buildBom(project: Project, materials: Material[], specs?: ModelSpecs): BomLine[] {
   const layout = computeLayout(project);
   const acc = new Map<string, Acc>();
-  const add = (group: BomGroup, originalId: string, qty: number) => {
+  const add = (group: BomGroup, originalId: string, qty: number, label?: string) => {
     if (qty <= 0) return;
     // deo zamenjen u projektu („Delovi ograde“): umesto materijala iz specifikacije ide izabrani
     const materialId = project.partMaterials?.[originalId] ?? originalId;
     const k = `${group}|${materialId}`;
     const cur = acc.get(k);
     if (cur) cur.qty += qty;
-    else acc.set(k, { group, materialId, qty });
+    else acc.set(k, { group, materialId, qty, label });
   };
 
   for (const li of layout.items) {
@@ -81,9 +111,13 @@ export function buildBom(project: Project, materials: Material[], specs?: ModelS
     if (isRl10Item(it) && !hasCustomSpec(modelId, specs)) continue;
     // elementi specifikacije modela (podrazumevani ili izmenjeni): količine i dužine po formulama
     const vars = specVars({ modelId, slopeFactor: itemSlope(li).factor, widthMm: li.clearWidth, heightMm: it.heightMm, axisMm: li.axisEnd - li.axisStart, params: it.params, doubleGate: it.kind === 'gate' && it.gateType === 'double', leafWidthsMm: it.kind === 'gate' && it.gateType === 'double' ? gateLeafPoses(it, li.clearStart, li.clearEnd, 1).map((q) => q.widthMm) : undefined });
-    for (const ev of evaluateSpec(specFor(modelId, specs), vars)) add(ev.part.group, ev.part.materialId, ev.materialQty);
+    // kapija sa merama: noseći ram krila ide iz mera kapije (izabrani profil), pa se ram iz specifikacije ispune ne broji dvaput
+    const ownFrame = it.kind === 'gate' && Boolean(it.design?.profiles.some((p) => p.role === 'frame'));
+    for (const ev of evaluateSpec(specFor(modelId, specs), vars)) if (!(ownFrame && ev.part.group === 'Ramovi')) add(ev.part.group, ev.part.materialId, ev.materialQty);
 
-    if (it.kind === 'gate') {
+    if (it.kind === 'gate' && it.design) {
+      for (const l of gateBomLines(it, li.clearWidth, materials)) add(l.group, l.materialId, l.qty, l.label);
+    } else if (it.kind === 'gate') {
       const hinges = CALC_RULES.hingesPerGate[it.gateType] ?? 0;
       add('Šarke', HINGE_MATERIAL[it.hinge], hinges);
       if (it.gateType !== 'sliding' || it.lock !== 'standard') add('Brave', LOCK_MATERIAL[it.lock], 1);
@@ -165,7 +199,10 @@ export function buildBom(project: Project, materials: Material[], specs?: ModelS
   const lines: BomLine[] = [];
   for (const a of acc.values()) {
     const mat = materials.find((x) => x.id === a.materialId);
-    lines.push(toLine(a, mat, project.settings.pricing));
+    const line = toLine(a, mat, project.settings.pricing);
+    // deo kapije bez veze sa cenovnikom (ručno zadat okov ili profil): naziv radnika, bez cene
+    if (!mat && a.label) { line.name = a.label; line.unit = a.materialId.startsWith('gate-m:') ? 'm' : 'kom'; }
+    lines.push(line);
   }
   const materialSum = lines.reduce((s, l) => s + l.total, 0);
   if (materialSum > 0 && CALC_RULES.extraMaterialPercent > 0) {

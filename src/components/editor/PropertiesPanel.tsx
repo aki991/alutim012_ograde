@@ -1,8 +1,8 @@
 import { PartsPanel } from './PartsPanel';
 import { allFenceModels } from '../../domain/models/customRegistry';
-import { AlertTriangle, ArrowLeft, ArrowRight, Copy, Trash2, Calculator, FileDown, Scissors, ClipboardList } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ArrowRight, Copy, Trash2, Calculator, FileDown, Scissors, ClipboardList, Ruler } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { autoFillToFixedTotal, changeColor, changeFinish, indexOfItem, resetPostHeights, setAllColors, setAllFinishes, setAllGatesOwnPosts, setAllPlinths, removeItemPlinths, setItemPlinthHeight, setRl10Params, resetRl10Params, setTubesParams, resetTubesParams, setPlinthWidth, setAllHeights, setOuterWidth, updateItem, updatePost } from '../../domain/geometry/operations';
+import { autoFillToFixedTotal, changeColor, changeFinish, isTotalLocked, setItemWidthLock, setTotalLock, indexOfItem, resetPostHeights, setAllColors, setAllFinishes, setAllGatesOwnPosts, setAllPlinths, removeItemPlinths, setItemPlinthHeight, setRl10Params, resetRl10Params, setTubesParams, resetTubesParams, setPlinthWidth, setAllHeights, setOuterWidth, updateItem, updatePost } from '../../domain/geometry/operations';
 import { computeInfill } from '../../domain/geometry/infill';
 import { MAX_TURN_DEG } from '../../domain/geometry/plan';
 import { cornerInfo } from '../../domain/geometry/corner';
@@ -25,6 +25,8 @@ import { fmtMm, fmtMoney, fmtNum } from '../../utils/units';
 import { ColorField, NumberField, SegmentedField, SelectField, TextField, ToggleField } from '../forms/Fields';
 import { ConfirmDialog } from '../ui/Modal';
 import { PdfPreviewModal } from './PdfPreviewModal';
+import { GateDesignModal } from '../gates/GateDesignModal';
+import { resolveGate, SYSTEM_LABELS } from '../../domain/gates/design';
 
 function Section({ title, children, testId }: { title: string; children: React.ReactNode; testId?: string }) {
   return (
@@ -109,6 +111,9 @@ function ProjectBasics({ project }: { project: Project }) {
   return (
     <Section title="Osnovne karakteristike" testId="panel-basics">
       <TextField label="Naziv projekta" value={project.name} testId="project-name" onChange={(v) => mutate((p) => ({ ...p, name: v, updatedAt: new Date().toISOString() }), 'name')} />
+ {!advanced && (
+        <ToggleField label="Ukupna dužina" testId="lock-total-toggle" checked={isTotalLocked(project)} onLabel="Zaključana" offLabel="Slobodna" onChange={(v) => mutate((p) => setTotalLock(p, v))} />
+      )}
       {advanced && (
         <>
       <SegmentedField label="Ukupna dužina" testId="total-mode" value={s.totalMode} options={[{ value: 'auto', label: 'Automatska' }, { value: 'fixed', label: 'Fiksna' }]}
@@ -181,6 +186,24 @@ function ArchField({ id, heightMm, value }: { id: string; heightMm: number; valu
   );
 }
 
+/** ulaz u mere kapije: kratko stanje (kote koje nedostaju, greške) i dugme koje otvara prozor „Mere kapije“ */
+function GateDesignEntry({ project, gate }: { project: Project; gate: Gate }) {
+  const [open, setOpen] = useState(false);
+  const index = indexOfItem(project, gate.id);
+  const li = computeLayout(project).items[index];
+  const res = gate.design ? resolveGate(gate, li.clearWidth) : null;
+  const errors = res?.issues.filter((i) => i.level === 'error').length ?? 0;
+  return (
+    <div className="rounded-lg border border-line p-2.5 mb-2" data-testid="gate-design-entry">
+      <div className="text-[12.5px] text-muted mb-1.5">
+        {res ? <>Mere kapije: {SYSTEM_LABELS[res.system]}{gate.design?.template ? ` · šablon „${gate.design.template.name}“ v${gate.design.template.version}` : ''}{errors ? <span className="text-[#b42318]"> · {errors} grešaka</span> : ''}</> : 'Zazori, krila, rep, kolica, okovi i šabloni kapije zadaju se u merama kapije.'}
+      </div>
+      <button className="btn btn-sm btn-primary w-full" data-testid="btn-gate-design" onClick={() => setOpen(true)}><Ruler size={14} />Mere kapije</button>
+      {open && <GateDesignModal projectId={project.id} itemId={gate.id} onClose={() => setOpen(false)} />}
+    </div>
+  );
+}
+
 function ItemPanel({ project, id }: { project: Project; id: string }) {
   const st = useAppStore.getState();
   const index = indexOfItem(project, id);
@@ -195,7 +218,11 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
   const stairIn = stairGroupAt(project.items, index) !== null;
   const common = (
     <>
-      {!stairIn && <NumberField label="Širina" testId="field-width" value={Math.round(outerWidthMm(project, index))} range={{ min: Math.round(wRange.min + half), max: Math.round(wRange.max + half) }} onCommit={(v) => st.mutate((p) => setOuterWidth(p, id, v), `w:${id}`)} />}
+      {!stairIn && <NumberField label="Širina" testId="field-width" value={Math.round(outerWidthMm(project, index))} range={{ min: Math.round(wRange.min + half), max: Math.round(wRange.max + half) }} onCommit={(v) => st.setWidth(id, v, `w:${id}`)}
+        hint={isTotalLocked(project) ? 'Ukupna dužina je zaključana: ostala platna se prilagođavaju da zbir ostane isti.' : undefined} />}
+      {!stairIn && it.kind === 'fence' && (
+        <ToggleField label="Širina platna" testId="field-width-lock" checked={Boolean(it.widthLocked)} onLabel="Zaključana" offLabel="Slobodna" onChange={(v) => st.mutate((p) => setItemWidthLock(p, id, v))} />
+      )}
       <NumberField label="Visina" testId="field-height" value={it.heightMm} range={heightRangeFor(it)} onCommit={(v) => (stairIn ? st.mutate((p) => setStairGroup(p, id, { heightMm: v }), `h:${id}`) : st.patchItem(id, { heightMm: v }, 'h'))} />
     </>
   );
@@ -329,6 +356,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
     const swing = g.gateType !== 'sliding';
     body = (
       <>
+        <GateDesignEntry project={project} gate={g} />
         {common}
         <ModelSelect value={g.infillModelId} onChange={(m) => st.setItemModel(id, m)} />
         <ColorField stacked value={g.color} testId="field-color" onChange={(c) => st.setItemColor(id, c)} finish={g.finish} onFinishChange={(f) => st.setItemFinish(id, f)} />
@@ -341,7 +369,11 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
         {swing && <SelectField label="Šarke" value={g.hinge} options={Object.entries(HINGE_LABELS).map(([value, label]) => ({ value: value as Gate['hinge'], label }))} onChange={(v) => st.patchItem(id, { hinge: v })} />}
         <ToggleField label="Automatika" testId="field-automation" checked={g.automation} onLabel="Da (motor)" offLabel="Ne" onChange={(v) => st.patchItem(id, { automation: v })} />
         {g.automation && <SelectField label="Tip automatike" value={g.automationType} options={Object.entries(AUTOMATION_LABELS).map(([value, label]) => ({ value: value as Gate['automationType'], label }))} onChange={(v) => st.patchItem(id, { automationType: v })} />}
-        {g.gateType === 'double' && (
+        {/* kapija sa merama: krila i bočni prostor zadaju se u „Mere kapije“ (ova stara polja bi im protivrečila) */}
+        {g.design && (g.gateType === 'double' || g.gateType === 'sliding') && (
+          <div className="text-[12.5px] text-muted pb-1" data-testid="gate-design-note">{g.gateType === 'double' ? 'Širine krila i zazori' : 'Rep, hod i bočni prostor'} se zadaju u „Mere kapije“.</div>
+        )}
+        {g.gateType === 'double' && !g.design && (
           <>
             <ToggleField label="Različita krila" checked={g.unequalLeaves} onChange={(v) => st.patchItem(id, { unequalLeaves: v, leftLeafMm: v ? Math.round((g.widthMm - 20) / 2) : 0 })} />
             {g.unequalLeaves ? (
@@ -351,7 +383,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
             )}
           </>
         )}
-        {g.gateType === 'sliding' && (
+        {g.gateType === 'sliding' && !g.design && (
           <>
             <ToggleField label="Prostor za povlačenje" checked={g.availableSpaceMm !== undefined} onLabel="Zadat" offLabel="Nije zadat" testId="field-space-known" onChange={(v) => st.patchItem(id, { availableSpaceMm: v ? Math.round(li.clearWidth) : undefined })} />
             {g.availableSpaceMm !== undefined && (

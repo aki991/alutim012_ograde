@@ -31,8 +31,18 @@ export function registerCustomModels(models: CustomModel[] | undefined, material
 export const customModelOf = (id: string): CustomModel | undefined => REG.get(id);
 export const isCustomModel = (id: string): boolean => REG.has(id);
 
-/** Svi modeli za izbor u editoru: katalog, pa ručno nacrtani. */
-export const allFenceModels = (): FenceModelDef[] => [...FENCE_MODEL_LIST, ...[...REG.keys()].map((id) => (FENCE_MODELS as Record<string, FenceModelDef>)[id])];
+/** Nacrtani model koji zamenjuje model iz kataloga („dorada, sačuvaj na istom tipu“), ako postoji. */
+export const replacementOf = (builtinId: string): CustomModel | undefined => [...REG.values()].find((m) => m.replaces === builtinId);
+
+/** Model koji se stvarno koristi: zamena modela iz kataloga, ako je ima, inače isti model. */
+export const effectiveModelId = <T extends string>(id: T): T => (replacementOf(id)?.id as T | undefined) ?? id;
+
+/** Svi modeli za izbor u editoru: katalog (dorađen model stoji umesto originala), pa ostali ručno nacrtani. */
+export const allFenceModels = (): FenceModelDef[] => {
+  const all = FENCE_MODELS as Record<string, FenceModelDef>;
+  const catalog = FENCE_MODEL_LIST.map((d) => { const r = replacementOf(d.id); return r ? all[r.id] : d; });
+  return [...catalog, ...[...REG.values()].filter((m) => !m.replaces).map((m) => all[m.id])];
+};
 
 /** Delovi nacrtanog modela razvučeni na polje zadate širine i visine, u boji elementa (hex ili RAL ključ). */
 export function customPartsFor(modelId: string, widthMm: number, heightMm: number, color: string): ResolvedPart[] {

@@ -1,4 +1,5 @@
 import type { Gate, Mm, OpeningSide, SwingDirection } from '../models/types';
+import { resolveGate } from '../gates/design';
 
 /**
  * Konvencija 3D scene: 1 jedinica = 1000 mm. X duž trase (rastući redosled elemenata), Y visina, Z dubina.
@@ -34,7 +35,13 @@ export function swingAngle(open: number, hinge: OpeningSide, swing: SwingDirecti
 }
 
 /** Širine krila dvokrilne kapije (levo, desno) u okviru svetlog otvora. Nikad negativne. */
-export function doubleLeafWidths(g: Pick<Gate, 'unequalLeaves' | 'leftLeafMm'>, clearWidthMm: Mm): [Mm, Mm] {
+export function doubleLeafWidths(g: Pick<Gate, 'unequalLeaves' | 'leftLeafMm'> & Partial<Gate>, clearWidthMm: Mm): [Mm, Mm] {
+  // mere kapije: ručno zadate ili izračunate širine krila imaju prednost nad okvirnom podelom
+  if (g.design && g.kind === 'gate' && g.gateType === 'double') {
+    const r = resolveGate(g as Gate, clearWidthMm);
+    const wl = r.values.WL?.v; const wr = r.values.WR?.v;
+    if (typeof wl === 'number' && typeof wr === 'number' && wl > 0 && wr > 0) return [wl, wr];
+  }
   const avail = Math.max(0, clearWidthMm - LEAF_GAP_MM);
   if (!g.unequalLeaves || g.leftLeafMm <= 0) return [avail / 2, avail / 2];
   const left = Math.min(Math.max(g.leftLeafMm, Math.min(300, avail / 2)), Math.max(Math.min(300, avail / 2), avail - 300));
@@ -52,9 +59,12 @@ export function gateLeafPoses(g: Gate, clearStart: Mm, clearEnd: Mm, open: numbe
   }
   if (g.gateType === 'double') {
     const [lw, rw] = doubleLeafWidths(g, clear);
+    // bočni zazori iz mera kapije pomeraju krila od lica stubova
+    const r = g.design ? resolveGate(g, clear) : null;
+    const gl = r?.values.gL?.v ?? 0; const gr = r?.values.gR?.v ?? 0;
     return [
-      { pivotX: clearStart, extendDir: 1, widthMm: lw, rotationY: swingAngle(o, 'left', g.swing), slideX: 0 },
-      { pivotX: clearEnd, extendDir: -1, widthMm: rw, rotationY: swingAngle(o, 'right', g.swing), slideX: 0 },
+      { pivotX: clearStart + gl, extendDir: 1, widthMm: lw, rotationY: swingAngle(o, 'left', g.swing), slideX: 0 },
+      { pivotX: clearEnd - gr, extendDir: -1, widthMm: rw, rotationY: swingAngle(o, 'right', g.swing), slideX: 0 },
     ];
   }
   const left = g.opening === 'left';

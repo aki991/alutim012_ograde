@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { heightRangeFor, LIMITS, validateRange, widthRangeFor } from '../../domain/validation/limits';
 import type { Project } from '../../domain/models/types';
 import { computeLayout, outerWidthMm, postHalfSum } from '../../domain/geometry/layout';
-import { setAllPostHeights, setHeightsOfKind, setOuterWidth, setTotalLength } from '../../domain/geometry/operations';
+import { setAllPostHeights, setHeightsOfKind, setTotalLength, widthChangeProblem } from '../../domain/geometry/operations';
 import { GATE_LABELS } from '../../domain/models/catalog';
 import { itemLabel } from '../../utils/labels';
 import { useAppStore } from '../../store/useAppStore';
@@ -44,7 +44,9 @@ function SizeEditModal({ project, id, kind, onClose }: { project: Project; id: s
   const range = wide ? { min: Math.max(1, Math.round(base.min + half) - postsMm), max: Math.round(base.max + half) - postsMm } : base;
   const label = kind === 'total' ? 'Ukupna dužina' : kind === 'clear' ? 'Širina platna (između stubova)' : 'Širina';
   const rangeCheck = validateRange(value, range, label);
-  const error = !rangeCheck.ok ? rangeCheck.message : totalTry?.reason;
+  // zaključana ukupna dužina: ostala platna moraju da mogu da popune razliku
+  const lockProblem = kind !== 'total' && rangeCheck.ok && value > 0 ? widthChangeProblem(project, id, Math.round(value) + postsMm) : null;
+  const error = !rangeCheck.ok ? rangeCheck.message : lockProblem ? `Nije moguće: ${lockProblem}` : totalTry?.reason;
   const ok = !error;
   const name = kind === 'total' ? 'Cela ograda — sva polja ograde dobijaju istu dužinu, kapije i otvori ostaju isti'
     : item.kind === 'gate' ? GATE_LABELS[item.gateType] : item.kind === 'opening' ? (item.bendDeg !== undefined ? 'Ugaoni spoj' : 'Prazan otvor') : itemLabel(items, index);
@@ -53,7 +55,7 @@ function SizeEditModal({ project, id, kind, onClose }: { project: Project; id: s
     if (!ok) return;
     const st = useAppStore.getState();
     if (kind === 'total') st.mutate((p) => setTotalLength(p, Math.round(value)).project);
-    else st.mutate((p) => setOuterWidth(p, id, Math.round(value) + postsMm));
+    else st.setWidth(id, Math.round(value) + postsMm);
     onClose();
   };
   return (

@@ -255,3 +255,22 @@ export function materialOwnColor(name: string): string | null {
   if (/inox|nerđaj|nerdjaj/i.test(name)) return '#B7BEC6';
   return null;
 }
+
+/**
+ * Redosled materijala u spiskovima: po grupi (kvadratne cevi, U profili, … kao u crtanju modela), pa po merama od najmanje
+ * do najveće (npr. 20×20, 30×20, 40×40, 80×20 … ; okrugle cevi po prečniku), pa po nazivu.
+ */
+export function compareMaterials(a: ShapeInput, b: ShapeInput): number {
+  const order = (m: ShapeInput) => { const i = MATERIAL_GROUPS.findIndex((g) => g.id === materialShape(m).group); return i < 0 ? MATERIAL_GROUPS.length : i; };
+  const dims = (m: ShapeInput): number[] => { const d = dimsFromName(m.name); if (d.length) return d; const r = roundFromName(m.name); return r ? [r.d, r.wall] : []; };
+  const g = order(a) - order(b);
+  if (g) return g;
+  const da = dims(a); const db = dims(b);
+  if (da.length && !db.length) return -1;
+  if (!da.length && db.length) return 1;
+  for (let i = 0; i < Math.max(da.length, db.length); i++) {
+    const x = da[i] ?? 0; const y = db[i] ?? 0;
+    if (x !== y) return x - y;
+  }
+  return a.name.localeCompare(b.name, 'sr', { numeric: true });
+}

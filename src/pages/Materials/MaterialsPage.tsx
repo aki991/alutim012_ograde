@@ -1,12 +1,13 @@
 import { ChevronDown, Download, Ruler, FileSpreadsheet, FileText, Plus, Search, Trash2, Upload } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { NumberField, SelectField, TextField } from '../../components/forms/Fields';
+import { NumberField, PriceInput, SelectField, TextField } from '../../components/forms/Fields';
+import { NumInput } from '../../components/forms/NumInput';
 import { DemoBadge, Page, PageHeader } from '../../components/ui/Common';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
 import type { Material, MaterialCategory, MaterialUnit } from '../../domain/models/types';
 import { ProfileDrawing } from '../../components/models/ProfileDrawing';
 import { MaterialDrawing, materialFacts } from '../../components/models/MaterialDrawing';
-import { materialShape } from '../../domain/models/materialShape';
+import { compareMaterials, materialShape } from '../../domain/models/materialShape';
 import { profileGeometry, profileSpecFor } from '../../domain/models/profileDrawings';
 import { MaterialsImportModal } from '../../components/models/MaterialsImportModal';
 import { materialsToRows, parseCsv } from '../../domain/pricing/materialsIo';
@@ -16,7 +17,7 @@ import { downloadCsv } from '../../services/exports';
 import { downloadMaterialsPdf } from '../../services/pdf';
 import { useAppStore } from '../../store/useAppStore';
 import { uid } from '../../utils/id';
-import { fmtMoney } from '../../utils/units';
+import { fmtMoney, fromCurrency, toCurrency } from '../../utils/units';
 
 const CATS: Record<MaterialCategory, string> = { profil: 'Profili', stub: 'Stubovi', okov: 'Okovi', automatika: 'Automatika', staklo: 'Staklo', panel: 'Paneli', ostalo: 'Ostalo' };
 const UNITS: MaterialUnit[] = ['m', 'kom', 'set', 'm2', 'kg'];
@@ -72,7 +73,7 @@ export default function MaterialsPage() {
 
   const list = useMemo(() => {
     const t = q.trim().toLowerCase();
-    return materials.filter((m) => (cat === 'all' || m.category === cat) && (!t || m.name.toLowerCase().includes(t) || m.sku.toLowerCase().includes(t)));
+    return materials.filter((m) => (cat === 'all' || m.category === cat) && (!t || m.name.toLowerCase().includes(t) || m.sku.toLowerCase().includes(t))).sort(compareMaterials);
   }, [materials, q, cat]);
 
   const openNew = () => { setIsNew(true); setForm({ id: uid('mat'), sku: '', name: '', category: 'ostalo', unit: 'kom', unitPrice: 0, wastePercent: 0, demo: false }); };
@@ -119,7 +120,7 @@ export default function MaterialsPage() {
                   <td className="td font-medium">{m.name}<span className="ml-2 inline-flex items-center gap-1 text-[11.5px] font-semibold text-primary align-middle" title="Kliknite na red da vidite crtež i karakteristike"><Ruler size={13} />crtež</span>{m.demo && <span className="ml-2"><DemoBadge>demo</DemoBadge></span>}</td>
                   <td className="td text-slate-600">{CATS[m.category]}</td>
                   <td className="td"><select aria-label={`Jedinica: ${m.name}`} className="input !w-20 !py-1" value={m.unit} onChange={(e) => upsertMaterial({ ...m, unit: e.target.value as MaterialUnit })}>{UNITS.map((u) => <option key={u}>{u}</option>)}</select></td>
-                  <td className="td"><input aria-label={`Cena: ${m.name}`} type="number" min={0} className="input !py-1 text-right tabular-nums" value={m.unitPrice} onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v >= 0) upsertMaterial({ ...m, unitPrice: v }); }} /></td>
+                  <td className="td"><PriceInput label={`Cena: ${m.name}`} className="!py-1" rsd={m.unitPrice} onChange={(v) => upsertMaterial({ ...m, unitPrice: v })} /></td>
                   <td className="td"><input aria-label={`Otpad: ${m.name}`} type="number" min={0} max={100} className="input !py-1 text-right tabular-nums" value={m.wastePercent} onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v >= 0 && v <= 100) upsertMaterial({ ...m, wastePercent: v }); }} /></td>
                   <td className="td text-right whitespace-nowrap"><button className="btn btn-sm" title="Naziv, šifra, kategorija i ostali podaci materijala (cena, jedinica i otpad se menjaju direktno u tabeli)" onClick={() => { setIsNew(false); setForm(m); }}>Naziv i šifra</button> <button className="btn btn-sm btn-icon btn-danger" aria-label={`Obriši ${m.name}`} onClick={() => setDel(m)}><Trash2 size={14} /></button></td>
                 </tr>
@@ -155,12 +156,17 @@ export default function MaterialsPage() {
           <TextField label="Naziv" testId="material-name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} />
           <SelectField label="Kategorija" value={form.category} options={Object.entries(CATS).map(([value, label]) => ({ value: value as MaterialCategory, label }))} onChange={(v) => setForm({ ...form, category: v })} />
           <SelectField label="Jedinica mere" value={form.unit} options={UNITS.map((u) => ({ value: u, label: u }))} onChange={(v) => setForm({ ...form, unit: v })} />
-          <NumberField label="Cena po jedinici" unit={settings.currency} value={form.unitPrice} range={{ min: 0, max: 10_000_000 }} allowZero integer={false} step={10} onCommit={(v) => setForm({ ...form, unitPrice: v })} />
+          <NumberField label="Cena po jedinici" unit={settings.currency} value={toCurrency(form.unitPrice, settings.currency, settings.currencyRateToEur)} range={{ min: 0, max: 10_000_000 }} allowZero integer={false} step={settings.currency === 'EUR' ? 0.1 : 10} onCommit={(v) => setForm({ ...form, unitPrice: fromCurrency(v, settings.currency, settings.currencyRateToEur) })} />
           <div className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.45fr)] items-center gap-x-3 gap-y-1 py-1.5">
             <label className="label" htmlFor="material-wall">Debljina zida (mm)</label>
             <input id="material-wall" data-testid="material-wall" className="input tabular-nums" inputMode="decimal" placeholder="kao u cenovniku" value={form.wallMm ?? ''}
               onChange={(e) => { const v = Number(e.target.value.replace(',', '.')); setForm({ ...form, wallMm: e.target.value.trim() !== '' && Number.isFinite(v) && v > 0 && v <= 20 ? v : undefined }); }} />
             <div className="col-span-2 text-xs text-muted leading-snug">Samo za profile. Menja presek: npr. U profil 60 mm ima unutrašnji otvor 56 mm sa zidom 2 mm, a 54 mm sa zidom 3 mm. Prazno = debljina iz cenovnika.</div>
+          </div>
+          <div className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.45fr)] items-center gap-x-3 gap-y-1 py-1.5">
+            <label className="label">Masa (kg/m)</label>
+            <NumInput testId="material-kgm" ariaLabel="Masa po metru" value={form.kgPerM} placeholder="nije poznato" className="!text-left" onCommit={(v) => setForm({ ...form, kgPerM: v !== null && v > 0 ? v : undefined })} />
+            <div className="col-span-2 text-xs text-muted leading-snug">Iz deklaracije profila. Koristi se za procenu mase kapije (pokretni sklop). Prazno = masa nepoznata.</div>
           </div>
           <NumberField label="Procenat otpada" unit="%" value={form.wastePercent} range={{ min: 0, max: 100 }} allowZero integer={false} step={1} onCommit={(v) => setForm({ ...form, wastePercent: v })} />
         </Modal>

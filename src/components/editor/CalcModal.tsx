@@ -2,8 +2,8 @@ import { useMemo } from 'react';
 import { buildBom, computePrice } from '../../domain/pricing/calc';
 import type { Project } from '../../domain/models/types';
 import { useAppStore } from '../../store/useAppStore';
-import { fmtMoney, fmtNum } from '../../utils/units';
-import { NumberField, SegmentedField, ToggleField } from '../forms/Fields';
+import { fmtMoney, fmtNum, fromCurrency, toCurrency } from '../../utils/units';
+import { NumberField, PriceInput, SegmentedField, ToggleField } from '../forms/Fields';
 import { Modal } from '../ui/Modal';
 import { LIMITS } from '../../domain/validation/limits';
 
@@ -17,6 +17,10 @@ export function CalcModal({ project, onClose }: { project: Project; onClose: () 
   const price = useMemo(() => computePrice(project, materials, specs), [project, materials, specs]);
   const pr = project.settings.pricing;
   const money = (n: number) => fmtMoney(n, settings.currency, settings.currencyRateToEur);
+  // iznosi se čuvaju u dinarima; u evrima se prikazuju i unose preračunati po kursu
+  const cur = (rsd: number) => toCurrency(rsd, settings.currency, settings.currencyRateToEur);
+  const fromCur = (v: number) => fromCurrency(v, settings.currency, settings.currencyRateToEur);
+  const curStep = settings.currency === 'EUR' ? 0.1 : 10;
   const setPricing = (patch: Partial<typeof pr>, key?: string) => mutate((p) => ({ ...p, updatedAt: new Date().toISOString(), settings: { ...p.settings, pricing: { ...p.settings.pricing, ...patch } } }), key ?? null);
   const empty = project.items.length === 0;
 
@@ -48,15 +52,14 @@ export function CalcModal({ project, onClose }: { project: Project; onClose: () 
                     <td className="td !px-2 text-right tabular-nums text-[13px]" title={`Geometrijski: ${fmtNum(l.geometricQty, 2)} ${l.unit}`}>{fmtNum(l.purchaseQty, l.unit === 'kom' ? 0 : 2)}<span className="text-muted"> {l.unit}</span></td>
                     <td className="td !px-2 text-right">
                       {mat ? (
-                        <input aria-label={`Cena: ${l.name}`} data-testid={`price-input-${mat.id}`} type="number" min={0} className="input !py-1 !px-2 text-right tabular-nums" defaultValue={mat.unitPrice}
-                          onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v >= 0) upsertMaterial({ ...mat, unitPrice: v }); }} />
-                      ) : <span className="text-[13px] tabular-nums">{fmtNum(l.unitPriceNet, 2)}</span>}
+                        <PriceInput label={`Cena: ${l.name}`} testId={`price-input-${mat.id}`} className="!py-1 !px-2" rsd={mat.unitPrice} onChange={(v) => upsertMaterial({ ...mat, unitPrice: v })} />
+                      ) : <span className="text-[13px] tabular-nums">{fmtNum(cur(l.unitPriceNet), 2)}</span>}
                     </td>
-                    <td className="td !px-2 text-right tabular-nums font-semibold text-[13px]">{fmtNum(l.total, 0)}</td>
+                    <td className="td !px-2 text-right tabular-nums font-semibold text-[13px]">{fmtNum(cur(l.total), settings.currency === 'EUR' ? 2 : 0)}</td>
                   </tr>
                 );
               })}
-              <tr className="bg-slate-50 font-semibold"><td className="td !px-2" colSpan={3}>Materijal ukupno (neto, {settings.currency})</td><td className="td !px-2 text-right tabular-nums">{fmtNum(price.materialTotal, 0)}</td></tr>
+              <tr className="bg-slate-50 font-semibold"><td className="td !px-2" colSpan={3}>Materijal ukupno (neto, {settings.currency})</td><td className="td !px-2 text-right tabular-nums">{fmtNum(cur(price.materialTotal), settings.currency === 'EUR' ? 2 : 0)}</td></tr>
             </tbody>
           </table>
         </div>
@@ -81,10 +84,10 @@ export function CalcModal({ project, onClose }: { project: Project; onClose: () 
           <NumberField label="Popust" unit="%" value={pr.discountPercent} range={LIMITS.percent} allowZero integer={false} step={1} onCommit={(v) => setPricing({ discountPercent: v }, 'dp')} />
           <NumberField label="PDV" unit="%" value={pr.vatPercent} range={LIMITS.percent} allowZero integer={false} step={1} onCommit={(v) => setPricing({ vatPercent: v }, 'vat')} />
           <ToggleField label="Cene su bruto" checked={pr.pricesIncludeVat} onLabel="Sa PDV-om" offLabel="Bez PDV-a" onChange={(v) => setPricing({ pricesIncludeVat: v })} />
-          <NumberField label="Rad po m²" unit={`${settings.currency}/m²`} value={pr.laborPerM2Rsd} range={{ min: 0, max: 100000 }} allowZero onCommit={(v) => setPricing({ laborPerM2Rsd: v }, 'l1')} />
-          <NumberField label="Rad po kapiji" unit={settings.currency} value={pr.laborPerGateRsd} range={{ min: 0, max: 500000 }} allowZero onCommit={(v) => setPricing({ laborPerGateRsd: v }, 'l2')} />
-          <NumberField label="Montaža po m" unit={`${settings.currency}/m`} value={pr.installPerMeterRsd} range={{ min: 0, max: 100000 }} allowZero onCommit={(v) => setPricing({ installPerMeterRsd: v }, 'i1')} />
-          <NumberField label="Montaža po kapiji" unit={settings.currency} value={pr.installPerGateRsd} range={{ min: 0, max: 500000 }} allowZero onCommit={(v) => setPricing({ installPerGateRsd: v }, 'i2')} />
+          <NumberField label="Rad po m²" unit={`${settings.currency}/m²`} value={cur(pr.laborPerM2Rsd)} range={{ min: 0, max: 100000 }} allowZero integer={false} step={curStep} onCommit={(v) => setPricing({ laborPerM2Rsd: fromCur(v) }, 'l1')} />
+          <NumberField label="Rad po kapiji" unit={settings.currency} value={cur(pr.laborPerGateRsd)} range={{ min: 0, max: 500000 }} allowZero integer={false} step={curStep} onCommit={(v) => setPricing({ laborPerGateRsd: fromCur(v) }, 'l2')} />
+          <NumberField label="Montaža po m" unit={`${settings.currency}/m`} value={cur(pr.installPerMeterRsd)} range={{ min: 0, max: 100000 }} allowZero integer={false} step={curStep} onCommit={(v) => setPricing({ installPerMeterRsd: fromCur(v) }, 'i1')} />
+          <NumberField label="Montaža po kapiji" unit={settings.currency} value={cur(pr.installPerGateRsd)} range={{ min: 0, max: 500000 }} allowZero integer={false} step={curStep} onCommit={(v) => setPricing({ installPerGateRsd: fromCur(v) }, 'i2')} />
         </div>
       </div>
     </Modal>

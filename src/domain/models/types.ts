@@ -78,6 +78,8 @@ export interface FenceSection {
   plinthWidthMm?: Mm;
   /** Stepenište: polje prati stepenice (širina ostaje horizontalna dužina u osnovi) */
   stair?: StairSpec;
+  /** Širina platna je zaključana: automatsko raspoređivanje do zadate ukupne dužine je ne menja */
+  widthLocked?: boolean;
 }
 
 export interface Gate {
@@ -105,6 +107,8 @@ export interface Gate {
   /** Klizna kapija: raspoloživ prostor za povlačenje (mm); undefined = nije zadat */
   availableSpaceMm?: Mm;
   params: FenceParams;
+  /** Mere kapije koje radnik zadaje ručno (zazori, krila, rep, kolica, okovi, profili, šablon); bez vrednosti važi stari okvirni obračun */
+  design?: import('../gates/design').GateDesign;
 }
 
 export interface Opening {
@@ -119,6 +123,8 @@ export interface Opening {
   bendDeg?: number;
   /** Tehnički razmak između dva susedna stuba (kapija sa svojim stubovima); ne prikazuje se kao element i ne ulazi u liste */
   spacer?: boolean;
+  /** Širina otvora je zaključana: automatsko raspoređivanje do zadate ukupne dužine je ne menja */
+  widthLocked?: boolean;
 }
 
 /** Razmak osa dva stuba uz ugaoni spoj (mm): 100 mm slobodno između stubova Ø40 za savijanje cevi */
@@ -265,6 +271,8 @@ export interface Material {
    * 56 mm sa zidom 2 mm, a 54 mm sa zidom 3 mm). Bez vrednosti važi debljina iz cenovnika / naziva.
    */
   wallMm?: number;
+  /** masa po metru (kg/m) iz deklaracije profila; bez vrednosti masa se ne računa (prikazuje se kao nepoznata) */
+  kgPerM?: number;
 }
 
 /** Stavka magacina: komadi jednog materijala iste dužine. */
@@ -295,6 +303,12 @@ export interface AppSettings {
   modelSpecs?: Record<string, import('./spec').SpecPart[]>;
   /** ručno nacrtani modeli ograda i kapija (strana Modeli ograda → Napravi model) */
   customModels?: import('./custom').CustomModel[];
+  /** šabloni kapija i detalja radionice (sa verzijama); posao čuva svoje vrednosti i verziju primenjenog šablona */
+  gateTemplates?: import('../gates/templates').GateTemplate[];
+  /** sopstveni okovi radionice (šarke, brave, kolica …) za izbor u merama kapije */
+  gateHardware?: import('../gates/design').GateHardware[];
+  /** sopstveni profili radionice za ram, noseći profil i rep kapije */
+  gateProfiles?: import('../gates/design').GateProfile[];
   companyName: string;
   /** podaci firme za zaglavlja dokumenata (krojna lista); prazna polja se ne prikazuju */
   companyInfo?: { address?: string; phone?: string; email?: string; pib?: string };

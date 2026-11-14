@@ -47,3 +47,23 @@ describe('karta boja i završna obrada', () => {
     expect(changeFinish(p, id0, 'sjaj').posts[0].finish).toBe('sjaj');
   });
 });
+
+describe('sortiranje materijala i cene u evrima', () => {
+  it('materijali po grupi, pa od najmanjih mera do najvećih', async () => {
+    const { compareMaterials } = await import('../domain/models/materialShape');
+    const mk = (name: string) => ({ sku: name, name, unit: 'm' as const, category: 'profil' as const });
+    const list = ['Kvadratna cev 80×20×1 mm', 'Kvadratna cev 20×20×1 mm', 'U profil 60×28', 'Kvadratna cev 40×40×1,9 mm', 'Kvadratna cev 30×20×1 mm', 'U profil 20×20×1,35 mm'].map(mk);
+    expect([...list].sort(compareMaterials).map((m) => m.name)).toEqual([
+      'Kvadratna cev 20×20×1 mm', 'Kvadratna cev 30×20×1 mm', 'Kvadratna cev 40×40×1,9 mm', 'Kvadratna cev 80×20×1 mm',
+      'U profil 20×20×1,35 mm', 'U profil 60×28',
+    ]);
+  });
+
+  it('cena u dinarima se prikazuje u evrima po kursu i unos u evrima se vraća u dinare', async () => {
+    const { toCurrency, fromCurrency } = await import('../utils/units');
+    expect(toCurrency(1172, 'EUR', 117.2)).toBe(10);
+    expect(toCurrency(1172, 'RSD', 117.2)).toBe(1172);
+    expect(fromCurrency(10, 'EUR', 117.2)).toBeCloseTo(1172, 6);
+    expect(toCurrency(fromCurrency(5.55, 'EUR', 117.2), 'EUR', 117.2)).toBe(5.55);
+  });
+});

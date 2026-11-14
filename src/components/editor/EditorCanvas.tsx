@@ -13,6 +13,7 @@ import { outerWidthMm } from '../../domain/geometry/layout';
 import { traceToProject } from '../../domain/geometry/trace';
 import { TraceCanvas } from './TraceCanvas';
 import { PhotoSim } from './PhotoSim';
+import { setItemWidthLock, setTotalLock } from '../../domain/geometry/operations';
 import { DimEditModal, type DimKind } from './DimEditModal';
 import { AddItemModal } from './AddItemModal';
 
@@ -274,6 +275,13 @@ export function EditorCanvas({ project, svgRef, areaRef, drag, onBeginDrag, regi
   const onClickBackground = (e: React.MouseEvent) => {
     if (downOnHit.current) { downOnHit.current = false; return; }
     if ((e.target as Element).closest('[data-add]') && !justPanned.current) { setAddOpen(true); return; }
+    const lock = (e.target as Element).closest('[data-lock]');
+    if (lock && !justPanned.current) {
+      const id = lock.getAttribute('data-id')!;
+      const on = lock.getAttribute('data-locked') !== 'true';
+      mutate((p) => (lock.getAttribute('data-lock') === 'total' ? setTotalLock(p, on) : setItemWidthLock(p, id, on)));
+      return;
+    }
     const dim = (e.target as Element).closest('[data-dim]');
     if (dim && !justPanned.current) { setDimEdit({ id: dim.getAttribute('data-id')!, kind: dim.getAttribute('data-dim') as DimKind }); return; }
     if ((e.target as Element).closest('[data-hit]')) return;
