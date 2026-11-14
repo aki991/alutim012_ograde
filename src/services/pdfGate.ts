@@ -1,7 +1,6 @@
 import { createElement } from 'react';
 import { GateSketchSvg } from '../components/gates/GateSketch';
 import { DIM_BY_KEY, dimsFor, emptyDesign, fmt, HW_ROLE_LABELS, missingHardware, HW_STATUS_LABELS, ORIGIN_LABELS, resolveGate, STATUS_LABELS, SYSTEM_LABELS, systemOf } from '../domain/gates/design';
-import { gateCutRows } from '../domain/gates/production';
 import { computeLayout } from '../domain/geometry/layout';
 import { FENCE_MODELS } from '../domain/models/catalog';
 import type { AppSettings, Gate, Material, Project } from '../domain/models/types';
@@ -18,14 +17,13 @@ import { loadHeaderLogos } from './pdfHeader';
  * PDF mera kapije: skica (zatvoreno / otvoreno), sve kote sa poreklom i statusom, okovi, krojna lista sa referencama i obradom
  * krajeva, otvorene stavke i status potvrda. Bez potvrde unetih mera dokument je označen kao radna verzija (nije za izradu).
  */
-export async function buildGatePdfBlob(project: Project, itemId: string, materials: Material[], settings: AppSettings): Promise<Blob> {
+export async function buildGatePdfBlob(project: Project, itemId: string, _materials: Material[], settings: AppSettings): Promise<Blob> {
   const index = project.items.findIndex((i) => i.id === itemId);
   const gate = project.items[index] as Gate;
   const li = computeLayout(project).items[index];
   const sys = systemOf(gate);
   const g: Gate = { ...gate, design: gate.design ?? emptyDesign(sys) };
   const res = resolveGate(g, li.clearWidth);
-  const rows = gateCutRows(g, res, materials);
   const miss = missingHardware(g, sys);
   const { renderToStaticMarkup } = await import('react-dom/server');
   const svg = renderToStaticMarkup(createElement(GateSketchSvg, { gate: g, res, width: 900, postHs: [project.posts[index]?.heightMm, project.posts[index + 1]?.heightMm], postWs: [project.posts[index]?.widthMm, project.posts[index + 1]?.widthMm] })).replace('width="100%"', 'width="900"');
@@ -63,17 +61,6 @@ export async function buildGatePdfBlob(project: Project, itemId: string, materia
         table: { headerRows: 1, widths: [80, '*', 30, '*'], body: [['Uloga', 'Naziv / šifra', 'Kom.', 'Granice / status'].map((t) => cell(t, { bold: true })), ...[...d.hardware.map((x) => [cell(HW_ROLE_LABELS[x.role]), cell(`${x.name}${x.code ? ` (${x.code})` : ' (bez fabričke šifre)'}${x.supplier ? ` · ${x.supplier}` : ''}`), cell(String(x.qty)), cell(`${x.minGapMm !== undefined ? `min ${x.minGapMm} mm ` : ''}${x.maxGapMm !== undefined ? `max ${x.maxGapMm} mm ` : ''}${x.nominalGapMm !== undefined ? `nom. ${x.nominalGapMm} mm ` : ''}· ${HW_STATUS_LABELS[x.status]}${x.doc ? ` · ${x.doc}` : ''}`)]), ...miss.map((r) => [cell(HW_ROLE_LABELS[r.role]), cell('nepoznata oznaka'), cell(String(r.qty)), cell('—')])]] },
         layout: { hLineColor: () => LINE, vLineColor: () => LINE },
       } : { text: 'Okovi nisu zadati.', color: MUTED },
-      { text: 'Krojna lista kapije', bold: true, margin: [0, 8, 0, 3] },
-      {
-        table: {
-          headerRows: 1, widths: [80, '*', 25, 60, '*'],
-          body: [['Sklop / deo', 'Profil', 'Kom.', 'Rezna dužina', 'Kraj / referenca'].map((t) => cell(t, { bold: true })),
-            ...rows.map((r) => [cell(`${r.assembly}\n${r.part}`), cell(`${r.profile}${r.code ? ` (${r.code})` : ''}`), cell(String(r.qty)),
-              cell(r.lengthMm === null ? `nedostaje: ${r.missing.map((k) => DIM_BY_KEY[k]?.label ?? k).join(', ')}` : `${fmt(r.lengthMm)}${r.manual ? `\nručno (geom. ${fmt(r.geometricMm)})` : ''}`, { color: r.lengthMm === null ? '#b42318' : INK }),
-              cell(`${r.ends} · ${r.ref}`, { color: MUTED })])],
-        },
-        layout: { hLineColor: () => LINE, vLineColor: () => LINE },
-      },
       { text: 'Provere i otvorene stavke', bold: true, margin: [0, 8, 0, 3] },
       { ul: res.issues.length ? res.issues.map((i) => ({ text: i.msg, color: i.level === 'error' ? '#b42318' : i.level === 'warn' ? '#93370d' : MUTED, fontSize: 8.5 })) : [{ text: 'Nema otvorenih stavki.', fontSize: 8.5 }] },
       ...(d.configDoc || d.notes ? [{ text: [d.configDoc ? `Konfiguracioni dokument: ${d.configDoc}. ` : '', d.notes ?? ''].join(''), margin: [0, 6, 0, 0], fontSize: 8.5 }] : []),

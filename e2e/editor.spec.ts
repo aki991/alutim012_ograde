@@ -1525,23 +1525,28 @@ test('dorada modela iz kataloga: crtež od delova, nov tip ili isti tip (projekt
   expect(errors).toEqual([]);
 });
 
-test('crtanje modela: promena širine i visine razvlači crtež (prečke se prilagođavaju), bez greške o preklapanju', async ({ page }) => {
+test('crtanje modela: mere crteža su izvedene iz crteža, mogu da se promene poljem ili klikom na kotu; kote se mogu isključiti', async ({ page }) => {
   await seedMaterials(page, '/modeli');
   await page.getByTestId('rework-model-h_narrow').click();
   await page.getByTestId('designer-part').first().waitFor();
-  const before = await page.getByTestId('designer-part').count();
+  // polja Širina i Visina prikazuju trenutne mere crteža; nema isprekidanog okvira
   const w = page.getByTestId('designer-width');
-  await w.fill('1000');
-  await w.press('Enter');
+  const w0 = Number(await w.inputValue());
+  expect(w0).toBeGreaterThan(100);
+  await expect(page.getByTestId('designer-dims-layer')).toBeVisible();
+  await expect(page.getByTestId('designer-dim-w')).toContainText(String(w0));
+  // klik na kotu otvara polje za izmenu
+  await page.getByTestId('designer-dim-w').click();
+  await expect(w).toBeFocused();
+  // izmena širine razvlači crtež, a kota prati
+  await w.fill(String(w0 + 200)); await w.press('Enter');
   await expect(page.getByTestId('designer-notice')).toHaveCount(0);
-  await expect(w).toHaveValue('1000');
-  await expect(page.getByTestId('designer-part')).toHaveCount(before);
-  const h = page.getByTestId('designer-height');
-  await h.fill('1800');
-  await h.press('Enter');
-  await expect(page.getByTestId('designer-notice')).toHaveCount(0);
-  await expect(h).toHaveValue('1800');
-  await expect(page.getByTestId('designer-part')).toHaveCount(before);
+  await expect(page.getByTestId('designer-dim-w')).toContainText(String(w0 + 200));
+  // odštikliranje sakriva kote
+  await page.getByTestId('designer-dims').uncheck();
+  await expect(page.getByTestId('designer-dims-layer')).toHaveCount(0);
+  await page.getByTestId('designer-dims').check();
+  await expect(page.getByTestId('designer-dims-layer')).toBeVisible();
 });
 
 test('crtanje modela: raspored prečki i za prečke koje nisu u U profilima (dorađen model), za jednu i za više izabranih', async ({ page }) => {
@@ -1614,7 +1619,7 @@ test('zamena materijala: lista ne izlazi iz panela, podrazumevano nudi samo mate
   expect(names.length).toBeGreaterThan(3);
   expect(names.every((n) => /Kvadratna cev|Pravougaona cev/i.test(n))).toBe(true);
   // pretraga
-  await list.getByLabel('Pretraga materijala').fill('80×20×1 mm');
+  await list.getByLabel('Pretraga materijala').fill('80×20×1');
   await expect(page.getByTestId('part-swap-option').first()).toBeVisible();
   expect(await page.getByTestId('part-swap-option').count()).toBeLessThan(names.length);
   await list.getByLabel('Pretraga materijala').fill('');
@@ -1625,4 +1630,127 @@ test('zamena materijala: lista ne izlazi iz panela, podrazumevano nudi samo mate
   // izbor zatvara listu
   await page.getByTestId('part-swap-option').first().click();
   await expect(list).toHaveCount(0);
+});
+
+test('crtanje modela: Ctrl + C i Ctrl + V — nalepljen deo prati pokazivač dok se ne postavi klikom; Esc otkazuje', async ({ page }) => {
+  await seedMaterials(page, '/modeli');
+  await page.getByTestId('rework-model-h_narrow').click();
+  await page.getByTestId('designer-part').first().waitFor();
+  const before = await page.getByTestId('designer-part').count();
+  const bar = page.getByTestId('designer-part').nth(8);
+  const at = (await bar.boundingBox())!;
+  const cx = at.x + at.width / 2; const cy = at.y + at.height / 2;
+  await bar.click({ force: true });
+  await page.keyboard.press('Control+c');
+  await page.keyboard.press('Delete');
+  await expect(page.getByTestId('designer-part')).toHaveCount(before - 1);
+  // Ctrl + V: deo stoji na pokazivaču i prati ga, bez postavljanja
+  await page.keyboard.press('Control+v');
+  const box = (await page.getByTestId('designer-2d').boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + 120);
+  await expect(page.getByTestId('designer-paste-ghost')).toBeVisible();
+  await expect(page.getByTestId('designer-paste-hint')).toBeVisible();
+  const g1 = (await page.getByTestId('designer-paste-ghost').boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + 220);
+  const g2 = (await page.getByTestId('designer-paste-ghost').boundingBox())!;
+  expect(Math.abs(g2.y - g1.y)).toBeGreaterThan(10);
+  expect(await page.getByTestId('designer-part').count()).toBe(before - 1);
+  // Esc otkazuje lepljenje
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('designer-paste-ghost')).toHaveCount(0);
+  expect(await page.getByTestId('designer-part').count()).toBe(before - 1);
+  // ponovo nalepi i postavi klikom na mesto izbrisanog dela
+  await page.keyboard.press('Control+v');
+  await page.mouse.move(cx, cy);
+  await page.mouse.click(cx, cy);
+  await expect(page.getByTestId('designer-paste-ghost')).toHaveCount(0);
+  await expect(page.getByTestId('designer-part')).toHaveCount(before);
+});
+
+test('crtanje modela: Dodaj ram pita od kog je profila i crta ram oko platna sa uglovima pod 45°', async ({ page }) => {
+  await seedMaterials(page, '/modeli');
+  await page.getByTestId('rework-model-h_narrow').click();
+  await page.getByTestId('designer-part').first().waitFor();
+  const before = await page.getByTestId('designer-part').count();
+  const dimW = async () => Number(((await page.getByTestId('designer-dim-w').textContent()) ?? '').replace(/[^0-9.]/g, ''));
+  const w0 = await dimW();
+  await page.getByTestId('designer-add-frame').click();
+  await page.getByTestId('frame-material').click();
+  await page.getByTestId('frame-material-option').first().click();
+  await expect(page.getByTestId('designer-notice')).toHaveCount(0);
+  await expect(page.getByTestId('designer-part')).toHaveCount(before + 4);
+  expect(await dimW()).toBeGreaterThan(w0);
+  // četiri dela rama su izabrana, sa oznakom reza 45°
+  await expect(page.getByTestId('designer-multi')).toBeVisible();
+  await expect(page.getByTestId('multi-cut45')).toBeChecked();
+  // uglovi su zaista pod 45°: svaki deo rama je trapez čija je kosa ivica jednako pomerena po x i po y
+  const pts = (await page.locator('[data-testid="designer-part"] > g > polygon').first().getAttribute('points'))!.split(' ').map((q) => q.split(',').map(Number));
+  const dx = Math.abs(pts[1][0] - pts[2][0]); const dy = Math.abs(pts[1][1] - pts[2][1]);
+  expect(dx).toBeGreaterThan(1);
+  expect(dx).toBeCloseTo(dy, 3);
+  // Obriši ram: ram nestaje, a mere crteža se vraćaju
+  await page.getByTestId('designer-remove-frame').click();
+  await expect(page.getByTestId('designer-part')).toHaveCount(before);
+  await expect(page.getByTestId('designer-remove-frame')).toHaveCount(0);
+  expect(await dimW()).toBe(w0);
+});
+
+test('crtanje modela: ram se okreće ceo (sva četiri dela), bez greške o preklapanju', async ({ page }) => {
+  await seedMaterials(page, '/modeli');
+  await page.getByTestId('rework-model-h_narrow').click();
+  await page.getByTestId('designer-part').first().waitFor();
+  const before = await page.getByTestId('designer-part').count();
+  await page.getByTestId('designer-add-frame').click();
+  await page.getByTestId('frame-material').click();
+  await page.getByTestId('frame-material-option').first().click();
+  await expect(page.getByTestId('designer-part')).toHaveCount(before + 4);
+  for (const r of [90, 180, 270, 0]) {
+    await page.getByTestId('multi-rot-' + r).click();
+    await expect(page.getByTestId('designer-notice')).toHaveCount(0);
+    await expect(page.getByTestId('designer-part')).toHaveCount(before + 4);
+    await expect(page.getByTestId('multi-rot-' + r)).toHaveAttribute('aria-pressed', 'true');
+  }
+});
+
+test('crtanje modela: ceo crtež sa ramom može i da se smanji (ram zadržava debljinu)', async ({ page }) => {
+  await seedMaterials(page, '/modeli');
+  await page.getByTestId('rework-model-h_narrow').click();
+  await page.getByTestId('designer-part').first().waitFor();
+  await page.getByTestId('designer-add-frame').click();
+  await page.getByTestId('frame-material').click();
+  await page.getByTestId('frame-material-option').first().click();
+  const before = await page.getByTestId('designer-part').count();
+  const w = page.getByTestId('designer-width'); const h = page.getByTestId('designer-height');
+  const w0 = Number(await w.inputValue()); const h0 = Number(await h.inputValue());
+  await w.fill(String(w0 - 300)); await w.press('Enter');
+  await expect(page.getByTestId('designer-notice')).toHaveCount(0);
+  await expect(w).toHaveValue(String(w0 - 300));
+  await h.fill(String(h0 - 250)); await h.press('Enter');
+  await expect(page.getByTestId('designer-notice')).toHaveCount(0);
+  await expect(h).toHaveValue(String(h0 - 250));
+  await expect(page.getByTestId('designer-part')).toHaveCount(before);
+  await w.fill(String(w0 + 100)); await w.press('Enter');
+  await expect(page.getByTestId('designer-notice')).toHaveCount(0);
+  await expect(w).toHaveValue(String(w0 + 100));
+});
+
+test('crtanje modela kapije: Dodaj šarke postavlja šarke duž ivice, a komadni delovi su iznad profila', async ({ page }) => {
+  await seedMaterials(page, '/modeli');
+  await page.getByTestId('rework-model-h_narrow').click();
+  await page.getByTestId('designer-part').first().waitFor();
+  // „Dodaj šarke“ postoji samo za vrstu Kapija
+  await expect(page.getByTestId('designer-add-hinges')).toHaveCount(0);
+  await page.getByTestId('designer-kind').selectOption('gate');
+  await expect(page.getByTestId('designer-add-hinges')).toBeVisible();
+  const before = await page.getByTestId('designer-part').count();
+  await page.getByTestId('designer-add-hinges').click();
+  await page.getByTestId('hinge-count').selectOption('3');
+  await page.getByTestId('hinge-side').selectOption('left');
+  await page.getByTestId('hinge-material').click();
+  await page.getByTestId('hinge-material-option').first().click();
+  await expect(page.getByTestId('designer-notice')).toHaveCount(0);
+  await expect(page.getByTestId('designer-part')).toHaveCount(before + 3);
+  // komadni delovi se crtaju na kraju (iznad profila)
+  const ids = await page.getByTestId('designer-part').evaluateAll((els) => els.map((e) => e.getAttribute('data-part-id')));
+  expect(ids.length).toBe(before + 3);
 });

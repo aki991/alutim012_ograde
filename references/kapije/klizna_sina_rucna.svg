@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 694" width="1240" height="694" role="img"><title>Na donjoj šini · ručna</title>
+<rect x="0.00" y="0.00" width="1240.00" height="694.00" rx="0" fill="#ffffff" stroke="none"/>
+<rect x="0.00" y="0.00" width="1240.00" height="99.00" rx="0" fill="#172a3d" stroke="none"/>
+<text x="38" y="32" font-family="DejaVu Sans, sans-serif" font-size="14" fill="#afc9da" font-weight="700" text-anchor="start">ALU TIM 012  /  REFERENCA ZA EDITOR OGRADA</text>
+<text x="38" y="72" font-family="DejaVu Sans, sans-serif" font-size="32" fill="white" font-weight="700" text-anchor="start">Na donjoj šini · ručna</text>
+<rect x="40.00" y="116.00" width="19.00" height="11.00" rx="2" fill="#23415e" stroke="none"/>
+<text x="68" y="127" font-family="DejaVu Sans, sans-serif" font-size="14" fill="#172a3d" font-weight="400" text-anchor="start">Pokretno krilo i profili</text>
+<rect x="333.00" y="116.00" width="19.00" height="11.00" rx="2" fill="#b75321" stroke="none"/>
+<text x="361" y="127" font-family="DejaVu Sans, sans-serif" font-size="14" fill="#172a3d" font-weight="400" text-anchor="start">Pogon ili ručni okov</text>
+<rect x="626.00" y="116.00" width="19.00" height="11.00" rx="2" fill="#08786a" stroke="none"/>
+<text x="654" y="127" font-family="DejaVu Sans, sans-serif" font-size="14" fill="#172a3d" font-weight="400" text-anchor="start">Vođenje i prihvat</text>
+<rect x="919.00" y="116.00" width="19.00" height="11.00" rx="2" fill="#737e8a" stroke="none"/>
+<text x="947" y="127" font-family="DejaVu Sans, sans-serif" font-size="14" fill="#172a3d" font-weight="400" text-anchor="start">Fiksna podloga i stubovi</text>
+<text x="40" y="157" font-family="DejaVu Sans, sans-serif" font-size="14" fill="#172a3d" font-weight="400" text-anchor="start">Pogled iz dvorišta · zatvoreno krilo i isprekidana kontura otvorenog položaja</text>
+<g id="installation-fixed">
+<line x1="55.00" y1="400.00" x2="1190.00" y2="400.00" stroke="#737e8a" stroke-width="1.5" />
+<rect x="92.25" y="394.78" width="942.50" height="5.22" rx="0" fill="#737e8a" stroke="none"/>
+<rect x="116.90" y="182.50" width="18.85" height="217.50" rx="0" fill="#dce2e9" stroke="none"/>
+<line x1="116.90" y1="182.50" x2="116.90" y2="400.00" stroke="#737e8a" stroke-width="1" />
+<rect x="559.88" y="182.50" width="18.85" height="217.50" rx="0" fill="#dce2e9" stroke="none"/>
+<line x1="559.88" y1="182.50" x2="559.88" y2="400.00" stroke="#737e8a" stroke-width="1" />
+<rect x="557.70" y="182.50" width="23.20" height="15.95" rx="0" fill="#08786a" stroke="none"/>
+<rect x="133.57" y="217.30" width="18.85" height="17.40" rx="0" fill="#08786a" stroke="none"/>
+<rect x="1002.85" y="377.52" width="13.05" height="22.47" rx="0" fill="#08786a" stroke="none"/>
+</g>
+<g id="open-position-reference">
+<path d="M 563.5 383.325 V 197.0 H 998.4999999999999 V 383.325 Z" fill="none" stroke="#849bae" stroke-width="1.5" stroke-dasharray="7 5"/>
+<line x1="563.50" y1="383.32" x2="998.50" y2="383.32" stroke="#849bae" stroke-width="1" stroke-dasharray="7 5"/>
+</g>
+<g id="leaf-moving">
+<rect x="143.00" y="373.18" width="435.00" height="10.15" rx="0" fill="#23415e" stroke="none"/>
+<rect x="143.00" y="197.00" width="435.00" height="10.15" rx="0" fill="#23415e" stroke="none"/>
+<rect x="143.00" y="207.15" width="9.28" height="166.02" rx="0" fill="#23415e" stroke="none"/>
+<rect x="568.72" y="207.15" width="9.28" height="166.02" rx="0" fill="#23415e" stroke="none"/>
+<rect x="153.59" y="208.60" width="6.23" height="165.30" rx="0" fill="#08786a" stroke="none"/>
+<rect x="561.33" y="208.60" width="6.23" height="165.30" rx="0" fill="#08786a" stroke="none"/>
+<rect x="155.32" y="363.02" width="410.35" height="5.80" rx="0" fill="#7694ad" stroke="none"/>
+<rect x="155.32" y="349.25" width="410.35" height="5.80" rx="0" fill="#7694ad" stroke="none"/>
+<rect x="155.32" y="335.48" width="410.35" height="5.80" rx="0" fill="#7694ad" stroke="none"/>
+<rect x="155.32" y="321.70" width="410.35" height="5.80" rx="0" fill="#7694ad" stroke="none"/>
+<rect x="155.32" y="307.93" width="410.35" height="5.80" rx="0" fill="#7694ad" stroke="none"/>
+<rect x="155.32" y="294.15" width="410.35" height="5.80" rx="0" fill="#7694ad" stroke="none"/>
+<rect x="155.32" y="280.38" width="410.35" height="5.80" rx="0" fill="#7694ad" stroke="none"/>
+<rect x="155.32" y="266.60" width="410.35" height="5.80" rx="0" fill="#7694ad" stroke="none"/>
+<rect x="155.32" y="252.83" width="410.35" height="5.80" rx="0" fill="#7694ad" stroke="none"/>
+<rect x="155.32" y="239.05" width="410.35" height="5.80" rx="0" fill="#7694ad" stroke="none"/>
+<rect x="155.32" y="225.28" width="410.35" height="5.80" rx="0" fill="#7694ad" stroke="none"/>
+<rect x="155.32" y="211.50" width="410.35" height="5.80" rx="0" fill="#7694ad" stroke="none"/>
+<rect x="192.30" y="381.15" width="23.20" height="4.35" rx="0" fill="#b75321" stroke="none"/>
+<circle cx="203.90" cy="387.38" r="7.539999999999999" fill="white" stroke="#23415e" stroke-width="2"/>
+<circle cx="203.90" cy="387.38" r="2.5" fill="#23415e" stroke="#23415e" stroke-width="2"/>
+<rect x="505.50" y="381.15" width="23.20" height="4.35" rx="0" fill="#b75321" stroke="none"/>
+<circle cx="517.10" cy="387.38" r="7.539999999999999" fill="white" stroke="#23415e" stroke-width="2"/>
+<circle cx="517.10" cy="387.38" r="2.5" fill="#23415e" stroke="#23415e" stroke-width="2"/>
+<rect x="148.66" y="259.78" width="3.48" height="21.02" rx="0" fill="#b75321" stroke="none"/>
+<rect x="143.58" y="241.81" width="13.05" height="7.83" rx="0" fill="#b75321" stroke="none"/>
+</g>
+<g id="actuation-fixed">
+<rect x="132.85" y="241.81" width="9.42" height="7.83" rx="0" fill="#b75321" stroke="none"/>
+</g>
+<line x1="143.00" y1="188.00" x2="143.00" y2="202.00" stroke="#586d80" stroke-width="1" />
+<line x1="578.00" y1="188.00" x2="578.00" y2="202.00" stroke="#586d80" stroke-width="1" />
+<line x1="143.00" y1="195.00" x2="578.00" y2="195.00" stroke="#586d80" stroke-width="1" />
+<text x="360.5" y="188" font-family="DejaVu Sans, sans-serif" font-size="13" fill="#172a3d" font-weight="700" text-anchor="middle">Ram 3.000 mm</text>
+<line x1="143.00" y1="439.00" x2="143.00" y2="453.00" stroke="#586d80" stroke-width="1" />
+<line x1="563.50" y1="439.00" x2="563.50" y2="453.00" stroke="#586d80" stroke-width="1" />
+<line x1="143.00" y1="446.00" x2="563.50" y2="446.00" stroke="#586d80" stroke-width="1" />
+<text x="353.25" y="439" font-family="DejaVu Sans, sans-serif" font-size="13" fill="#172a3d" font-weight="700" text-anchor="middle">Hod 2.900 mm</text>
+<line x1="92.25" y1="471.00" x2="92.25" y2="485.00" stroke="#586d80" stroke-width="1" />
+<line x1="1034.75" y1="471.00" x2="1034.75" y2="485.00" stroke="#586d80" stroke-width="1" />
+<line x1="92.25" y1="478.00" x2="1034.75" y2="478.00" stroke="#586d80" stroke-width="1" />
+<text x="563.5" y="471" font-family="DejaVu Sans, sans-serif" font-size="13" fill="#172a3d" font-weight="700" text-anchor="middle">Podna šina 6.500 mm</text>
+<line x1="338.75" y1="255.00" x2="314.75" y2="234.00" stroke="#172a3d" stroke-width="1" />
+<circle cx="314.75" cy="234.00" r="10" fill="white" stroke="#172a3d" stroke-width="2"/>
+<text x="314.75" y="238.0" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#172a3d" font-weight="700" text-anchor="middle">1</text>
+<line x1="569.30" y1="189.75" x2="597.30" y2="195.75" stroke="#172a3d" stroke-width="1" />
+<circle cx="597.30" cy="195.75" r="10" fill="white" stroke="#172a3d" stroke-width="2"/>
+<text x="597.3" y="199.75000000000003" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#172a3d" font-weight="700" text-anchor="middle">2</text>
+<line x1="143.00" y1="226.00" x2="109.00" y2="207.00" stroke="#172a3d" stroke-width="1" />
+<circle cx="109.00" cy="207.00" r="10" fill="white" stroke="#172a3d" stroke-width="2"/>
+<text x="109.0" y="211.0" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#172a3d" font-weight="700" text-anchor="middle">3</text>
+<line x1="203.90" y1="387.38" x2="235.90" y2="412.38" stroke="#172a3d" stroke-width="1" />
+<circle cx="235.90" cy="412.38" r="10" fill="white" stroke="#172a3d" stroke-width="2"/>
+<text x="235.9" y="416.385" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#172a3d" font-weight="700" text-anchor="middle">4</text>
+<line x1="148.66" y1="270.23" x2="111.66" y2="283.23" stroke="#172a3d" stroke-width="1" />
+<circle cx="111.66" cy="283.23" r="10" fill="white" stroke="#172a3d" stroke-width="2"/>
+<text x="111.655" y="287.225" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#172a3d" font-weight="700" text-anchor="middle">5</text>
+<line x1="1002.85" y1="381.88" x2="1030.85" y2="364.88" stroke="#172a3d" stroke-width="1" />
+<circle cx="1030.85" cy="364.88" r="10" fill="white" stroke="#172a3d" stroke-width="2"/>
+<text x="1030.85" y="368.875" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#172a3d" font-weight="700" text-anchor="middle">6</text>
+<line x1="40.00" y1="504.00" x2="1200.00" y2="504.00" stroke="#dce2e9" stroke-width="1" />
+<circle cx="50.00" cy="527.00" r="9" fill="white" stroke="#172a3d" stroke-width="2"/>
+<text x="50" y="531" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#172a3d" font-weight="700" text-anchor="middle">1</text>
+<text x="69" y="532" font-family="DejaVu Sans, sans-serif" font-size="14" fill="#172a3d" font-weight="400" text-anchor="start">Ram, dva bočna U-profila i 12 horizontalnih prečki</text>
+<circle cx="50.00" cy="557.00" r="9" fill="white" stroke="#172a3d" stroke-width="2"/>
+<text x="50" y="561" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#172a3d" font-weight="700" text-anchor="middle">2</text>
+<text x="69" y="562" font-family="DejaVu Sans, sans-serif" font-size="14" fill="#172a3d" font-weight="400" text-anchor="start">Fiksna konzola sa parom gornjih vodećih valjaka</text>
+<circle cx="50.00" cy="587.00" r="9" fill="white" stroke="#172a3d" stroke-width="2"/>
+<text x="50" y="591" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#172a3d" font-weight="700" text-anchor="middle">3</text>
+<text x="69" y="592" font-family="DejaVu Sans, sans-serif" font-size="14" fill="#172a3d" font-weight="400" text-anchor="start">Prihvatnik krila na strani zatvaranja</text>
+<circle cx="640.00" cy="527.00" r="9" fill="white" stroke="#172a3d" stroke-width="2"/>
+<text x="640" y="531" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#172a3d" font-weight="700" text-anchor="middle">4</text>
+<text x="659" y="532" font-family="DejaVu Sans, sans-serif" font-size="14" fill="#172a3d" font-weight="400" text-anchor="start">Dva donja točkića na nepokretnoj podnoj šini</text>
+<circle cx="640.00" cy="557.00" r="9" fill="white" stroke="#172a3d" stroke-width="2"/>
+<text x="640" y="561" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#172a3d" font-weight="700" text-anchor="middle">5</text>
+<text x="659" y="562" font-family="DejaVu Sans, sans-serif" font-size="14" fill="#172a3d" font-weight="400" text-anchor="start">Ručka, klizni zasun i fiksna prihvatna pločica</text>
+<circle cx="640.00" cy="587.00" r="9" fill="white" stroke="#172a3d" stroke-width="2"/>
+<text x="640" y="591" font-family="DejaVu Sans, sans-serif" font-size="11" fill="#172a3d" font-weight="700" text-anchor="middle">6</text>
+<text x="659" y="592" font-family="DejaVu Sans, sans-serif" font-size="14" fill="#172a3d" font-weight="400" text-anchor="start">Mehanički graničnik na strani otvaranja</text>
+<rect x="40.00" y="627.00" width="1160.00" height="43.00" rx="5" fill="#eef3f8" stroke="none"/>
+<text x="52" y="653" font-family="DejaVu Sans, sans-serif" font-size="14" fill="#172a3d" font-weight="400" text-anchor="start">Ilustrativna geometrija. Svetli otvor, okov, graničnike i montažne mere potvrditi za stvarni posao.</text>
+</svg>

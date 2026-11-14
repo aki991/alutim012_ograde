@@ -117,6 +117,17 @@ export function pieceSolids(kind: PieceKind, w: number, d: number): Solid[] {
   }
 }
 
+/** Najniža tačka tela po dubini (z): zadnja strana komadnog dela. */
+export function solidsZMin(solids: Solid[]): number {
+  let z = Infinity;
+  for (const s of solids) {
+    if (s.prim === 'box') z = Math.min(z, s.pos[2] - s.size[2] / 2);
+    else if (s.prim === 'pyr') z = Math.min(z, s.pos[2] - s.base[1] / 2);
+    else z = Math.min(z, s.pos[2] - (s.axis === 'z' ? s.len / 2 : s.r));
+  }
+  return Number.isFinite(z) ? z : 0;
+}
+
 /** Okvir tela u pogledu spreda (x, y). */
 export function solidsBounds(solids: Solid[]): { x0: number; y0: number; x1: number; y1: number } {
   let x0 = Infinity; let y0 = Infinity; let x1 = -Infinity; let y1 = -Infinity;

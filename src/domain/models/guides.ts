@@ -1,4 +1,4 @@
-import { partAngle, scaleModel, type CustomModel, type CustomPart, type Lufta } from './custom';
+import { contentBounds, partAngle, scaleModel, type CustomModel, type CustomPart, type Lufta } from './custom';
 import { materialShape, sectionFace, type MatShape, type Section } from './materialShape';
 import { uid } from '../../utils/id';
 import { minVerticalPitch } from './overlap';
@@ -145,11 +145,14 @@ export function applyGuides(model: CustomModel, materials: Material[]): CustomMo
  */
 export function orientGuides(model: CustomModel, materials: Material[]): CustomModel {
   const shapeOf = shapeLookup(materials);
+  // sredina crteža (okvir svih delova): model nema unapred zadatu širinu
+  const bounds = contentBounds(model, shapeOf);
+  const cx = bounds ? (bounds.x0 + bounds.x1) / 2 : model.widthMm / 2;
   let changed = false;
   const parts = model.parts.map((p) => {
     const s = shapeOf(p);
     if (!s || !isGuideCandidate(p, s)) return p;
-    const dirX: 1 | -1 = p.x < model.widthMm / 2 ? 1 : -1;
+    const dirX: 1 | -1 = p.x < cx ? 1 : -1;
     const rot = (norm(p.angleDeg) === 90) === (dirX === 1) ? 270 : 90;
     if (p.rot === rot) return p;
     changed = true;
@@ -167,6 +170,8 @@ export function autoAttachBars(model: CustomModel, materials: Material[]): Custo
   if (!model.parts.some((p) => { const s = shapeOf(p); return !!s && isGuideCandidate(p, s); })) return model;
   let out = model;
   for (const p of model.parts) {
+    // deo rama (dodat dugmetom „Dodaj ram“) nije prečka: ne uklapa se samo u bočne U profile
+    if (p.cut45 && p.miter) continue;
     if (p.guides || (norm(p.angleDeg) !== 0 && norm(p.angleDeg) !== 180)) continue;
     const s = shapeOf(p);
     if (!s || s.type !== 'linear' || s.u) continue;

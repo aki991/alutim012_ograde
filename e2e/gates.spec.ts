@@ -253,36 +253,44 @@ test('model kapije: sačuvaj iz Mere kapije, nov posao sa modelom, prepravka mod
   await expect(page.getByTestId('gd-template-ref')).toContainText('v1');
 });
 
-test('modeli kapija: pravljenje u editoru, uređivanje, dodavanje iz kataloga i brisanje; osnovne kapije se brišu i vraćaju', async ({ page }) => {
+test('modeli kapija: kartica ima Koristi model, Otvori crtež i Obriši; u crtežu su Mere kapije; model je u katalogu; brisanje; osnovne kapije se brišu i vraćaju', async ({ page }) => {
   const errors = trackErrors(page);
   await page.goto('/modeli-kapija');
   await expect(page.getByTestId('gate-models-empty')).toBeVisible();
-  await page.getByTestId('btn-create-gate-model').click();
-  await page.getByTestId('new-gate-model-pedestrian').click();
-  await expect(page).toHaveURL(/editor.proj_/);
-  await expect(page.getByTestId('gate-model-banner')).toBeVisible();
-  await page.locator('[data-hit="item"]').last().click();
-  await page.getByTestId('btn-gate-design').click();
+  // model nastaje čuvanjem kapije iz Mere kapije (isto kao što se crtež modela čuva u podešavanjima)
+  await newProjectWithGate(page, 'single');
   await setDim(page, 'gH', '15');
+  await page.getByTestId('gd-save-model').click();
+  await page.getByTestId('gm-name').fill('Pešačka 15');
+  await page.getByTestId('gm-save-confirm').click();
+  await expect(page.getByTestId('gd-model-msg')).toContainText('sačuvan (v1)');
   await page.keyboard.press('Escape');
-  await page.getByTestId('gate-model-name-input').fill('Pešačka 15');
-  await page.getByTestId('gate-model-save-new').click();
-  await expect(page).toHaveURL(/modeli-kapija/);
-  await expect(page.getByTestId('gate-model-name')).toHaveText('Pešačka 15');
-  // privremen projekat se ne vidi u spisku projekata
-  await page.goto('/projekti');
-  await expect(page.getByText('Nov model kapije')).toHaveCount(0);
-  // uređivanje: prepravka istog modela
-  await page.goto('/modeli-kapija');
-  await page.getByTestId('edit-gate-model').click();
-  await expect(page.getByTestId('gate-model-banner')).toContainText('Pešačka 15');
-  await page.getByTestId('gate-model-save').click();
+  await page.getByRole('link', { name: 'Modeli kapija' }).click();
+  const card = page.getByTestId('gate-model-card');
+  await expect(card.getByTestId('gate-model-name')).toHaveText('Pešačka 15');
+  await expect(card.getByRole('button', { name: 'Koristi model' })).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Otvori crtež' })).toBeVisible();
+  await expect(card.getByRole('button', { name: /Obriši/ })).toBeVisible();
+  // otvori crtež: vrsta Kapija, dugme Mere kapije; izmena se čuva uz model
+  await page.getByTestId('open-gate-model').click();
+  await expect(page.getByTestId('designer-kind')).toHaveValue('gate');
+  await page.getByTestId('designer-gate-measures').click();
+  await expect(page.getByTestId('gate-design')).toBeVisible();
+  await expect(val(page, 'gH')).toHaveValue('15');
+  await setDim(page, 'gZ', '12');
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('gate-design')).toHaveCount(0);
+  await page.getByTestId('designer-gate-measures').click();
+  await expect(val(page, 'gZ')).toHaveValue('12');
+  await page.keyboard.press('Escape');
+  await page.getByTestId('designer-back').click();
   await expect(page.getByTestId('gate-model-card')).toContainText('v2');
   // model je u katalogu editora
-  await page.getByTestId('use-gate-model').click();
+  await page.getByRole('link', { name: 'Početna' }).click();
+  await page.getByTestId('hero-new').click();
   await expect(page.getByTestId('catalog').getByText('Pešačka 15')).toBeVisible();
   // brisanje modela
-  await page.goto('/modeli-kapija');
+  await page.getByRole('link', { name: 'Modeli kapija' }).click();
   await page.getByTestId('delete-gate-model').click();
   await page.getByRole('button', { name: 'Obriši', exact: true }).last().click();
   await expect(page.getByTestId('gate-models-empty')).toBeVisible();
@@ -311,5 +319,21 @@ test('modeli ograda: svaki model iz kataloga može da se obriše i vrati', async
   await page.getByRole('link', { name: 'Modeli ograda' }).click();
   await page.getByTestId('restore-hidden-models').click();
   await expect(page.getByTestId('model-card-h_wide')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('osnovne kapije: dugme Doradi otvara crtež kapije kao nov model vrste Kapija', async ({ page }) => {
+  const errors = trackErrors(page);
+  await page.goto('/modeli-kapija');
+  await page.getByTestId('rework-gate-double').click();
+  await expect(page.getByTestId('model-designer')).toBeVisible();
+  await expect(page.getByTestId('designer-kind')).toHaveValue('gate');
+  await expect(page.getByTestId('designer-gate-type')).toHaveValue('double');
+  await expect(page.getByTestId('designer-name')).toHaveValue('Dvokrilna kapija');
+  await page.getByTestId('designer-gate-measures').click();
+  await expect(page.getByTestId('gate-design')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.getByTestId('designer-back').click();
+  await expect(page.getByTestId('gate-model-name')).toHaveText('Dvokrilna kapija');
   expect(errors).toEqual([]);
 });

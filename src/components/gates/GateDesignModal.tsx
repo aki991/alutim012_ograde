@@ -35,7 +35,7 @@ function IssueRow({ level, msg }: { level: string; msg: string }) {
   return <div className={`flex gap-1.5 items-start text-[12.5px] ${tone}`} data-testid={`gd-issue-${level}`}><Icon size={14} className="mt-0.5 shrink-0" /><span>{msg}</span></div>;
 }
 
-export function GateDesignModal({ projectId, itemId, onClose }: { projectId: string; itemId: string; onClose: () => void }) {
+export function GateDesignModal({ projectId, itemId, onClose, embedded }: { projectId: string; itemId: string; onClose: () => void; /** otvoreno iz crtanja modela kapije: nema „Sačuvaj kao model“ */ embedded?: boolean }) {
   const project = useAppStore((s) => s.projects.find((p) => p.id === projectId));
   const materials = useAppStore((s) => s.materials);
   const settings = useAppStore((s) => s.settings);
@@ -66,7 +66,7 @@ export function GateDesignModal({ projectId, itemId, onClose }: { projectId: str
 
   return (
     <Modal title={`Mere kapije — ${design.template?.name ?? label} (${SYSTEM_LABELS[sys]})`} onClose={onClose} fullscreen
-      headerActions={<><button className="btn btn-sm" data-testid="gd-save-model" onClick={() => setSaveOpen(true)}>Sačuvaj kao model</button><button className="btn btn-sm" data-testid="gd-pdf" onClick={async () => { const { downloadGatePdf } = await import('../../services/pdfGate'); await downloadGatePdf(project, itemId, materials, settings); }}><FileDown size={14} />PDF mera kapije</button></>}>
+      headerActions={<>{!embedded && <button className="btn btn-sm" data-testid="gd-save-model" onClick={() => setSaveOpen(true)}>Sačuvaj kao model</button>}<button className="btn btn-sm" data-testid="gd-pdf" onClick={async () => { const { downloadGatePdf } = await import('../../services/pdfGate'); await downloadGatePdf(project, itemId, materials, settings); }}><FileDown size={14} />PDF mera kapije</button></>}>
       <div className={`grid lg:grid-cols-[minmax(0,1fr)_400px] gap-4`} data-testid="gate-design">
         {/* skica i provere ostaju na ekranu dok se lista kota skroluje */}
         <div className="min-w-0 lg:sticky lg:top-0 lg:self-start lg:max-h-[calc(100dvh-110px)] lg:overflow-auto scroll-thin" data-testid="gd-left">

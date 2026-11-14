@@ -305,8 +305,6 @@ export interface AppSettings {
   modelSpecs?: Record<string, import('./spec').SpecPart[]>;
   /** ručno nacrtani modeli ograda i kapija (strana Modeli ograda → Napravi model) */
   customModels?: import('./custom').CustomModel[];
-  /** modeli kapija (strana Modeli kapija): sačuvane kapije sa merama i okovima */
-  gateModels?: import('../gates/gateModels').GateModel[];
   /** modeli iz kataloga (ograde i osnovne kapije) koje je korisnik obrisao; „Vrati obrisane modele“ ih vraća */
   hiddenModels?: string[];
   /** sopstveni okovi radionice (šarke, brave, kolica …) za izbor u merama kapije */

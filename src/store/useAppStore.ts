@@ -12,9 +12,10 @@ import { computeLayout } from '../domain/geometry/layout';
 import { removeStair, setStairGroup } from '../domain/geometry/stairOps';
 import { DEFAULT_MODEL_ID, FENCE_MODELS, TERRACE_NO_GATES, isTerraceModel, projectModelId } from '../domain/models/catalog';
 import { effectiveModelId, registerCustomModels, setHiddenModels } from '../domain/models/customRegistry';
-import { gateFieldsFromModel, gateModelFromGate, type GateModel } from '../domain/gates/gateModels';
+import { defaultGateConfig, gateClearWidth, gateConfigFromGate, gateFieldsFromModel, GATE_TYPE_LABELS } from '../domain/gates/gateModels';
 import { postHalfSum } from '../domain/geometry/layout';
 import { builtinToCustom } from '../domain/models/fromBuiltin';
+import { cleanMaterialName } from '../domain/models/materialTitle';
 import { createFence, createGate, createProject, nowIso } from '../domain/models/factories';
 import { emptyHistory, recordChange, redo as redoH, undo as undoH, type History } from '../domain/models/history';
 import type {
@@ -116,19 +117,19 @@ interface AppState {
   /** sakriva model iz kataloga (brisanje): projekti koji ga koriste rade i dalje */
   hideModel: (id: string) => void;
   restoreHiddenModels: () => void;
-  /** modeli kapija */
-  saveGateModel: (m: GateModel) => void;
-  removeGateModel: (id: string) => void;
-  /** postavlja kapiju u otvorenom projektu prema modelu (tip, ispuna, mere, okovi); svetli otvor ostaje onaj iz modela */
+  /** modeli kapija = nacrtani modeli vrste „Kapija“ sa podešavanjima iz „Mere kapije“ */
+  /** postavlja kapiju u otvorenom projektu prema modelu (ispuna, boja, visina, tip, mere, okovi); svetli otvor je onaj iz modela */
   applyGateModel: (itemId: string, modelId: string) => boolean;
   /** dodaje kapiju iz modela na kraj niza u otvorenom projektu; vraća ID kapije */
   addGateFromModel: (modelId: string) => string | null;
-  /** pravi privremen projekat sa jednom kapijom (iz modela ili prazan) za uređivanje modela; vraća ID projekta */
-  startGateModelEdit: (modelId: string | null, gateType?: GateType) => string;
-  /** upisuje kapiju iz privremenog projekta u model (prepravka postojećeg ili nov) i briše privremen projekat; vraća ID modela */
-  commitGateModelEdit: (mode: 'overwrite' | 'new', name: string) => string | null;
-  /** odbacuje privremen projekat */
-  discardGateModelEdit: (projectId: string) => void;
+  /** dorada osnovne kapije: pravi crtež kapije od delova podrazumevanog modela kao nov model vrste „Kapija“ i vraća njegov ID */
+  startGateDorada: (gateType: GateType) => string;
+  /** nov projekat sa jednom kapijom iz modela; vraća ID projekta */
+  newProjectFromGateModel: (modelId: string) => string | null;
+  /** privremen projekat sa kapijom iz modela, otvoren u „Mere kapije“ unutar crtanja modela; vraća ID projekta i kapije */
+  createGateDraft: (modelId: string) => { projectId: string; itemId: string } | null;
+  /** zatvara privremen projekat: vraća podešavanja kapije (sa zadatom verzijom) i briše projekat */
+  finishGateDraft: (projectId: string, version: number) => import('../domain/gates/gateModels').GateConfig | null;
 }
 
 /** Element čiji model više ne postoji (obrisan nacrtani model) prelazi na podrazumevani model, da se projekat i dalje otvara. */
@@ -171,6 +172,9 @@ const nextQuoteNo = (projects: Project[]): string => {
   }, 0);
   return `P-${year}-${String(max + 1).padStart(3, '0')}`;
 };
+
+/** privremen projekat za „Mere kapije“ u crtanju modela → projekat koji je bio otvoren pre njega */
+const DRAFT_PREV = new Map<string, string | null>();
 
 const LAST_PROJECT_KEY = 'alu-tim.lastProject';
 const rememberProject = (id: string) => { try { localStorage.setItem(LAST_PROJECT_KEY, id); } catch { /* privatni režim: bez pamćenja */ } };
@@ -231,16 +235,27 @@ export const useAppStore = create<AppState>((set, get) => {
               backfilled = true;
             }
           } catch { /* bez localStorage-a: preskače se */ }
+          // jednokratno: nazivi materijala iz uvoza postaju „vrsta pa dimenzije“ (npr. Kvadratna cev 60×40×3, U profil 60×28)
+          const NAMES_KEY = 'alutim.materialNamesV1';
+          let renamed = false;
+          try {
+            if (localStorage.getItem(NAMES_KEY) !== '1') {
+              const clean = materials.map((m) => { const n = cleanMaterialName(m.name); return n === m.name ? m : { ...m, name: n }; });
+              if (clean.some((m, i) => m !== materials[i])) { materials = clean; renamed = true; }
+              if (!renamed) localStorage.setItem(NAMES_KEY, '1');
+            }
+          } catch { /* bez localStorage-a: preskače se */ }
           // nacrtani modeli moraju biti u katalogu pre nego što se projekti učitaju
           registerCustomModels(settings.customModels, materials);
           setHiddenModels(settings.hiddenModels);
           // privremeni projekti za uređivanje modela ne preživljavaju ponovno pokretanje
           set({ projects: data.projects.filter((p) => !p.modelDraft).map(migrateProject).map(dropUnknownModels), customers: data.customers, materials, settings, ready: true });
-          if (backfilled) {
+          if (backfilled || renamed) {
             // autosave počinje tek posle init-a, pa se dodati materijali upisuju odmah; oznaka se postavlja tek kad je upis uspeo
             try {
               await saveAll({ projects: get().projects, customers: get().customers, materials, settings });
-              localStorage.setItem(BACKFILL_KEY, '1');
+              if (backfilled) localStorage.setItem(BACKFILL_KEY, '1');
+              if (renamed) localStorage.setItem(NAMES_KEY, '1');
             } catch { /* neuspeh ne sme da sakrije učitane podatke; pokušaće se opet pri sledećem pokretanju */ }
           }
         }
@@ -526,62 +541,68 @@ export const useAppStore = create<AppState>((set, get) => {
       setHiddenModels([]);
       set((s) => ({ settings: { ...s.settings, hiddenModels: [] } }));
     },
-    saveGateModel(m) {
-      const list = get().settings.gateModels ?? [];
-      const gateModels = list.some((x) => x.id === m.id) ? list.map((x) => (x.id === m.id ? m : x)) : [...list, m];
-      set((s) => ({ settings: { ...s.settings, gateModels } }));
-    },
-    removeGateModel(id) {
-      set((s) => ({ settings: { ...s.settings, gateModels: (s.settings.gateModels ?? []).filter((x) => x.id !== id) } }));
-    },
     applyGateModel(itemId, modelId) {
-      const m = (get().settings.gateModels ?? []).find((x) => x.id === modelId);
+      const m = (get().settings.customModels ?? []).find((x) => x.id === modelId);
       if (!m || !currentProject()) return false;
       get().mutate((p) => {
         const q = updateItem(p, itemId, gateFieldsFromModel(m) as Partial<Gate>);
-        return setOuterWidth(q, itemId, m.clearWidthMm + 2 * postHalfSum(q, indexOfItem(q, itemId)));
+        return setOuterWidth(q, itemId, gateClearWidth(m) + 2 * postHalfSum(q, indexOfItem(q, itemId)));
       });
       return true;
     },
     addGateFromModel(modelId) {
-      const m = (get().settings.gateModels ?? []).find((x) => x.id === modelId);
-      const cur = currentProject();
-      if (!m || !cur) return null;
-      const id = get().addElement({ kind: 'gate', gateType: m.gateType, modelId: m.infillModelId as FenceModelId });
+      const m = (get().settings.customModels ?? []).find((x) => x.id === modelId);
+      if (!m || !currentProject()) return null;
+      const id = get().addElement({ kind: 'gate', gateType: m.gate?.gateType ?? 'pedestrian', modelId: m.id as FenceModelId });
       if (!id) return null;
       get().applyGateModel(id, modelId);
       return id;
     },
-    startGateModelEdit(modelId, gateType = 'pedestrian') {
-      const m = modelId ? (get().settings.gateModels ?? []).find((x) => x.id === modelId) : undefined;
-      let gate = createGate(m?.gateType ?? gateType);
-      if (m) gate = { ...gate, ...(gateFieldsFromModel(m) as Partial<Gate>) } as Gate;
-      let p = createProject(m ? `Model kapije — ${m.name}` : 'Nov model kapije', [gate]);
-      p.modelDraft = { modelId: m?.id ?? null };
-      p.settings.pricing = { ...get().settings.pricing };
-      const clear = m?.clearWidthMm ?? null;
-      if (clear !== null) p = setOuterWidth(p, gate.id, clear + 2 * postHalfSum(p, 0));
-      set((s) => ({ projects: [p, ...s.projects], editor: { ...emptyEditor(), projectId: p.id, activeModelId: s.editor.activeModelId } }));
-      return p.id;
-    },
-    commitGateModelEdit(mode, name) {
-      const cur = currentProject();
-      if (!cur?.modelDraft) return null;
-      const index = cur.items.findIndex((i) => i.kind === 'gate');
-      const g = cur.items[index];
-      if (!g || g.kind !== 'gate') return null;
-      const clear = computeLayout(cur).items[index].clearWidth;
-      const list = get().settings.gateModels ?? [];
-      const base = cur.modelDraft.modelId ? list.find((x) => x.id === cur.modelDraft!.modelId) : undefined;
-      const overwrite = mode === 'overwrite' && base;
-      const id = overwrite ? base!.id : uid('gm');
-      const model = gateModelFromGate(g, clear, name.trim() || base?.name || 'Model kapije', id, overwrite ? base!.version + 1 : 1);
-      get().saveGateModel(model);
-      get().discardGateModelEdit(cur.id);
+    startGateDorada(gateType) {
+      const id = uid('cm');
+      const wide = gateType === 'double' || gateType === 'sliding';
+      const base = builtinToCustom(DEFAULT_MODEL_ID, get().materials, id, wide ? 3000 : 1000, 1500);
+      const model = { ...base, name: GATE_TYPE_LABELS[gateType], kind: 'gate' as const, baseModelId: undefined, gate: { ...defaultGateConfig(gateType), clearWidthMm: wide ? 3000 : 1000 } };
+      const customModels = [...(get().settings.customModels ?? []), model];
+      registerCustomModels(customModels, get().materials);
+      set((s) => ({ settings: { ...s.settings, customModels } }));
       return id;
     },
-    discardGateModelEdit(projectId) {
-      set((s) => ({ projects: s.projects.filter((p) => p.id !== projectId), editor: s.editor.projectId === projectId ? { ...emptyEditor() } : s.editor }));
+    newProjectFromGateModel(modelId) {
+      const m = (get().settings.customModels ?? []).find((x) => x.id === modelId);
+      if (!m || !(m.id in FENCE_MODELS)) return null;
+      let p = createProject(`Novi projekat — ${m.name}`, [createGate(m.gate?.gateType ?? 'pedestrian', { infillModelId: m.id as FenceModelId })]);
+      p.quoteNo = nextQuoteNo(get().projects);
+      p.settings.pricing = { ...get().settings.pricing };
+      const gate = p.items[0] as Gate;
+      p = updateItem(p, gate.id, gateFieldsFromModel(m) as Partial<Gate>);
+      p = setOuterWidth(p, gate.id, gateClearWidth(m) + 2 * postHalfSum(p, 0));
+      set((s) => ({ projects: [p, ...s.projects], editor: { ...emptyEditor(), projectId: p.id, activeModelId: s.editor.activeModelId } }));
+      rememberProject(p.id);
+      return p.id;
+    },
+    createGateDraft(modelId) {
+      const m = (get().settings.customModels ?? []).find((x) => x.id === modelId);
+      if (!m || !(m.id in FENCE_MODELS)) return null;
+      let p = createProject('Mere kapije', [createGate(m.gate?.gateType ?? 'pedestrian', { infillModelId: m.id as FenceModelId })]);
+      p.modelDraft = { modelId: m.id };
+      p.settings.pricing = { ...get().settings.pricing };
+      const gate = p.items[0] as Gate;
+      p = updateItem(p, gate.id, gateFieldsFromModel(m) as Partial<Gate>);
+      p = setOuterWidth(p, gate.id, gateClearWidth(m) + 2 * postHalfSum(p, 0));
+      DRAFT_PREV.set(p.id, get().editor.projectId);
+      set((s) => ({ projects: [p, ...s.projects], editor: { ...emptyEditor(), projectId: p.id, activeModelId: s.editor.activeModelId } }));
+      return { projectId: p.id, itemId: gate.id };
+    },
+    finishGateDraft(projectId, version) {
+      const proj = get().projects.find((x) => x.id === projectId);
+      const index = proj ? proj.items.findIndex((i) => i.kind === 'gate') : -1;
+      const g = proj?.items[index];
+      const cfg = proj && g && g.kind === 'gate' ? gateConfigFromGate(g, computeLayout(proj).items[index].clearWidth, version) : null;
+      const prev = DRAFT_PREV.get(projectId) ?? null;
+      DRAFT_PREV.delete(projectId);
+      set((s) => ({ projects: s.projects.filter((x) => x.id !== projectId), editor: { ...emptyEditor(), projectId: prev && s.projects.some((x) => x.id === prev) ? prev : null, activeModelId: s.editor.activeModelId } }));
+      return cfg;
     },
   };
 });

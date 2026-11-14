@@ -1,6 +1,6 @@
 import { Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { partBounds, type CustomModel, type CustomPart } from '../../domain/models/custom';
+import { extentBounds, partBounds, type CustomModel, type CustomPart } from '../../domain/models/custom';
 import { materialShape, sectionFace, type MatShape } from '../../domain/models/materialShape';
 import type { Material } from '../../domain/models/types';
 import { uid } from '../../utils/id';
@@ -28,6 +28,18 @@ interface Props {
   onMoveStart: () => void;
   /** pomeranje svih izabranih delova odjednom (novi x i y svakog dela) */
   onMove: (moves: { id: string; x: number; y: number }[]) => void;
+  /** nalepljeni delovi (Ctrl + V) koji prate pokazivač dok se ne postave klikom; null = nema lepljenja */
+  /** prikaz kota: ukupna širina i visina crteža (mere modela proizlaze iz crteža) */
+  showDims?: boolean;
+  /** crtež je pomeren ka početku koordinata (dx, dy; n raste pri svakom pomeranju): pogled ide za njim */
+  viewShift?: { dx: number; dy: number; n: number };
+  /** raste kad pogled treba ponovo da se uklopi (dodat ili obrisan ram, poništavanje) */
+  fitTick?: number;
+  /** posle prevlačenja delova: mere modela se računaju iz crteža */
+  onMoveEnd?: () => void;
+  placing?: ResolvedPart[] | null;
+  /** klik postavlja nalepljene delove, pomerene za (dx, dy) mm u odnosu na kopirane */
+  onPlace?: (dx: number, dy: number) => void;
 }
 
 const snap = (v: number, g: number): number => Math.round(v / g) * g;
@@ -50,12 +62,37 @@ export function partFromDrag(materialId: string, shape: MatShape, sx: number, sy
   return { ...base, x: sx, y: sy, lengthMm: len, angleDeg: Math.round((Math.atan2(dy, dx) * 180) / Math.PI) };
 }
 
+/** Ukupne kote crteža (širina ispod, visina levo) sa kosim crticama; slova prate zum. */
+function DimsLayer({ box, fs }: { box: { x0: number; y0: number; x1: number; y1: number }; fs: number }) {
+  // klik na kotu otvara polje za izmenu te mere u traci iznad crteža
+  const edit = (id: string) => (e: React.SyntheticEvent) => { e.stopPropagation(); const el = document.querySelector<HTMLInputElement>(`[data-testid="${id}"]`); el?.focus(); el?.select(); };
+  const clickable = (id: string) => ({ onPointerDown: (e: React.PointerEvent) => e.stopPropagation(), onClick: edit(id), style: { cursor: 'pointer' as const, pointerEvents: 'all' as const } });
+  const W = Math.round((box.x1 - box.x0) * 10) / 10; const H = Math.round((box.y1 - box.y0) * 10) / 10;
+  const off = fs * 2.6; const tk = fs * 0.45;
+  const c = '#2563eb';
+  const ln = { stroke: c, strokeWidth: 1.2, vectorEffect: 'non-scaling-stroke' as const };
+  const ext = { ...ln, strokeOpacity: 0.45, strokeDasharray: '4 3' };
+  const yb = -box.y0 + off; const xl = box.x0 - off;
+  return (
+    <g data-testid="designer-dims-layer" pointerEvents="none" fontSize={fs} fill={c} fontWeight="700">
+      <line x1={box.x0} y1={-box.y0} x2={box.x0} y2={yb + tk} {...ext} /><line x1={box.x1} y1={-box.y0} x2={box.x1} y2={yb + tk} {...ext} />
+      <line x1={box.x0} y1={yb} x2={box.x1} y2={yb} {...ln} />
+      <line x1={box.x0 - tk} y1={yb + tk} x2={box.x0 + tk} y2={yb - tk} {...ln} /><line x1={box.x1 - tk} y1={yb + tk} x2={box.x1 + tk} y2={yb - tk} {...ln} />
+      <text x={(box.x0 + box.x1) / 2} y={yb + fs * 1.5} textAnchor="middle" data-testid="designer-dim-w" {...clickable('designer-width')}><title>Kliknite da promenite širinu</title>{W} mm</text>
+      <line x1={box.x0} y1={-box.y1} x2={xl - tk} y2={-box.y1} {...ext} /><line x1={box.x0} y1={-box.y0} x2={xl - tk} y2={-box.y0} {...ext} />
+      <line x1={xl} y1={-box.y1} x2={xl} y2={-box.y0} {...ln} />
+      <line x1={xl - tk} y1={-box.y1 + tk} x2={xl + tk} y2={-box.y1 - tk} {...ln} /><line x1={xl - tk} y1={-box.y0 + tk} x2={xl + tk} y2={-box.y0 - tk} {...ln} />
+      <text x={xl - fs * 0.6} y={-(box.y0 + box.y1) / 2} textAnchor="middle" transform={`rotate(-90 ${xl - fs * 0.6} ${-(box.y0 + box.y1) / 2})`} data-testid="designer-dim-h" {...clickable('designer-height')}><title>Kliknite da promenite visinu</title>{H} mm</text>
+    </g>
+  );
+}
+
 /**
  * Platno za crtanje modela: pogled spreda u mm. Izabranim materijalom se crta povlačenjem. Levi taster bira: klik na deo,
  * Ctrl + klik dodaje ili skida deo iz izbora, prevlačenje po praznom bira sve delove koje okvir dotakne; prevlačenje izabranog
  * dela pomera ceo izbor. Desni (ili srednji) taster pomera papir. Pokazivač je obična strelica.
  */
-export function Designer2D({ model, parts, active, selectedIds, ortho, gridMm, onSelect, onAdd, onMoveStart, onMove }: Props) {
+export function Designer2D({ parts, active, selectedIds, ortho, gridMm, onSelect, onAdd, onMoveStart, onMove, placing, onPlace, showDims = true, viewShift, fitTick = 0, onMoveEnd }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ w: 800, h: 500 });
@@ -68,15 +105,32 @@ export function Designer2D({ model, parts, active, selectedIds, ortho, gridMm, o
   const selected = useMemo(() => new Set(selectedIds), [selectedIds]);
   const activeShape = useMemo(() => (active ? materialShape(active) : null), [active]);
   const vh = (view.w * size.h) / size.w;
+  /** okvir crteža (svi delovi): odatle su ukupne mere */
+  const dimsBox = useMemo(() => extentBounds(parts), [parts]);
+  // nalepljeni delovi: sredina njihovog okvira stoji na pokazivaču (na mreži)
+  const placeOffset = useMemo(() => {
+    if (!placing?.length || !cursor) return null;
+    let x0 = Infinity; let y0 = Infinity; let x1 = -Infinity; let y1 = -Infinity;
+    for (const r of placing) { const b = partBounds(r.part, r.shape); x0 = Math.min(x0, b.x0); y0 = Math.min(y0, b.y0); x1 = Math.max(x1, b.x1); y1 = Math.max(y1, b.y1); }
+    return { dx: snap(cursor.x - (x0 + x1) / 2, gridMm), dy: snap(cursor.y - (y0 + y1) / 2, gridMm) };
+  }, [placing, cursor, gridMm]);
+
+  const placeAt = (c: { x: number; y: number }): { dx: number; dy: number } | null => {
+    if (!placing?.length) return null;
+    let x0 = Infinity; let y0 = Infinity; let x1 = -Infinity; let y1 = -Infinity;
+    for (const r of placing) { const b = partBounds(r.part, r.shape); x0 = Math.min(x0, b.x0); y0 = Math.min(y0, b.y0); x1 = Math.max(x1, b.x1); y1 = Math.max(y1, b.y1); }
+    return { dx: snap(c.x - (x0 + x1) / 2, gridMm), dy: snap(c.y - (y0 + y1) / 2, gridMm) };
+  };
 
   const fit = useCallback(() => {
-    let x0 = 0; let y0 = 0; let x1 = model.widthMm; let y1 = model.heightMm;
-    for (const r of parts) { const b = partBounds(r.part, r.shape); x0 = Math.min(x0, b.x0); y0 = Math.min(y0, b.y0); x1 = Math.max(x1, b.x1); y1 = Math.max(y1, b.y1); }
+    let x0 = 0; let y0 = 0; let x1 = 1000; let y1 = 1500; // prazan crtež: prostor za početak crtanja
+    const eb = extentBounds(parts);
+    if (eb) { x0 = eb.x0; y0 = eb.y0; x1 = eb.x1; y1 = eb.y1; }
     const pad = Math.max(x1 - x0, y1 - y0) * 0.12 + 60;
     const w = Math.max(x1 - x0 + 2 * pad, ((y1 - y0 + 2 * pad) * size.w) / size.h);
     const h = (w * size.h) / size.w;
     setView({ x: (x0 + x1) / 2 - w / 2, y: -(y0 + y1) / 2 - h / 2, w });
-  }, [model.widthMm, model.heightMm, parts, size.w, size.h]);
+  }, [parts, size.w, size.h]);
 
   useLayoutEffect(() => {
     const el = wrapRef.current;
@@ -89,7 +143,9 @@ export function Designer2D({ model, parts, active, selectedIds, ortho, gridMm, o
   // pogled se uklapa pri otvaranju i kad se promeni veličina polja ili platna
   const fitRef = useRef(fit);
   fitRef.current = fit;
-  useEffect(() => { fitRef.current(); }, [model.widthMm, model.heightMm, size.w, size.h]);
+  useEffect(() => { fitRef.current(); }, [size.w, size.h, fitTick]);
+  // crtež se pomerio ka početku koordinata: pogled se pomera isto, pa delovi ostaju na istom mestu na ekranu
+  useEffect(() => { if (viewShift && viewShift.n > 0) setView((v) => ({ ...v, x: v.x + viewShift.dx, y: v.y - viewShift.dy })); }, [viewShift?.n]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toWorld = (cx: number, cy: number): { x: number; y: number } => {
     const r = svgRef.current!.getBoundingClientRect();
@@ -120,6 +176,11 @@ export function Designer2D({ model, parts, active, selectedIds, ortho, gridMm, o
     const p = toWorld(e.clientX, e.clientY);
     e.currentTarget.setPointerCapture(e.pointerId);
     if (e.button === 1 || e.button === 2) { drag.current = { mode: 'pan', cx: e.clientX, cy: e.clientY, view }; return; }
+    if (placing?.length) {
+      // klik postavlja nalepljene delove tamo gde stoje (pokazivač se pre klika ažurira pomeranjem)
+      if (e.button === 0) { const sp = { x: snap(p.x, gridMm), y: snap(p.y, gridMm) }; setCursor(sp); const o = placeAt(sp); if (o) onPlace?.(o.dx, o.dy); }
+      return;
+    }
     if (active) { drag.current = { mode: 'draw', sx: snap(p.x, gridMm), sy: snap(p.y, gridMm) }; return; }
     if (e.button !== 0) return;
     const add = e.ctrlKey || e.metaKey;
@@ -161,6 +222,7 @@ export function Designer2D({ model, parts, active, selectedIds, ortho, gridMm, o
   const onPointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
     const d = drag.current;
     drag.current = null;
+    if (d?.mode === 'move' && d.moved) onMoveEnd?.();
     if (d?.mode === 'box') {
       const b = box;
       setBox(null);
@@ -194,24 +256,27 @@ export function Designer2D({ model, parts, active, selectedIds, ortho, gridMm, o
 
   return (
     <div ref={wrapRef} className="relative h-full w-full bg-[#eef2f6] overflow-hidden select-none" style={{ touchAction: 'none' }} data-testid="designer-2d">
-      <svg ref={svgRef} className="absolute inset-0 w-full h-full" viewBox={`${view.x} ${view.y} ${view.w} ${vh}`} style={{ cursor: active ? 'crosshair' : 'default' }}
+      <svg ref={svgRef} className="absolute inset-0 w-full h-full" viewBox={`${view.x} ${view.y} ${view.w} ${vh}`} style={{ cursor: active || placing ? 'crosshair' : 'default' }}
         onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={() => { setCursor(null); if (!drag.current) setGhost(null); }} onPointerCancel={() => { drag.current = null; setBox(null); }} onContextMenu={(e) => e.preventDefault()}>
         {lines}
         <line x1={view.x} y1={0} x2={view.x + view.w} y2={0} stroke="#64748b" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
-        <rect x={0} y={-model.heightMm} width={model.widthMm} height={model.heightMm} fill="#fff" fillOpacity={0.55} stroke="#2563eb" strokeWidth={1.2} strokeDasharray="7 5" vectorEffect="non-scaling-stroke" />
-        <text x={model.widthMm / 2} y={fs * 1.6} textAnchor="middle" fontSize={fs} fill="#2563eb" fontWeight="600">{model.widthMm} mm</text>
-        <text x={-fs * 0.8} y={-model.heightMm / 2} textAnchor="middle" fontSize={fs} fill="#2563eb" fontWeight="600" transform={`rotate(-90 ${-fs * 0.8} ${-model.heightMm / 2})`}>{model.heightMm} mm</text>
+        {showDims && dimsBox && <DimsLayer box={dimsBox} fs={fs} />}
         <g transform="scale(1,-1)">
           {parts.map((r) => <PartSvg key={r.part.id} part={r.part} shape={r.shape} hex={r.hex} selected={selected.has(r.part.id)} />)}
           {box && <rect data-testid="designer-select-box" x={box.x0} y={box.y0} width={box.x1 - box.x0} height={box.y1 - box.y0} fill="#2563eb" fillOpacity={0.08} stroke="#2563eb" strokeWidth={1} strokeDasharray="5 4" vectorEffect="non-scaling-stroke" pointerEvents="none" />}
           {ghost && activeShape && <PartSvg part={ghost} shape={activeShape} hex="#d71920" ghost />}
+          {placing && placeOffset && <g transform={`translate(${placeOffset.dx} ${placeOffset.dy})`} data-testid="designer-paste-ghost" pointerEvents="none">{placing.map((r) => <PartSvg key={r.part.id} part={r.part} shape={r.shape} hex="#d71920" ghost />)}</g>}
         </g>
         {ghost && ghostLabel && <text x={ghost.x + fs} y={-(ghost.y + (ghost.heightMm ?? 0)) - fs * 1.2} fontSize={fs} fill="#d71920" fontWeight="700" data-testid="designer-ghost-label">{ghostLabel}</text>}
       </svg>
       <div className="absolute left-3 bottom-3 text-[12px] bg-white/90 border border-line rounded-lg px-2.5 py-1 tabular-nums text-slate-700" data-testid="designer-cursor">
         {cursor ? `X ${cursor.x} · Y ${cursor.y} mm` : 'Pogled spreda'}
       </div>
-      {active && (
+      {placing?.length ? (
+        <div className="absolute left-3 top-3 right-28 text-[12.5px] bg-white/95 border border-line rounded-lg px-3 py-1.5 text-slate-700" data-testid="designer-paste-hint">
+          Nalepljeno ({placing.length}): pomerite miša i kliknite na mesto gde deo treba da stoji. Esc: otkaži.
+        </div>
+      ) : active && (
         <div className="absolute left-3 top-3 right-28 text-[12.5px] bg-white/95 border border-line rounded-lg px-3 py-1.5 text-slate-700" data-testid="designer-hint">
           <b>{active.sku}</b> — {activeShape?.type === 'piece' ? 'kliknite na mesto gde deo treba da stoji.' : activeShape?.type === 'sheet' ? 'povucite mišem pravougaonik ploče.' : 'povucite mišem od početka do kraja profila.'} Esc: kraj crtanja.
         </div>

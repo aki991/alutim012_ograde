@@ -1,0 +1,168 @@
+{
+  "schemaVersion": 1,
+  "presets": [
+    {
+      "id": "klizna_sina_rucna",
+      "name": "Na donjoj šini · ručna",
+      "support": "ground_rail",
+      "actuation": "manual",
+      "units": "mm",
+      "sourceStatus": "illustrative",
+      "coordinates": "x grows toward opening side, y grows upward. Origin is at ground level below closed leading edge.",
+      "openingDirection": "right",
+      "travel": 2900,
+      "clearOpeningMeasured": null,
+      "moving": {
+        "mainFrameWidth": 3000,
+        "mainFrameHeight": 1285,
+        "frameBottomY": 115,
+        "infillCount": 12,
+        "infillSection": 40,
+        "infillVisualLength": 2830,
+        "infillPitch": 95,
+        "sideChannelVisualLength": 1140,
+        "wheelCentersX": [
+          420,
+          2580
+        ],
+        "wheelDiameter": 104,
+        "handleX": 39,
+        "latchX": 47
+      },
+      "fixed": {
+        "catchX": 0,
+        "upperGuideX": 2940,
+        "openingStopContactX": 5930,
+        "railStartX": -350,
+        "railLength": 6500,
+        "latchReceiverX": -23
+      }
+    },
+    {
+      "id": "klizna_sina_motorna",
+      "name": "Na donjoj šini · motorna",
+      "support": "ground_rail",
+      "actuation": "motor",
+      "units": "mm",
+      "sourceStatus": "illustrative",
+      "coordinates": "x grows toward opening side, y grows upward. Origin is at ground level below closed leading edge.",
+      "openingDirection": "right",
+      "travel": 2900,
+      "clearOpeningMeasured": null,
+      "moving": {
+        "mainFrameWidth": 3000,
+        "mainFrameHeight": 1285,
+        "frameBottomY": 115,
+        "infillCount": 12,
+        "infillSection": 40,
+        "infillVisualLength": 2830,
+        "infillPitch": 95,
+        "sideChannelVisualLength": 1140,
+        "wheelCentersX": [
+          420,
+          2580
+        ],
+        "wheelDiameter": 104,
+        "rackStartX": 55,
+        "rackLength": 2910,
+        "rackMountsX": [
+          220,
+          1500,
+          2780
+        ]
+      },
+      "fixed": {
+        "catchX": 0,
+        "upperGuideX": 2940,
+        "openingStopContactX": 5930,
+        "railStartX": -350,
+        "railLength": 6500,
+        "pinionX": 2940
+      }
+    },
+    {
+      "id": "samonoseca_rucna",
+      "name": "Samonoseća · ručna",
+      "support": "cantilever",
+      "actuation": "manual",
+      "units": "mm",
+      "sourceStatus": "illustrative",
+      "coordinates": "x grows toward opening side, y grows upward. Origin is at ground level below closed leading edge.",
+      "openingDirection": "right",
+      "travel": 2930,
+      "clearOpeningMeasured": null,
+      "moving": {
+        "mainFrameWidth": 3000,
+        "mainFrameHeight": 1285,
+        "frameBottomY": 115,
+        "infillCount": 12,
+        "infillSection": 40,
+        "infillVisualLength": 2830,
+        "infillPitch": 95,
+        "sideChannelVisualLength": 1140,
+        "tailLength": 1500,
+        "carrierProfileLength": 4500,
+        "noseRollerCenterX": 55,
+        "tailBraceX": 3640,
+        "handleX": 39,
+        "latchX": 47
+      },
+      "fixed": {
+        "catchX": 0,
+        "upperGuideX": 2965,
+        "openingStopContactX": 7455,
+        "carriageCentersX": [
+          3200,
+          4170
+        ],
+        "lowerCatchX": 39,
+        "latchReceiverX": -23
+      }
+    },
+    {
+      "id": "samonoseca_motorna",
+      "name": "Samonoseća · motorna",
+      "support": "cantilever",
+      "actuation": "motor",
+      "units": "mm",
+      "sourceStatus": "illustrative",
+      "coordinates": "x grows toward opening side, y grows upward. Origin is at ground level below closed leading edge.",
+      "openingDirection": "right",
+      "travel": 2930,
+      "clearOpeningMeasured": null,
+      "moving": {
+        "mainFrameWidth": 3000,
+        "mainFrameHeight": 1285,
+        "frameBottomY": 115,
+        "infillCount": 12,
+        "infillSection": 40,
+        "infillVisualLength": 2830,
+        "infillPitch": 95,
+        "sideChannelVisualLength": 1140,
+        "tailLength": 1500,
+        "carrierProfileLength": 4500,
+        "noseRollerCenterX": 55,
+        "tailBraceX": 3640,
+        "rackStartX": 60,
+        "rackLength": 4120,
+        "rackMountsX": [
+          150,
+          1400,
+          2700,
+          3950
+        ]
+      },
+      "fixed": {
+        "catchX": 0,
+        "upperGuideX": 2965,
+        "openingStopContactX": 7455,
+        "carriageCentersX": [
+          3200,
+          4170
+        ],
+        "lowerCatchX": 39,
+        "pinionX": 3140
+      }
+    }
+  ]
+}

@@ -5,7 +5,8 @@ import { DEFAULT_MODEL_ID, FENCE_MODELS, GATE_LABELS, POST_LABELS, isLightColor,
 import { createFence, createGate, createOpening, createProject } from '../../domain/models/factories';
 import { applyPostType, setOuterWidth } from '../../domain/geometry/operations';
 import { postHalfSum } from '../../domain/geometry/layout';
-import { gateFieldsFromModel, GATE_TYPE_LABELS, type GateModel } from '../../domain/gates/gateModels';
+import { gateClearWidth, gateFieldsFromModel, GATE_TYPE_LABELS } from '../../domain/gates/gateModels';
+import type { CustomModel } from '../../domain/models/custom';
 import type { FenceModelId, Gate, GateType, PostType, Project } from '../../domain/models/types';
 import type { DragSource } from '../../hooks/useDragController';
 import { useAppStore, useCurrentProject, type NewElementSpec } from '../../store/useAppStore';
@@ -98,12 +99,13 @@ export function ElementThumb({ kind, model }: { kind: ThumbKind; model: FenceMod
 }
 
 /** Sličica modela kapije: kapija iz modela između stubova, isti crtež kao u 2D prikazu. */
-export function GateModelThumb({ model }: { model: GateModel }) {
+export function GateModelThumb({ model }: { model: CustomModel }) {
+  const ok = model.id in FENCE_MODELS;
   const mini = useMini(() => {
-    const g = { ...createGate(model.gateType, { infillModelId: (model.infillModelId in FENCE_MODELS ? model.infillModelId : DEFAULT_MODEL_ID) as FenceModelId }), ...(gateFieldsFromModel(model) as Partial<Gate>) } as Gate;
+    const g = { ...createGate(model.gate?.gateType ?? 'pedestrian', { infillModelId: (ok ? model.id : DEFAULT_MODEL_ID) as FenceModelId }), ...(gateFieldsFromModel(model) as Partial<Gate>) } as Gate;
     const p = createProject('m', [g]);
-    return setOuterWidth(p, g.id, model.clearWidthMm + 2 * postHalfSum(p, 0));
-  }, `gm-${model.id}-${model.version}`);
+    return setOuterWidth(p, g.id, gateClearWidth(model) + 2 * postHalfSum(p, 0));
+  }, `gm-${model.id}-${model.updatedAt}`);
   return <MiniThumb project={mini} grey={isLightColor(model.color)} />;
 }
 
@@ -125,7 +127,8 @@ export function Catalog({ onBeginDrag }: { onBeginDrag: (source: DragSource, e: 
   const { addElement, mutate } = useAppStore.getState();
   const selection = useAppStore((s) => s.editor.selection);
   const [showAll, setShowAll] = useState(false);
-  const gateModels = useAppStore((s) => s.settings.gateModels);
+  const customModels = useAppStore((s) => s.settings.customModels);
+  const gateModels = customModels?.filter((m) => m.kind === 'gate' && !m.replaces);
   const hidden = useAppStore((s) => s.settings.hiddenModels);
   const def = FENCE_MODELS[model];
   const terrace = isTerraceModel(model); // ograda za terasu: bez kapija i bez kataloga stubova
@@ -179,7 +182,7 @@ export function Catalog({ onBeginDrag }: { onBeginDrag: (source: DragSource, e: 
           );
         })}
         {!terrace && gateModels?.map((m) => (
-          <CatalogCard key={m.id} testId={`cat-gatemodel-${m.id}`} title={m.name} subtitle={`Model kapije · ${GATE_TYPE_LABELS[m.gateType]}`} thumb={<GateModelThumb model={m} />}
+          <CatalogCard key={m.id} testId={`cat-gatemodel-${m.id}`} title={m.name} subtitle={`Model kapije · ${GATE_TYPE_LABELS[m.gate?.gateType ?? 'pedestrian']}`} thumb={<GateModelThumb model={m} />}
             onAdd={() => useAppStore.getState().addGateFromModel(m.id)} />
         ))}
         {terrace && (

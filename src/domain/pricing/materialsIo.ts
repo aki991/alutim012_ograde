@@ -1,4 +1,5 @@
 import type { Material, MaterialCategory, MaterialUnit } from '../models/types';
+import { cleanMaterialName } from '../models/materialTitle';
 
 /** Nazivi kategorija kako se prikazuju u tabeli (i izvoze). */
 export const MATERIAL_CATEGORY_LABELS: Record<MaterialCategory, string> = { profil: 'Profili', stub: 'Stubovi', okov: 'Okovi', automatika: 'Automatika', staklo: 'Staklo', panel: 'Paneli', ostalo: 'Ostalo' };
@@ -232,7 +233,9 @@ export function documentHasNewColumns(source: string | string[][]): boolean {
 
 /** Cenovnik posle uvoza: izmenjeni materijali zamenjuju postojeće, novi se dodaju na kraj. */
 export function applyImport(existing: Material[], plan: ImportPlan): Material[] {
-  const changed = new Map(plan.rows.filter((r) => r.status === 'changed' && r.result).map((r) => [r.result!.id, r.result!]));
-  const added = plan.rows.filter((r) => r.status === 'new' && r.result).map((r) => r.result!);
+  // nazivi iz uvoza se čiste (vrsta pa dimenzije, bez beleški dobavljača)
+  const tidy = (m: Material): Material => ({ ...m, name: cleanMaterialName(m.name) });
+  const changed = new Map(plan.rows.filter((r) => r.status === 'changed' && r.result).map((r) => [r.result!.id, tidy(r.result!)]));
+  const added = plan.rows.filter((r) => r.status === 'new' && r.result).map((r) => tidy(r.result!));
   return [...existing.map((m) => changed.get(m.id) ?? m), ...added];
 }

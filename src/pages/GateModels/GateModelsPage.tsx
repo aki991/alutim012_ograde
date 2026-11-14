@@ -1,13 +1,16 @@
-import { Plus, RotateCcw, Trash2, Wrench } from 'lucide-react';
+import { PencilRuler, RotateCcw, Trash2, Wrench } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ElementThumb, GateModelThumb } from '../../components/editor/Catalog';
+import { CustomModelThumb } from '../../components/designer/PartsSvg';
+import { ElementThumb } from '../../components/editor/Catalog';
 import { Page, PageHeader } from '../../components/ui/Common';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
-import { GATE_TYPE_LABELS, type GateModel } from '../../domain/gates/gateModels';
-import { DEFAULT_MODEL_ID, FENCE_MODELS, GATE_LABELS, isTerraceModel } from '../../domain/models/catalog';
-import type { FenceModelId, GateType } from '../../domain/models/types';
+import { GATE_TYPE_LABELS } from '../../domain/gates/gateModels';
+import { DEFAULT_MODEL_ID, GATE_LABELS } from '../../domain/models/catalog';
+import type { CustomModel } from '../../domain/models/custom';
+import type { GateType } from '../../domain/models/types';
 import { useAppStore, useListedProjects } from '../../store/useAppStore';
+import { uid } from '../../utils/id';
 
 const BASIC: { type: GateType; subtitle: string }[] = [
   { type: 'pedestrian', subtitle: 'Za prolaz ljudi' },
@@ -16,53 +19,50 @@ const BASIC: { type: GateType; subtitle: string }[] = [
   { type: 'single', subtitle: 'Jedno krilo' },
 ];
 
-/** Modeli kapija: sačuvane kapije sa merama i okovima (zamena za šablone) i osnovni tipovi kapija; svaki model se može obrisati. */
+/**
+ * Modeli kapija: ručno nacrtani modeli vrste „Kapija“, isto kao modeli ograda (Koristi model, Otvori crtež, Obriši).
+ * U crtežu postoji dugme „Mere kapije“ za podešavanja kapije. Osnovni tipovi kapija se takođe mogu obrisati i vratiti.
+ */
 export default function GateModelsPage() {
   const navigate = useNavigate();
-  const models = useAppStore((s) => s.settings.gateModels) ?? [];
+  const customModels = useAppStore((s) => s.settings.customModels);
+  const materials = useAppStore((s) => s.materials);
   const hidden = useAppStore((s) => s.settings.hiddenModels) ?? [];
   const projects = useListedProjects();
   const currentId = useAppStore((s) => s.editor.projectId);
   const current = projects.find((p) => p.id === currentId);
-  const [pick, setPick] = useState(false);
-  const [del, setDel] = useState<GateModel | null>(null);
+  const models = (customModels ?? []).filter((m) => m.kind === 'gate' && !m.replaces);
+  const [del, setDel] = useState<CustomModel | null>(null);
   const [delBasic, setDelBasic] = useState<GateType | null>(null);
+  const [choice, setChoice] = useState<CustomModel | null>(null);
   const hiddenBasic = BASIC.filter((b) => hidden.includes(`gate:${b.type}`));
 
-  const usedBy = (id: string) => projects.filter((p) => p.items.some((i) => i.kind === 'gate' && i.design?.template?.id === id)).map((p) => p.name);
-  const edit = (id: string | null, type?: GateType) => { const pid = useAppStore.getState().startGateModelEdit(id, type); navigate(`/editor/${pid}`); };
-  const newJob = (m: GateModel) => {
-    const st = useAppStore.getState();
-    const infill = (m.infillModelId in FENCE_MODELS ? m.infillModelId : DEFAULT_MODEL_ID) as FenceModelId;
-    const pid = st.newProject({ modelId: isTerraceModel(infill) ? undefined : infill, startGate: m.gateType, name: `Novi projekat — ${m.name}` });
-    const gate = useAppStore.getState().projects.find((p) => p.id === pid)?.items.find((i) => i.kind === 'gate');
-    if (gate) useAppStore.getState().applyGateModel(gate.id, m.id);
-    navigate(`/editor/${pid}`);
-  };
-  const addToOpen = (m: GateModel) => { if (useAppStore.getState().addGateFromModel(m.id) && current) navigate(`/editor/${current.id}`); };
+  const usedBy = (modelId: string): string[] => projects.filter((p) => p.items.some((it) => it.kind === 'gate' && it.infillModelId === modelId)).map((p) => p.name);
+  const startNew = (m: CustomModel) => { const id = useAppStore.getState().newProjectFromGateModel(m.id); if (id) navigate(`/editor/${id}`); };
+  const addToOpen = (m: CustomModel) => { if (useAppStore.getState().addGateFromModel(m.id) && current) navigate(`/editor/${current.id}`); };
+  const useModel = (m: CustomModel) => { if (current) setChoice(m); else startNew(m); };
   const useBasic = (t: GateType) => navigate(`/editor/${useAppStore.getState().newProject({ modelId: DEFAULT_MODEL_ID, startGate: t, name: `Novi projekat — ${GATE_LABELS[t]}` })}`);
 
   return (
     <Page>
-      <PageHeader title="Modeli kapija" subtitle="Sačuvane kapije sa svim merama i okovima. Model se pravi crtanjem u editoru, uz „Mere kapije“, ili čuvanjem kapije iz projekta."
-        actions={<button className="btn btn-primary" data-testid="btn-create-gate-model" onClick={() => setPick(true)}><Plus size={17} />Napravi model kapije</button>} />
+      <PageHeader title="Modeli kapija" subtitle="Ručno nacrtani modeli kapija. U crtežu kapije dugme „Mere kapije“ otvara podešavanja kapije (mere, zazori, okovi) koja se čuvaju uz model."
+        actions={<button className="btn btn-primary" data-testid="btn-create-gate-model" onClick={() => navigate(`/modeli/crtanje/${uid('cm')}`, { state: { kind: 'gate' } })}><PencilRuler size={17} />Napravi model</button>} />
       <section className="mb-7" data-testid="gate-models">
-        <h2 className="font-bold text-lg mb-3">Moji modeli kapija</h2>
+        <h2 className="font-bold text-lg mb-3">Moji modeli kapija (ručno nacrtani)</h2>
         {models.length === 0 ? (
-          <p className="text-sm text-muted card p-4" data-testid="gate-models-empty">Još nema sačuvanih modela. Napravite model dugmetom iznad ili u „Mere kapije“ izaberite „Sačuvaj kao model“.</p>
+          <p className="text-sm text-muted card p-4" data-testid="gate-models-empty">Još nema modela kapija. Napravite ga dugmetom „Napravi model“ ili u „Mere kapije“ izaberite „Sačuvaj kao model“.</p>
         ) : (
           <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
             {models.map((m) => (
               <article key={m.id} className="card overflow-hidden flex flex-col" data-testid="gate-model-card">
-                <div className="relative bg-[#eef2f6] border-b border-line p-3 grid place-items-center"><GateModelThumb model={m} /></div>
+                <div className="relative aspect-[16/10] bg-[#eef2f6] overflow-hidden border-b border-line p-3"><CustomModelThumb model={m} materials={materials} /></div>
                 <div className="p-4 flex-1 flex flex-col">
-                  <h3 className="font-bold text-[17px]" data-testid="gate-model-name">{m.name}</h3>
-                  <p className="text-sm text-muted mt-0.5">{GATE_TYPE_LABELS[m.gateType]} · otvor {m.clearWidthMm} × {m.heightMm} mm · v{m.version}</p>
-                  <p className="text-[12.5px] text-muted">Ispuna: {FENCE_MODELS[m.infillModelId as FenceModelId]?.name ?? 'model nije pronađen'}</p>
+                  <h3 className="font-bold text-[17px]" data-testid="gate-model-name">{m.name || 'Model bez naziva'}</h3>
+                  <p className="text-sm text-muted mt-0.5">Kapija · {m.widthMm} × {m.heightMm} mm · {m.parts.length} delova</p>
+                  <p className="text-[12.5px] text-muted">{GATE_TYPE_LABELS[m.gate?.gateType ?? 'pedestrian']} · mere kapije v{m.gate?.version ?? 1}</p>
                   <div className="flex flex-wrap gap-2 mt-auto pt-4">
-                    <button className="btn btn-primary" data-testid="use-gate-model" onClick={() => newJob(m)}>Nov posao sa modelom</button>
-                    <button className="btn" data-testid="add-gate-model" disabled={!current} title={current ? `Dodaje kapiju u projekat „${current.name}“` : 'Nijedan projekat nije otvoren'} onClick={() => addToOpen(m)}>Dodaj u otvoreni projekat</button>
-                    <button className="btn" data-testid="edit-gate-model" onClick={() => edit(m.id)}><Wrench size={16} />Uredi</button>
+                    <button className="btn btn-primary" data-testid="use-gate-model" disabled={m.parts.length === 0} onClick={() => useModel(m)}>Koristi model</button>
+                    <button className="btn" data-testid="open-gate-model" onClick={() => navigate(`/modeli/crtanje/${m.id}`)}><PencilRuler size={16} />Otvori crtež</button>
                     <button className="btn btn-danger" data-testid="delete-gate-model" aria-label={`Obriši model ${m.name}`} onClick={() => setDel(m)}><Trash2 size={16} />Obriši</button>
                   </div>
                 </div>
@@ -84,27 +84,32 @@ export default function GateModelsPage() {
                 <h3 className="font-bold text-[16px]">{GATE_LABELS[b.type]}</h3>
                 <p className="text-sm text-muted">{b.subtitle}</p>
                 <div className="flex flex-wrap gap-2 mt-auto pt-3">
-                  <button className="btn btn-primary" onClick={() => useBasic(b.type)}>Nov posao</button>
-                  <button className="btn" data-testid={`edit-basic-${b.type}`} onClick={() => edit(null, b.type)}><Wrench size={16} />Napravi model</button>
-                  <button className="btn btn-danger" data-testid={`delete-basic-${b.type}`} aria-label={`Obriši ${GATE_LABELS[b.type]}`} onClick={() => setDelBasic(b.type)}><Trash2 size={16} /></button>
+                  {/* dorada: crtež kapije u crtanju, gde se menja svaki deo (red iznad, da dugmad ostanu u istoj liniji kao kod ograda) */}
+                  <div className="w-full flex gap-2">
+                    <button className="btn flex-1" data-testid={`rework-gate-${b.type}`} title="Otvara crtež kapije u crtanju, gde se menja svaki deo" onClick={() => navigate(`/modeli/crtanje/${useAppStore.getState().startGateDorada(b.type)}`)}><Wrench size={16} />Doradi</button>
+                    <button className="btn btn-danger shrink-0" data-testid={`delete-basic-${b.type}`} aria-label={`Obriši ${GATE_LABELS[b.type]}`} title="Obriši kapiju" onClick={() => setDelBasic(b.type)}><Trash2 size={16} /></button>
+                  </div>
+                  <button className="btn btn-primary" onClick={() => useBasic(b.type)}>Koristi model</button>
                 </div>
               </div>
             </article>
           ))}
         </div>
       </section>
-      {pick && (
-        <Modal title="Koji tip kapije?" onClose={() => setPick(false)}>
-          <p className="text-sm text-muted mb-3">Otvara se editor sa jednom kapijom. U „Mere kapije“ zadajete mere i okove, a na kraju čuvate model.</p>
-          <div className="grid grid-cols-2 gap-2">
-            {BASIC.map((b) => <button key={b.type} className="btn justify-start" data-testid={`new-gate-model-${b.type}`} onClick={() => { setPick(false); edit(null, b.type); }}>{GATE_LABELS[b.type]}</button>)}
+      {choice && (
+        <Modal title="Kako želite da koristite model?" onClose={() => setChoice(null)}>
+          <p className="text-sm text-slate-600 mb-3">Trenutno je otvoren projekat <b>{current?.name}</b>.</p>
+          <div className="flex flex-col gap-2">
+            <button className="btn btn-primary justify-start" data-testid="gate-model-new-project" onClick={() => { startNew(choice); setChoice(null); }}>Napravi novi projekat sa ovom kapijom</button>
+            <button className="btn justify-start" data-testid="gate-model-add-to-open" onClick={() => { addToOpen(choice); setChoice(null); }}>Dodaj kapiju u otvoreni projekat</button>
+            <button className="btn justify-start" onClick={() => setChoice(null)}>Otkaži</button>
           </div>
         </Modal>
       )}
       {del && (
         <ConfirmDialog title="Brisanje modela kapije" danger confirmLabel="Obriši"
-          message={usedBy(del.id).length ? <>Model <b>{del.name}</b> su koristili projekti: <b>{usedBy(del.id).join(', ')}</b>. Oni zadržavaju svoje mere; briše se samo model.</> : <>Model <b>{del.name}</b> se trajno briše.</>}
-          onCancel={() => setDel(null)} onConfirm={() => { useAppStore.getState().removeGateModel(del.id); setDel(null); }} />
+          message={usedBy(del.id).length ? <>Model <b>{del.name}</b> koriste projekti: <b>{usedBy(del.id).join(', ')}</b>. Ako ga obrišete, kapije u tim projektima prelaze na podrazumevani model; mere ostaju.</> : <>Model <b>{del.name}</b> se trajno briše.</>}
+          onCancel={() => setDel(null)} onConfirm={() => { useAppStore.getState().removeCustomModel(del.id); setDel(null); }} />
       )}
       {delBasic && (
         <ConfirmDialog title="Brisanje osnovne kapije" danger confirmLabel="Obriši"

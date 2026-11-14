@@ -50,11 +50,11 @@ export default function ModelsPage() {
     <Page>
       <PageHeader title="Modeli ograda" subtitle="Svi modeli ograde i pripadajućih kapija. Model se menja bez promene ukupne širine segmenta; boja se postavlja prema slici modela."
         actions={<>{hiddenFence.length > 0 && <button className="btn" data-testid="restore-hidden-models" onClick={() => useAppStore.getState().updateSettings({ hiddenModels: (hiddenModels ?? []).filter((id) => !(id in FENCE_MODELS)) })}><RotateCcw size={16} />Vrati obrisane modele ({hiddenFence.length})</button>}<button className="btn btn-primary" data-testid="btn-create-model" onClick={() => navigate('/modeli/crtanje')}><PencilRuler size={17} />Napravi model</button></>} />
-      {!!customModels?.some((m) => !m.replaces) && (
+      {!!customModels?.some((m) => !m.replaces && m.kind !== 'gate') && (
         <section className="mb-7" data-testid="custom-models">
           <h2 className="font-bold text-lg mb-3">Moji modeli (ručno nacrtani)</h2>
           <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-            {customModels!.filter((m) => !m.replaces).map((m) => (
+            {customModels!.filter((m) => !m.replaces && m.kind !== 'gate').map((m) => (
               <article key={m.id} className="card overflow-hidden flex flex-col" data-testid="custom-model-card">
                 <div className="relative aspect-[16/10] bg-[#eef2f6] overflow-hidden border-b border-line p-3"><CustomModelThumb model={m} materials={materials} /></div>
                 <div className="p-4 flex-1 flex flex-col">

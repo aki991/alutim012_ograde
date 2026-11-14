@@ -1,3 +1,4 @@
+import { cleanMaterialName } from '../domain/models/materialTitle';
 import type { Material } from '../domain/models/types';
 
 /**
@@ -9,7 +10,7 @@ const m = (id: string, sku: string, name: string, category: Material['category']
   id, sku, name, category, unit, unitPrice, wastePercent, demo: false,
 });
 
-export const MODEL_MATERIALS: Material[] = [
+const RAW_MODEL_MATERIALS: Material[] = [
   m('mat_alu_profil', 'DEMO-HP-100', 'Aluminijumski profil 100×20', 'profil', 'm', 520, 6),
   m('mat_alu_panel', 'DEMO-PP-250', 'Aluminijumski panel-profil 250×20', 'profil', 'm', 1150, 5),
   m('mat_alu_vertical', 'DEMO-VP-060', 'Aluminijumski profil 60×20', 'profil', 'm', 340, 6),
@@ -91,3 +92,6 @@ export function missingModelMaterials(existing: Material[]): Material[] {
   const skus = new Set(existing.map((x) => x.sku.trim().toLowerCase()).filter(Boolean));
   return MODEL_MATERIALS.filter((x) => !ids.has(x.id) && !skus.has(x.sku.trim().toLowerCase())).map((x) => ({ ...x }));
 }
+
+/** nazivi su vrsta pa dimenzije (bez beleški iz uvoza), npr. „Kvadratna cev 30×30×2“ */
+export const MODEL_MATERIALS: Material[] = RAW_MODEL_MATERIALS.map((m) => ({ ...m, name: cleanMaterialName(m.name) }));

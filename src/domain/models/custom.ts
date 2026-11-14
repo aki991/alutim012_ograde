@@ -33,6 +33,8 @@ export interface CustomPart {
   lufta?: Lufta;
   /** deo rama: oba kraja se seku pod 45° (u krojnoj listi dobija oznaku 45°, dužina je spoljna mera) */
   cut45?: boolean;
+  /** deo rama sa uglom 45° na krajevima: koja je ivica spoljna (duža): „lo“ = niža strana preseka u lokalnoj osi, „hi“ = viša; bez vrednosti krajevi se crtaju ravno */
+  miter?: 'lo' | 'hi';
   /** pomeraj po dubini (mm, + ka posmatraču) */
   z: number;
 }
@@ -49,6 +51,8 @@ export interface CustomModel {
   updatedAt: string;
   /** model nastao doradom modela iz kataloga (ID tog modela) */
   baseModelId?: string;
+  /** samo vrsta „Kapija“: podešavanja kapije iz „Mere kapije“ (tip, pogon, mere i okovi), čuvaju se uz crtež */
+  gate?: import('../gates/gateModels').GateConfig;
   /** model zamenjuje model iz kataloga („sačuvaj na istom tipu“): u izboru modela stoji umesto njega, a projekti ga koriste */
   replaces?: string;
 }
@@ -103,6 +107,46 @@ export function clampToFrame(model: CustomModel, shapeOf: (p: CustomPart) => Mat
   return changed ? { ...model, widthMm: W, heightMm: H, parts } : model;
 }
 
+/**
+ * Okvir nacrtanog (mm): svi profili i ploče, i komadni delovi koji ne leže na nečemu. Brava ili šarka koja stoji na ramu ili krilu
+ * (njena tačka oslonca je unutar nekog profila) ne širi mere crteža, jer je deo tog profila, a ne dodatak sa strane.
+ */
+export function extentBounds(items: { part: CustomPart; shape: MatShape }[]): { x0: number; y0: number; x1: number; y1: number } | null {
+  let x0 = Infinity; let y0 = Infinity; let x1 = -Infinity; let y1 = -Infinity;
+  const solids = items.filter((i) => i.shape.type !== 'piece').map((i) => partBounds(i.part, i.shape));
+  const take = (b: { x0: number; y0: number; x1: number; y1: number }) => { x0 = Math.min(x0, b.x0); y0 = Math.min(y0, b.y0); x1 = Math.max(x1, b.x1); y1 = Math.max(y1, b.y1); };
+  for (const b of solids) take(b);
+  for (const i of items) {
+    if (i.shape.type !== 'piece') continue;
+    const ax = i.part.x; const ay = i.part.y + 1;
+    const resting = solids.some((b) => ax >= b.x0 - 1e-6 && ax <= b.x1 + 1e-6 && ay >= b.y0 - 1e-6 && ay <= b.y1 + 1e-6);
+    if (!resting) take(partBounds(i.part, i.shape));
+  }
+  return x1 >= x0 ? { x0, y0, x1, y1 } : null;
+}
+
+/** Okvir svih nacrtanih delova (vidi extentBounds); null kad nema delova. */
+export function contentBounds(model: Pick<CustomModel, 'parts'>, shapeOf: (p: CustomPart) => MatShape | null): { x0: number; y0: number; x1: number; y1: number } | null {
+  const items: { part: CustomPart; shape: MatShape }[] = [];
+  for (const p of model.parts) { const shape = shapeOf(p); if (shape) items.push({ part: p, shape }); }
+  return extentBounds(items);
+}
+
+/**
+ * Mere modela proizlaze iz crteža: širina i visina su mere svega što je nacrtano, a delovi se pomeraju tako da donji levi ugao
+ * crteža bude (0, 0). Vraća pomeraj (dx, dy) koji je primenjen na delove (0, 0 kad se ništa nije pomerilo).
+ */
+export function normalizeToContent(model: CustomModel, shapeOf: (p: CustomPart) => MatShape | null): { model: CustomModel; dx: number; dy: number } {
+  const b = contentBounds(model, shapeOf);
+  if (!b) return { model, dx: 0, dy: 0 };
+  const r = (n: number) => Math.round(n * 1000) / 1000;
+  const dx = Math.abs(b.x0) < 1e-6 ? 0 : -b.x0; const dy = Math.abs(b.y0) < 1e-6 ? 0 : -b.y0;
+  const W = Math.round((b.x1 - b.x0) * 10) / 10; const H = Math.round((b.y1 - b.y0) * 10) / 10;
+  if (dx === 0 && dy === 0 && W === model.widthMm && H === model.heightMm) return { model, dx: 0, dy: 0 };
+  const parts = dx === 0 && dy === 0 ? model.parts : model.parts.map((p) => ({ ...p, x: r(p.x + dx), y: r(p.y + dy) }));
+  return { model: { ...model, widthMm: W, heightMm: H, parts }, dx, dy };
+}
+
 export interface ResolvedPart { part: CustomPart; shape: MatShape; hex: string; material: Material | undefined }
 
 /**
@@ -113,11 +157,13 @@ export function resolveParts(model: Pick<CustomModel, 'parts' | 'color'>, materi
   const byId = new Map(materials.map((m) => [m.id, m]));
   const guideIds = new Set(model.parts.flatMap((p) => p.guides ?? []));
   const ordered = guideIds.size ? [...model.parts.filter((p) => !guideIds.has(p.id)), ...model.parts.filter((p) => guideIds.has(p.id))] : model.parts;
-  return ordered.map((part) => {
+  const all = ordered.map((part) => {
     const material = byId.get(part.materialId);
     const shape = material ? materialShape(material) : materialShape({ sku: '', name: part.heightMm ? 'ploča' : 'profil 40x20', unit: part.heightMm ? 'm2' : 'm', category: 'ostalo' });
     return { part, shape, hex: material ? partHex(material, model) : '#94a3b8', material };
   });
+  // komadni delovi (brave, šarke, kape) se crtaju na kraju: uvek su iznad profila i mogu da stoje bilo gde, i na ramu
+  return [...all.filter((r) => r.shape.type !== 'piece'), ...all.filter((r) => r.shape.type === 'piece')];
 }
 
 /**

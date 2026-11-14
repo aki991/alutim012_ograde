@@ -26,10 +26,17 @@ export function PartSvg({ part, shape, hex, selected = false, ghost = false }: {
     body = <rect x={part.x} y={part.y} width={part.lengthMm} height={part.heightMm ?? 0} fill={shape.glass ? GLASS : hex} fillOpacity={shape.glass ? 0.45 : 1} {...common} />;
   } else if (shape.type === 'linear') {
     const { face, u0 } = sectionFace(shape.section, partAngle(part));
+    // deo rama: krajevi pod 45° (duža ivica je spoljna), da se ramovi spajaju na uglovima
+    const mit = part.cut45 && part.miter ? part.lengthMm > 2 * face : false;
+    const L = part.lengthMm;
+    const poly = mit
+      ? (part.miter === 'lo' ? [[0, u0], [L, u0], [L - face, u0 + face], [face, u0 + face]] : [[face, u0], [L - face, u0], [L, u0 + face], [0, u0 + face]]).map((q) => q.join(',')).join(' ')
+      : null;
+    const clipId = `miter-${part.id}${ghost ? '-g' : ''}`;
     body = (
       <g transform={`translate(${part.x} ${part.y}) rotate(${part.angleDeg})`}>
-        <rect x={0} y={u0} width={part.lengthMm} height={face} fill={hex} {...common} />
-        {sectionEdgeLines(shape.section, partAngle(part)).map((u) => <line key={u} x1={0} y1={u} x2={part.lengthMm} y2={u} stroke="#808080" strokeOpacity={0.7} strokeWidth={0.8} vectorEffect="non-scaling-stroke" />)}
+        {poly ? <><clipPath id={clipId}><polygon points={poly} /></clipPath><polygon points={poly} fill={hex} {...common} /></> : <rect x={0} y={u0} width={part.lengthMm} height={face} fill={hex} {...common} />}
+        <g clipPath={poly ? `url(#${clipId})` : undefined}>{sectionEdgeLines(shape.section, partAngle(part)).map((u) => <line key={u} x1={0} y1={u} x2={part.lengthMm} y2={u} stroke="#808080" strokeOpacity={0.7} strokeWidth={0.8} vectorEffect="non-scaling-stroke" />)}</g>
       </g>
     );
   } else {

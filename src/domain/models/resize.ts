@@ -1,5 +1,5 @@
 import { partBounds, type CustomModel, type CustomPart } from './custom';
-import { materialShape, type MatShape } from './materialShape';
+import { materialShape, sectionFace, type MatShape } from './materialShape';
 import type { Material } from './types';
 
 /**
@@ -35,11 +35,42 @@ export function resizeModel(model: CustomModel, widthMm: number, heightMm: numbe
     const s = shapeOf(p);
     if (!s || s.type !== 'linear') continue;
     const b = partBounds(p, s);
+    // letvica koja je u nizu istih (prva i poslednja prečka uz ivicu) nije ram: nosi se po svojoj osi, pa su razmaci u nizu jednaki
+    const inRow = model.parts.filter((q) => q.id !== p.id && q.materialId === p.materialId && Math.abs(q.angleDeg - p.angleDeg) < 1e-6 && q.rot === p.rot && Math.abs(q.lengthMm - p.lengthMm) < 1 && (isH(p) ? Math.abs(q.x - p.x) < 1 : Math.abs(q.y - p.y) < 1)).length >= 2;
+    if (inRow) continue;
     if (isV(p)) { if (b.x0 < 1) mL = Math.max(mL, b.x1); if (b.x1 > W - 1) mR = Math.max(mR, W - b.x0); }
     if (isH(p)) { if (b.y0 < 1) mB = Math.max(mB, b.y1); if (b.y1 > H - 1) mT = Math.max(mT, H - b.y0); }
   }
   const mx = mapper(W, widthMm, mL, mR);
   const my = mapper(H, heightMm, mB, mT);
+
+  /**
+   * Niz istih letvica (prečke jedna iznad druge, ili uspravne letvice jedna pored druge): razmaci između letvica i razmak od
+   * krajnjih letvica do ivice (ili rama) rastu srazmerno, a debljina letvica ostaje. Tako su razmaci uvek jednaki, a niz staje
+   * tačno u novu meru (osa letvice se ne razvlači zajedno sa njenom debljinom).
+   */
+  const rowKey = (p: CustomPart) => [p.materialId, a(p), p.rot, Math.round(p.lengthMm), Math.round(isH(p) ? p.x : p.y)].join('|');
+  const rows = new Map<string, CustomPart[]>();
+  for (const p of model.parts) { const sh = shapeOf(p); if (sh?.type === 'linear' && (isH(p) || isV(p))) { const k = rowKey(p); rows.set(k, [...(rows.get(k) ?? []), p]); } }
+  const rowAxis = new Map<string, number>();
+  for (const list of rows.values()) {
+    if (list.length < 3) continue;
+    const horiz = isH(list[0]);
+    const sh = shapeOf(list[0]);
+    if (sh?.type !== 'linear') continue;
+    const e = sectionFace(sh.section, list[0].rot + (list[0].tiltDeg ?? 0));
+    // položaj preseka oko ose: pod 0° i 270° lokalno u ide u pozitivan smer (y, odnosno x), pod 90° i 180° u suprotan
+    const flip = a(list[0]) === 90 || a(list[0]) === 180;
+    const lo = flip ? -e.u1 : e.u0; const hi = flip ? -e.u0 : e.u1;
+    const axes = list.map((p) => (horiz ? p.y : p.x));
+    const L = Math.min(...axes); const U = Math.max(...axes);
+    const size = horiz ? H : W; const ns = horiz ? heightMm : widthMm; const m0 = horiz ? mB : mL; const m1 = horiz ? mT : mR;
+    const k = (ns - m0 - m1) / Math.max(1e-6, size - m0 - m1);
+    const g0 = L + lo - m0; const g1 = size - m1 - (U + hi);
+    const L2 = m0 + g0 * k - lo; const U2 = ns - m1 - g1 * k - hi;
+    if (!(U2 >= L2) || U - L < 1e-6) continue;
+    for (const p of list) rowAxis.set(p.id, L2 + ((horiz ? p.y : p.x) - L) * ((U2 - L2) / (U - L)));
+  }
 
   const parts = model.parts.map((p): CustomPart => {
     const s = shapeOf(p);
@@ -52,8 +83,9 @@ export function resizeModel(model: CustomModel, widthMm: number, heightMm: numbe
     const rad = (p.angleDeg * Math.PI) / 180;
     const ex = p.x + p.lengthMm * Math.cos(rad); const ey = p.y + p.lengthMm * Math.sin(rad);
     const x0 = mx(p.x); const y0 = my(p.y); const x1 = mx(ex); const y1 = my(ey);
-    if (isH(p)) return { ...p, x: r3(x0), y: r3(y0), lengthMm: r3(Math.abs(x1 - x0)) }; // početak ostaje početak (i kod ugla 180°)
-    if (isV(p)) return { ...p, x: r3(x0), y: r3(y0), lengthMm: r3(Math.abs(y1 - y0)) };
+    const ra = rowAxis.get(p.id);
+    if (isH(p)) return { ...p, x: r3(x0), y: r3(ra ?? y0), lengthMm: r3(Math.abs(x1 - x0)) }; // početak ostaje početak (i kod ugla 180°)
+    if (isV(p)) return { ...p, x: r3(ra ?? x0), y: r3(y0), lengthMm: r3(Math.abs(y1 - y0)) };
     // kosi deo: krajevi se pomeraju, a dužina i ugao se računaju iznova
     return { ...p, x: r3(x0), y: r3(y0), lengthMm: r3(Math.hypot(x1 - x0, y1 - y0)), angleDeg: r3((Math.atan2(y1 - y0, x1 - x0) * 180) / Math.PI) };
   });

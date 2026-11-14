@@ -46,7 +46,7 @@ export const effectiveModelId = <T extends string>(id: T): T => (replacementOf(i
 export const allFenceModels = (keep?: string): FenceModelDef[] => {
   const all = FENCE_MODELS as Record<string, FenceModelDef>;
   const catalog = FENCE_MODEL_LIST.filter((d) => !HIDDEN.has(d.id) || d.id === keep).map((d) => { const r = replacementOf(d.id); return r ? all[r.id] : d; });
-  return [...catalog, ...[...REG.values()].filter((m) => !m.replaces).map((m) => all[m.id])];
+  return [...catalog, ...[...REG.values()].filter((m) => !m.replaces && (m.kind !== 'gate' || m.id === keep)).map((m) => all[m.id])];
 };
 
 /** Delovi nacrtanog modela razvučeni na polje zadate širine i visine, u boji elementa (hex ili RAL ključ). */

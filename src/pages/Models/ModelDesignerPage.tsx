@@ -1,3 +1,8 @@
+import { settleModel as settle } from '../../domain/models/settle';
+import { hingesAlongEdge, isHingeMaterial, restOnSurface } from '../../domain/models/surface';
+import { frameIds, isFramePart, modelWithFrame, modelWithoutFrame, modelWithRotatedFrame, resizeWithFrame } from '../../domain/models/frame';
+import { GateDesignModal } from '../../components/gates/GateDesignModal';
+import { defaultGateConfig, GATE_TYPE_LABELS } from '../../domain/gates/gateModels';
 import { AlertTriangle, ArrowLeft, Copy, Download, FileText, Link2, MousePointer2, Redo2, Rows3, Search, Trash2, Undo2, X } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -9,32 +14,17 @@ import { downloadSketchPdf, downloadSketchSvg } from '../../services/pdfSketch';
 import { resolveParts, ShapeIcon } from '../../components/designer/PartsSvg';
 import { colorHex, FENCE_MODELS, normalizeColorKey } from '../../domain/models/catalog';
 import { ColorChartModal } from '../../components/forms/ColorChartModal';
-import { clampToFrame, CUSTOM_KIND_LABELS, customBom, newCustomModel, repeatPart, type CustomModel, type CustomPart } from '../../domain/models/custom';
-import { applyGuides, attachToGuides, autoAttachBars, barGroup, barLayoutInfo, orientGuides, gapRange, guideReport, layoutBars, type LayoutAuto } from '../../domain/models/guides';
-import { resizeModel } from '../../domain/models/resize';
+import { CUSTOM_KIND_LABELS, customBom, newCustomModel, repeatPart, type CustomModel, type CustomPart } from '../../domain/models/custom';
+import { attachToGuides, barGroup, barLayoutInfo, gapRange, guideReport, layoutBars, type LayoutAuto } from '../../domain/models/guides';
 import type { Lufta } from '../../domain/models/custom';
 import { checkNewOverlap } from '../../domain/models/overlap';
 import { replaceMaterial, replaceOptions, replaceRole, replaceTargets } from '../../domain/models/replace';
-import { ConfirmDialog } from '../../components/ui/Modal';
+import { ConfirmDialog, Modal } from '../../components/ui/Modal';
 import { compareMaterials, MATERIAL_GROUPS, materialShape, sectionFace, type MaterialGroupId } from '../../domain/models/materialShape';
-import type { FenceModelId, Material } from '../../domain/models/types';
+import type { FenceModelId, GateType, Material } from '../../domain/models/types';
 import { useAppStore } from '../../store/useAppStore';
 import { uid } from '../../utils/id';
 import { fmtMoney } from '../../utils/units';
-
-/**
- * Prečke u svoje U profile, delovi u okvir modela, pa prečke ponovo (ako su se bočne strane pomerile).
- * `grow`: deo veći od okvira povećava širinu / visinu modela (okvir prati stvarnu ogradu); isključeno kad korisnik
- * sam menja širinu ili visinu modela, da bi okvir mogao i da se smanji.
- */
-function settle(model: CustomModel, materials: Material[], grow = true): CustomModel {
-  const byId = new Map(materials.map((m) => [m.id, m]));
-  // U profili ka unutra, prečke između njih u kanal, pa sve u okvir modela
-  const oriented = autoAttachBars(orientGuides(model, materials), materials);
-  const fitted = applyGuides(oriented, materials);
-  const framed = clampToFrame(fitted, (p) => { const m = byId.get(p.materialId); return m ? materialShape(m) : null; }, grow);
-  return framed === fitted ? fitted : applyGuides(framed, materials);
-}
 
 const Designer3D = lazy(() => import('../../components/designer/Designer3D'));
 
@@ -201,7 +191,20 @@ export default function ModelDesignerPage() {
 function Designer({ id }: { id: string }) {
   const materials = useAppStore((s) => s.materials);
   const settings = useAppStore((s) => s.settings);
-  const [model, setModel] = useState<CustomModel>(() => useAppStore.getState().settings.customModels?.find((m) => m.id === id) ?? newCustomModel(id));
+  const locState = useLocation().state as { dorada?: boolean; kind?: 'gate' } | null;
+  const [model, setModel] = useState<CustomModel>(() => useAppStore.getState().settings.customModels?.find((m) => m.id === id)
+    ?? (locState?.kind === 'gate' ? { ...newCustomModel(id), kind: 'gate', name: 'Nova kapija', widthMm: 1000, heightMm: 1500, gate: defaultGateConfig() } : newCustomModel(id)));
+  /** „Mere kapije“ otvorene iz crtanja: privremen projekat sa kapijom ovog modela */
+  const [draft, setDraft] = useState<{ projectId: string; itemId: string } | null>(null);
+  /** pitanje „od kog elementa je ram“ pre dodavanja rama oko platna */
+  const [frameAsk, setFrameAsk] = useState(false);
+  /** dodavanje šarki: strana i broj, pa izbor šarke */
+  const [hingeAsk, setHingeAsk] = useState<{ side: 'left' | 'right'; count: number } | null>(null);
+  /** pomeraj crteža (za pogled) i zahtev za uklapanje pogleda posle dodavanja/brisanja rama, poništavanja i slično */
+  const [viewShift, setViewShift] = useState({ dx: 0, dy: 0, n: 0 });
+  const [fitTick, setFitTick] = useState(0);
+  /** prikaz kota (ukupna širina i visina crteža); može da se isključi */
+  const [showDims, setShowDims] = useState(true);
   const [hist, setHist] = useState<{ past: CustomModel[]; future: CustomModel[] }>({ past: [], future: [] });
   const [activeId, setActiveId] = useState<string | null>(null);
   /** izabrani delovi (Ctrl + klik ili okvir za više); jedan izabran deo ima pun panel, više delova zajednički */
@@ -232,11 +235,14 @@ function Designer({ id }: { id: string }) {
    * Izmena crteža. Vraća false (i piše obaveštenje) kad bi izmena napravila preklapanje delova; tada se ništa ne menja.
    * Uklopljene prečke se posle izmene vraćaju unutar svojih U profila.
    */
-  const change = useCallback((fn: (m: CustomModel) => CustomModel, keep = true): boolean => {
+  const change = useCallback((fn: (m: CustomModel) => CustomModel, keep = true, norm = true): boolean => {
     const cur = modelRef.current;
     const raw = fn(cur);
     if (raw === cur) return true;
-    const next = settle(raw, materialsRef.current, raw.widthMm === cur.widthMm && raw.heightMm === cur.heightMm);
+    const st = settle(raw, materialsRef.current, norm);
+    const next = st.model;
+    // crtež se pomerio ka početku koordinata: pogled ide za njim, pa deo ostaje na istom mestu na ekranu
+    if (st.dx !== 0 || st.dy !== 0) setViewShift((v) => ({ dx: st.dx, dy: st.dy, n: v.n + 1 }));
     const bad = checkNewOverlap(cur, next, materialsRef.current);
     if (bad) { setNotice(bad); return false; }
     if (keep) setHist((h) => ({ past: [...h.past.slice(-99), cur], future: [] }));
@@ -246,8 +252,8 @@ function Designer({ id }: { id: string }) {
     setNotice(null);
     return true;
   }, []);
-  const undo = useCallback(() => setHist((h) => { if (!h.past.length) return h; setModel(h.past[h.past.length - 1]); return { past: h.past.slice(0, -1), future: [modelRef.current, ...h.future] }; }), []);
-  const redo = useCallback(() => setHist((h) => { if (!h.future.length) return h; setModel(h.future[0]); return { past: [...h.past, modelRef.current], future: h.future.slice(1) }; }), []);
+  const undo = useCallback(() => setHist((h) => { if (!h.past.length) return h; setModel(h.past[h.past.length - 1]); setFitTick((t) => t + 1); return { past: h.past.slice(0, -1), future: [modelRef.current, ...h.future] }; }), []);
+  const redo = useCallback(() => setHist((h) => { if (!h.future.length) return h; setModel(h.future[0]); setFitTick((t) => t + 1); return { past: [...h.past, modelRef.current], future: h.future.slice(1) }; }), []);
 
   // čuvanje: model se upisuje u podešavanja čim ima bar jedan deo (ili je već sačuvan), pa se izmene ne gube
   useEffect(() => {
@@ -261,7 +267,7 @@ function Designer({ id }: { id: string }) {
   // promena materijala (npr. debljine zida U profila) menja kanal: uklopljene prečke se vraćaju u nove granice, a delovi u okvir
   useEffect(() => {
     // i pri otvaranju: model sačuvan pre pravila o okviru se odmah vraća u okvir
-    const next = settle(modelRef.current, materials, false);
+    const next = settle(modelRef.current, materials, false).model;
     if (next !== modelRef.current) { modelRef.current = next; setModel(next); }
   }, [materials]);
 
@@ -309,6 +315,30 @@ function Designer({ id }: { id: string }) {
     if (all.length > 1 && (ids.length === 1 || all.length > ids.length)) setPendingSwap({ ids, materialId }); else swapMaterial(ids, materialId);
   };
   const removeSel = useCallback(() => { if (!selectedIds.length) return; const del = new Set(selectedIds); change((m) => ({ ...m, parts: m.parts.filter((p) => !del.has(p.id)) })); setSelectedIds([]); }, [selectedIds, change]);
+  /** kopirani delovi (Ctrl + C) i delovi koji su nalepljeni (Ctrl + V) pa prate pokazivač dok se ne postave klikom */
+  const clip = useRef<CustomPart[]>([]);
+  const [placing, setPlacing] = useState<CustomPart[] | null>(null);
+  const placingParts = useMemo(() => (placing?.length ? resolveParts({ ...model, parts: placing }, materials) : null), [placing, model, materials]);
+  const copySel = useCallback(() => {
+    if (!selectedIds.length) return;
+    const ids = new Set(selectedIds);
+    clip.current = modelRef.current.parts.filter((p) => ids.has(p.id)).map((p) => JSON.parse(JSON.stringify(p)) as CustomPart);
+  }, [selectedIds]);
+  const pasteClip = useCallback(() => {
+    if (!clip.current.length) return;
+    setActiveId(null);
+    setPlacing(clip.current.map((p) => ({ ...p })));
+  }, []);
+  /** nalepljeni delovi dobijaju nove ID-ove i postavljaju se pomereni za (dx, dy); prečke vezane za bočne profile koji nisu kopirani se odvezuju */
+  const placeClip = (dx: number, dy: number) => {
+    if (!placing?.length) return;
+    const ids = new Map(placing.map((p) => [p.id, uid('part')]));
+    const copies = placing.map((p): CustomPart => {
+      const g = p.guides && ids.has(p.guides[0]) && ids.has(p.guides[1]) ? ([ids.get(p.guides[0])!, ids.get(p.guides[1])!] as [string, string]) : undefined;
+      return restOnSurface(modelRef.current, { ...p, id: ids.get(p.id)!, x: p.x + dx, y: p.y + dy, guides: g }, materialsRef.current);
+    });
+    if (change((m) => ({ ...m, parts: [...m.parts, ...copies] }))) { setSelectedIds(copies.map((c) => c.id)); setPlacing(null); }
+  };
   const duplicateSel = useCallback(() => {
     const p = modelRef.current.parts.find((x) => x.id === selectedId);
     if (!p) return;
@@ -319,7 +349,9 @@ function Designer({ id }: { id: string }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as Element).closest('input,select,textarea')) return;
-      if (e.key === 'Escape') { setActiveId(null); return; }
+      if (e.key === 'Escape') { setActiveId(null); setPlacing(null); return; }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') { e.preventDefault(); copySel(); return; }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteClip(); return; }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicateSel(); return; }
@@ -330,22 +362,108 @@ function Designer({ id }: { id: string }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedIds, grid, undo, redo, removeSel, duplicateSel, change]);
+  }, [selectedIds, grid, undo, redo, removeSel, duplicateSel, change, copySel, pasteClip]);
+
+  /** Ram oko platna od izabranog profila (uglovi pod 45°); vidi domain/models/frame.ts */
+  const addFrame = (materialId: string) => {
+    setFrameAsk(false);
+    const next = modelWithFrame(modelRef.current, materialsRef.current.find((x) => x.id === materialId), materialsRef.current);
+    if ('error' in next) { setNotice(next.error); return; }
+    if (change(() => next)) { setSelectedIds(frameIds(next)); setFitTick((t) => t + 1); }
+  };
+  /** briše ram dodat dugmetom „Dodaj ram“; mere modela se vraćaju na mere platna */
+  /** nova širina / visina celog crteža; sa ramom se razvlači platno unutar njega (ram zadržava debljinu) */
+  const resizeTo = (w: number, h: number): boolean => {
+    const next = resizeWithFrame(modelRef.current, w, h, materialsRef.current);
+    if ('error' in next) { setNotice(next.error); return false; }
+    return change(() => next);
+  };
+  /** šarke duž jedne ivice kapije; leže na ramu ili krilu */
+  const addHinges = (materialId: string) => {
+    const ask = hingeAsk;
+    setHingeAsk(null);
+    const mat = materialsRef.current.find((x) => x.id === materialId);
+    if (!mat || !ask) return;
+    const made = hingesAlongEdge(modelRef.current, mat, ask.side, ask.count, materialsRef.current);
+    if (!made.length) { setNotice('Šarke se dodaju na nacrtanu kapiju: prvo nacrtajte platno ili ram.'); return; }
+    if (change((m) => ({ ...m, parts: [...m.parts, ...made] }))) setSelectedIds(made.map((q) => q.id));
+  };
+  /** okretanje preseka rama: okreće se ceo ram (sva četiri dela), pa uglovi ostaju spojeni */
+  const rotateFrame = (rot: number) => {
+    const next = modelWithRotatedFrame(modelRef.current, rot, materialsRef.current);
+    if ('error' in next) { setNotice(next.error); return; }
+    if (change(() => next)) { setSelectedIds(frameIds(next)); setFitTick((t) => t + 1); }
+  };
+  const removeFrame = () => { if (change((m) => modelWithoutFrame(m))) { setSelectedIds([]); setFitTick((t) => t + 1); } };
+
+  const openGateMeasures = () => {
+    const cur = modelRef.current;
+    if (cur.parts.length === 0) { setNotice('Prvo nacrtajte bar jedan deo kapije; tek tada se otvaraju mere kapije.'); return; }
+    const d = useAppStore.getState().createGateDraft(cur.id);
+    if (!d) { setNotice('Model kapije još nije sačuvan. Pokušajte ponovo za trenutak.'); return; }
+    setDraft(d);
+  };
+  const closeGateMeasures = () => {
+    if (!draft) return;
+    const cur = modelRef.current;
+    const version = cur.gate?.version ?? 1;
+    let cfg = useAppStore.getState().finishGateDraft(draft.projectId, version);
+    setDraft(null);
+    if (!cfg) return;
+    // nova verzija samo ako se podešavanja stvarno promenila
+    const same = JSON.stringify({ ...cfg, version: 0 }) === JSON.stringify({ ...(cur.gate ?? {}), version: 0 });
+    if (!same) cfg = { ...cfg, version: version + 1 };
+    const next = cfg;
+    // mere modela proizlaze iz crteža: podešavanja kapije se čuvaju uz model, a crtež se ne razvlači
+    if (!same) change((m) => ({ ...m, gate: next }), false);
+  };
 
   return (
     <div className="h-full flex flex-col min-h-0" data-testid="model-designer">
+      {hingeAsk && (
+        <Modal title="Dodaj šarke" onClose={() => setHingeAsk(null)}>
+          <p className="text-sm text-muted mb-3">Šarke se postavljaju duž jedne ivice kapije, ravnomerno od gornje do donje (prve i poslednje na 150 mm od ivice), i leže na ramu ili krilu. Posle toga se svaka može pomeriti.</p>
+          <div className="grid grid-cols-2 gap-3 mb-3 text-sm">
+            <label className="flex flex-col gap-1">Strana šarki
+              <select className="input" data-testid="hinge-side" value={hingeAsk.side} onChange={(e) => setHingeAsk({ ...hingeAsk, side: e.target.value as 'left' | 'right' })}><option value="left">Levo</option><option value="right">Desno</option></select></label>
+            <label className="flex flex-col gap-1">Broj šarki
+              <select className="input" data-testid="hinge-count" value={hingeAsk.count} onChange={(e) => setHingeAsk({ ...hingeAsk, count: Number(e.target.value) })}>{[2, 3, 4].map((n) => <option key={n} value={n}>{n}</option>)}</select></label>
+          </div>
+          <MaterialPicker materials={materials.filter(isHingeMaterial)} placeholder="— izaberite šarku —" testId="hinge-material" ariaLabel="Šarka" onPick={addHinges} />
+        </Modal>
+      )}
+      {frameAsk && (
+        <Modal title="Dodaj ram" onClose={() => setFrameAsk(false)}>
+          <p className="text-sm text-muted mb-3">Od kog elementa je ram? Ram se crta oko platna, uglovi se seku pod 45°, a model se uvećava za širinu profila sa svake strane.</p>
+          <MaterialPicker materials={materials.filter((m) => materialShape(m).type === 'linear')} placeholder="— izaberite profil rama —" testId="frame-material" ariaLabel="Profil rama" onPick={addFrame} />
+        </Modal>
+      )}
+      {draft && <GateDesignModal projectId={draft.projectId} itemId={draft.itemId} embedded onClose={closeGateMeasures} />}
       <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-line bg-white">
-        <Link to="/modeli" className="btn btn-sm" data-testid="designer-back"><ArrowLeft size={15} />Modeli</Link>
+        <Link to={model.kind === 'gate' ? '/modeli-kapija' : '/modeli'} className="btn btn-sm" data-testid="designer-back"><ArrowLeft size={15} />{model.kind === 'gate' ? 'Modeli kapija' : 'Modeli'}</Link>
         <input className="input !w-56 !py-1.5 font-semibold" aria-label="Naziv modela" data-testid="designer-name" value={model.name} onChange={(e) => change((m) => ({ ...m, name: e.target.value }), false)} />
-        <select className="input !w-auto !py-1.5" aria-label="Vrsta" data-testid="designer-kind" value={model.kind} onChange={(e) => change((m) => ({ ...m, kind: e.target.value as CustomModel['kind'] }))}>
+        <select className="input !w-auto !py-1.5" aria-label="Vrsta" data-testid="designer-kind" value={model.kind} onChange={(e) => change((m) => ({ ...m, kind: e.target.value as CustomModel['kind'], gate: e.target.value === 'gate' ? m.gate ?? defaultGateConfig() : m.gate }))}>
           {Object.entries(CUSTOM_KIND_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <Num label="Širina" value={model.widthMm} min={100} max={20000} testId="designer-width" onChange={(v) => change((m) => resizeModel(m, Math.round(v), m.heightMm, materialsRef.current))} />
-        <Num label="Visina" value={model.heightMm} min={100} max={6000} testId="designer-height" onChange={(v) => change((m) => resizeModel(m, m.widthMm, Math.round(v), materialsRef.current))} />
+        {model.kind === 'gate' && (
+          <>
+            <select className="input !w-auto !py-1.5" aria-label="Tip kapije" data-testid="designer-gate-type" value={model.gate?.gateType ?? 'pedestrian'}
+              onChange={(e) => change((m) => ({ ...m, gate: { ...defaultGateConfig(e.target.value as GateType), clearWidthMm: m.gate?.clearWidthMm, version: m.gate?.version ?? 1 } }))}>
+              {(Object.keys(GATE_TYPE_LABELS) as GateType[]).map((t) => <option key={t} value={t}>{GATE_TYPE_LABELS[t]}</option>)}
+            </select>
+            <button className="btn btn-sm btn-primary" data-testid="designer-gate-measures" onClick={openGateMeasures}>Mere kapije</button>
+          </>
+        )}
+        <Num label="Širina" value={model.widthMm} min={50} max={20000} testId="designer-width" onChange={(v) => resizeTo(Math.round(v), modelRef.current.heightMm)} />
+        <Num label="Visina" value={model.heightMm} min={50} max={6000} testId="designer-height" onChange={(v) => resizeTo(modelRef.current.widthMm, Math.round(v))} />
+        <label className="flex items-center gap-1.5 text-[13px]" title="Ukupna širina i visina crteža; mere modela proizlaze iz crteža"><input type="checkbox" checked={showDims} data-testid="designer-dims" onChange={(e) => setShowDims(e.target.checked)} />Kote</label>
         <button type="button" className="input !w-auto !py-1.5 inline-flex items-center gap-2" aria-label={`Boja: ${normalizeColorKey(model.color)}. Otvori kartu boja`} data-testid="designer-color" onClick={() => setChartOpen(true)}>
           <span className="w-5 h-5 rounded-full ring-1 ring-black/20" style={{ background: colorHex(model.color) }} />{normalizeColorKey(model.color)}
         </button>
         {chartOpen && <ColorChartModal value={normalizeColorKey(model.color)} favorites={settings.favoriteColors ?? []} onPick={(k) => change((m) => ({ ...m, color: k }))} onFavorites={(list) => useAppStore.getState().updateSettings({ favoriteColors: list })} onClose={() => setChartOpen(false)} />}
+        {model.kind === 'gate' && <button className="btn btn-sm" data-testid="designer-add-hinges" title="Dodaje šarke duž jedne ivice kapije" onClick={() => setHingeAsk({ side: model.gate?.opening ?? 'right', count: 2 })}>Dodaj šarke</button>}
+        <button className="btn btn-sm" data-testid="designer-add-frame" title="Dodaje ram oko platna (uglovi pod 45°)" onClick={() => setFrameAsk(true)}>Dodaj ram</button>
+        {model.parts.some(isFramePart) && <button className="btn btn-sm" data-testid="designer-remove-frame" title="Briše dodat ram; mere modela se vraćaju na mere platna" onClick={removeFrame}><Trash2 size={14} />Obriši ram</button>}
         <div className="flex-1" />
         <label className="flex items-center gap-1.5 text-[13px]" title="Profili se crtaju samo vodoravno ili uspravno"><input type="checkbox" checked={ortho} data-testid="designer-ortho" onChange={(e) => setOrtho(e.target.checked)} />Pod pravim uglom</label>
         <select className="input !w-auto !py-1.5" aria-label="Korak mreže" value={grid} onChange={(e) => setGrid(Number(e.target.value))}>
@@ -411,10 +529,10 @@ function Designer({ id }: { id: string }) {
           )}
           {view !== '3d' && view !== 'skica' && (
             <Designer2D model={model} parts={parts} active={active} selectedIds={selectedIds} ortho={ortho} gridMm={grid}
-              onSelect={setSelectedIds}
-              onAdd={(p) => { const next = { ...modelRef.current, parts: [...modelRef.current.parts, p] }; const fitted = p.angleDeg === 0 ? attach(next, p.id, true) : null; if (change(() => fitted ?? next)) setSelectedId(p.id); }}
+              onSelect={setSelectedIds} placing={placingParts} onPlace={placeClip} showDims={showDims} viewShift={viewShift} fitTick={fitTick} onMoveEnd={() => change((m) => ({ ...m }), false)}
+              onAdd={(p0) => { const p = restOnSurface(modelRef.current, p0, materialsRef.current); const next = { ...modelRef.current, parts: [...modelRef.current.parts, p] }; const fitted = p.angleDeg === 0 ? attach(next, p.id, true) : null; if (change(() => fitted ?? next)) setSelectedId(p.id); }}
               onMoveStart={record}
-              onMove={(moves) => { const at = new Map(moves.map((v) => [v.id, v])); change((m) => ({ ...m, parts: m.parts.map((p) => { const v = at.get(p.id); return v ? { ...p, x: v.x, y: v.y } : p; }) }), false); }} />
+              onMove={(moves) => { const at = new Map(moves.map((v) => [v.id, v])); change((m) => ({ ...m, parts: m.parts.map((p) => { const v = at.get(p.id); return v ? { ...p, x: v.x, y: v.y } : p; }) }), false, false); }} />
           )}
           {view !== '2d' && view !== 'skica' && (
             <div className={`min-h-0 ${view === 'split' ? 'border-t xl:border-t-0 xl:border-l border-line' : ''}`}>
@@ -473,7 +591,7 @@ function Designer({ id }: { id: string }) {
                   <div className="grid gap-1 py-1 text-[13px]">
                     <span className="text-slate-600">Okretanje preseka{rot.same ? '' : ' (različito)'}</span>
                     <span className="grid grid-cols-4 rounded-lg border border-line overflow-hidden">
-                      {[0, 90, 180, 270].map((r) => <button key={r} data-testid={`multi-rot-${r}`} aria-pressed={rot.same && rot.value === r} className={`py-1 text-[12px] font-semibold ${rot.same && rot.value === r ? 'bg-brand-black text-white' : 'hover:bg-slate-50'}`} onClick={() => setAll({ rot: r })}>{r}°</button>)}
+                      {[0, 90, 180, 270].map((r) => <button key={r} data-testid={`multi-rot-${r}`} aria-pressed={rot.same && rot.value === r} className={`py-1 text-[12px] font-semibold ${rot.same && rot.value === r ? 'bg-brand-black text-white' : 'hover:bg-slate-50'}`} onClick={() => (multi.some((q) => isFramePart(q.part)) ? rotateFrame(r) : setAll({ rot: r }))}>{r}°</button>)}
                     </span>
                   </div>
                 )}
@@ -534,7 +652,7 @@ function Designer({ id }: { id: string }) {
                 <div className="grid gap-1 py-1 text-[13px]">
                   <span className="text-slate-600">Okretanje preseka</span>
                   <span className="grid grid-cols-4 rounded-lg border border-line overflow-hidden">
-                    {[0, 90, 180, 270].map((r) => <button key={r} data-testid={`part-rot-${r}`} aria-pressed={sel.part.rot === r} className={`py-1 text-[12px] font-semibold ${sel.part.rot === r ? 'bg-brand-black text-white' : 'hover:bg-slate-50'}`} onClick={() => patchPart(sel.part.id, { rot: r })}>{r}°</button>)}
+                    {[0, 90, 180, 270].map((r) => <button key={r} data-testid={`part-rot-${r}`} aria-pressed={sel.part.rot === r} className={`py-1 text-[12px] font-semibold ${sel.part.rot === r ? 'bg-brand-black text-white' : 'hover:bg-slate-50'}`} onClick={() => (isFramePart(sel.part) ? rotateFrame(r) : patchPart(sel.part.id, { rot: r }))}>{r}°</button>)}
                   </span>
                 </div>
               )}

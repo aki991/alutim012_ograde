@@ -6,7 +6,8 @@ import { SEED_MATERIALS } from './fixtures/materials';
 import type { Gate } from '../domain/models/types';
 import { applyExample, configHash, confirmationState, emptyDesign, mirrorDesign, missingHardware, resolveGate, setDim, setSolve, type GateDesign, type GateHardware } from '../domain/gates/design';
 import { gateCutRows, gateMass } from '../domain/gates/production';
-import { gateFieldsFromModel, gateModelFromGate } from '../domain/gates/gateModels';
+import { gateClearWidth, gateConfigFromGate, gateFieldsFromModel } from '../domain/gates/gateModels';
+import { newCustomModel } from '../domain/models/custom';
 import { doubleLeafWidths } from '../domain/geometry/gates';
 import { computeLayout } from '../domain/geometry/layout';
 
@@ -189,19 +190,19 @@ describe('potvrde i šabloni', () => {
     expect(confirmationState(withDesign(g, setDim(conf, 'gC', 12)), 4000, 'mere')).toBe('stale');
     expect(confirmationState(withDesign(g, conf), 3800, 'mere')).toBe('stale');
   });
-  it('model kapije čuva celu kapiju (kote, okove, ispunu); primena na drugu kapiju je prenosi i zavisne kote se preračunavaju', () => {
+  it('model kapije je nacrtan model sa podešavanjima kapije; primena na drugu kapiju prenosi mere i okove, zavisne kote se preračunavaju', () => {
     const g = { ...createGate('double'), heightMm: 1500, color: 'RAL 9005' } as Gate;
     let d = set(emptyDesign('swing_double'), { gL: 25, gR: 25, WL: 1200 });
     d = { ...setDim(d, 'gC', 10), hardware: [hw('hinge_left', 'Moja šarka', { qty: 2 })] };
-    const model = gateModelFromGate(withDesign(g, d), 4000, 'Dvokrilna ALU TIM', 'gm1', 1);
-    expect(model).toMatchObject({ name: 'Dvokrilna ALU TIM', version: 1, gateType: 'double', clearWidthMm: 4000, heightMm: 1500, color: 'RAL 9005' });
-    expect(model.design.template).toEqual({ id: 'gm1', name: 'Dvokrilna ALU TIM', version: 1 });
-    // izmena kapije posle čuvanja ne menja sačuvan model (kopija)
+    const cfg = gateConfigFromGate(withDesign(g, d), 4000, 3);
+    // izmena kapije posle čuvanja ne menja sačuvana podešavanja (kopija)
     d.hardware[0].name = 'Izmenjeno';
-    expect(model.design.hardware[0].name).toBe('Moja šarka');
-    const fields = gateFieldsFromModel(model);
-    const job = { ...createGate('double'), ...fields } as Gate;
-    expect(job.design?.template?.version).toBe(1);
+    expect(cfg.design.hardware[0].name).toBe('Moja šarka');
+    expect(cfg).toMatchObject({ gateType: 'double', version: 3, clearWidthMm: 4000, heightMm: 1500 });
+    const model = { ...newCustomModel('cm_t'), kind: 'gate' as const, name: 'Dvokrilna ALU TIM', widthMm: 1000, heightMm: 1500, color: 'RAL 9005', gate: cfg };
+    expect(gateClearWidth(model)).toBe(4000);
+    const job = { ...createGate('double'), ...gateFieldsFromModel(model) } as Gate;
+    expect(job.design?.template).toEqual({ id: 'cm_t', name: 'Dvokrilna ALU TIM', version: 3 });
     const r = resolveGate(job, 3500);
     expect(r.values.WL.v).toBe(1200);
     expect(r.values.WR.v).toBe(3500 - 25 - 10 - 25 - 1200);
