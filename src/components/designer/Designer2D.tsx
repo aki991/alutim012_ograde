@@ -40,6 +40,14 @@ interface Props {
   placing?: ResolvedPart[] | null;
   /** klik postavlja nalepljene delove, pomerene za (dx, dy) mm u odnosu na kopirane */
   onPlace?: (dx: number, dy: number) => void;
+  /** dodatni sloj preko crteža (klizni okov), u koordinatama SVG-a (y naniže); px = mm po pikselu */
+  overlay?: (px: number) => React.ReactNode;
+  /** y linije tla u koordinatama SVG-a (klizna kapija: krilo je podignuto od tla); bez vrednosti tlo je donja ivica crteža */
+  groundY?: number;
+  /** okvir koji uklapanje pogleda uzima u obzir pored delova (mm, y nagore) */
+  extraBounds?: { x0: number; y0: number; x1: number; y1: number } | null;
+  /** klik na deo dodatnog sloja (atribut data-sliding-part) */
+  onOverlayPick?: (key: string) => void;
 }
 
 const snap = (v: number, g: number): number => Math.round(v / g) * g;
@@ -92,7 +100,7 @@ function DimsLayer({ box, fs }: { box: { x0: number; y0: number; x1: number; y1:
  * Ctrl + klik dodaje ili skida deo iz izbora, prevlačenje po praznom bira sve delove koje okvir dotakne; prevlačenje izabranog
  * dela pomera ceo izbor. Desni (ili srednji) taster pomera papir. Pokazivač je obična strelica.
  */
-export function Designer2D({ parts, active, selectedIds, ortho, gridMm, onSelect, onAdd, onMoveStart, onMove, placing, onPlace, showDims = true, viewShift, fitTick = 0, onMoveEnd }: Props) {
+export function Designer2D({ parts, active, selectedIds, ortho, gridMm, onSelect, onAdd, onMoveStart, onMove, placing, onPlace, showDims = true, viewShift, fitTick = 0, onMoveEnd, overlay, groundY = 0, extraBounds, onOverlayPick }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ w: 800, h: 500 });
@@ -126,11 +134,12 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, onSelect
     let x0 = 0; let y0 = 0; let x1 = 1000; let y1 = 1500; // prazan crtež: prostor za početak crtanja
     const eb = extentBounds(parts);
     if (eb) { x0 = eb.x0; y0 = eb.y0; x1 = eb.x1; y1 = eb.y1; }
+    if (extraBounds) { x0 = Math.min(x0, extraBounds.x0); y0 = Math.min(y0, extraBounds.y0); x1 = Math.max(x1, extraBounds.x1); y1 = Math.max(y1, extraBounds.y1); }
     const pad = Math.max(x1 - x0, y1 - y0) * 0.12 + 60;
     const w = Math.max(x1 - x0 + 2 * pad, ((y1 - y0 + 2 * pad) * size.w) / size.h);
     const h = (w * size.h) / size.w;
     setView({ x: (x0 + x1) / 2 - w / 2, y: -(y0 + y1) / 2 - h / 2, w });
-  }, [parts, size.w, size.h]);
+  }, [parts, size.w, size.h, extraBounds]);
 
   useLayoutEffect(() => {
     const el = wrapRef.current;
@@ -183,6 +192,8 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, onSelect
     }
     if (active) { drag.current = { mode: 'draw', sx: snap(p.x, gridMm), sy: snap(p.y, gridMm) }; return; }
     if (e.button !== 0) return;
+    const hw = onOverlayPick ? (e.target as Element).closest('[data-sliding-part]')?.getAttribute('data-sliding-part') : null;
+    if (hw && hw !== 'leaf') { onOverlayPick!(hw); return; }
     const add = e.ctrlKey || e.metaKey;
     const id = (e.target as Element).closest('[data-part-id]')?.getAttribute('data-part-id');
     const hit = id ? parts.find((r) => r.part.id === id) : undefined;
@@ -259,7 +270,7 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, onSelect
       <svg ref={svgRef} className="absolute inset-0 w-full h-full" viewBox={`${view.x} ${view.y} ${view.w} ${vh}`} style={{ cursor: active || placing ? 'crosshair' : 'default' }}
         onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={() => { setCursor(null); if (!drag.current) setGhost(null); }} onPointerCancel={() => { drag.current = null; setBox(null); }} onContextMenu={(e) => e.preventDefault()}>
         {lines}
-        <line x1={view.x} y1={0} x2={view.x + view.w} y2={0} stroke="#64748b" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+        <line x1={view.x} y1={groundY} x2={view.x + view.w} y2={groundY} stroke="#64748b" strokeWidth={1.5} vectorEffect="non-scaling-stroke" data-testid="designer-ground" />
         {showDims && dimsBox && <DimsLayer box={dimsBox} fs={fs} />}
         <g transform="scale(1,-1)">
           {parts.map((r) => <PartSvg key={r.part.id} part={r.part} shape={r.shape} hex={r.hex} selected={selected.has(r.part.id)} />)}
@@ -267,6 +278,7 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, onSelect
           {ghost && activeShape && <PartSvg part={ghost} shape={activeShape} hex="#d71920" ghost />}
           {placing && placeOffset && <g transform={`translate(${placeOffset.dx} ${placeOffset.dy})`} data-testid="designer-paste-ghost" pointerEvents="none">{placing.map((r) => <PartSvg key={r.part.id} part={r.part} shape={r.shape} hex="#d71920" ghost />)}</g>}
         </g>
+        {overlay && <g data-testid="designer-overlay">{overlay(view.w / size.w)}</g>}
         {ghost && ghostLabel && <text x={ghost.x + fs} y={-(ghost.y + (ghost.heightMm ?? 0)) - fs * 1.2} fontSize={fs} fill="#d71920" fontWeight="700" data-testid="designer-ghost-label">{ghostLabel}</text>}
       </svg>
       <div className="absolute left-3 bottom-3 text-[12px] bg-white/90 border border-line rounded-lg px-2.5 py-1 tabular-nums text-slate-700" data-testid="designer-cursor">

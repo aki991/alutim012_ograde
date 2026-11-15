@@ -2,6 +2,8 @@ import { useAppStore } from '../../store/useAppStore';
 import { placeSliding } from '../../domain/gates/slidingLayout';
 import type { Component, Role, Shape } from '../../domain/gates/slidingAssembly';
 import type { Gate } from '../../domain/models/types';
+import { ramInsets } from '../../domain/models/tubes';
+import { InfillArt } from '../fences/InfillArt';
 
 /** Referentne boje priloga: pokretno krilo, pogon/ručni okov, vođenje i prihvat, fiksna podloga. */
 export const SLIDING_COLORS = { leaf: '#23415e', infill: '#7694ad', drive: '#b75321', guide: '#08786a', fixed: '#737e8a', foundation: '#e2e7ed', open: '#849bae' } as const;
@@ -26,13 +28,21 @@ interface Props {
   realistic?: boolean;
   /** proba hoda (0–100 %); bez vrednosti iz stanja editora */
   testPct?: number;
+  /** klik na deo crteža (ključ dela); u crtežu modela otvara podešavanja tog dela */
+  onPartClick?: (compKey: string) => void;
+  /** delovi crteža koji se ističu (izabrani deo) */
+  highlight?: string[];
+  /** krilo iz modela se ne crta (u crtanju modela krilo je sam crtež) */
+  noLeaf?: boolean;
+  /** bez zone uvlačenja i konture otvorenog položaja */
+  noZone?: boolean;
 }
 
 /**
  * Klizni sklop na crtežu projekta. Sve nastaje iz podataka kapije: lokalna osa X (ka strani otvaranja) se preslikava pri otvaranju
  * ulevo, pa se sklop postavlja na mesto elementa. Proba hoda pomera samo pokretne delove za hod × procenat / 100.
  */
-export function SlidingAssemblyArt({ gate, clearStart, clearEnd, clearWidth, floorY, px, hex, showDims, realistic, testPct }: Props) {
+export function SlidingAssemblyArt({ gate, clearStart, clearEnd, clearWidth, floorY, px, hex, showDims, realistic, testPct, onPartClick, highlight, noLeaf, noZone }: Props) {
   const stored = useAppStore((s) => s.editor.slideTest[gate.id]);
   const placed = placeSliding(gate, { clearStart, clearEnd, clearWidth });
   if (!placed) return null;
@@ -59,7 +69,9 @@ export function SlidingAssemblyArt({ gate, clearStart, clearEnd, clearWidth, flo
     const fill = c.key === 'foundation' ? SLIDING_COLORS.foundation : color(c.role);
     const op = c.role === 'infill' ? 0.82 : 1;
     return (
-      <g key={c.key} data-sliding-part={c.key} data-moving={c.moving ? 'true' : 'false'} opacity={op}>
+      <g key={c.key} data-sliding-part={c.key} data-moving={c.moving ? 'true' : 'false'} opacity={op}
+        style={{ ...(onPartClick ? { cursor: 'pointer' } : {}), ...(highlight?.includes(c.key) ? { filter: 'drop-shadow(0 0 5px #d92d20)' } : {}) }}
+        onClick={onPartClick ? (e) => { e.stopPropagation(); onPartClick(c.key); } : undefined}>
         <title>{c.label}{c.moving ? ' (pokretno)' : ' (fiksno)'}</title>
         {c.shapes.map((s, i) => shapeEl(s, `${c.key}-${i}`, dx, fill))}
       </g>
@@ -76,7 +88,7 @@ export function SlidingAssemblyArt({ gate, clearStart, clearEnd, clearWidth, flo
 
   // isprekidana kontura otvorenog položaja (krilo i rep na punom hodu)
   const openOutline = (() => {
-    if (realistic || !spec.showOpenOutline) return null;
+    if (realistic || noZone || !spec.showOpenOutline) return null;
     const pts: [number, number][] = cant
       ? [[T, fb], [T, top], [T + W, top], [T + mvEnd, fb + 30], [T + mvEnd, fb - 80], [T, fb - 80]]
       : [[T, fb], [T, top], [T + W, top], [T + W, fb]];
@@ -85,7 +97,7 @@ export function SlidingAssemblyArt({ gate, clearStart, clearEnd, clearWidth, flo
 
   // zona uvlačenja: od kraja zatvorenog krila do kraja krila na punom hodu
   const zone = (() => {
-    if (realistic) return null;
+    if (realistic || noZone) return null;
     const a = X(W); const b = X(mvEnd + T);
     return (
       <g data-testid="sliding-retract-zone">
@@ -130,6 +142,12 @@ export function SlidingAssemblyArt({ gate, clearStart, clearEnd, clearWidth, flo
       {zone}
       {fixed.map(draw)}
       {openOutline}
+      {spec.drawnLeaf && !noLeaf && (
+        // krilo iz modela (nacrtan model ili model ograde), podignuto od tla za odstojanje donje ivice rama; u probi hoda klizi sa okovom
+        <g data-sliding-part="leaf" data-moving="true" transform={`translate(${X(t) - X(0)} 0)`}>
+          <InfillArt modelId={gate.infillModelId} x={Math.min(X(0), X(W))} y={Y(top)} w={W} h={res.frameHeight} frame={gate.params.frameMm} barSize={gate.params.barSizeMm} gap={gate.params.gapMm} lift={gate.params.liftMm} arch={gate.params.archMm} hex={hex} colorKey={gate.color} ram={ramInsets(gate.infillModelId, gate.params)} uid={`${gate.id}-sl`} />
+        </g>
+      )}
       {moving.map(draw)}
       {dims}
     </g>

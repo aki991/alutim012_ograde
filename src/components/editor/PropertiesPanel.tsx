@@ -358,6 +358,8 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
     // klizna kapija kao sklop: mere, pozicije, proba hoda i sastavnica u svom panelu (stara polja klizne kapije bi im protivrečila)
     if (g.sliding) body = (
       <>
+        {/* krilo klizne kapije: model ograde ili nacrtan model kapije, kao kod ostalih kapija */}
+        {g.sliding.drawnLeaf && <ModelSelect value={g.infillModelId} onChange={(m) => st.setItemModel(id, m)} />}
         <SlidingPanel project={project} gate={g} />
         <ColorField stacked value={g.color} testId="field-color" onChange={(c) => st.setItemColor(id, c)} finish={g.finish} onFinishChange={(f) => st.setItemFinish(id, f)} />
         <ToggleField label="Stubovi kapije" testId="field-gate-own-posts" checked={Boolean(g.ownPosts)} onLabel="Svoji stubovi" offLabel="Zajednički stub" onChange={(v) => st.patchItem(id, { ownPosts: v })} />

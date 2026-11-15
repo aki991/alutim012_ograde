@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { bomPart, dimDefault, dimOf, PART_DEFS, partsFor } from '../domain/gates/slidingParts';
 import { localToWorld, resolveSliding, SLIDING_PRESETS, slidingBom, specFromPreset, type SlidingPresetId, type SlidingSpec } from '../domain/gates/slidingAssembly';
 
 const H = (frameHeight: number, spec: SlidingSpec) => frameHeight + spec.frameBottomY;
@@ -50,7 +51,7 @@ describe('provere', () => {
     expect(check(resolveSliding(spec, frameWidth, H(frameHeight, spec)), 'carrier')?.level).toBe('ok');
     const far = { ...spec, manual: { ...spec.manual, carriage2: 4700 } };
     expect(check(resolveSliding(far, frameWidth, H(frameHeight, spec)), 'carrier')?.msg).toMatch(/iza kraja C-profila/);
-    const longTravel = { ...spec, travel: 3400 };
+    const longTravel = { ...spec, travel: 3400, travelSet: true };
     expect(check(resolveSliding(longTravel, frameWidth, H(frameHeight, spec)), 'carrier')?.msg).toMatch(/otvorenom položaju/);
   });
 
@@ -96,7 +97,9 @@ describe('geometrija i preslikavanje', () => {
     const { spec } = specFromPreset('klizna_sina_rucna');
     const a = resolveSliding(spec, 3000, 1400); const b = resolveSliding(spec, 4000, 1400);
     expect(b.at('upperGuide')).toBe(3940);
-    expect(b.at('railLength')).toBe(7500);
+    expect(b.at('railLength')).toBe(4000 + 3900 + 600);
+    // hod prati širinu rama (zona uvlačenja ostaje uz ram)
+    expect(b.spec.travel).toBe(3900);
     const wheel = (r: typeof a) => r.components.find((c) => c.key === 'wheels')!.shapes.find((s) => s.t === 'circle') as { r: number };
     expect(wheel(b).r).toBe(wheel(a).r);
   });
@@ -163,8 +166,8 @@ describe('klizna kapija u projektu', () => {
     const { p } = await project('klizna_sina_motorna');
     const lines = buildBom(p, []);
     const names = lines.map((l) => l.name);
-    expect(names.some((n) => /^Podna šina — klizna kapija/.test(n))).toBe(true);
-    expect(names.some((n) => /Zupčasta letva — klizna kapija \(potvrditi\)/.test(n))).toBe(true);
+    expect(names.some((n) => n.startsWith('Podna šina (klizna kapija) — nije definisano'))).toBe(true);
+    expect(names.some((n) => n === 'Zupčasta letva (klizna kapija) — nije definisano (potvrditi)')).toBe(true);
     expect(lines.some((l) => l.materialId === 'mat_wheel')).toBe(false);
     expect(lines.filter((l) => l.materialId.includes(':limits')).length).toBe(0);
   });
@@ -180,12 +183,244 @@ describe('klizna kapija u projektu', () => {
   it('3D: krilo klizi za hod, ne za svetli otvor', async () => {
     const { gateLeafPoses } = await import('../domain/geometry/gates');
     const { g, li } = await project('samonoseca_rucna');
-    expect(gateLeafPoses(g, li.clearStart, li.clearEnd, 1)[0].slideX).toBe(2930);
+    expect(gateLeafPoses(g, li.clearStart, li.clearEnd, 1)[0].slideX).toBe(li.clearWidth - 70);
   });
   it('stara klizna kapija bez sklopa zadržava stare stavke', async () => {
     const { buildBom } = await import('../domain/pricing/calc');
     const { createGate, createProject } = await import('../domain/models/factories');
     const p = createProject('Stari', [createGate('sliding', { widthMm: 4000 })]);
     expect(buildBom(p, []).some((l) => l.materialId === 'mat_wheel')).toBe(true);
+  });
+});
+
+describe('delovi klizne kapije: svaki deo ima svoje mere', () => {
+  const sizeKey = (_id: SlidingPresetId, spec: SlidingSpec) => { const r = resolveSliding(spec, 3000, 1400); return JSON.stringify([r.components, slidingBom(r).map((b) => [b.key, b.name, b.qty, b.shownMm, b.totalM])]); };
+  it.each(SLIDING_PRESETS.map((p) => p.id))('%s: svi delovi i stavke iz opisa delova postoje u crtežu i sastavnici', (id) => {
+    const { spec } = specFromPreset(id);
+    const withPost = { ...spec, guidePost: true };
+    const r = resolveSliding(withPost, 3000, 1400);
+    const compKeys = new Set(r.components.map((c) => c.key));
+    const bomKeys = new Set(slidingBom(r).map((b) => b.key));
+    for (const part of partsFor(spec.support, spec.actuation)) {
+      for (const c of part.comps) expect(compKeys.has(c), `crtež: ${c}`).toBe(true);
+      for (const b of part.bom) expect(bomKeys.has(b), `sastavnica: ${b}`).toBe(true);
+      for (const pk of part.pos ?? []) expect(r.pos[pk]).toBeDefined();
+    }
+    // svaka stavka sastavnice i svaki deo crteža pripada nekom delu (nema „sirotinje“ koja se ne može podesiti)
+    const partBom = new Set(partsFor(spec.support, spec.actuation).flatMap((p) => p.bom));
+    for (const k of bomKeys) expect(partBom.has(k) || bomPart(k) !== undefined, `stavka bez dela: ${k}`).toBe(true);
+    const partComps = new Set(partsFor(spec.support, spec.actuation).flatMap((p) => p.comps));
+    for (const k of compKeys) expect(partComps.has(k) || k === 'foundation', `deo crteža bez dela: ${k}`).toBe(true);
+  });
+  it.each(SLIDING_PRESETS.map((p) => p.id))('%s: promena svake mere dela menja crtež ili sastavnicu', (id) => {
+    const { spec } = specFromPreset(id);
+    const base = { ...spec, guidePost: true };
+    const r0 = resolveSliding(base, 3000, 1400);
+    const baseKey = sizeKey(id, base);
+    for (const part of partsFor(spec.support, spec.actuation)) {
+      for (const d of part.dims) {
+        const cur = dimOf(base, d.key, r0.frameHeight);
+        const next = d.key === 'infill.gap' ? 60 : d.key === 'infillCount' ? 9 : d.key === 'mount.step' ? 600 : (cur ?? 10) * 1.3 + 3;
+        const changed: SlidingSpec = d.field ? { ...base, [d.field]: next } : { ...base, dims: { [d.key]: next } };
+        expect(sizeKey(id, changed), `${part.key}/${d.key}`).not.toBe(baseKey);
+      }
+    }
+  });
+  it('razmak prečki: zadat razmak menja raspored, a preveliki daje grešku', () => {
+    const { spec } = specFromPreset('klizna_sina_rucna');
+    const a = resolveSliding(spec, 3000, 1400);
+    const infill = (r: typeof a) => (r.components.find((c) => c.key === 'infill')!.shapes as { y: number }[]).map((x) => x.y);
+    const ys = infill(a);
+    const b = resolveSliding({ ...spec, dims: { 'infill.gap': 30 } }, 3000, 1400);
+    expect(infill(b)[1] - infill(b)[0]).toBe(40 + 30);
+    expect(infill(b)[0]).toBe(ys[0]);
+    expect(check(b, 'infillGap')).toBeUndefined();
+    const c = resolveSliding({ ...spec, dims: { 'infill.gap': 200 } }, 3000, 1400);
+    expect(check(c, 'infillGap')?.level).toBe('error');
+    expect(check(c, 'infillGap')?.msg).toMatch(/prelazi za/);
+  });
+  it('točkić veći od prostora ispod rama daje grešku; polazne mere ne', () => {
+    const { spec, frameWidth, frameHeight } = specFromPreset('klizna_sina_rucna');
+    expect(check(resolveSliding(spec, frameWidth, H(frameHeight, spec)), 'wheelFit')).toBeUndefined();
+    const big = resolveSliding({ ...spec, wheelDiameter: 200 }, frameWidth, H(frameHeight, spec));
+    expect(check(big, 'wheelFit')?.level).toBe('warn');
+    expect(slidingBom(big).find((b) => b.key === 'wheels')?.name).toContain('Ø200');
+  });
+  it('mere delova zadate ručno ostaju kad se promeni širina kapije', () => {
+    const { spec } = specFromPreset('samonoseca_motorna');
+    const s2: SlidingSpec = { ...spec, dims: { 'catch.w': 200, 'car.plateW': 300 } };
+    const r = resolveSliding(s2, 4200, 1400);
+    const catchShape = r.components.find((c) => c.key === 'catch')!.shapes[0] as { w: number };
+    expect(catchShape.w).toBe(200);
+    expect(dimDefault(s2, PART_DEFS.find((p) => p.key === 'catch')!.dims[0], 1000)).toBe(130);
+  });
+  it('materijal po stavci: izabran materijal ulazi u sastavnicu sa cenom, bez izbora piše „nije definisano“', async () => {
+    const { buildBom } = await import('../domain/pricing/calc');
+    const { createGate, createProject, createFence } = await import('../domain/models/factories');
+    const d = specFromPreset('klizna_sina_rucna');
+    const wheel = { id: 'mat_okov_t1', sku: 'TOC-104', name: 'Točkić Ø104 sa nosačem', category: 'okov' as const, unit: 'kom' as const, unitPrice: 1500, wastePercent: 0, demo: false };
+    const railMat = { id: 'mat_prof_t1', sku: 'SINA-20', name: 'Šina 20 mm', category: 'profil' as const, unit: 'm' as const, unitPrice: 800, wastePercent: 0, demo: false };
+    const spec: SlidingSpec = { ...d.spec, partMat: { wheels: wheel.id, rail: railMat.id } };
+    const p = createProject('T', [createFence(), createGate('sliding', { sliding: spec, heightMm: d.frameHeight + d.spec.frameBottomY, widthMm: 3200 })]);
+    const lines = buildBom(p, [wheel, railMat]);
+    const w = lines.find((l) => l.materialId === wheel.id)!;
+    expect(w.geometricQty).toBe(2);
+    expect(w.total).toBe(3000);
+    expect(lines.find((l) => l.materialId === railMat.id)?.unit).toBe('m');
+    // ostali okovi bez izbora
+    expect(lines.some((l) => l.name === 'Prihvatnik krila (klizna kapija) — nije definisano')).toBe(true);
+    expect(lines.some((l) => /Valjak gornje vođice.*nije definisano/.test(l.name))).toBe(true);
+    expect(lines.some((l) => /Donji točkić/.test(l.name) && /nije definisano/.test(l.name))).toBe(false);
+  });
+  it('broj komada okova se menja ručno; sastavnica prati', () => {
+    const { spec, frameWidth, frameHeight } = specFromPreset('klizna_sina_rucna');
+    const r = resolveSliding({ ...spec, qtys: { stops: 3, wheels: 4 } }, frameWidth, H(frameHeight, spec));
+    const b = slidingBom(r);
+    expect(b.find((i) => i.key === 'stops')?.qty).toBe(3);
+    expect(b.find((i) => i.key === 'wheels')?.qty).toBe(4);
+  });
+});
+
+describe('klizna kapija iz crtanja modela: delovi okova se postavljaju', () => {
+  it('od nule: bez postavljenih delova nema okova; postavljeni točkići imaju prečnik, prvi od početka, razmak i broj', async () => {
+    const { slidingForModel } = await import('../domain/gates/slidingAssembly');
+    const { withPartOn } = await import('../components/gates/SlidingForm');
+    const empty = slidingForModel('klizna_sina_rucna', false);
+    const r0 = resolveSliding(empty, 3000, 1285 + empty.frameBottomY);
+    expect(r0.components).toEqual([]);
+    expect(slidingBom(r0)).toEqual([]);
+    const s1: SlidingSpec = { ...empty, ...withPartOn(empty, 'wheels', true), wheelDiameter: 50, dims: { 'wheel.count': 3, 'wheel.gap': 800 }, manual: { wheel1: 300 } };
+    const r1 = resolveSliding(s1, 3000, 1400);
+    expect(r1.components.map((c) => c.key)).toEqual(['wheels']);
+    const circles = r1.components[0].shapes.filter((x) => x.t === 'circle') as { cx: number; r: number }[];
+    expect(circles.map((c) => c.cx)).toEqual([300, 1100, 1900]);
+    expect(circles[0].r).toBe(25);
+    expect(slidingBom(r1).map((b) => [b.key, b.qty])).toEqual([['wheels', 3]]);
+    // šina nije postavljena: nema provere točkića na šini
+    expect(check(r1, 'rail')).toBeUndefined();
+  });
+  it('krilo iz modela: ram, U-profili i prečke se ne crtaju i ne ulaze u sastavnicu okova', async () => {
+    const { slidingForModel } = await import('../domain/gates/slidingAssembly');
+    const s = slidingForModel('samonoseca_motorna', true);
+    const r = resolveSliding(s, 3000, 1285 + s.frameBottomY);
+    const keys = r.components.map((c) => c.key);
+    expect(keys).not.toContain('frame');
+    expect(keys).not.toContain('infill');
+    expect(keys).toEqual(expect.arrayContaining(['carrier', 'tail', 'carriages', 'upperGuide', 'catch', 'stop', 'rack', 'motor']));
+    const bk = slidingBom(r).map((b) => b.key);
+    expect(bk).not.toContain('frame-h');
+    expect(bk).not.toContain('infill');
+    expect(bk).toEqual(expect.arrayContaining(['carrier', 'carriages', 'motor']));
+  });
+  it('hod prati širinu krila dok se ne zada ručno (zona uvlačenja ostaje uz krilo)', async () => {
+    const { travelOf } = await import('../domain/gates/slidingAssembly');
+    const { spec } = specFromPreset('klizna_sina_rucna');
+    for (const W of [2000, 3000, 3500]) {
+      const r = resolveSliding(spec, W, 1400);
+      expect(r.spec.travel).toBe(W - 100);
+      expect(r.open.end).toBe(W + W - 100);
+    }
+    expect(travelOf({ ...spec, travel: 2500, travelSet: true }, 3500)).toBe(2500);
+  });
+});
+
+describe('rep: cevi se seku pod uglom, ojačanja se dodaju i pomeraju', () => {
+  const rep = (braces?: import('../domain/gates/slidingAssembly').TailBrace[]) => {
+    const { spec } = specFromPreset('samonoseca_rucna');
+    return resolveSliding({ ...spec, braces }, 3000, 1400);
+  };
+  it('kosnik i pojasnica imaju uglove sečenja i dužinu po dužoj strani; ravan kraj uz ram je 90°', () => {
+    const r = rep();
+    const diag = r.tail!.find((m) => m.bomKey === 'tail-diag')!;
+    const bottom = r.tail!.find((m) => m.bomKey === 'tail-bottom')!;
+    expect(bottom.ends[0]).toEqual([90]);
+    // spoj kosnika i pojasnice je gerung: polovina ugla nagiba kosnika
+    const theta = Math.atan2(diag.poly[0][1] - diag.poly[1][1], diag.poly[1][0] - diag.poly[0][0]);
+    expect(diag.ends[1][0]).toBeCloseTo(((theta * 180) / Math.PI) / 2, 0);
+    expect(bottom.ends[1][0]).toBeCloseTo(diag.ends[1][0], 1);
+    // kraj uz ram je paralelan sa stranicom rama
+    expect(diag.ends[0][0]).toBeCloseTo(90 - (theta * 180) / Math.PI, 0);
+    // dužina po dužoj strani nije kraća od razmaka krajeva
+    expect(bottom.len).toBeGreaterThanOrEqual(1500 - 1);
+    const note = slidingBom(r).find((b) => b.key === 'tail-diag')!;
+    expect(note.note).toContain('rez pod uglom:');
+    expect(note.note).toContain('°');
+    expect(note.cutMm).toBe(diag.len);
+    expect(note.confirm).toBe(false);
+  });
+  it('bez ojačanja, ili uspravno + vodoravno + koso, svako sa svojim položajem i uglom', () => {
+    expect(rep([]).tail!.map((m) => m.bomKey)).toEqual(['tail-diag', 'tail-bottom']);
+    const r = rep([{ id: 'a', kind: 'vertical' }, { id: 'b', kind: 'horizontal' }, { id: 'c', kind: 'diagonal' }]);
+    expect(r.tail!.map((m) => m.bomKey)).toEqual(['tail-diag', 'tail-bottom', 'tail-brace-a', 'tail-brace-b', 'tail-brace-c']);
+    const v = r.tail!.find((m) => m.bomKey === 'tail-brace-a')!;
+    expect(v.ends[0]).toEqual([90]);
+    expect(v.ends[1][0]).toBeGreaterThan(0); expect(v.ends[1][0]).toBeLessThan(90);
+    // pomeranje uspravnog ojačanja ka kraju repa skraćuje ga
+    const v2 = rep([{ id: 'a', kind: 'vertical', pos: 4000 }]).tail!.find((m) => m.bomKey === 'tail-brace-a')!;
+    expect(v2.len).toBeLessThan(v.len);
+    // sastavnica ima red za svako ojačanje sa dužinom i uglovima
+    const bom = slidingBom(r).filter((b) => b.key.startsWith('tail-brace-'));
+    expect(bom).toHaveLength(3);
+    for (const b of bom) { expect(b.cutMm).toBeGreaterThan(0); expect(b.ends).toBeDefined(); }
+  });
+  it('širina cevi na crtežu prati izabrani profil (dims tail.diag.w)', () => {
+    const { spec } = specFromPreset('samonoseca_rucna');
+    const thin = resolveSliding({ ...spec, dims: { 'tail.diag.w': 40 } }, 3000, 1400).tail!.find((m) => m.bomKey === 'tail-diag')!;
+    const wide = resolveSliding({ ...spec, dims: { 'tail.diag.w': 80 } }, 3000, 1400).tail!.find((m) => m.bomKey === 'tail-diag')!;
+    expect(wide.w).toBe(80); expect(thin.w).toBe(40);
+  });
+});
+
+describe('rep: koso ojačanje u uglu (V zasek) i uredan polazni raspored', () => {
+  const bbox = (poly: [number, number][]) => ({ x0: Math.min(...poly.map((q) => q[0])), x1: Math.max(...poly.map((q) => q[0])), y0: Math.min(...poly.map((q) => q[1])), y1: Math.max(...poly.map((q) => q[1])) });
+  const all = () => {
+    const { spec } = specFromPreset('samonoseca_rucna');
+    return resolveSliding({ ...spec, braces: [{ id: 'v', kind: 'vertical' }, { id: 'h', kind: 'horizontal' }, { id: 'd', kind: 'diagonal' }] }, 3000, 1400);
+  };
+  it('koso ojačanje polazno ide u donji levi ugao repa: dodiruje ram i pojasnicu i ima V zasek (dva reza)', () => {
+    const r = all();
+    const d = r.tail!.find((m) => m.bomKey === 'tail-brace-d')!;
+    const bottom = r.tail!.find((m) => m.bomKey === 'tail-bottom')!;
+    const chordTop = bbox(bottom.poly).y1;
+    const b = bbox(d.poly);
+    expect(b.x0).toBeCloseTo(3000, 0);       // uz ram
+    expect(b.y0).toBeCloseTo(chordTop, 0);   // na pojasnici
+    expect(d.ends[0]).toHaveLength(2);       // V zasek
+    expect(d.ends[0][0] + d.ends[0][1]).toBeCloseTo(90, 0);
+    expect(d.ends[1]).toHaveLength(1);
+    // pomereno desno od ugla: običan rez uz pojasnicu
+    const { spec } = specFromPreset('samonoseca_rucna');
+    const moved = resolveSliding({ ...spec, braces: [{ id: 'd', kind: 'diagonal', pos: 3400 }] }, 3000, 1400).tail!.find((m) => m.bomKey === 'tail-brace-d')!;
+    expect(moved.ends[0]).toHaveLength(1);
+  });
+  it('tri ojačanja polazno: vodoravno stoji dole, seče koso ojačanje i naleže na uspravno (spoj sa ostalima)', () => {
+    const r = all();
+    const h = r.tail!.find((m) => m.bomKey === 'tail-brace-h')!;
+    const v = r.tail!.find((m) => m.bomKey === 'tail-brace-v')!;
+    const d = r.tail!.find((m) => m.bomKey === 'tail-brace-d')!;
+    const bh = bbox(h.poly); const bv = bbox(v.poly); const bd = bbox(d.poly);
+    const chordTop = bbox(r.tail!.find((m) => m.bomKey === 'tail-bottom')!.poly).y1;
+    expect(bh.y0).toBeGreaterThan(chordTop);
+    expect(bh.y1).toBeLessThan(bv.y1);                 // ispod čvora
+    expect(bh.x0).toBeCloseTo(3000, 0);                // od rama
+    expect(bh.x1).toBeCloseTo(bv.x0, 0);               // do uspravnog ojačanja
+    expect(h.ends).toEqual([[90], [90]]);
+    expect(bh.x1).toBeGreaterThan(bd.x0 + 50);         // prolazi kroz koso ojačanje
+    expect(bh.y1).toBeLessThan(bd.y1);
+    // koso ojačanje i uspravno se spajaju u istom čvoru na kosniku
+    expect(bd.x1).toBeGreaterThan(bv.x0 - 1);
+  });
+});
+
+describe('krojna lista: rep sa uglovima sečenja', () => {
+  it('cevi repa su u krojnoj listi sa dužinom po dužoj strani i uglovima reza', async () => {
+    const { buildCutList } = await import('../domain/pricing/production');
+    const { createGate, createProject, createFence } = await import('../domain/models/factories');
+    const d = specFromPreset('samonoseca_rucna');
+    const spec: SlidingSpec = { ...d.spec, braces: [{ id: 'a', kind: 'vertical' }, { id: 'b', kind: 'diagonal' }] };
+    const p = createProject('T', [createFence(), createGate('sliding', { sliding: spec, heightMm: d.frameHeight + d.spec.frameBottomY, widthMm: 3200 })]);
+    const rows = buildCutList(p).filter((r) => r.index === 1 && r.part.startsWith('Rep'));
+    expect(rows.map((r) => r.part)).toEqual(['Rep — kosnik', 'Rep — donja pojasnica', 'Rep — ojačanje uspravno', 'Rep — ojačanje koso']);
+    for (const r of rows) { expect(r.lengthMm).toBeGreaterThan(100); expect(r.note).toContain('rez pod uglom'); expect(r.profile).toContain('nije definisano'); }
   });
 });

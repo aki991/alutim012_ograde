@@ -225,6 +225,8 @@ export interface SlidingTemplate {
   heightMm: Mm;
   opening: OpeningSide;
   color: string;
+  /** polazna varijanta iz koje je model nastao (Doradi) */
+  basedOn?: string;
 }
 
 export interface Project {

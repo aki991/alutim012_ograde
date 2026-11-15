@@ -1,4 +1,5 @@
 import type { Gate, Mm, OpeningSide, SwingDirection } from '../models/types';
+import { travelOf } from '../gates/slidingAssembly';
 import { resolveGate } from '../gates/design';
 
 /**
@@ -78,7 +79,7 @@ export function gateLeafPoses(g: Gate, clearStart: Mm, clearEnd: Mm, open: numbe
   const clear = Math.max(0, clearEnd - clearStart);
   if (g.gateType === 'sliding') {
     const dir = g.opening === 'right' ? 1 : -1;
-    return [{ pivotX: clearStart, extendDir: 1, widthMm: clear, rotationY: 0, slideX: dir * o * (g.sliding ? g.sliding.travel : clear) }];
+    return [{ pivotX: clearStart, extendDir: 1, widthMm: clear, rotationY: 0, slideX: dir * o * (g.sliding ? travelOf(g.sliding, clear) : clear) }];
   }
   if (g.gateType === 'double') {
     const [lw, rw] = doubleLeafWidths(g, clear);
@@ -99,7 +100,7 @@ export function gateLeafPoses(g: Gate, clearStart: Mm, clearEnd: Mm, open: numbe
 export function slidingSpaceStatus(g: Gate, clearWidthMm: Mm): { known: boolean; ok: boolean; neededMm: Mm; availableMm: Mm | null } {
   if (g.gateType !== 'sliding') return { known: false, ok: true, neededMm: 0, availableMm: null };
   // klizni sklop: bočni prostor se proverava prema hodu i repu u panelu kapije
-  if (g.sliding) return { known: false, ok: true, neededMm: g.sliding.travel, availableMm: null };
+  if (g.sliding) return { known: false, ok: true, neededMm: travelOf(g.sliding, clearWidthMm), availableMm: null };
   const avail = g.availableSpaceMm;
   if (avail === undefined || avail === null) return { known: false, ok: true, neededMm: clearWidthMm, availableMm: null };
   return { known: true, ok: avail >= clearWidthMm, neededMm: clearWidthMm, availableMm: avail };

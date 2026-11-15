@@ -118,7 +118,7 @@ export function SlidingThumb({ preset, template }: { preset?: SlidingPresetId; t
     const g = createGate('sliding', { sliding: spec, heightMm: d ? d.frameHeight + d.spec.frameBottomY : template!.heightMm, opening: template?.opening ?? 'right', automation: spec.actuation === 'motor', ...(template ? { color: template.color } : {}) });
     const p = createProject('m', [g]);
     return setOuterWidth(p, g.id, (d?.frameWidth ?? template!.frameWidth) + 2 * postHalfSum(p, 0));
-  }, `sl-${preset ?? template?.id}`);
+  }, preset ? `sl-${preset}` : `sl-${template!.id}-${JSON.stringify([template!.spec, template!.frameWidth, template!.heightMm, template!.opening, template!.color])}`);
   return <MiniThumb project={mini} />;
 }
 
@@ -196,7 +196,7 @@ export function Catalog({ onBeginDrag }: { onBeginDrag: (source: DragSource, e: 
           );
         })}
         {/* klizne kapije kao sklop: četiri polazne varijante i korisnički šabloni */}
-        {!terrace && SLIDING_PRESETS.map((p) => (
+        {!terrace && SLIDING_PRESETS.filter((p) => !hidden?.includes(`gate:slide:${p.id}`)).map((p) => (
           <CatalogCard key={p.id} testId={`cat-sliding-${p.id}`} title={presetTitle(p.id)} subtitle={`Klizna kapija · ${p.name}`} thumb={<SlidingThumb preset={p.id} />}
             onAdd={() => useAppStore.getState().addSlidingGate({ preset: p.id })} />
         ))}

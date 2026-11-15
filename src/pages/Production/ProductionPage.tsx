@@ -30,7 +30,7 @@ export default function ProductionPage() {
   const project = projects.find((p) => p.id === id) ?? projects[0];
   const customer = customers.find((c) => c.id === project?.customerId) ?? null;
   const cuts = useMemo(() => (project ? buildCutList(project, specs, materials) : []), [project, specs, materials]);
-  const hw = useMemo(() => (project ? buildHardwareList(project) : []), [project]);
+  const hw = useMemo(() => (project ? buildHardwareList(project, materials) : []), [project, materials]);
   const rail = useMemo(() => (project ? buildRail04Sheet(project, specs) : null), [project, specs]);
   const rl10 = useMemo(() => (project ? buildRl10Sheet(project, specs) : null), [project, specs]);
   const louver = useMemo(() => (project ? buildLouver08Sheet(project, specs) : null), [project, specs]);
@@ -91,7 +91,7 @@ export default function ProductionPage() {
         <>
           <button className="btn" data-testid="prod-workorder" onClick={() => setOrderOpen(true)}><ClipboardList size={17} />Radni nalog</button>
           <button className="btn" data-testid="prod-csv" onClick={csv}><FileSpreadsheet size={17} />CSV lista materijala</button>
-          <button className="btn btn-primary" data-testid="prod-pdf" disabled={busy} onClick={async () => { setBusy(true); try { await downloadProductionPdf(project, customer, settings); } finally { setBusy(false); } }}><FileDown size={17} />PDF specifikacija</button>
+          <button className="btn btn-primary" data-testid="prod-pdf" disabled={busy} onClick={async () => { setBusy(true); try { await downloadProductionPdf(project, customer, settings, materials); } finally { setBusy(false); } }}><FileDown size={17} />PDF specifikacija</button>
         </>
       } />
       <div role="note" className="rounded-lg bg-[#fffaeb] text-[#93370d] border border-[#fedf89] px-4 py-2.5 text-[13px] mb-4">

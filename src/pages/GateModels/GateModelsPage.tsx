@@ -2,10 +2,11 @@ import { PencilRuler, RotateCcw, Trash2, Wrench } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CustomModelThumb } from '../../components/designer/PartsSvg';
-import { ElementThumb } from '../../components/editor/Catalog';
+import { ElementThumb, SlidingThumb } from '../../components/editor/Catalog';
 import { Page, PageHeader } from '../../components/ui/Common';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
 import { GATE_TYPE_LABELS } from '../../domain/gates/gateModels';
+import { presetTitle, SLIDING_PRESETS, type SlidingPresetId } from '../../domain/gates/slidingAssembly';
 import { DEFAULT_MODEL_ID, GATE_LABELS } from '../../domain/models/catalog';
 import type { CustomModel } from '../../domain/models/custom';
 import type { GateType } from '../../domain/models/types';
@@ -35,7 +36,11 @@ export default function GateModelsPage() {
   const [del, setDel] = useState<CustomModel | null>(null);
   const [delBasic, setDelBasic] = useState<GateType | null>(null);
   const [choice, setChoice] = useState<CustomModel | null>(null);
-  const hiddenBasic = BASIC.filter((b) => hidden.includes(`gate:${b.type}`));
+  const [delSlidePreset, setDelSlidePreset] = useState<SlidingPresetId | null>(null);
+  const hiddenBasic = [...BASIC.filter((b) => hidden.includes(`gate:${b.type}`)), ...SLIDING_PRESETS.filter((p) => hidden.includes(`gate:slide:${p.id}`))];
+  const visibleSlidePresets = SLIDING_PRESETS.filter((p) => !hidden.includes(`gate:slide:${p.id}`));
+  const rework = (p: SlidingPresetId) => navigate(`/modeli/crtanje/${useAppStore.getState().startSlidingDorada(p)}`);
+  const startSliding = (source: { preset: SlidingPresetId } | { template: string }) => { const id = useAppStore.getState().newProjectFromSliding(source); if (id) navigate(`/editor/${id}`); };
 
   const usedBy = (modelId: string): string[] => projects.filter((p) => p.items.some((it) => it.kind === 'gate' && it.infillModelId === modelId)).map((p) => p.name);
   const startNew = (m: CustomModel) => { const id = useAppStore.getState().newProjectFromGateModel(m.id); if (id) navigate(`/editor/${id}`); };
@@ -94,8 +99,30 @@ export default function GateModelsPage() {
               </div>
             </article>
           ))}
+          {/* klizne kapije kao sklop: četiri polazne varijante; Doradi pravi nov model koji se menja deo po deo */}
+          {visibleSlidePresets.map((p) => (
+            <article key={p.id} className="card overflow-hidden flex flex-col" data-testid={`basic-sliding-${p.id}`}>
+              <div className="bg-[#eef2f6] border-b border-line p-3 grid place-items-center"><SlidingThumb preset={p.id} /></div>
+              <div className="p-4 flex-1 flex flex-col">
+                <h3 className="font-bold text-[16px]">{presetTitle(p.id)}</h3>
+                <p className="text-sm text-muted">{p.support === 'ground_rail' ? 'Krilo vozi po šini u tlu' : 'Krilo visi na repu i vozi na kolicima'}</p>
+                <div className="flex flex-wrap gap-2 mt-auto pt-3">
+                  <div className="w-full flex gap-2">
+                    <button className="btn flex-1" data-testid={`rework-sliding-${p.id}`} title="Pravi nov model koji se menja deo po deo (okvir, prečke, šina, točkići, vođice, graničnici …)" onClick={() => rework(p.id)}><Wrench size={16} />Doradi</button>
+                    <button className="btn btn-danger shrink-0" data-testid={`delete-basic-sliding-${p.id}`} aria-label={`Obriši ${presetTitle(p.id)}`} title="Obriši kapiju" onClick={() => setDelSlidePreset(p.id)}><Trash2 size={16} /></button>
+                  </div>
+                  <button className="btn btn-primary" data-testid={`use-sliding-${p.id}`} onClick={() => startSliding({ preset: p.id })}>Koristi model</button>
+                </div>
+              </div>
+            </article>
+          ))}
         </div>
       </section>
+      {delSlidePreset && (
+        <ConfirmDialog title="Brisanje osnovne kapije" danger confirmLabel="Obriši"
+          message={<><b>{presetTitle(delSlidePreset)}</b> se uklanja iz kataloga u editoru i sa ove strane. Projekti koji je koriste ostaju isti, a obrisanu možete vratiti dugmetom „Vrati obrisane osnovne kapije“.</>}
+          onCancel={() => setDelSlidePreset(null)} onConfirm={() => { useAppStore.getState().hideModel(`gate:slide:${delSlidePreset}`); setDelSlidePreset(null); }} />
+      )}
       {choice && (
         <Modal title="Kako želite da koristite model?" onClose={() => setChoice(null)}>
           <p className="text-sm text-slate-600 mb-3">Trenutno je otvoren projekat <b>{current?.name}</b>.</p>

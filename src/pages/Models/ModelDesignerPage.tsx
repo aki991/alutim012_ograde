@@ -2,6 +2,12 @@ import { settleModel as settle } from '../../domain/models/settle';
 import { hingesAlongEdge, isHingeMaterial, restOnSurface } from '../../domain/models/surface';
 import { frameIds, isFramePart, modelWithFrame, modelWithoutFrame, modelWithRotatedFrame, resizeWithFrame } from '../../domain/models/frame';
 import { GateDesignModal } from '../../components/gates/GateDesignModal';
+import { SlidingAssemblyArt } from '../../components/gates/SlidingAssemblyArt';
+import { SlidingDesignerPanel, SlidingPartButtons } from '../../components/gates/SlidingDesignerPanel';
+import type { SlidingSpec } from '../../domain/gates/slidingAssembly';
+import { placeSliding } from '../../domain/gates/slidingLayout';
+import { compPart, partDef } from '../../domain/gates/slidingParts';
+import { createGate } from '../../domain/models/factories';
 import { defaultGateConfig, GATE_TYPE_LABELS } from '../../domain/gates/gateModels';
 import { AlertTriangle, ArrowLeft, Copy, Download, FileText, Link2, MousePointer2, Redo2, Rows3, Search, Trash2, Undo2, X } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -279,6 +285,14 @@ function Designer({ id }: { id: string }) {
   const sel = parts.find((r) => r.part.id === selectedId) ?? null;
   const multi = selectedIds.length > 1 ? parts.filter((r) => selectedIds.includes(r.part.id)) : [];
   const bom = useMemo(() => customBom(model, materials), [model, materials]);
+  // klizna kapija: klizni okov (točkići, šina, valjci, graničnici …) se crta preko crteža krila i podešava u panelu desno
+  const [hwSel, setHwSel] = useState<string | null>(null);
+  const slSpec = model.kind === 'gate' && model.gate?.gateType === 'sliding' ? model.gate.sliding : undefined;
+  const slGate = useMemo(() => (slSpec ? { ...createGate('sliding', { sliding: { ...slSpec, drawnLeaf: true }, heightMm: model.heightMm, opening: model.gate?.opening ?? 'right', color: model.color }), id: model.id } : null), [slSpec, model.heightMm, model.gate?.opening, model.color, model.id]);
+  const slPlaced = useMemo(() => (slGate ? placeSliding(slGate, { clearStart: 0, clearEnd: model.widthMm, clearWidth: model.widthMm }) : null), [slGate, model.widthMm]);
+  const slBounds = useMemo(() => (slPlaced && slSpec ? { x0: slPlaced.minX, y0: -slSpec.frameBottomY - 320, x1: slPlaced.maxX, y1: model.heightMm + 160 } : null), [slPlaced, slSpec, model.heightMm]);
+  const patchSliding = (p: Partial<SlidingSpec>) => change((m) => (m.gate?.sliding ? { ...m, gate: { ...m.gate, sliding: { ...m.gate.sliding, ...p } } } : m));
+  const hwSelValid = hwSel && slSpec && partDef(hwSel) ? hwSel : null;
   const total = bom.reduce((s, l) => s + l.total, 0);
 
   const exportSketch = async (kind: 'pdf' | 'svg') => {
@@ -461,7 +475,7 @@ function Designer({ id }: { id: string }) {
           <span className="w-5 h-5 rounded-full ring-1 ring-black/20" style={{ background: colorHex(model.color) }} />{normalizeColorKey(model.color)}
         </button>
         {chartOpen && <ColorChartModal value={normalizeColorKey(model.color)} favorites={settings.favoriteColors ?? []} onPick={(k) => change((m) => ({ ...m, color: k }))} onFavorites={(list) => useAppStore.getState().updateSettings({ favoriteColors: list })} onClose={() => setChartOpen(false)} />}
-        {model.kind === 'gate' && <button className="btn btn-sm" data-testid="designer-add-hinges" title="Dodaje šarke duž jedne ivice kapije" onClick={() => setHingeAsk({ side: model.gate?.opening ?? 'right', count: 2 })}>Dodaj šarke</button>}
+        {model.kind === 'gate' && !slSpec && <button className="btn btn-sm" data-testid="designer-add-hinges" title="Dodaje šarke duž jedne ivice kapije" onClick={() => setHingeAsk({ side: model.gate?.opening ?? 'right', count: 2 })}>Dodaj šarke</button>}
         <button className="btn btn-sm" data-testid="designer-add-frame" title="Dodaje ram oko platna (uglovi pod 45°)" onClick={() => setFrameAsk(true)}>Dodaj ram</button>
         {model.parts.some(isFramePart) && <button className="btn btn-sm" data-testid="designer-remove-frame" title="Briše dodat ram; mere modela se vraćaju na mere platna" onClick={removeFrame}><Trash2 size={14} />Obriši ram</button>}
         <div className="flex-1" />
@@ -502,6 +516,12 @@ function Designer({ id }: { id: string }) {
           </div>
         );
       })()}
+      {slSpec && (
+        <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-line bg-[#f8fafc]" data-testid="designer-sliding-bar">
+          <span className="text-[13px] font-semibold">Klizni okov:</span>
+          <SlidingPartButtons spec={slSpec} selected={hwSelValid} onSpec={patchSliding} onSelect={(k) => { setHwSel(k); if (k) setSelectedIds([]); }} />
+        </div>
+      )}
       {notice && (
         <div className="flex items-start gap-2 px-3 py-2 bg-[#fef3f2] border-b border-[#fecdca] text-[13px] text-[#b42318]" role="alert" data-testid="designer-notice">
           <AlertTriangle size={16} className="mt-0.5 shrink-0" />
@@ -529,7 +549,9 @@ function Designer({ id }: { id: string }) {
           )}
           {view !== '3d' && view !== 'skica' && (
             <Designer2D model={model} parts={parts} active={active} selectedIds={selectedIds} ortho={ortho} gridMm={grid}
-              onSelect={setSelectedIds} placing={placingParts} onPlace={placeClip} showDims={showDims} viewShift={viewShift} fitTick={fitTick} onMoveEnd={() => change((m) => ({ ...m }), false)}
+              onSelect={(ids) => { setSelectedIds(ids); if (ids.length) setHwSel(null); }} placing={placingParts} onPlace={placeClip} showDims={showDims} viewShift={viewShift} fitTick={fitTick} onMoveEnd={() => change((m) => ({ ...m }), false)}
+              groundY={slSpec ? slSpec.frameBottomY : 0} extraBounds={slBounds} onOverlayPick={(c) => { const k = compPart(c); if (k) { setHwSel(k); setSelectedIds([]); } }}
+              overlay={slGate ? (px) => <SlidingAssemblyArt gate={slGate} clearStart={0} clearEnd={model.widthMm} clearWidth={model.widthMm} floorY={slSpec!.frameBottomY} px={px} hex={colorHex(model.color)} noLeaf testPct={0} onPartClick={() => undefined} highlight={hwSelValid ? partDef(hwSelValid)?.comps : undefined} /> : undefined}
               onAdd={(p0) => { const p = restOnSurface(modelRef.current, p0, materialsRef.current); const next = { ...modelRef.current, parts: [...modelRef.current.parts, p] }; const fitted = p.angleDeg === 0 ? attach(next, p.id, true) : null; if (change(() => fitted ?? next)) setSelectedId(p.id); }}
               onMoveStart={record}
               onMove={(moves) => { const at = new Map(moves.map((v) => [v.id, v])); change((m) => ({ ...m, parts: m.parts.map((p) => { const v = at.get(p.id); return v ? { ...p, x: v.x, y: v.y } : p; }) }), false, false); }} />
@@ -544,6 +566,7 @@ function Designer({ id }: { id: string }) {
         </section>
 
         <aside className="border-l border-line bg-white min-h-0 overflow-auto scroll-thin p-3">
+          {slSpec && (hwSelValid || (!sel && !multi.length)) && <SlidingDesignerPanel spec={slSpec} W={model.widthMm} leafH={model.heightMm} onSpec={patchSliding} selected={hwSelValid} onSelect={setHwSel} />}
           <h2 className="font-bold text-[15px] mb-1">Izabrani deo</h2>
           {!sel && !multi.length && <p className="text-sm text-muted mb-4" data-testid="designer-no-selection">Izaberite materijal levo i nacrtajte ga na polju, ili kliknite na nacrtani deo da ga izmenite. Ctrl + klik ili prevlačenje po praznom biraju više delova.</p>}
           {multi.length > 0 && (() => {

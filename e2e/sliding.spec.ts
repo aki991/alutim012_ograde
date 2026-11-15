@@ -24,6 +24,12 @@ async function setNum(page: Page, testId: string, value: string) {
   await f.press('Enter');
 }
 
+/** otvara karticu dela u panelu (ako već nije otvorena) */
+async function openPart(page: Page, key: string) {
+  const t = page.getByTestId(`sl-part-toggle-${key}`);
+  if ((await t.getAttribute('aria-expanded')) !== 'true') await t.click();
+}
+
 async function save(page: Page) {
   await page.getByTestId('btn-save').click();
   await expect(page.getByTestId('btn-save')).toHaveAttribute('data-state', 'saved', { timeout: 8000 });
@@ -69,38 +75,39 @@ test('motorna na šini: mere i hod, proba hoda, preslikavanje, upozorenje letve 
   await expect(page.getByTestId('sl-check-passage')).toHaveAttribute('data-level', 'pending');
 
   // proba hoda: pomeraju se samo pokretni delovi (ram, letva), vođica i motor stoje
-  const frame0 = await box(page, 'frame'); const guide0 = await box(page, 'upperGuide'); const motor0 = await box(page, 'motor');
+  const frame0 = await box(page, 'leaf'); const guide0 = await box(page, 'upperGuide'); const motor0 = await box(page, 'motor');
   await page.getByTestId('sl-slider').fill('100');
   await expect(fv(page).locator('[data-testid="sliding-assembly"]')).toHaveAttribute('data-pct', '100');
-  const frame1 = await box(page, 'frame'); const guide1 = await box(page, 'upperGuide'); const motor1 = await box(page, 'motor');
+  const frame1 = await box(page, 'leaf'); const guide1 = await box(page, 'upperGuide'); const motor1 = await box(page, 'motor');
   expect(frame1.x).toBeGreaterThan(frame0.x + 50);
   expect(Math.abs(guide1.x - guide0.x)).toBeLessThan(1);
   expect(Math.abs(motor1.x - motor0.x)).toBeLessThan(1);
   await page.getByTestId('sl-half').click();
-  const frameHalf = await box(page, 'frame');
+  const frameHalf = await box(page, 'leaf');
   expect(Math.abs(frameHalf.x - (frame0.x + frame1.x) / 2)).toBeLessThan(2);
 
   // otvaranje ulevo: ceo sklop se preslikava, krilo na probi hoda ide ulevo
   await page.getByTestId('sl-closed').click();
   await page.getByTestId('sl-opening-left').click();
   await expect(fv(page).locator('[data-testid="sliding-assembly"]')).toHaveAttribute('data-opening', 'left');
-  const l0 = await box(page, 'frame');
+  const l0 = await box(page, 'leaf');
   await page.getByTestId('sl-open').click();
-  const l1 = await box(page, 'frame');
+  const l1 = await box(page, 'leaf');
   expect(l1.x).toBeLessThan(l0.x - 50);
   await page.getByTestId('sl-closed').click();
 
   // korekcija: letva počinje na X 30 i duga je 2.950 mm → zahvat kroz ceo hod
-  await page.getByTestId('sl-advanced').locator('summary').click();
+  await openPart(page, 'rack');
   await setNum(page, 'sl-pos-rackStart', '30');
   await expect(page.getByTestId('sl-pos-state-rackStart')).toContainText('ručno');
-  await setNum(page, 'sl-rackLength', '2950');
+  await setNum(page, 'sl-dim-rackLength', '2950');
   await expect(page.getByTestId('sl-check-rack')).toHaveAttribute('data-level', 'ok');
 
   // promena širine rama preračunava vođicu, šinu i zupčanik; hod se menja nezavisno
   await setNum(page, 'sl-width', '3500');
+  await openPart(page, 'upperGuide'); await openPart(page, 'rail'); await openPart(page, 'stop');
   await expect(page.getByTestId('sl-pos-upperGuide')).toHaveValue('3440');
-  await expect(page.getByTestId('sl-pos-railLength')).toHaveValue('7000');
+  await expect(page.getByTestId('sl-pos-railLength')).toHaveValue('7500');
   await setNum(page, 'sl-travel', '3400');
   await expect(page.getByTestId('sl-travel')).toHaveValue('3400');
   await expect(page.getByTestId('sl-pos-stop')).toHaveValue(String(3500 + 3400 + 30));
@@ -120,7 +127,7 @@ test('motorna na šini: mere i hod, proba hoda, preslikavanje, upozorenje letve 
   await expect(page.getByTestId('sl-height')).toHaveValue('1400');
   await expect(page.getByTestId('sl-clearOpening')).toHaveValue('3300');
   await expect(fv(page).locator('[data-testid="sliding-assembly"]')).toHaveAttribute('data-opening', 'left');
-  await page.getByTestId('sl-advanced').locator('summary').click();
+  await openPart(page, 'rack');
   await expect(page.getByTestId('sl-pos-rackStart')).toHaveValue('30');
   await expect(page.getByTestId('sl-pos-state-rackStart')).toContainText('ručno');
   expect(errors).toEqual([]);

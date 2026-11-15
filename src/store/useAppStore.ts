@@ -12,7 +12,7 @@ import { computeLayout } from '../domain/geometry/layout';
 import { removeStair, setStairGroup } from '../domain/geometry/stairOps';
 import { DEFAULT_MODEL_ID, FENCE_MODELS, TERRACE_NO_GATES, isTerraceModel, projectModelId } from '../domain/models/catalog';
 import { effectiveModelId, registerCustomModels, setHiddenModels } from '../domain/models/customRegistry';
-import { specFromPreset, type SlidingSpec } from '../domain/gates/slidingAssembly';
+import { presetTitle, slidingForModel, specFromPreset, type SlidingSpec } from '../domain/gates/slidingAssembly';
 import { defaultGateConfig, gateClearWidth, gateConfigFromGate, gateFieldsFromModel, GATE_TYPE_LABELS } from '../domain/gates/gateModels';
 import { postHalfSum } from '../domain/geometry/layout';
 import { builtinToCustom } from '../domain/models/fromBuiltin';
@@ -142,6 +142,11 @@ interface AppState {
   /** čuva kliznu kapiju kao imenovan šablon (nezavisna kopija); vraća ID šablona */
   saveSlidingTemplate: (itemId: string, name: string) => string | null;
   removeSlidingTemplate: (id: string) => void;
+  /** Doradi: nov model klizne kapije iz polazne varijante (nezavisna kopija koja se menja u crtežu modela) */
+  startSlidingDorada: (presetId: import('../domain/gates/slidingAssembly').SlidingPresetId) => string;
+  /** izmena modela klizne kapije; projekti koji su ga već koristili imaju svoju kopiju i ne menjaju se */
+  /** nov projekat sa kliznom kapijom iz polazne varijante ili iz modela */
+  newProjectFromSliding: (source: { preset: import('../domain/gates/slidingAssembly').SlidingPresetId } | { template: string }) => string | null;
 }
 
 /** Element čiji model više ne postoji (obrisan nacrtani model) prelazi na podrazumevani model, da se projekat i dalje otvara. */
@@ -612,7 +617,8 @@ export const useAppStore = create<AppState>((set, get) => {
       let spec: SlidingSpec; let frameWidth: number; let heightMm: number; let opening: Gate['opening'] = 'right'; let color: string | undefined;
       if ('preset' in source) {
         const d = specFromPreset(source.preset);
-        spec = d.spec; frameWidth = d.frameWidth; heightMm = d.frameHeight + d.spec.frameBottomY;
+        // krilo je izabrani model ograde (menja se kao kod ostalih kapija); sklop daje klizni okov
+        spec = { ...d.spec, drawnLeaf: true }; frameWidth = d.frameWidth; heightMm = d.frameHeight;
       } else {
         const t = (get().settings.slidingTemplates ?? []).find((x) => x.id === source.template);
         if (!t) return null;
@@ -649,6 +655,23 @@ export const useAppStore = create<AppState>((set, get) => {
       const t: SlidingTemplate = { id, name: nm, createdAt: new Date().toISOString(), spec, frameWidth: Math.round(clear), heightMm: g.heightMm, opening: g.opening, color: g.color };
       set((s) => ({ settings: { ...s.settings, slidingTemplates: [...(s.settings.slidingTemplates ?? []), t] } }));
       return id;
+    },
+    startSlidingDorada(presetId) {
+      const id = uid('cm');
+      const d = specFromPreset(presetId);
+      const base = builtinToCustom(DEFAULT_MODEL_ID, get().materials, id, d.frameWidth, d.frameHeight);
+      const sliding = slidingForModel(presetId, true);
+      const model = { ...base, name: presetTitle(presetId), kind: 'gate' as const, baseModelId: undefined, gate: { ...defaultGateConfig('sliding'), automation: sliding.actuation === 'motor', sliding } };
+      const customModels = [...(get().settings.customModels ?? []), model];
+      registerCustomModels(customModels, get().materials);
+      set((s) => ({ settings: { ...s.settings, customModels } }));
+      return id;
+    },
+    newProjectFromSliding(source) {
+      const pid = get().newProject({ name: 'Novi projekat — klizna kapija' });
+      const id = get().addSlidingGate(source);
+      if (!id) { get().removeProject(pid); return null; }
+      return pid;
     },
     removeSlidingTemplate(id) {
       set((s) => ({ settings: { ...s.settings, slidingTemplates: (s.settings.slidingTemplates ?? []).filter((t) => t.id !== id) } }));

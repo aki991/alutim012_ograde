@@ -13,6 +13,7 @@ import { isRail04 } from './railSpec';
 import { HW_ROLE_LABELS, missingHardware, resolveGate, systemOf, unknownHwLabel } from '../gates/design';
 import { gateCutRows } from '../gates/production';
 import { resolveSliding, slidingBom, variantTitle } from '../gates/slidingAssembly';
+import { slidingH } from '../gates/slidingLayout';
 
 export interface CutRow {
   element: string;
@@ -46,12 +47,13 @@ export function buildCutList(project: Project, specs?: ModelSpecs, materials?: M
     // klizna kapija kao sklop: u krojnu listu idu samo komadi sa poznatom krojnom merom (upisanom ili ravnim rezom šine/C-profila);
     // komad čija mera zavisi od spoja čeka potvrdu u panelu kapije
     if (it.kind === 'gate' && it.sliding) {
-      for (const b of slidingBom(resolveSliding(it.sliding, li.clearWidth, it.heightMm))) {
+      for (const b of slidingBom(resolveSliding(it.sliding, li.clearWidth, slidingH(it)))) {
         if (b.cutMm === null || b.cutMm <= 0 || b.unit !== 'kom') continue;
         if (b.make !== 'izrada' && b.key !== 'rail' && b.key !== 'carrier') continue;
-        rows.push({ element: name, index: li.index, part: b.name, profile: b.name, lengthMm: b.cutMm, qty: b.qty, note: [b.note, b.shownMm !== null && b.shownMm !== b.cutMm ? `prikazano ${b.shownMm} mm` : ''].filter(Boolean).join(' · ') || undefined });
+        const mat = b.materialId ? materials?.find((m) => m.id === b.materialId) : undefined;
+        rows.push({ element: name, index: li.index, part: b.name, profile: mat ? mat.name : `${b.name} — nije definisano`, lengthMm: b.cutMm, qty: b.qty, note: [b.note, b.shownMm !== null && b.shownMm !== b.cutMm ? `prikazano ${b.shownMm} mm` : ''].filter(Boolean).join(' · ') || undefined });
       }
-      continue;
+      if (!it.sliding.drawnLeaf) continue;
     }
     const slope = itemSlope(li);
     const stairNote = slope.factor > 1 ? `stepenište: krajevi pod uglom ${Math.round(slope.deg)}°` : '';
@@ -62,7 +64,7 @@ export function buildCutList(project: Project, specs?: ModelSpecs, materials?: M
     }
     const group = new Map<string, CutRow>();
     const slats = slatCutLengths({ modelId, slopeFactor: slope.factor, widthMm: it.kind === 'gate' ? gateSpecWidth(it, li.clearWidth) : li.clearWidth, heightMm: it.heightMm, axisMm: li.axisEnd - li.axisStart, params: it.params, doubleGate: it.kind === 'gate' && it.gateType === 'double', leafWidthsMm: it.kind === 'gate' && it.gateType === 'double' ? gateLeafPoses(it, li.clearStart, li.clearEnd, 1).map((q) => q.widthMm) : undefined });
-    if (it.kind === 'gate' && it.design) {
+    if (it.kind === 'gate' && it.design && !it.sliding) {
       // mere kapije: ram krila, noseći profil, rep, šina — red koji još nema meru ostaje u prozoru „Mere kapije“ (ne ide u plan rezanja)
       for (const r of gateCutRows(it, resolveGate(it, li.clearWidth), materials ?? [])) {
         if (r.lengthMm === null || r.lengthMm <= 0) continue;
@@ -102,7 +104,7 @@ export function buildCutList(project: Project, specs?: ModelSpecs, materials?: M
 
 export interface HardwareRow { element: string; item: string; qty: number }
 
-export function buildHardwareList(project: Project): HardwareRow[] {
+export function buildHardwareList(project: Project, materials?: Material[]): HardwareRow[] {
   const layout = computeLayout(project);
   const rows: HardwareRow[] = [];
   project.items.forEach((it, i) => {
@@ -110,9 +112,10 @@ export function buildHardwareList(project: Project): HardwareRow[] {
     const el = itemLabel(project.items, i);
     if (it.sliding) {
       // kupljeni delovi kliznog sklopa; delovi kompleta motora se ne ponavljaju, nepotvrđeni nose oznaku
-      for (const b of slidingBom(resolveSliding(it.sliding, layout.items[i].clearWidth, it.heightMm))) {
+      for (const b of slidingBom(resolveSliding(it.sliding, layout.items[i].clearWidth, slidingH(it)))) {
         if (b.make !== 'kupovina' || b.kit || b.key === 'rail' || b.key === 'carrier') continue;
-        rows.push({ element: el, item: `${b.name}${b.confirm ? ' (potvrditi)' : ''}`, qty: b.qty });
+        const mat = b.materialId ? materials?.find((m) => m.id === b.materialId) : undefined;
+        rows.push({ element: el, item: mat ? `${b.name}: ${mat.name}${b.confirm ? ' (potvrditi)' : ''}` : `${b.name} — nije definisano${b.confirm ? ' (potvrditi)' : ''}`, qty: b.unit === 'par' ? b.qty * 2 : b.qty });
       }
       return;
     }

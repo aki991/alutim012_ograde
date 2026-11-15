@@ -1,5 +1,11 @@
 import type { LaidOutItem } from '../geometry/layout';
 import type { Gate } from '../models/types';
+
+/**
+ * Visina sklopa od tla do vrha rama. Kod krila iz modela (nacrtano ili model ograde) visina kapije je visina krila, a krilo je
+ * podignuto od tla za odstojanje donje ivice rama.
+ */
+export const slidingH = (g: Pick<Gate, 'heightMm' | 'sliding'>): number => g.heightMm + (g.sliding?.drawnLeaf ? g.sliding.frameBottomY : 0);
 import { localToWorld, resolveSliding, type SlidingResult } from './slidingAssembly';
 
 /** Klizni sklop postavljen u projekat: rezultat i preslikavanje lokalne ose X u X crteža. */
@@ -14,7 +20,7 @@ export interface PlacedSliding {
 
 export function placeSliding(gate: Gate, li: Pick<LaidOutItem, 'clearStart' | 'clearEnd' | 'clearWidth'>): PlacedSliding | null {
   if (!gate.sliding) return null;
-  const res = resolveSliding(gate.sliding, li.clearWidth, gate.heightMm);
+  const res = resolveSliding(gate.sliding, li.clearWidth, slidingH(gate));
   const X = (x: number) => localToWorld(x, gate.opening, li.clearStart, li.clearEnd);
   const a = X(res.extents.minX); const b = X(res.extents.maxX);
   return { gate, res, X, minX: Math.min(a, b), maxX: Math.max(a, b) };

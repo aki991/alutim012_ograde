@@ -148,11 +148,11 @@ export async function downloadQuotePdf(project: Project, customer: Customer | nu
   downloadBlob(blob, `ponuda_${safeFilename(project.quoteNo || project.name)}.pdf`);
 }
 
-export async function buildProductionPdfBlob(project: Project, customer: Customer | null, settings: AppSettings): Promise<Blob> {
+export async function buildProductionPdfBlob(project: Project, customer: Customer | null, settings: AppSettings, materials?: Material[]): Promise<Blob> {
   const pdfMake = await getPdfMake();
   const sketch = await frontViewPng(project, 1500);
-  const cuts = buildCutList(project, settings.modelSpecs);
-  const hw = buildHardwareList(project);
+  const cuts = buildCutList(project, settings.modelSpecs, materials);
+  const hw = buildHardwareList(project, materials);
   const rail = buildRail04Sheet(project, settings.modelSpecs);
   const rl10 = buildRl10Sheet(project, settings.modelSpecs);
   const louver = buildLouver08Sheet(project, settings.modelSpecs);
@@ -232,8 +232,8 @@ export async function buildProductionPdfBlob(project: Project, customer: Custome
   return renderBlob(pdfMake, def);
 }
 
-export async function downloadProductionPdf(project: Project, customer: Customer | null, settings: AppSettings): Promise<void> {
-  downloadBlob(await buildProductionPdfBlob(project, customer, settings), `proizvodnja_${safeFilename(project.name)}.pdf`);
+export async function downloadProductionPdf(project: Project, customer: Customer | null, settings: AppSettings, materials?: Material[]): Promise<void> {
+  downloadBlob(await buildProductionPdfBlob(project, customer, settings, materials), `proizvodnja_${safeFilename(project.name)}.pdf`);
 }
 
 /**
