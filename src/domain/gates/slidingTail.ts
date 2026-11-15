@@ -124,9 +124,9 @@ export function tailGeometry(t: TailInput): { members: TailMember[]; defaults: T
   // ugla uz ram, a vodoravno je na pola puta između čvora i vrha, pa se ne sudara sa ostalima
   const xv = Math.round(t.defaultVerticalX);
   const yNode = yLower(xv); const yTopAttach = yLower(W);
-  // vodoravno stoji dole, na pola visine kosog ojačanja: ide od rama, seče koso i naleže na uspravno ojačanje (spoj sa ostalima)
+  // vodoravno je na visini čvora: ide od rama do istog čvora na kosniku u kome se sastaju uspravno i koso ojačanje (sve u jednoj tački)
   const vb = t.braces.find((b) => b.kind === 'vertical');
-  const defaults: TailDefaults = { vertical: xv, horizontal: Math.round(vb ? (chordTopY + yNode) / 2 : (yNode + yTopAttach) / 2), diagX1: W, diagX2: xv };
+  const defaults: TailDefaults = { vertical: xv, horizontal: Math.round(vb ? yNode : (yNode + yTopAttach) / 2), diagX1: W, diagX2: xv };
 
   const members: TailMember[] = [];
   members.push(member('tail-diag', 'Rep — kosnik', P1, J, diagW, [frameCut], [miter]));

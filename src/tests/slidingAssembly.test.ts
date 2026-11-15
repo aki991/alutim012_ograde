@@ -393,7 +393,7 @@ describe('rep: koso ojačanje u uglu (V zasek) i uredan polazni raspored', () =>
     const moved = resolveSliding({ ...spec, braces: [{ id: 'd', kind: 'diagonal', pos: 3400 }] }, 3000, 1400).tail!.find((m) => m.bomKey === 'tail-brace-d')!;
     expect(moved.ends[0]).toHaveLength(1);
   });
-  it('tri ojačanja polazno: vodoravno stoji dole, seče koso ojačanje i naleže na uspravno (spoj sa ostalima)', () => {
+  it('tri ojačanja polazno: vodoravno, uspravno i koso ojačanje se sastaju u istom čvoru na kosniku', () => {
     const r = all();
     const h = r.tail!.find((m) => m.bomKey === 'tail-brace-h')!;
     const v = r.tail!.find((m) => m.bomKey === 'tail-brace-v')!;
@@ -401,12 +401,14 @@ describe('rep: koso ojačanje u uglu (V zasek) i uredan polazni raspored', () =>
     const bh = bbox(h.poly); const bv = bbox(v.poly); const bd = bbox(d.poly);
     const chordTop = bbox(r.tail!.find((m) => m.bomKey === 'tail-bottom')!.poly).y1;
     expect(bh.y0).toBeGreaterThan(chordTop);
-    expect(bh.y1).toBeLessThan(bv.y1);                 // ispod čvora
     expect(bh.x0).toBeCloseTo(3000, 0);                // od rama
-    expect(bh.x1).toBeCloseTo(bv.x0, 0);               // do uspravnog ojačanja
-    expect(h.ends).toEqual([[90], [90]]);
-    expect(bh.x1).toBeGreaterThan(bd.x0 + 50);         // prolazi kroz koso ojačanje
-    expect(bh.y1).toBeLessThan(bd.y1);
+    // čvor: vrh uspravnog i gornji kraj kosog i desni kraj vodoravnog su u istoj tački kosnika
+    expect(Math.abs(bh.x1 - bv.x1)).toBeLessThan(60);
+    expect(Math.abs(bh.y1 - bv.y1)).toBeLessThan(60);
+    expect(Math.abs(bd.x1 - bv.x1)).toBeLessThan(60);
+    expect(h.ends[0]).toEqual([90]);
+    expect(h.ends[1]).toHaveLength(1);
+    expect(h.ends[1][0]).toBeLessThan(90);              // kraj uz kosnik je zasečen pod uglom
     // koso ojačanje i uspravno se spajaju u istom čvoru na kosniku
     expect(bd.x1).toBeGreaterThan(bv.x0 - 1);
   });
@@ -422,5 +424,24 @@ describe('krojna lista: rep sa uglovima sečenja', () => {
     const rows = buildCutList(p).filter((r) => r.index === 1 && r.part.startsWith('Rep'));
     expect(rows.map((r) => r.part)).toEqual(['Rep — kosnik', 'Rep — donja pojasnica', 'Rep — ojačanje uspravno', 'Rep — ojačanje koso']);
     for (const r of rows) { expect(r.lengthMm).toBeGreaterThan(100); expect(r.note).toContain('rez pod uglom'); expect(r.profile).toContain('nije definisano'); }
+  });
+});
+
+describe('materijal upisan ručno (nije u cenovniku)', () => {
+  it('ručno upisan naziv ide u krojnu listu, listu okova i sastavnicu umesto „nije definisano“', async () => {
+    const { buildCutList, buildHardwareList } = await import('../domain/pricing/production');
+    const { buildBom } = await import('../domain/pricing/calc');
+    const { createGate, createProject, createFence } = await import('../domain/models/factories');
+    const d = specFromPreset('samonoseca_rucna');
+    const spec: SlidingSpec = { ...d.spec, partText: { carrier: 'C profil 60x60x2', catch: 'Prihvatnik nerđajući' } };
+    const p = createProject('T', [createFence(), createGate('sliding', { sliding: spec, heightMm: d.frameHeight + d.spec.frameBottomY, widthMm: 3200 })]);
+    const cut = buildCutList(p).filter((r) => r.index === 1).find((r) => r.part === 'Noseći C-profil')!;
+    expect(cut.profile).toBe('C profil 60x60x2');
+    expect(buildHardwareList(p).some((r) => r.item === 'Prihvatnik krila: Prihvatnik nerđajući')).toBe(true);
+    const names = buildBom(p, []).map((l) => l.name);
+    expect(names.some((n) => n.startsWith('C profil 60x60x2') && n.includes('nije u cenovniku'))).toBe(true);
+    // izabran materijal iz cenovnika ima prednost nad upisanim tekstom
+    const item = slidingBom(resolveSliding({ ...spec, partMat: { carrier: 'm1' } }, 3200, 1400)).find((b) => b.key === 'carrier')!;
+    expect(item.materialId).toBe('m1'); expect(item.materialText).toBeUndefined();
   });
 });

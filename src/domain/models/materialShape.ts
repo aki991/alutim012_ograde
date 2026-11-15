@@ -1,5 +1,7 @@
 import { RAL_COLORS } from './catalog';
-import { profileGeometry, profileSpecFor, specWall, type ProfileSpec, type Pt } from './profileDrawings';
+import { profileGeometry, profileSpecFor, specDimFields, specWall, withDims, type DimField, type ProfileSpec, type Pt } from './profileDrawings';
+
+export type { DimField } from './profileDrawings';
 import type { Material } from './types';
 
 /**
@@ -9,11 +11,12 @@ import type { Material } from './types';
  */
 
 export type MaterialGroupId =
-  | 'kv' | 'u' | 'maske' | 'l' | 'h' | 'z' | 'kose' | 'okrugle' | 'trake'
+  | 'kv' | 'c' | 'u' | 'maske' | 'l' | 'h' | 'z' | 'kose' | 'okrugle' | 'trake'
   | 'kape' | 'rozetne' | 'stope' | 'cepovi' | 'okov' | 'automatika' | 'ploce' | 'ostalo';
 
 export const MATERIAL_GROUPS: { id: MaterialGroupId; label: string }[] = [
   { id: 'kv', label: 'Kvadratne i pravougaone cevi' },
+  { id: 'c', label: 'C profili (šine kliznih kapija)' },
   { id: 'u', label: 'U profili' },
   { id: 'maske', label: 'Profili za maske i maskice' },
   { id: 'l', label: 'L profili' },
@@ -87,6 +90,25 @@ export function sectionOfSpec(spec: ProfileSpec): Section {
   return { polys, w: geo.w, h: geo.h };
 }
 
+/** C profil po nazivu („C profil 60x60x2“): isti univerzalan presek za sve mere; null kad naziv nije C profil */
+export function cProfileSpec(m: ShapeInput): ProfileSpec | null {
+  if (!/\bc[- ]?profil/.test(norm(m.name))) return null;
+  const dims = dimsFromName(m.name);
+  const a = dims[0] ?? 60; const b = dims[1] ?? a;
+  return withDims({ kind: 'c', a, b, c: Math.min(m.wallMm ?? dims[2] ?? 2, Math.min(a, b) / 2 - 0.05) }, m.dims);
+}
+
+/** Ključ za pretragu: bez razlike velikih i malih slova, kvačica, „×“ = „x“ = „X“, zarez = tačka. */
+export const searchKey = (s: string): string => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'dj').replace(/[×✕*]/g, 'x').replace(/,/g, '.').replace(/\s+/g, ' ').trim();
+
+/** Da li tekst odgovara pretrazi: svaka reč iz upita mora da se nađe (npr. „60x20“ nalazi „Kvadratna cev 60×20×1“). */
+export function matchesSearch(text: string, query: string): boolean {
+  const q = searchKey(query);
+  if (!q) return true;
+  const hay = searchKey(text);
+  return q.split(' ').every((w) => hay.includes(w));
+}
+
 const circle = (r: number, n = 40): Pt[] => Array.from({ length: n }, (_, i) => [r * Math.cos((2 * Math.PI * i) / n), r * Math.sin((2 * Math.PI * i) / n)] as Pt);
 const roundSection = (d: number, wall: number): Section => ({ polys: [{ outline: circle(d / 2), holes: wall > 0 && wall < d / 2 ? [circle(d / 2 - wall)] : [] }], w: d, h: d, round: true });
 const solidSection = (w: number, h: number): Section => ({ polys: [{ outline: [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]], holes: [] }], w, h });
@@ -143,24 +165,42 @@ export function solidsBounds(solids: Solid[]): { x0: number; y0: number; x1: num
 
 const piece = (group: MaterialGroupId, kind: PieceKind, w: number, d: number): MatShape => ({ type: 'piece', group, solids: pieceSolids(kind, w, d) });
 
-const cache = new Map<string, MatShape>();
+const cache = new Map<string, Resolved>();
 
 /** Oblik materijala (uvek postoji: nepoznat materijal dobija opšti oblik prema jedinici mere). */
-type ShapeInput = Pick<Material, 'sku' | 'name' | 'unit' | 'category'> & { wallMm?: number };
+type ShapeInput = Pick<Material, 'sku' | 'name' | 'unit' | 'category'> & { wallMm?: number; dims?: Record<string, number> };
 
-export function materialShape(m: ShapeInput): MatShape {
-  const key = `${m.sku}|${m.name}|${m.unit}|${m.category}|${m.wallMm ?? ''}`;
+function resolved(m: ShapeInput): Resolved {
+  const key = `${m.sku}|${m.name}|${m.unit}|${m.category}|${m.wallMm ?? ''}|${m.dims ? JSON.stringify(m.dims) : ''}`;
   let s = cache.get(key);
   if (!s) { s = resolveShape(m); cache.set(key, s); }
   return s;
 }
 
-function resolveShape(m: ShapeInput): MatShape {
+export function materialShape(m: ShapeInput): MatShape {
+  return resolved(m).shape;
+}
+
+/** Mere preseka materijala koje se mogu ručno menjati (A, B, debljina zida, otvor …); prazno za oblike bez mera. */
+export function materialDimFields(m: ShapeInput): DimField[] {
+  return resolved(m).fields;
+}
+
+/** Oblik materijala i mere preseka koje se mogu ručno menjati. */
+interface Resolved { shape: MatShape; fields: DimField[] }
+const plain = (shape: MatShape): Resolved => ({ shape, fields: [] });
+const fromSpec = (spec: ProfileSpec, group: MaterialGroupId, exact: boolean): Resolved => ({
+  shape: { type: 'linear', group, section: sectionOfSpec(spec), exact, u: spec.kind === 'u' ? { a: spec.a, b: spec.b, c: spec.c } : undefined, wall: specWall(spec) ?? undefined },
+  fields: specDimFields(spec),
+});
+
+function resolveShape(m: ShapeInput): Resolved {
+  const ov = m.dims ?? {};
   const spec = profileSpecFor(m);
   if (spec) {
-    const group: MaterialGroupId = spec.kind === 'tube' ? 'kv' : spec.kind === 'u' ? 'u' : spec.kind === 'l' ? 'l' : spec.kind === 'h' ? 'h' : spec.kind === 'slant' ? 'kose'
+    const group: MaterialGroupId = spec.kind === 'tube' ? 'kv' : spec.kind === 'c' ? 'c' : spec.kind === 'u' ? 'u' : spec.kind === 'l' ? 'l' : spec.kind === 'h' ? 'h' : spec.kind === 'slant' ? 'kose'
       : spec.name === 'zmali' || spec.name === 'zveliki' ? 'z' : 'maske';
-    return { type: 'linear', group, section: sectionOfSpec(spec), exact: true, u: spec.kind === 'u' ? { a: spec.a, b: spec.b, c: spec.c } : undefined, wall: specWall(spec) ?? undefined };
+    return fromSpec(spec, group, true);
   }
   const n = norm(m.name);
   const dims = dimsFromName(m.name);
@@ -170,46 +210,57 @@ function resolveShape(m: ShapeInput): MatShape {
   const has = (re: RegExp): boolean => re.test(n);
 
   // komadni delovi (naziv često sadrži i meru profila na koji idu, zato se proveravaju pre profila)
-  if (has(/\bkap[aeu]\b/)) return piece('kape', has(/pismo|piramid|siljat/) ? 'cap_pyramid' : 'cap_flat', w, d);
-  if (has(/rozetn/)) return piece('rozetne', 'rosette', w, d);
-  if (has(/\bstop[aeu]\b/)) return piece('stope', has(/bocn/) ? 'side_foot' : 'foot', w, d);
-  if (has(/\bcep\b|\bcepovi\b|\bcepa\b/)) return piece('cepovi', 'plug', w, d);
-  if (has(/sark/)) return piece('okov', 'hinge', w, d);
-  if (has(/brav|kvak/)) return piece('okov', 'lock', w, d);
-  if (has(/tocki/)) return piece('okov', 'wheel', w, d);
-  if (has(/motor|automatik|pogon/) || m.category === 'automatika') return piece('automatika', 'motor', w, d);
-  if (has(/vijak|vijci|sraf|zakiv|sidro|anker|tipl/)) return piece('okov', 'screw', w, d);
-  if (has(/prsten|maska stuba/)) return piece('okov', 'ring', rd?.d ?? 40, rd?.d ?? 40);
-  if (has(/nosac|spojnic|veza|zglob|kolen|zavrsetak|podlosk|drzac|ugaonik|sidrenje|savijanje/)) return piece('okov', 'bracket', Math.min(w, 60), Math.min(d, 60));
+  if (has(/\bkap[aeu]\b/)) return plain(piece('kape', has(/pismo|piramid|siljat/) ? 'cap_pyramid' : 'cap_flat', w, d));
+  if (has(/rozetn/)) return plain(piece('rozetne', 'rosette', w, d));
+  if (has(/\bstop[aeu]\b/)) return plain(piece('stope', has(/bocn/) ? 'side_foot' : 'foot', w, d));
+  if (has(/\bcep\b|\bcepovi\b|\bcepa\b/)) return plain(piece('cepovi', 'plug', w, d));
+  if (has(/sark/)) return plain(piece('okov', 'hinge', w, d));
+  if (has(/brav|kvak/)) return plain(piece('okov', 'lock', w, d));
+  if (has(/tocki/)) return plain(piece('okov', 'wheel', w, d));
+  if (has(/motor|automatik|pogon/) || m.category === 'automatika') return plain(piece('automatika', 'motor', w, d));
+  if (has(/vijak|vijci|sraf|zakiv|sidro|anker|tipl/)) return plain(piece('okov', 'screw', w, d));
+  if (has(/prsten|maska stuba/)) return plain(piece('okov', 'ring', rd?.d ?? 40, rd?.d ?? 40));
+  if (has(/nosac|spojnic|veza|zglob|kolen|zavrsetak|podlosk|drzac|ugaonik|sidrenje|savijanje/)) return plain(piece('okov', 'bracket', Math.min(w, 60), Math.min(d, 60)));
 
   // ploče
   if (m.unit === 'm2' || m.category === 'staklo' || m.category === 'panel' || has(/stakl|\bpanel\b|\blim\b|ploca/)) {
     if (!has(/panel-profil|profil/)) {
       const t = new RegExp(`${N}\\s*mm`).exec(m.name);
-      return { type: 'sheet', group: 'ploce', thick: t ? num(t[1]) : has(/stakl/) ? 8 : 3, glass: has(/stakl/) || m.category === 'staklo' };
+      const thick = typeof ov.t === 'number' && ov.t > 0 ? ov.t : t ? num(t[1]) : has(/stakl/) ? 8 : 3;
+      return { shape: { type: 'sheet', group: 'ploce', thick, glass: has(/stakl/) || m.category === 'staklo' }, fields: [{ key: 't', label: 'Debljina', value: thick }] };
     }
   }
 
-  // profili po nazivu
-  if (rd) { const w = Math.min(m.wallMm ?? rd.wall, rd.d / 2 - 0.05); return { type: 'linear', group: 'okrugle', section: roundSection(rd.d, w), exact: true, wall: w }; }
-  const wall = m.wallMm ?? dims[2] ?? 1.5;
-  if (has(/\bu[- ]?profil|^u \d/)) {
-    const u = { a: dims[0] ?? 20, b: dims[1] ?? 20, c: Math.min(wall, Math.min(dims[0] ?? 20, dims[1] ?? 20) / 2 - 0.05) };
-    return { type: 'linear', group: 'u', section: sectionOfSpec({ kind: 'u', ...u }), exact: dims.length >= 2, u, wall: u.c };
+  // profili po nazivu (mere iz naziva, pa ručno izmenjene mere materijala)
+  const pos = (k: string): number | undefined => { const v = ov[k]; return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : undefined; };
+  if (rd) {
+    const dia = pos('d') ?? rd.d;
+    const wl = Math.min(m.wallMm ?? rd.wall, dia / 2 - 0.05);
+    return { shape: { type: 'linear', group: 'okrugle', section: roundSection(dia, wl), exact: true, wall: wl }, fields: [{ key: 'd', label: 'Prečnik', value: dia }, { key: 'c', label: 'Debljina zida', value: wl, wall: true }] };
   }
-  if (has(/\bl[- ]?profil|ugaoni profil/)) return { type: 'linear', group: 'l', section: sectionOfSpec({ kind: 'l', a: dims[0] ?? 20, b: dims[1] ?? 20, c: wall }), exact: dims.length >= 2, wall };
-  if (has(/\bh[- ]?profil/)) return { type: 'linear', group: 'h', section: sectionOfSpec({ kind: 'h', width: dims[0] ?? 60, up: 20, down: 10, t: 1.2 }), exact: false };
-  if (has(/\bz[- ]?profil/)) return { type: 'linear', group: 'z', section: sectionOfSpec({ kind: 'shape', name: 'zmali' }), exact: false };
-  if (has(/zakosen/)) return { type: 'linear', group: 'kose', section: sectionOfSpec({ kind: 'slant', width: dims[0] ?? 80, height: dims[1] ?? 20, wall: m.wallMm ?? dims[2] ?? 1, offset: 25.6 }), exact: false, wall: m.wallMm ?? dims[2] ?? 1 };
-  if (has(/traka|flah|lajsn|maskic/)) return { type: 'linear', group: 'trake', section: solidSection(dims[0] ?? 30, dims[1] ?? 3), exact: dims.length >= 2 };
+  const wall = m.wallMm ?? dims[2] ?? 1.5;
+  const cSpec = cProfileSpec(m);
+  if (cSpec) return fromSpec(cSpec, 'c', dims.length >= 2);
+  if (has(/\bu[- ]?profil|^u \d/)) {
+    const a0 = dims[0] ?? 20; const b0 = dims[1] ?? 20;
+    return fromSpec(withDims({ kind: 'u', a: a0, b: b0, c: Math.min(wall, Math.min(a0, b0) / 2 - 0.05) }, ov), 'u', dims.length >= 2);
+  }
+  if (has(/\bl[- ]?profil|ugaoni profil/)) return fromSpec(withDims({ kind: 'l', a: dims[0] ?? 20, b: dims[1] ?? 20, c: wall }, ov), 'l', dims.length >= 2);
+  if (has(/\bh[- ]?profil/)) return fromSpec(withDims({ kind: 'h', width: dims[0] ?? 60, up: 20, down: 10, t: m.wallMm ?? 1.2 }, ov), 'h', false);
+  if (has(/\bz[- ]?profil/)) return fromSpec({ kind: 'shape', name: 'zmali' }, 'z', false);
+  if (has(/zakosen/)) return fromSpec(withDims({ kind: 'slant', width: dims[0] ?? 80, height: dims[1] ?? 20, wall: m.wallMm ?? dims[2] ?? 1, offset: 25.6 }, ov), 'kose', false);
+  if (has(/traka|flah|lajsn|maskic/)) {
+    const a = pos('a') ?? dims[0] ?? 30; const b = pos('b') ?? dims[1] ?? 3;
+    return { shape: { type: 'linear', group: 'trake', section: solidSection(a, b), exact: dims.length >= 2 }, fields: [{ key: 'a', label: 'Širina', value: a }, { key: 'b', label: 'Debljina', value: b }] };
+  }
   const profileWord = has(/cev|kutij|letvic|lamel|dask|profil|stub|tarabic|rukohvat|precka|sipka/);
   if (profileWord || m.unit === 'm') {
-    const a = dims[0] ?? 40; const b = dims[1] ?? 20;
-    const c = Math.min(wall, Math.min(a, b) / 2 - 0.1);
-    return { type: 'linear', group: has(/cev|kutij|stub/) ? 'kv' : 'trake', section: sectionOfSpec({ kind: 'tube', a, b, c }), exact: dims.length >= 2, wall: c };
+    const a0 = dims[0] ?? 40; const b0 = dims[1] ?? 20;
+    const r = fromSpec(withDims({ kind: 'tube', a: a0, b: b0, c: Math.min(wall, Math.min(a0, b0) / 2 - 0.1) }, ov), has(/cev|kutij|stub/) ? 'kv' : 'trake', dims.length >= 2);
+    return r;
   }
-  if (m.category === 'okov') return piece('okov', 'bracket', Math.min(w, 60), Math.min(d, 60));
-  return piece('ostalo', 'box', w, d);
+  if (m.category === 'okov') return plain(piece('okov', 'bracket', Math.min(w, 60), Math.min(d, 60)));
+  return plain(piece('ostalo', 'box', w, d));
 }
 
 /** Presek okrenut oko ose profila za 0 / 90 / 180 / 270°. */
@@ -285,3 +336,24 @@ export function compareMaterials(a: ShapeInput, b: ShapeInput): number {
   }
   return a.name.localeCompare(b.name, 'sr', { numeric: true });
 }
+
+/**
+ * Izmena mera A × B × C u nazivu: ako naziv sadrži stare mere (npr. „C profil 60×60×2“), upisuju se nove („C profil 60×60×1,5“).
+ * Naziv bez tih mera se ne menja.
+ */
+export function syncNameDims(name: string, before: DimField[], after: DimField[]): string {
+  const keys = ['a', 'b', 'c'];
+  const olds = keys.map((k) => before.find((f) => f.key === k)?.value);
+  const news = keys.map((k) => after.find((f) => f.key === k)?.value);
+  if (olds[0] === undefined || olds[1] === undefined || news[0] === undefined || news[1] === undefined) return name;
+  const pat = (v: number) => String(v).replace(/\./g, '[.,]');
+  const x = '\\s*[x×X]\\s*';
+  const re = new RegExp('(?<![\\d.,])' + pat(olds[0]) + x + pat(olds[1]) + '(?:' + x + (olds[2] !== undefined ? pat(olds[2]) : '\\d+(?:[.,]\\d+)?') + ')?(?![\\d])');
+  const m = re.exec(name);
+  if (!m) return name;
+  const f = (v: number) => String(Math.round(v * 100) / 100).replace('.', ',');
+  const hasThird = /[x×X][^x×X]*[x×X]/i.test(m[0]);
+  const repl = f(news[0]) + '×' + f(news[1]) + (hasThird && news[2] !== undefined ? '×' + f(news[2]) : '');
+  return name.replace(re, repl);
+}
+

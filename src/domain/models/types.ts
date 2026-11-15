@@ -290,6 +290,8 @@ export interface Material {
    * 56 mm sa zidom 2 mm, a 54 mm sa zidom 3 mm). Bez vrednosti važi debljina iz cenovnika / naziva.
    */
   wallMm?: number;
+  /** ručno izmenjene mere preseka (A, B, otvor, širina …) kad se razlikuju od cenovnika i naziva; ključevi zavise od oblika */
+  dims?: Record<string, number>;
   /** masa po metru (kg/m) iz deklaracije profila; bez vrednosti masa se ne računa (prikazuje se kao nepoznata) */
   kgPerM?: number;
 }

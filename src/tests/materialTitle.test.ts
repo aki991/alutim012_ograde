@@ -8,8 +8,9 @@ describe('čitljivi nazivi materijala', () => {
   it.each([
     ['Pravougaona cev 80×20×1 mm, sirovo (Ekoluka Key; osnovica cene nepotvrđena)', 'Pravougaona cev 80×20×1'],
     ['Kvadratna cev 60×40×3 mm, sirovo (Ekoluka Key)', 'Kvadratna cev 60×40×3'],
-    ['Kvadratna cev 60×20×1 mm, RAL 7016 (Ekoluka Key)', 'Kvadratna cev 60×20×1, RAL 7016'],
-    ['Zakošena letvica 80×20×1 mm, boja 7016 (Ekoluka Key; osnovica cene nepotvrđena)', 'Zakošena letvica 80×20×1, RAL 7016'],
+    ['Kvadratna cev 60×20×1 mm, RAL 7016 (Ekoluka Key)', 'Kvadratna cev 60×20×1'],
+    ['Zakošena letvica 80×20×1 mm, boja 7016 (Ekoluka Key; osnovica cene nepotvrđena)', 'Zakošena letvica 80×20×1'],
+    ['Okrugla cev Ø25×1,5 RAL 9005', 'Okrugla cev Ø25×1,5'],
     ['U 60×20×2 mm, sirovo (Ekoluka Key; nije isto što i U 60×28)', 'U profil 60×20×2'],
     ['U 60×28 (podatak radnika; nije u cenovniku — uneti cenu)', 'U profil 60×28'],
     ['Kvadratna cev 80×80×3 mm, sirovo — stub (Ekoluka Key; uneti cenu)', 'Kvadratna cev 80×80×3'],

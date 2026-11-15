@@ -119,7 +119,7 @@ export function SlidingDesignerPanel({ spec, W, leafH, onSpec, selected, onSelec
               const mat = b.materialId ? materials.find((m) => m.id === b.materialId) : undefined;
               return (
                 <div key={b.key} className="flex gap-2 text-[12px] py-0.5 border-b border-line last:border-0" data-testid={`sl-hw-bom-${b.key}`}>
-                  <span className="flex-1">{b.name}<span className={`block ${mat ? 'text-muted' : 'text-amber-800'}`}>{mat ? mat.name : 'nije definisano'}</span></span>
+                  <span className="flex-1">{b.name}<span className={`block ${mat || b.materialText ? 'text-muted' : 'text-amber-800'}`}>{mat ? mat.name : b.materialText ? `${b.materialText} (ručno)` : 'nije definisano'}</span></span>
                   <span className="tabular-nums whitespace-nowrap">{b.shownMm && (b.key === 'rail' || b.key === 'carrier' || b.make === 'izrada') ? fmt(b.shownMm) + ' · ' : ''}{b.qty} {b.unit}</span>
                 </div>
               );

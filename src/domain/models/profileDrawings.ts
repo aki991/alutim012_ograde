@@ -9,6 +9,8 @@ export type ShapeName = 'mask' | 'maskica' | 'dvemaske' | 'zmali' | 'zveliki';
 export type ProfileSpec =
   /** U profil: A širina, B visina, C debljina zida; otvor je okrenut nagore */
   | { kind: 'u'; a: number; b: number; c: number }
+  /** C profil (šina klizne kapije): kutijasti presek A × B, debljina zida C, otvor na donjoj strani sa uvijenim ivicama */
+  | { kind: 'c'; a: number; b: number; c: number; /** otvor na donjoj strani; bez vrednosti pola širine */ slot?: number }
   /** šuplja pravougaona (kvadratna) cev: A širina, B visina, C debljina zida */
   | { kind: 'tube'; a: number; b: number; c: number }
   /** L profil: A donji krak, B uspravni krak, C debljina */
@@ -51,23 +53,60 @@ export const PROFILE_BY_SKU: Record<string, ProfileSpec> = {
 };
 
 /** Debljina zida preseka (mm); null za složene oblike kojima se zid ne menja. */
-export const specWall = (s: ProfileSpec): number | null => (s.kind === 'u' || s.kind === 'tube' || s.kind === 'l' ? s.c : s.kind === 'h' ? s.t : s.kind === 'slant' ? s.wall : null);
+export const specWall = (s: ProfileSpec): number | null => (s.kind === 'u' || s.kind === 'tube' || s.kind === 'l' || s.kind === 'c' ? s.c : s.kind === 'h' ? s.t : s.kind === 'slant' ? s.wall : null);
 
 /** Presek sa drugom debljinom zida (spoljne mere ostaju iste); zid ne može biti deblji od pola manje stranice. */
 export function withWall(s: ProfileSpec, wallMm: number | undefined): ProfileSpec {
   if (!wallMm || !(wallMm > 0)) return s;
   if (s.kind === 'u' || s.kind === 'l') return { ...s, c: Math.min(wallMm, Math.min(s.a, s.b) / 2 - 0.05) };
-  if (s.kind === 'tube') return { ...s, c: Math.min(wallMm, Math.min(s.a, s.b) / 2 - 0.05) };
+  if (s.kind === 'tube' || s.kind === 'c') return { ...s, c: Math.min(wallMm, Math.min(s.a, s.b) / 2 - 0.05) };
   if (s.kind === 'h') return { ...s, t: Math.min(wallMm, s.width / 2 - 0.05) };
   if (s.kind === 'slant') return { ...s, wall: Math.min(wallMm, s.height / 2 - 0.05) };
   return s;
 }
 
 /** Presek profila po šifri; ako je materijalu zadata debljina zida, presek je sa tom debljinom. */
-export const profileSpecFor = (m: Pick<Material, 'sku'> & { wallMm?: number }): ProfileSpec | null => {
+export const profileSpecFor = (m: Pick<Material, 'sku'> & { wallMm?: number; dims?: Record<string, number> }): ProfileSpec | null => {
   const s = PROFILE_BY_SKU[m.sku.trim().toUpperCase()];
-  return s ? withWall(s, m.wallMm) : null;
+  return s ? withDims(withWall(s, m.wallMm), m.dims) : null;
 };
+
+/** Mera preseka koja se može izmeniti: ključ, naziv, trenutna vrednost; `wall` = čuva se kao debljina zida materijala. */
+export interface DimField { key: string; label: string; value: number; wall?: boolean }
+
+/** Sve mere preseka koje se mogu menjati (složeni šematski oblici nemaju mere). */
+export function specDimFields(s: ProfileSpec): DimField[] {
+  switch (s.kind) {
+    case 'tube': case 'u': case 'l':
+      return [{ key: 'a', label: 'A — širina', value: s.a }, { key: 'b', label: 'B — visina', value: s.b }, { key: 'c', label: 'C — debljina zida', value: s.c, wall: true }];
+    case 'c': {
+      const slot = cSlot(s);
+      return [{ key: 'a', label: 'A — širina', value: s.a }, { key: 'b', label: 'B — visina', value: s.b }, { key: 'c', label: 'C — debljina zida', value: s.c, wall: true }, { key: 'slot', label: 'Otvor (donja strana)', value: slot }];
+    }
+    case 'h':
+      return [{ key: 'width', label: 'Širina', value: s.width }, { key: 'up', label: 'Visina iznad srednje veze', value: s.up }, { key: 'down', label: 'Visina ispod srednje veze', value: s.down }, { key: 't', label: 'Debljina zida', value: s.t, wall: true }];
+    case 'slant':
+      return [{ key: 'width', label: 'Širina donje ivice', value: s.width }, { key: 'height', label: 'Visina', value: s.height }, { key: 'wall', label: 'Debljina zida', value: s.wall, wall: true }, { key: 'offset', label: 'Pomeraj gornje ivice', value: s.offset }];
+    default:
+      return [];
+  }
+}
+
+/** Otvor C profila: zadat ili pola širine, u granicama u kojima ivice otvora ostaju (najmanje dva zida sa svake strane). */
+export const cSlot = (s: { a: number; c: number; slot?: number }): number => Math.max(2, Math.min(s.slot ?? s.a * 0.5, s.a - 4 * s.c));
+
+/** Presek sa ručno izmenjenim merama (debljina zida se menja posebno, preko withWall). */
+export function withDims(s: ProfileSpec, dims: Record<string, number> | undefined): ProfileSpec {
+  if (!dims) return s;
+  const pos = (k: string): number | undefined => { const v = dims[k]; return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : undefined; };
+  switch (s.kind) {
+    case 'tube': case 'u': case 'l': return { ...s, a: pos('a') ?? s.a, b: pos('b') ?? s.b };
+    case 'c': return { ...s, a: pos('a') ?? s.a, b: pos('b') ?? s.b, slot: pos('slot') ?? s.slot };
+    case 'h': return { ...s, width: pos('width') ?? s.width, up: pos('up') ?? s.up, down: pos('down') ?? s.down };
+    case 'slant': return { ...s, width: pos('width') ?? s.width, height: pos('height') ?? s.height, offset: typeof dims.offset === 'number' ? dims.offset : s.offset };
+    default: return s;
+  }
+}
 
 /** Kota na crtežu: duž od `from` do `to`, pomerena upravno za `gap` (mm; pozitivno = udesno/nadole od pravca crtanja). */
 export interface Dim { from: Pt; to: Pt; gap: number; label: string }
@@ -183,6 +222,23 @@ export function profileGeometry(spec: ProfileSpec): ProfileGeometry {
         { from: [0, 0], to: [c, 0], gap: -5, label: `C = ${fmt(c)}` },
       ],
       facts: [{ label: 'A — širina', value: mm(a) }, { label: 'B — visina', value: mm(b) }, { label: 'C — debljina zida', value: mm(c) }],
+    };
+  }
+  if (spec.kind === 'c') {
+    // univerzalan C profil: kutija sa otvorom na donjoj strani (pola širine); ivice otvora se uvijaju ka unutra, kao na šini klizne kapije
+    const { a, b, c } = spec;
+    const slotW = cSlot(spec);
+    const lip = (a - slotW) / 2;
+    const pts: Pt[] = [[0, 0], [a, 0], [a, b], [a - lip, b], [a - lip, b - c], [a - c, b - c], [a - c, c], [c, c], [c, b - c], [lip, b - c], [lip, b], [0, b]];
+    return {
+      path: pathOf(pts), fillRule: 'nonzero', w: a, h: b,
+      dims: [
+        { from: [0, 0], to: [a, 0], gap: -7, label: `A = ${fmt(a)}` },
+        { from: [a, 0], to: [a, b], gap: 7, label: `B = ${fmt(b)}` },
+        { from: [lip, b], to: [a - lip, b], gap: 7, label: `otvor = ${fmt(a - 2 * lip)}` },
+      ],
+      facts: [{ label: 'A — širina', value: mm(a) }, { label: 'B — visina', value: mm(b) }, { label: 'C — debljina zida', value: mm(c) }, { label: 'Otvor (donja strana)', value: mm(a - 2 * lip) }],
+      note: 'Šematski prikaz C profila: otvor je na donjoj strani; ivice otvora su uvijene ka unutra.',
     };
   }
   if (spec.kind === 'tube') {

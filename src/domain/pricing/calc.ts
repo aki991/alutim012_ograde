@@ -32,7 +32,7 @@ export function slidingBomLines(g: Gate, clearWidthMm: number, materials: Materi
   const out: { group: BomGroup; materialId: string; qty: number; label?: string; unit: Material['unit'] }[] = [];
   for (const b of slidingBom(res)) {
     const mat = b.materialId ? materials.find((m) => m.id === b.materialId) : undefined;
-    if (b.kit && !mat) continue;
+    if (b.kit && !mat && !b.materialText) continue;
     const group = SLIDING_GROUP[b.group];
     const meters = b.totalM !== null && (b.make === 'izrada' || b.key === 'rail' || b.key === 'carrier');
     if (mat) {
@@ -40,7 +40,8 @@ export function slidingBomLines(g: Gate, clearWidthMm: number, materials: Materi
       out.push({ group, materialId: mat.id, qty: inMeters ? b.totalM! : b.unit === 'par' ? b.qty * 2 : b.qty, unit: mat.unit });
       continue;
     }
-    const label = `${b.name} (klizna kapija) — nije definisano${b.confirm ? ' (potvrditi)' : ''}`;
+    // ručno upisan naziv (npr. „C profil 60×60×2“) ide u listu umesto „nije definisano“; nije u cenovniku, pa je bez cene
+    const label = b.materialText ? `${b.materialText} — ${b.name} (klizna kapija, nije u cenovniku)${b.confirm ? ' (potvrditi)' : ''}` : `${b.name} (klizna kapija) — nije definisano${b.confirm ? ' (potvrditi)' : ''}`;
     out.push(meters
       ? { group, materialId: `gate-m:sliding:${g.id}:${b.key}`, qty: b.totalM!, label, unit: 'm' }
       : { group, materialId: `gate-hw:sliding:${g.id}:${b.key}`, qty: b.unit === 'par' ? b.qty * 2 : b.qty, label, unit: 'kom' });

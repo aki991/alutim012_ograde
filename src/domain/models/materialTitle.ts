@@ -1,6 +1,6 @@
 /**
  * Čitljiv naziv materijala: vrsta pa dimenzije („Kvadratna cev 60×40×3“, „U profil 60×28“), bez beleški iz uvoza i cenovnika
- * („sirovo“, „Ekoluka Key“, „uneti cenu“, „podatak radnika“ …). Boja ostaje („RAL 7016“), jer razlikuje isti profil.
+ * („sirovo“, „Ekoluka Key“, „uneti cenu“, „podatak radnika“ …). Oznaka boje („RAL 7016“) se izbacuje: boja se bira ručno na modelu.
  */
 
 /** beleške iz uvoza i cenovnika koje ne pripadaju nazivu */
@@ -18,7 +18,7 @@ export function cleanMaterialName(raw: string): string {
   s = s.replace(/(\d+(?:[,.]\d+)?(?:\s*×\s*\d+(?:[,.]\d+)?)+)\s*mm\b/gi, '$1');
   // „sirovo“ je podrazumevana obrada profila; boja se piše „RAL 7016“
   s = s.replace(/,\s*sirovo\b/gi, '').replace(/\bsirovo\b,?\s*/gi, '');
-  s = s.replace(/,\s*boja\s+(\d{4})\b/gi, ', RAL $1').replace(/\bboja\s+(\d{4})\b/gi, 'RAL $1');
+  s = s.replace(/,?\s*\bRAL\s*\d{3,4}\b/gi, '').replace(/,?\s*\bboja\s+\d{4}\b/gi, '');
   // „U 60×28“ je U profil
   s = s.replace(/^U\s+(?=\d)/, 'U profil ');
   s = s.replace(/\s+,/g, ',').replace(/,\s*$/, '').replace(/\s{2,}/g, ' ').trim();

@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Material, Offcut, Project, StockItem } from '../../domain/models/types';
 import { materialIdForName } from '../../domain/models/spec';
+import { compareMaterials } from '../../domain/models/materialShape';
 import { fmtNum } from '../../utils/units';
 
 /**
@@ -25,7 +26,11 @@ export function OffcutsPanel({ project, materials, stock, profiles, onChange }: 
   const options = useMemo(() => profiles.map((name) => {
     const m = materials.find((x) => x.name === name);
     return { id: m?.id ?? materialIdForName(materials, name), label: m ? `${m.name}${m.sku ? ` (${m.sku})` : ''}` : `${name} (nije u cenovniku)` };
-  }).sort((a, b) => a.label.localeCompare(b.label, 'sr', { numeric: true })), [profiles, materials]);
+  }).sort((a, b) => {
+    // grupe pa mere od najmanje do najveće; profil koji nije u cenovniku ide po nazivu
+    const ma = materials.find((x) => x.id === a.id); const mb = materials.find((x) => x.id === b.id);
+    return ma && mb ? compareMaterials(ma, mb) : a.label.localeCompare(b.label, 'sr', { numeric: true });
+  }), [profiles, materials]);
   const labelOf = (id: string) => options.find((o) => o.id === id)?.label ?? byId.get(id)?.name;
   const len = Number(form.lengthMm.replace(',', '.')); const qty = Number(form.qty);
   const valid = !!form.materialId && Number.isFinite(len) && len > 0 && len <= 20000 && Number.isInteger(qty) && qty > 0;

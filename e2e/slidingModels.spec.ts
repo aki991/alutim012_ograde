@@ -44,6 +44,12 @@ async function setNum(page: Page, testId: string, value: string) {
   await f.press('Enter');
 }
 
+/** izbor materijala iz liste (dugme + lista sa pretragom) */
+async function pickMaterial(page: Page, testId: string, text: string | RegExp) {
+  await page.getByTestId(testId).click();
+  await page.getByTestId(`${testId}-option`).filter({ hasText: text }).first().click();
+}
+
 const overlay = (page: Page) => page.getByTestId('designer-overlay');
 const wheelCx = (page: Page) => overlay(page).locator('[data-sliding-part="wheels"] circle').evaluateAll((els) => els.map((e) => Number(e.getAttribute('cx'))));
 
@@ -78,11 +84,10 @@ test('Doradi klizne kapije: crtanje modela sa kliznim okovom, podešavanje točk
   await expect.poll(() => wheelCx(page)).toEqual([300, 1100, 1900]);
 
   // okov iz cenovnika: novi okov se upisuje u materijale; bez izbora piše „nije definisano“
-  await expect(page.getByTestId('sl-mat-wheels').locator('option:checked')).toHaveText('— nije definisano —');
-  await page.getByTestId('sl-mat-new-wheels').click();
-  await page.getByTestId('sl-newmat-name-wheels').fill('Točkić Ø50 sa nosačem');
-  await page.getByTestId('sl-newmat-add-wheels').click();
-  await expect(page.getByTestId('sl-mat-wheels').locator('option:checked')).toHaveText(/Točkić Ø50 sa nosačem/);
+  await expect(page.getByTestId('sl-mat-wheels')).toContainText('— izaberite iz cenovnika —');
+  await page.getByTestId('sl-mat-wheels-text').fill('Točkić Ø50 sa nosačem');
+  await page.getByTestId('sl-mat-wheels-add').click();
+  await expect(page.getByTestId('sl-mat-wheels')).toContainText('Točkić Ø50 sa nosačem');
 
   // uklanjanje i ponovno postavljanje dela
   await page.getByTestId('sl-add-stop').click();
@@ -173,11 +178,9 @@ test('rep samonoseće: profil iz padajućeg menija, ojačanja (bez, uspravno, vo
   // profil kosnika iz padajućeg menija
   const polyW = () => overlay(page).locator('[data-sliding-part="tail"] polygon').first().getAttribute('points');
   const before = await polyW();
-  const sel = page.getByTestId('sl-profile-tail-diag');
-  expect(await sel.locator('option').count()).toBeGreaterThan(5);
-  await sel.selectOption({ index: 1 });
+  await pickMaterial(page, 'sl-profile-tail-diag', '40×40');
   await expect.poll(polyW).not.toBe(before);
-  await expect(sel.locator('option:checked')).not.toHaveText('— izaberite profil —');
+  await expect(page.getByTestId('sl-profile-tail-diag')).toContainText('40×40');
   // jedno uspravno ojačanje je polazno; bez ojačanja
   await expect(page.getByTestId('sl-brace-0')).toBeVisible();
   const polys = () => overlay(page).locator('[data-sliding-part="tail"] polygon').count();
@@ -196,5 +199,91 @@ test('rep samonoseće: profil iz padajućeg menija, ojačanja (bez, uspravno, vo
   expect(await polys()).toBe(5);
   await page.getByTestId('sl-brace-remove-1').click();
   expect(await polys()).toBe(4);
+  expect(errors).toEqual([]);
+});
+
+test('noseći C-profil: prvo profil iz padajućeg menija pa dužina; visina dolazi iz izabranog profila', async ({ page }) => {
+  const errors = trackErrors(page);
+  await seedMaterials(page, '/modeli-kapija');
+  await page.getByTestId('rework-sliding-samonoseca_rucna').click();
+  await page.getByTestId('sl-add-carrier').click();
+  const body = page.getByTestId('sl-partbody-carrier');
+  await expect(body).toBeVisible();
+  await expect(page.getByTestId('sl-dim-carrier.h')).toHaveCount(0);
+  // redosled: profil, pa dužina
+  const profileY = (await page.getByTestId('sl-profile-carrier').boundingBox())!.y;
+  const lengthY = (await page.getByTestId('sl-pos-carrierLength').boundingBox())!.y;
+  expect(profileY).toBeLessThan(lengthY);
+  const h = () => overlay(page).locator('[data-sliding-part="carrier"] rect').first().getAttribute('height');
+  expect(Number(await h())).toBe(80);
+  await pickMaterial(page, 'sl-profile-carrier', '30×20');
+  await expect.poll(async () => Number(await h())).not.toBe(80);
+  expect([20, 30]).toContain(Number(await h()));
+  expect(errors).toEqual([]);
+});
+
+test('materijal koji nije u cenovniku: ručno upisan naziv, dugme Dodaj, lista sortirana po merama', async ({ page }) => {
+  const errors = trackErrors(page);
+  await seedMaterials(page, '/modeli-kapija');
+  await page.getByTestId('rework-sliding-samonoseca_rucna').click();
+  await page.getByTestId('sl-add-carrier').click();
+  // ručno upisan naziv: čuva se kao stavka, bez izbora iz cenovnika
+  await page.getByTestId('sliding-designer-part-close').click();
+  await expect(page.getByTestId('sl-hw-bom-carrier')).toContainText('nije definisano');
+  await page.getByTestId('sl-add-carrier').click();
+  await page.getByTestId('sl-profile-carrier-text').fill('C profil 60x60x2');
+  await page.getByTestId('sl-profile-carrier-text').press('Enter');
+  await expect(page.getByTestId('sl-profile-carrier-manual')).toContainText('krojnu listu');
+  await page.getByTestId('sliding-designer-part-close').click();
+  await expect(page.getByTestId('sl-hw-bom-carrier')).toContainText('C profil 60x60x2');
+  // „Dodaj“ upisuje materijal u „Materijali i cene“ i bira ga iz liste
+  await page.getByTestId('sl-add-carrier').click();
+  await page.getByTestId('sl-profile-carrier-add').click();
+  await expect(page.getByTestId('sl-profile-carrier')).toContainText('C profil 60x60x2');
+  await expect(page.getByTestId('sl-profile-carrier-manual')).toHaveCount(0);
+  await page.goto('/materijali');
+  await expect(page.getByTestId('materials-table')).toContainText('C profil 60x60x2');
+  // posle toga se bira iz liste
+  await page.goBack();
+  await expect(page.getByTestId('model-designer')).toBeVisible();
+  await page.getByTestId('sl-add-carrier').click();
+  await page.getByTestId('sl-profile-carrier').click();
+  await expect(page.getByTestId('sl-profile-carrier-option').filter({ hasText: 'C profil 60x60x2' })).toHaveCount(1);
+  // sortirano po merama od najmanje do najveće (kvadratne cevi: prva mera ne opada)
+  const names = await page.getByTestId('sl-profile-carrier-option').allInnerTexts();
+  const first = names.map((n) => /Kvadratna cev (\d+)×/.exec(n)?.[1]).filter(Boolean).map(Number);
+  expect(first.length).toBeGreaterThan(3);
+  expect([...first].sort((a, b) => a - b)).toEqual(first);
+  // nema oznake RAL u nazivima materijala
+  expect(names.some((n) => /RAL/.test(n))).toBe(false);
+  expect(errors).toEqual([]);
+});
+
+test('Materijali i cene: dugme Izmeni menja sve mere preseka (C profil otvor 30 → 20), naziv prati mere', async ({ page }) => {
+  const errors = trackErrors(page);
+  await seedMaterials(page, '/materijali');
+  await expect(page.getByTestId('material-edit').first()).toHaveText('Izmeni');
+  await page.getByTestId('btn-add-material').click();
+  await page.getByTestId('material-sku').fill('C-60');
+  await page.getByTestId('material-name').fill('C profil 60x60x2');
+  await expect(page.getByTestId('material-dims')).toBeVisible();
+  await expect(page.getByTestId('material-dim-slot')).toHaveValue('30');
+  await expect(page.getByTestId('material-preview')).toContainText('otvor = 30');
+  await setNum(page, 'material-dim-slot', '20');
+  await expect(page.getByTestId('material-preview')).toContainText('otvor = 20');
+  // izmena A menja i naziv
+  await setNum(page, 'material-dim-a', '50');
+  await expect(page.getByTestId('material-name')).toHaveValue('C profil 50×60×2');
+  await expect(page.getByTestId('material-preview')).toContainText('A = 50');
+  await page.getByTestId('material-save').click();
+  const row = page.getByTestId('material-row').filter({ hasText: 'C profil 50×60×2' });
+  await expect(row).toHaveCount(1);
+  await row.click();
+  await expect(page.getByTestId('material-drawing-row')).toContainText('20 mm');
+  // izmena postojećeg materijala; vraćanje mera iz cenovnika
+  await row.getByTestId('material-edit').click();
+  await expect(page.getByTestId('material-dim-slot')).toHaveValue('20');
+  await page.getByTestId('material-dims-reset').click();
+  await expect(page.getByTestId('material-dim-slot')).toHaveValue('25');
   expect(errors).toEqual([]);
 });

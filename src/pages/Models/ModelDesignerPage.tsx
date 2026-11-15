@@ -26,7 +26,7 @@ import type { Lufta } from '../../domain/models/custom';
 import { checkNewOverlap } from '../../domain/models/overlap';
 import { replaceMaterial, replaceOptions, replaceRole, replaceTargets } from '../../domain/models/replace';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
-import { compareMaterials, MATERIAL_GROUPS, materialShape, sectionFace, type MaterialGroupId } from '../../domain/models/materialShape';
+import { compareMaterials, MATERIAL_GROUPS, materialShape, matchesSearch, sectionFace, type MaterialGroupId } from '../../domain/models/materialShape';
 import type { FenceModelId, GateType, Material } from '../../domain/models/types';
 import { useAppStore } from '../../store/useAppStore';
 import { uid } from '../../utils/id';
@@ -140,10 +140,9 @@ function BarLayoutBox({ model, bar, materials, onApply, onError }: { model: Cust
 function Palette({ materials, activeId, onPick }: { materials: Material[]; activeId: string | null; onPick: (id: string | null) => void }) {
   const [q, setQ] = useState('');
   const groups = useMemo(() => {
-    const t = q.trim().toLowerCase();
     const by = new Map<MaterialGroupId, Material[]>();
     for (const m of materials) {
-      if (t && !m.name.toLowerCase().includes(t) && !m.sku.toLowerCase().includes(t)) continue;
+      if (!matchesSearch(`${m.name} ${m.sku}`, q)) continue;
       const g = materialShape(m).group;
       by.set(g, [...(by.get(g) ?? []), m]);
     }

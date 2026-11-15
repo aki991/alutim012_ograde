@@ -86,6 +86,8 @@ export interface SlidingSpec {
   dims?: Record<string, number>;
   /** materijal iz cenovnika po stavci sastavnice (ključ stavke → ID materijala); bez zapisa stavka je „nije definisano“ */
   partMat?: Record<string, string>;
+  /** ručno upisan naziv materijala po stavci (kad ga nema u cenovniku): ide u krojnu listu i radni nalog */
+  partText?: Record<string, string>;
   /** ručno zadat broj komada po stavci sastavnice (kupljeni delovi) */
   qtys?: Record<string, number>;
   /** poseban stub gornje vođice (po izboru) */
@@ -465,6 +467,8 @@ export interface SlidingBomItem {
   ends?: [number[], number[]];
   /** materijal iz cenovnika izabran za ovu stavku; bez njega je stavka „nije definisano“ */
   materialId?: string;
+  /** ručno upisan naziv materijala (nije u cenovniku) */
+  materialText?: string;
 }
 
 /** Stavke sastavnice iz istih komponenti i mera kao crtež; promena oslonca ili pogona menja samo pripadajuće stavke. */
@@ -476,7 +480,8 @@ export function slidingBom(r: SlidingResult): SlidingBomItem[] {
   const cut = (key: string): number | null => (typeof s.cuts[key] === 'number' ? s.cuts[key] : null);
   const matOf = (key: string): string | undefined => { const m = s.partMat?.[key]; return m ? m : undefined; };
   const qtyOf = (key: string, def: number): number => { const v = s.qtys?.[key]; return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.round(v) : def; };
-  const push = (it: Omit<SlidingBomItem, 'materialId'>): void => { items.push({ ...it, materialId: matOf(it.key) }); };
+  const textOf = (key: string): string | undefined => { const t = s.partText?.[key]?.trim(); return t ? t : undefined; };
+  const push = (it: Omit<SlidingBomItem, 'materialId' | 'materialText'>): void => { items.push({ ...it, materialId: matOf(it.key), materialText: matOf(it.key) ? undefined : textOf(it.key) }); };
   const prof = (key: string, name: string, qty: number, shown: number, cutKnown: number | null, note?: string, group: SlidingBomItem['group'] = 'Ram i ispuna', ends?: [number[], number[]]): void => {
     const c = cut(key) ?? cutKnown;
     push({ key, name, qty, unit: 'kom', shownMm: Math.round(shown), cutMm: c === null ? null : Math.round(c), buyMm: null, totalM: Math.round((qty * (c ?? shown)) / 10) / 100, make: 'izrada', group, confirm: c === null, note, ends });

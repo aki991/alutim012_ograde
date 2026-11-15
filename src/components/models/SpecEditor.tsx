@@ -1,5 +1,6 @@
 import { Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { compareMaterials } from '../../domain/models/materialShape';
 import { FENCE_MODELS } from '../../domain/models/catalog';
 import { BOM_GROUPS, checkFormula, defaultSpec, evaluateSpec, hasCustomSpec, SPEC_VARIABLES, specVars, type SpecPart } from '../../domain/models/spec';
 import type { FenceModelId } from '../../domain/models/types';
@@ -28,6 +29,8 @@ export function SpecEditor({ modelId, onClose }: { modelId: FenceModelId; onClos
   const evaluated = useMemo(() => evaluateSpec(parts, vars), [parts, vars]);
   const byId = new Map(evaluated.map((e) => [e.part.id, e]));
   const matName = (id: string) => materials.find((m) => m.id === id);
+  // grupe pa mere od najmanje do najveće
+  const sortedMaterials = useMemo(() => [...materials].sort(compareMaterials), [materials]);
   const errors = parts.some((p) => p.enabled && (checkFormula(p.qty, vars) !== null || checkFormula(p.lengthMm, vars) !== null || p.qty.trim() === ''));
 
   const patch = (id: string, change: Partial<SpecPart>) => setParts((ps) => ps.map((p) => (p.id === id ? { ...p, ...change } : p)));
@@ -98,7 +101,7 @@ export function SpecEditor({ modelId, onClose }: { modelId: FenceModelId; onClos
                     <td className="td">
                       <select className="input" aria-label="Materijal" data-testid={`spec-material-${i}`} value={p.materialId} onChange={(e) => patch(p.id, { materialId: e.target.value })}>
                         {!mat && <option value={p.materialId}>{p.materialId} (nepoznat)</option>}
-                        {materials.map((m) => <option key={m.id} value={m.id}>{m.name} [{m.unit}]</option>)}
+                        {sortedMaterials.map((m) => <option key={m.id} value={m.id}>{m.name} [{m.unit}]</option>)}
                       </select>
                     </td>
                     <td className="td">

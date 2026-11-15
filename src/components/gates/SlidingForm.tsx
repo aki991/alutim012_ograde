@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Clock, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Clock, Plus, RotateCcw, Trash2, X } from 'lucide-react';
+import { MaterialPicker } from '../designer/MaterialPicker';
 import {
   POS_LABELS, resolveSliding, slidingBom, variantTitle,
   type CheckLevel, type PosKey, type SlidingActuation, type SlidingBomItem, type SlidingResult, type SlidingSpec, type SlidingSupport,
@@ -90,7 +91,7 @@ export function SlidingForm({ spec, W, H, opening, onSpec, onWidth, onHeight, on
   const partCard = (p: PartDef) => {
     const isOpen = open.has(p.key);
     const items = p.bom.map((k) => bom.find((b) => b.key === k)).filter((b): b is SlidingBomItem => !!b);
-    const undefinedCount = items.filter((b) => !b.materialId || !materials.some((m) => m.id === b.materialId)).length;
+    const undefinedCount = items.filter((b) => !b.materialText && (!b.materialId || !materials.some((m) => m.id === b.materialId))).length;
     const hasIssue = [...p.dims.map((d) => d.key), ...(p.pos ?? [])].some((k) => issues(k).length > 0);
     const placed = isPartOn(spec, p.key);
     return (
@@ -189,7 +190,7 @@ export function SlidingForm({ spec, W, H, opening, onSpec, onWidth, onHeight, on
                 const mat = b.materialId ? materials.find((m) => m.id === b.materialId) : undefined;
                 return (
                   <tr key={b.key} className="border-t border-line align-top" data-testid={`sl-bom-${b.key}`}>
-                    <td className="py-0.5 pr-1">{b.name}<span className="block text-muted">{mat ? mat.name : <span className="text-amber-800">nije definisano</span>} · {b.make}{b.kit ? ' · deo kompleta motora' : ''}{b.confirm ? ' · potvrditi' : ''}{b.note ? ` · ${b.note}` : ''}</span></td>
+                    <td className="py-0.5 pr-1">{b.name}<span className="block text-muted">{mat ? mat.name : b.materialText ? `${b.materialText} (ručno)` : <span className="text-amber-800">nije definisano</span>} · {b.make}{b.kit ? ' · deo kompleta motora' : ''}{b.confirm ? ' · potvrditi' : ''}{b.note ? ` · ${b.note}` : ''}</span></td>
                     <td className="pr-1 text-right whitespace-nowrap">{b.qty} {b.unit}</td>
                     <td className="pr-1 text-right">{b.shownMm ?? '—'}</td>
                     <td className="pr-1 text-right w-[74px]">{b.make === 'izrada' || b.key === 'rail' || b.key === 'carrier'
@@ -212,43 +213,79 @@ export function SlidingForm({ spec, W, H, opening, onSpec, onWidth, onHeight, on
 
 const isProfile = (b: SlidingBomItem): boolean => b.make === 'izrada' || b.key === 'rail' || b.key === 'carrier';
 
-/** red stavke sastavnice u kartici dela: broj komada i materijal iz cenovnika ili novi okov; bez izbora piše „nije definisano“ */
-function MaterialRow({ item, spec, materials, onSpec, onAdd }: { item: SlidingBomItem; spec: SlidingSpec; materials: Material[]; onSpec: (p: Partial<SlidingSpec>) => void; onAdd: (name: string, sku: string) => void }) {
-  const profile = isProfile(item);
-  const [adding, setAdding] = useState(false);
-  const [name, setName] = useState('');
-  const [sku, setSku] = useState('');
-  const options = materials.filter((m) => (profile ? m.category === 'profil' : HW_CATEGORIES.includes(m.category)));
-  const chosen = item.materialId ? materials.find((m) => m.id === item.materialId) : undefined;
-  const setMat = (id: string) => {
-    const pm = { ...(spec.partMat ?? {}) };
-    if (id) pm[item.key] = id; else delete pm[item.key];
-    onSpec({ partMat: pm });
+/** širina cevi u pogledu iz naziva upisanog ručno (npr. „kvadratna cev 40×40×2“); 0 kad se mere ne prepoznaju */
+const faceOfText = (text: string): number => {
+  const sh = materialShape({ sku: '', name: text, unit: 'm', category: 'profil' });
+  return sh.type === 'linear' && sh.exact ? Math.round(sectionFace(sh.section, 0).face * 10) / 10 : 0;
+};
+
+/** izbor za stavku sastavnice: materijal iz cenovnika ili ručno upisan naziv (npr. „C profil 60×60×2“); prazno = nije definisano */
+interface Choice { materialId?: string; text?: string }
+
+/** izbor → izmene spec-a; mera koja dolazi iz profila (širina u pogledu) ide u `dimKey`, a vraća se i kao `w` */
+function choicePatch(spec: SlidingSpec, materials: Material[], key: string, c: Choice, dimKey?: string): { patch: Partial<SlidingSpec>; w: number } {
+  const pm = { ...(spec.partMat ?? {}) }; const pt = { ...(spec.partText ?? {}) }; const dims = { ...(spec.dims ?? {}) };
+  let w = 0;
+  const text = c.text?.trim();
+  if (c.materialId) { const m = materials.find((x) => x.id === c.materialId); pm[key] = c.materialId; delete pt[key]; w = m ? faceOf(m) : 0; }
+  else if (text) { delete pm[key]; pt[key] = text; w = faceOfText(text); }
+  else { delete pm[key]; delete pt[key]; }
+  if (dimKey) { if (w > 0) dims[dimKey] = w; else delete dims[dimKey]; }
+  return { patch: { partMat: pm, partText: pt, dims }, w };
+}
+
+/**
+ * Izbor materijala za deo: lista iz cenovnika (grupe, mere od najmanje do najveće, pretraga) ili ručno upisan naziv koji ide u krojnu
+ * listu i radni nalog. Upisan naziv može dugmetom da se doda u „Materijali i cene“, pa se posle bira iz liste. Bez izbora: „nije definisano“.
+ */
+function MaterialField({ label, kind, materialId, text, materials, testId, onChange }: {
+  label: string; kind: 'profile' | 'hardware'; materialId?: string; text?: string; materials: Material[]; testId: string; onChange: (c: Choice) => void;
+}) {
+  const options = materials.filter((m) => (kind === 'profile' ? materialShape(m).type === 'linear' : HW_CATEGORIES.includes(m.category)));
+  const chosen = materialId ? materials.find((m) => m.id === materialId) : undefined;
+  const [draft, setDraft] = useState(text ?? '');
+  useEffect(() => { setDraft(text ?? ''); }, [text]);
+  const commit = () => { if (draft.trim() !== (text ?? '')) onChange({ text: draft }); };
+  const addToPrice = () => {
+    const name = draft.trim();
+    if (!name) return;
+    const existing = materials.find((m) => m.name.trim().toLowerCase() === name.toLowerCase());
+    const profile = kind === 'profile';
+    const mat: Material = existing ?? { id: uid(profile ? 'mat_prof' : 'mat_okov'), sku: `${profile ? 'PROF' : 'OKOV'}-${uid('').slice(-5).toUpperCase()}`, name, category: profile ? 'profil' : 'okov', unit: profile ? 'm' : 'kom', unitPrice: 0, wastePercent: 0, demo: false };
+    if (!existing) useAppStore.getState().upsertMaterial(mat);
+    onChange({ materialId: mat.id });
   };
+  const face = chosen ? faceOf(chosen) : text ? faceOfText(text) : 0;
+  return (
+    <div className="space-y-1" data-testid={`${testId}-field`}>
+      <div className="text-[12.5px] leading-tight">{label}{kind === 'profile' && face > 0 && <span className="text-[11px] text-muted"> · širina u pogledu {face} mm</span>}</div>
+      <div className="flex gap-1.5 items-center">
+        <div className="flex-1 min-w-0"><MaterialPicker materials={options} placeholder={chosen ? chosen.name : text ? '— ručno upisano —' : '— izaberite iz cenovnika —'} testId={testId} ariaLabel={label} onPick={(id) => onChange({ materialId: id })} /></div>
+        {(chosen || text) && <button className="btn btn-icon !w-8 !h-8 shrink-0" aria-label={`Obriši izbor: ${label}`} data-testid={`${testId}-clear`} onClick={() => onChange({})}><X size={14} /></button>}
+      </div>
+      <div className="flex gap-1.5 items-center">
+        <input className="input !py-1 flex-1 min-w-0" placeholder={kind === 'profile' ? 'ili upišite ručno, npr. C profil 60×60×2' : 'ili upišite ručno naziv okova'} aria-label={`Ručno upisan naziv: ${label}`} data-testid={`${testId}-text`} value={draft}
+          onChange={(e) => setDraft(e.target.value)} onBlur={commit} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } }} />
+        <button className="btn btn-sm shrink-0" disabled={!draft.trim()} title="Upisuje materijal u „Materijali i cene“ i bira ga iz liste" data-testid={`${testId}-add`} onClick={addToPrice}><Plus size={14} />Dodaj</button>
+      </div>
+      {text && !chosen && <p className="text-[11px] text-muted" data-testid={`${testId}-manual`}>Upisano ručno: ide u krojnu listu i radni nalog. Nije u cenovniku — „Dodaj“ ga upisuje u „Materijali i cene“.</p>}
+      {chosen && chosen.unitPrice === 0 && <p className="text-[11px] text-amber-800">Cena nije upisana: upišite je u „Materijali i cene“.</p>}
+    </div>
+  );
+}
+
+/** red stavke sastavnice u kartici dela: broj komada i okov iz cenovnika ili ručno upisan; bez izbora piše „nije definisano“ */
+function MaterialRow({ item, spec, materials, onSpec }: { item: SlidingBomItem; spec: SlidingSpec; materials: Material[]; onSpec: (p: Partial<SlidingSpec>) => void }) {
+  const profile = isProfile(item);
   return (
     <div data-testid={`sl-matrow-${item.key}`} className="space-y-1">
       <div className="flex items-center gap-2 text-[12.5px]">
-        <span className="flex-1 leading-tight">{item.name}{item.confirm && <span className="text-[11px] text-muted"> · potvrditi</span>}</span>
+        <span className="flex-1 leading-tight font-semibold">{item.name}{item.confirm && <span className="text-[11px] font-normal text-muted"> · potvrditi</span>}</span>
         {!profile && item.key !== 'rackMounts' && (
           <label className="flex items-center gap-1 text-[11.5px] text-muted">kom<span className="w-[56px]"><NumInput value={item.qty} testId={`sl-qty-${item.key}`} ariaLabel={`Broj komada: ${item.name}`} onCommit={(v) => { const q = { ...(spec.qtys ?? {}) }; if (v === null) delete q[item.key]; else q[item.key] = Math.max(0, Math.round(v)); onSpec({ qtys: q }); }} /></span></label>
         )}
       </div>
-      <div className="flex gap-1.5">
-        <select className="input !py-1 flex-1 min-w-0" aria-label={`Materijal: ${item.name}`} data-testid={`sl-mat-${item.key}`} value={chosen ? chosen.id : ''} onChange={(e) => setMat(e.target.value)}>
-          <option value="">— nije definisano —</option>
-          {options.map((m) => <option key={m.id} value={m.id}>{m.name}{m.sku ? ` (${m.sku})` : ''}</option>)}
-        </select>
-        <button className="btn btn-sm shrink-0" data-testid={`sl-mat-new-${item.key}`} onClick={() => setAdding((a) => !a)}><Plus size={14} />{profile ? 'Novi profil' : 'Novi okov'}</button>
-      </div>
-      {chosen && chosen.unitPrice === 0 && <div className="text-[11px] text-amber-800">Cena nije upisana: upišite je u „Materijali i cene“.</div>}
-      {adding && (
-        <div className="grid sm:grid-cols-[1fr_120px_auto] gap-1.5 items-center">
-          <input className="input !py-1" placeholder={profile ? 'Naziv profila (obavezno)' : 'Naziv okova (obavezno)'} aria-label="Naziv" data-testid={`sl-newmat-name-${item.key}`} value={name} onChange={(e) => setName(e.target.value)} />
-          <input className="input !py-1" placeholder="Šifra" aria-label="Šifra" value={sku} onChange={(e) => setSku(e.target.value)} />
-          <button className="btn btn-sm btn-primary" disabled={!name.trim()} data-testid={`sl-newmat-add-${item.key}`} onClick={() => { onAdd(name, sku); setName(''); setSku(''); setAdding(false); }}>Dodaj</button>
-          <p className="sm:col-span-3 text-[11px] text-muted">Upisuje se i u „Materijali i cene“ ({profile ? 'profil, cena po metru' : 'okov, cena po komadu'}); cenu upišite tamo.</p>
-        </div>
-      )}
+      <MaterialField label="Okov" kind="hardware" materialId={item.materialId} text={item.materialText} materials={materials} testId={`sl-mat-${item.key}`} onChange={(c) => onSpec(choicePatch(spec, materials, item.key, c).patch)} />
     </div>
   );
 }
@@ -286,17 +323,18 @@ export function SlidingPartBody({ part: p, spec, res, bom, onSpec, onFrameBottom
     if (v === null) delete dims[d.key]; else dims[d.key] = d.unit === 'kom' ? Math.max(1, Math.round(v)) : v;
     onSpec({ dims });
   };
-  const addMaterial = (item: SlidingBomItem, name: string, sku: string) => {
-    const profile = isProfile(item);
-    const mat: Material = { id: uid(profile ? 'mat_prof' : 'mat_okov'), sku: sku.trim() || `${profile ? 'PROF' : 'OKOV'}-${uid('').slice(-5).toUpperCase()}`, name: name.trim(), category: profile ? 'profil' : 'okov', unit: profile ? 'm' : 'kom', unitPrice: 0, wastePercent: 0, demo: false };
-    useAppStore.getState().upsertMaterial(mat);
-    onSpec({ partMat: { ...(spec.partMat ?? {}), [item.key]: mat.id } });
-  };
   return (
     <div className="space-y-1.5" data-testid={`sl-partbody-${p.key}`}>
       {p.note && <p className="text-[11.5px] text-muted">{p.note}</p>}
       {!p.leaf && !onRemove && (
         <label className="flex items-center gap-2 text-[13px]"><input type="checkbox" data-testid={`sl-on-${p.key}`} checked={placed} onChange={(e) => onSpec(withPartOn(spec, p.key, e.target.checked))} />Postavljen na kapiju</label>
+      )}
+      {placed && p.key !== 'tail' && items.some(isProfile) && (
+        <div className="space-y-1.5" data-testid={`sl-part-profiles-${p.key}`}>
+          {/* mera dela koja dolazi iz profila (npr. visina C-profila = širina izabranog profila u pogledu) */}
+          {items.filter(isProfile).map((b) => <MaterialField key={b.key} label={b.name} kind="profile" materialId={b.materialId} text={b.materialText} materials={materials} testId={`sl-profile-${b.key}`}
+            onChange={(c) => onSpec(choicePatch(spec, materials, b.key, c, PROFILE_DIM[b.key]).patch)} />)}
+        </div>
       )}
       {placed && p.dims.filter((d) => !d.hidden).map((d) => {
         const v = dimOf(spec, d.key, fh, W);
@@ -333,16 +371,10 @@ export function SlidingPartBody({ part: p, spec, res, bom, onSpec, onFrameBottom
         );
       })}
       {placed && p.key === 'tail' && <TailEditor spec={spec} res={res} onSpec={onSpec} />}
-      {placed && p.key !== 'tail' && items.some(isProfile) && (
-        <div className="space-y-1.5" data-testid={`sl-part-profiles-${p.key}`}>
-          {items.filter(isProfile).map((b) => <ProfileSelect key={b.key} label={`Profil: ${b.name}`} value={b.materialId} materials={materials} testId={`sl-profile-${b.key}`}
-            onPick={(m) => { const pm = { ...(spec.partMat ?? {}) }; if (m) pm[b.key] = m.id; else delete pm[b.key]; onSpec({ partMat: pm }); }} />)}
-        </div>
-      )}
       {placed && items.some((b) => !isProfile(b)) && (
         <div className="rounded-md bg-slate-50 p-2 space-y-2" data-testid={`sl-part-bom-${p.key}`}>
           <div className="text-[11px] font-bold uppercase text-muted">Okov iz cenovnika</div>
-          {items.filter((b) => !isProfile(b)).map((b) => <MaterialRow key={b.key} item={b} spec={spec} materials={materials} onSpec={onSpec} onAdd={(n, s) => addMaterial(b, n, s)} />)}
+          {items.filter((b) => !isProfile(b)).map((b) => <MaterialRow key={b.key} item={b} spec={spec} materials={materials} onSpec={onSpec} />)}
         </div>
       )}
       {onRemove && <button className="btn btn-sm btn-danger" data-testid={`sl-remove-${p.key}`} onClick={onRemove}>Ukloni sa kapije</button>}
@@ -350,23 +382,11 @@ export function SlidingPartBody({ part: p, spec, res, bom, onSpec, onFrameBottom
   );
 }
 
+/** mera dela koja se uzima iz izabranog profila: ključ stavke → ključ mere */
+const PROFILE_DIM: Record<string, string> = { carrier: 'carrier.h' };
+
 /** širina cevi u pogledu spreda (mm) iz izabranog profila */
 const faceOf = (m: Material): number => { const sh = materialShape(m); return sh.type === 'linear' ? Math.round(sectionFace(sh.section, 0).face * 10) / 10 : 0; };
-
-/** padajući meni sa cevima i profilima iz cenovnika; izbor određuje i širinu cevi na crtežu */
-function ProfileSelect({ label, value, materials, onPick, testId }: { label: string; value?: string; materials: Material[]; onPick: (m: Material | null) => void; testId: string }) {
-  const options = materials.filter((m) => materialShape(m).type === 'linear');
-  const chosen = value ? materials.find((m) => m.id === value) : undefined;
-  return (
-    <label className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-2 items-center text-[12.5px]">
-      <span className="leading-tight">{label}{chosen && <span className="block text-[11px] text-muted">širina u pogledu {faceOf(chosen)} mm</span>}</span>
-      <select className="input !py-1 min-w-0" aria-label={label} data-testid={testId} value={chosen ? chosen.id : ''} onChange={(e) => onPick(materials.find((m) => m.id === e.target.value) ?? null)}>
-        <option value="">— izaberite profil —</option>
-        {options.map((m) => <option key={m.id} value={m.id}>{m.name}{m.sku ? ` (${m.sku})` : ''}</option>)}
-      </select>
-    </label>
-  );
-}
 
 /**
  * Rep samonoseće kapije: profili kosnika i donje pojasnice (padajući meni), ojačanja (bez, ili više njih: uspravno, vodoravno, koso)
@@ -385,25 +405,21 @@ function TailEditor({ spec, res, onSpec }: { spec: SlidingSpec; res: SlidingResu
     const e = (a: number[]) => (a.length > 1 ? `V ${a.map(d).join('° + ')}` : d(a[0] ?? 90));
     return <p className="text-[11.5px] text-muted" data-testid={`sl-cutinfo-${key}`}>dužina {m.len} mm · rez pod uglom {e(m.ends[0])}° / {e(m.ends[1])}° (90° = ravan rez; V = zasek u dva reza)</p>;
   };
-  const pickMain = (key: 'tail-diag' | 'tail-bottom', dimKey: string) => (m: Material | null) => {
-    const pm = { ...(spec.partMat ?? {}) }; const dims = { ...(spec.dims ?? {}) };
-    if (m) { pm[key] = m.id; const w = faceOf(m); if (w > 0) dims[dimKey] = w; } else { delete pm[key]; delete dims[dimKey]; }
-    onSpec({ partMat: pm, dims });
-  };
+  const pickMain = (key: 'tail-diag' | 'tail-bottom', dimKey: string) => (c: Choice) => onSpec(choicePatch(spec, materials, key, c, dimKey).patch);
+  const textOfKey = (key: string): string | undefined => spec.partText?.[key];
   const setBraces = (next: TailBrace[]) => onSpec({ braces: next });
   const patchBrace = (id: string, p: Partial<TailBrace>) => setBraces(braces.map((b) => (b.id === id ? { ...b, ...p } : b)));
-  const pickBrace = (b: TailBrace) => (m: Material | null) => {
-    const pm = { ...(spec.partMat ?? {}) }; const key = `tail-brace-${b.id}`;
-    if (m) pm[key] = m.id; else delete pm[key];
-    onSpec({ partMat: pm, braces: braces.map((x) => (x.id === b.id ? { ...x, w: m && faceOf(m) > 0 ? faceOf(m) : undefined } : x)) });
+  const pickBrace = (b: TailBrace) => (c: Choice) => {
+    const r = choicePatch(spec, materials, `tail-brace-${b.id}`, c);
+    onSpec({ ...r.patch, braces: braces.map((x) => (x.id === b.id ? { ...x, w: r.w > 0 ? r.w : undefined } : x)) });
   };
   const add = (kind: BraceKind) => setBraces([...braces, { id: uid('br').slice(-6), kind }]);
   const KIND_OPTS: BraceKind[] = ['vertical', 'horizontal', 'diagonal'];
   return (
     <div className="space-y-2" data-testid="sl-tail-editor">
-      <ProfileSelect label="Profil kosnika" value={spec.partMat?.['tail-diag']} materials={materials} onPick={pickMain('tail-diag', 'tail.diag.w')} testId="sl-profile-tail-diag" />
+      <MaterialField label="Profil kosnika" kind="profile" materialId={spec.partMat?.['tail-diag']} text={textOfKey('tail-diag')} materials={materials} onChange={pickMain('tail-diag', 'tail.diag.w')} testId="sl-profile-tail-diag" />
       {info('tail-diag')}
-      <ProfileSelect label="Profil donje pojasnice" value={spec.partMat?.['tail-bottom']} materials={materials} onPick={pickMain('tail-bottom', 'tail.bottom.w')} testId="sl-profile-tail-bottom" />
+      <MaterialField label="Profil donje pojasnice" kind="profile" materialId={spec.partMat?.['tail-bottom']} text={textOfKey('tail-bottom')} materials={materials} onChange={pickMain('tail-bottom', 'tail.bottom.w')} testId="sl-profile-tail-bottom" />
       {info('tail-bottom')}
       <div className="rounded-md bg-slate-50 p-2 space-y-2" data-testid="sl-braces">
         <div className="flex items-center gap-2">
@@ -420,7 +436,7 @@ function TailEditor({ spec, res, onSpec }: { spec: SlidingSpec; res: SlidingResu
               <span className="flex-1" />
               <button className="btn btn-icon !w-7 !h-7" aria-label="Ukloni ojačanje" data-testid={`sl-brace-remove-${i}`} onClick={() => setBraces(braces.filter((x) => x.id !== b.id))}><Trash2 size={13} /></button>
             </div>
-            <ProfileSelect label="Profil" value={spec.partMat?.[`tail-brace-${b.id}`]} materials={materials} onPick={pickBrace(b)} testId={`sl-brace-profile-${i}`} />
+            <MaterialField label="Profil" kind="profile" materialId={spec.partMat?.[`tail-brace-${b.id}`]} text={textOfKey(`tail-brace-${b.id}`)} materials={materials} onChange={pickBrace(b)} testId={`sl-brace-profile-${i}`} />
             {b.kind === 'vertical' && (
               <label className="grid grid-cols-[minmax(0,1fr)_96px] gap-2 items-center text-[12.5px]"><span>Položaj (X od početka krila)</span>
                 <NumInput value={Math.round(b.pos ?? dflt.vertical)} testId={`sl-brace-pos-${i}`} ariaLabel="Položaj ojačanja" onCommit={(v) => { if (v !== null) patchBrace(b.id, { pos: Math.round(v) }); }} /></label>

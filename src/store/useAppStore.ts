@@ -253,7 +253,7 @@ export const useAppStore = create<AppState>((set, get) => {
             }
           } catch { /* bez localStorage-a: preskače se */ }
           // jednokratno: nazivi materijala iz uvoza postaju „vrsta pa dimenzije“ (npr. Kvadratna cev 60×40×3, U profil 60×28)
-          const NAMES_KEY = 'alutim.materialNamesV1';
+          const NAMES_KEY = 'alutim.materialNamesV2'; // V2: izbacuje i oznake boje (RAL)
           let renamed = false;
           try {
             if (localStorage.getItem(NAMES_KEY) !== '1') {

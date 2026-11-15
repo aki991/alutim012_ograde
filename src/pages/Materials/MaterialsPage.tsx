@@ -7,8 +7,8 @@ import { ConfirmDialog, Modal } from '../../components/ui/Modal';
 import type { Material, MaterialCategory, MaterialUnit } from '../../domain/models/types';
 import { ProfileDrawing } from '../../components/models/ProfileDrawing';
 import { MaterialDrawing, materialFacts } from '../../components/models/MaterialDrawing';
-import { compareMaterials, materialShape } from '../../domain/models/materialShape';
-import { profileGeometry, profileSpecFor } from '../../domain/models/profileDrawings';
+import { compareMaterials, cProfileSpec, materialDimFields, materialShape, matchesSearch, syncNameDims } from '../../domain/models/materialShape';
+import { profileGeometry, profileSpecFor, type DimField } from '../../domain/models/profileDrawings';
 import { MaterialsImportModal } from '../../components/models/MaterialsImportModal';
 import { materialsToRows, parseCsv } from '../../domain/pricing/materialsIo';
 import { loadPdfJs, readPdfTable } from '../../services/pdfTable';
@@ -72,12 +72,26 @@ export default function MaterialsPage() {
   };
 
   const list = useMemo(() => {
-    const t = q.trim().toLowerCase();
-    return materials.filter((m) => (cat === 'all' || m.category === cat) && (!t || m.name.toLowerCase().includes(t) || m.sku.toLowerCase().includes(t))).sort(compareMaterials);
+    return materials.filter((m) => (cat === 'all' || m.category === cat) && matchesSearch(`${m.name} ${m.sku}`, q)).sort(compareMaterials);
   }, [materials, q, cat]);
 
   const openNew = () => { setIsNew(true); setForm({ id: uid('mat'), sku: '', name: '', category: 'ostalo', unit: 'kom', unitPrice: 0, wastePercent: 0, demo: false }); };
   const valid = form && form.name.trim().length > 0 && form.sku.trim().length > 0 && form.unitPrice >= 0;
+  /** mere preseka izabranog materijala koje se mogu menjati; izmena A, B i zida menja i mere u nazivu (npr. 60×60×2 → 60×60×1,5) */
+  const dimFields = form ? materialDimFields(form) : [];
+  const previewSpec = form ? (profileSpecFor(form) ?? cProfileSpec(form)) : null;
+  const setDimValue = (f: DimField, v: number | null) => {
+    if (!form) return;
+    const next: Material = { ...form };
+    if (v === null || !(v > 0)) {
+      // prazno polje = vrednost iz cenovnika / naziva
+      if (f.wall) next.wallMm = undefined; else { const d = { ...(next.dims ?? {}) }; delete d[f.key]; next.dims = Object.keys(d).length ? d : undefined; }
+    } else if (f.wall) next.wallMm = v;
+    else next.dims = { ...(next.dims ?? {}), [f.key]: v };
+    next.name = syncNameDims(form.name, dimFields, materialDimFields(next));
+    setForm(next);
+  };
+  const hasDimEdits = !!form && (form.wallMm !== undefined || (form.dims && Object.keys(form.dims).length > 0));
 
   return (
     <Page>
@@ -107,7 +121,7 @@ export default function MaterialsPage() {
             <thead><tr><th className="th">Šifra</th><th className="th">Naziv</th><th className="th">Kategorija</th><th className="th">Jedinica</th><th className="th text-right w-[150px]">Cena ({settings.currency}, neto)</th><th className="th text-right w-[90px]">Otpad %</th><th className="th w-24" /></tr></thead>
             <tbody>
               {list.map((m) => {
-                const spec = profileSpecFor(m);
+                const spec = profileSpecFor(m) ?? cProfileSpec(m);
                 // svaki materijal ima crtež: detaljan sa kotama dobavljača (ako ga ima), inače oblik iz crtanja modela
                 const open = openId === m.id;
                 const toggle = (e: React.SyntheticEvent) => { if (!(e.target as Element).closest('input,select,button,a')) setOpenId(open ? null : m.id); };
@@ -122,7 +136,7 @@ export default function MaterialsPage() {
                   <td className="td"><select aria-label={`Jedinica: ${m.name}`} className="input !w-20 !py-1" value={m.unit} onChange={(e) => upsertMaterial({ ...m, unit: e.target.value as MaterialUnit })}>{UNITS.map((u) => <option key={u}>{u}</option>)}</select></td>
                   <td className="td"><PriceInput label={`Cena: ${m.name}`} className="!py-1" rsd={m.unitPrice} onChange={(v) => upsertMaterial({ ...m, unitPrice: v })} /></td>
                   <td className="td"><input aria-label={`Otpad: ${m.name}`} type="number" min={0} max={100} className="input !py-1 text-right tabular-nums" value={m.wastePercent} onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v >= 0 && v <= 100) upsertMaterial({ ...m, wastePercent: v }); }} /></td>
-                  <td className="td text-right whitespace-nowrap"><button className="btn btn-sm" title="Naziv, šifra, kategorija i ostali podaci materijala (cena, jedinica i otpad se menjaju direktno u tabeli)" onClick={() => { setIsNew(false); setForm(m); }}>Naziv i šifra</button> <button className="btn btn-sm btn-icon btn-danger" aria-label={`Obriši ${m.name}`} onClick={() => setDel(m)}><Trash2 size={14} /></button></td>
+                  <td className="td text-right whitespace-nowrap"><button className="btn btn-sm" title="Izmena materijala: naziv, šifra, kategorija i sve mere preseka (cena, jedinica i otpad se menjaju i direktno u tabeli)" data-testid="material-edit" onClick={() => { setIsNew(false); setForm(m); }}>Izmeni</button> <button className="btn btn-sm btn-icon btn-danger" aria-label={`Obriši ${m.name}`} onClick={() => setDel(m)}><Trash2 size={14} /></button></td>
                 </tr>
                 {open && (
                   <tr data-testid="material-drawing-row">
@@ -151,24 +165,43 @@ export default function MaterialsPage() {
       </div>
       {imp && <MaterialsImportModal fileName={imp.name} table={imp.table} onClose={() => setImp(null)} />}
       {form && (
-        <Modal title={isNew ? 'Novi materijal' : 'Izmena materijala'} onClose={() => setForm(null)} footer={<><button className="btn" onClick={() => setForm(null)}>Otkaži</button><button className="btn btn-primary" disabled={!valid} data-testid="material-save" onClick={() => { upsertMaterial({ ...form, demo: isNew ? false : form.demo }); setForm(null); }}>Sačuvaj</button></>}>
+        <Modal title={isNew ? 'Novi materijal' : 'Izmena materijala'} width={780} onClose={() => setForm(null)} footer={<><button className="btn" onClick={() => setForm(null)}>Otkaži</button><button className="btn btn-primary" disabled={!valid} data-testid="material-save" onClick={() => { upsertMaterial({ ...form, demo: isNew ? false : form.demo }); setForm(null); }}>Sačuvaj</button></>}>
+          <div className="grid gap-x-5 md:grid-cols-[minmax(0,1fr)_260px]">
+          <div>
           <TextField label="Šifra" testId="material-sku" value={form.sku} onChange={(v) => setForm({ ...form, sku: v })} />
           <TextField label="Naziv" testId="material-name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} />
           <SelectField label="Kategorija" value={form.category} options={Object.entries(CATS).map(([value, label]) => ({ value: value as MaterialCategory, label }))} onChange={(v) => setForm({ ...form, category: v })} />
           <SelectField label="Jedinica mere" value={form.unit} options={UNITS.map((u) => ({ value: u, label: u }))} onChange={(v) => setForm({ ...form, unit: v })} />
           <NumberField label="Cena po jedinici" unit={settings.currency} value={toCurrency(form.unitPrice, settings.currency, settings.currencyRateToEur)} range={{ min: 0, max: 10_000_000 }} allowZero integer={false} step={settings.currency === 'EUR' ? 0.1 : 10} onCommit={(v) => setForm({ ...form, unitPrice: fromCurrency(v, settings.currency, settings.currencyRateToEur) })} />
-          <div className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.45fr)] items-center gap-x-3 gap-y-1 py-1.5">
-            <label className="label" htmlFor="material-wall">Debljina zida (mm)</label>
-            <input id="material-wall" data-testid="material-wall" className="input tabular-nums" inputMode="decimal" placeholder="kao u cenovniku" value={form.wallMm ?? ''}
-              onChange={(e) => { const v = Number(e.target.value.replace(',', '.')); setForm({ ...form, wallMm: e.target.value.trim() !== '' && Number.isFinite(v) && v > 0 && v <= 20 ? v : undefined }); }} />
-            <div className="col-span-2 text-xs text-muted leading-snug">Samo za profile. Menja presek: npr. U profil 60 mm ima unutrašnji otvor 56 mm sa zidom 2 mm, a 54 mm sa zidom 3 mm. Prazno = debljina iz cenovnika.</div>
-          </div>
+          {dimFields.length > 0 && (
+            <div className="rounded-lg border border-line p-2.5 my-1.5" data-testid="material-dims">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[13px] font-semibold flex-1">Mere preseka (mm)</span>
+                {hasDimEdits && <button className="btn btn-sm" data-testid="material-dims-reset" onClick={() => { const next = { ...form, wallMm: undefined, dims: undefined } as Material; next.name = syncNameDims(form.name, dimFields, materialDimFields(next)); setForm(next); }}>Vrati mere iz cenovnika</button>}
+              </div>
+              {dimFields.map((f) => (
+                <div key={f.key} className="grid grid-cols-[minmax(0,1fr)_110px] items-center gap-2 py-0.5">
+                  <label className="text-[13px] text-slate-700">{f.label}</label>
+                  <NumInput testId={`material-dim-${f.key}`} ariaLabel={f.label} value={Math.round(f.value * 100) / 100} onCommit={(v) => setDimValue(f, v)} />
+                </div>
+              ))}
+              <p className="text-xs text-muted leading-snug mt-1">Svaka mera se može promeniti; crtež desno se odmah menja. Izmena A, B i zida menja i mere u nazivu. Prazno polje vraća meru iz cenovnika.</p>
+            </div>
+          )}
           <div className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.45fr)] items-center gap-x-3 gap-y-1 py-1.5">
             <label className="label">Masa (kg/m)</label>
             <NumInput testId="material-kgm" ariaLabel="Masa po metru" value={form.kgPerM} placeholder="nije poznato" className="!text-left" onCommit={(v) => setForm({ ...form, kgPerM: v !== null && v > 0 ? v : undefined })} />
             <div className="col-span-2 text-xs text-muted leading-snug">Iz deklaracije profila. Koristi se za procenu mase kapije (pokretni sklop). Prazno = masa nepoznata.</div>
           </div>
           <NumberField label="Procenat otpada" unit="%" value={form.wastePercent} range={{ min: 0, max: 100 }} allowZero integer={false} step={1} onCommit={(v) => setForm({ ...form, wastePercent: v })} />
+          </div>
+          <div className="hidden md:block" data-testid="material-preview">
+            <div className="rounded-xl border border-line bg-white p-2 sticky top-0">
+              {previewSpec ? <ProfileDrawing spec={previewSpec} title={form.name} /> : <MaterialDrawing shape={materialShape(form)} />}
+              <p className="text-[11.5px] text-muted mt-1">Pregled preseka sa izmenjenim merama.</p>
+            </div>
+          </div>
+          </div>
         </Modal>
       )}
       {del && <ConfirmDialog title="Brisanje materijala" danger confirmLabel="Obriši" message={<>Obrisati <b>{del.name}</b>? Projekti koji ga koriste prikazaće upozorenje „nepoznat materijal" u obračunu.</>} onCancel={() => setDel(null)} onConfirm={() => { removeMaterial(del.id); setDel(null); }} />}

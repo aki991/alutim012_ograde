@@ -51,7 +51,7 @@ export function buildCutList(project: Project, specs?: ModelSpecs, materials?: M
         if (b.cutMm === null || b.cutMm <= 0 || b.unit !== 'kom') continue;
         if (b.make !== 'izrada' && b.key !== 'rail' && b.key !== 'carrier') continue;
         const mat = b.materialId ? materials?.find((m) => m.id === b.materialId) : undefined;
-        rows.push({ element: name, index: li.index, part: b.name, profile: mat ? mat.name : `${b.name} — nije definisano`, lengthMm: b.cutMm, qty: b.qty, note: [b.note, b.shownMm !== null && b.shownMm !== b.cutMm ? `prikazano ${b.shownMm} mm` : ''].filter(Boolean).join(' · ') || undefined });
+        rows.push({ element: name, index: li.index, part: b.name, profile: mat ? mat.name : b.materialText ? b.materialText : `${b.name} — nije definisano`, lengthMm: b.cutMm, qty: b.qty, note: [b.note, b.shownMm !== null && b.shownMm !== b.cutMm ? `prikazano ${b.shownMm} mm` : ''].filter(Boolean).join(' · ') || undefined });
       }
       if (!it.sliding.drawnLeaf) continue;
     }
@@ -115,7 +115,7 @@ export function buildHardwareList(project: Project, materials?: Material[]): Har
       for (const b of slidingBom(resolveSliding(it.sliding, layout.items[i].clearWidth, slidingH(it)))) {
         if (b.make !== 'kupovina' || b.kit || b.key === 'rail' || b.key === 'carrier') continue;
         const mat = b.materialId ? materials?.find((m) => m.id === b.materialId) : undefined;
-        rows.push({ element: el, item: mat ? `${b.name}: ${mat.name}${b.confirm ? ' (potvrditi)' : ''}` : `${b.name} — nije definisano${b.confirm ? ' (potvrditi)' : ''}`, qty: b.unit === 'par' ? b.qty * 2 : b.qty });
+        rows.push({ element: el, item: mat ? `${b.name}: ${mat.name}${b.confirm ? ' (potvrditi)' : ''}` : b.materialText ? `${b.name}: ${b.materialText}${b.confirm ? ' (potvrditi)' : ''}` : `${b.name} — nije definisano${b.confirm ? ' (potvrditi)' : ''}`, qty: b.unit === 'par' ? b.qty * 2 : b.qty });
       }
       return;
     }

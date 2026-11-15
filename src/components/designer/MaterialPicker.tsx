@@ -1,6 +1,6 @@
 import { ChevronDown, Search } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { compareMaterials, MATERIAL_GROUPS, materialShape } from '../../domain/models/materialShape';
+import { compareMaterials, MATERIAL_GROUPS, materialShape, matchesSearch } from '../../domain/models/materialShape';
 import type { Material } from '../../domain/models/types';
 
 /**
@@ -47,8 +47,7 @@ export function MaterialPicker({ materials, onPick, placeholder = '— izaberite
   }, [open]);
 
   const groups = useMemo(() => {
-    const t = q.trim().toLowerCase();
-    const list = materials.filter((m) => !t || m.name.toLowerCase().includes(t) || m.sku.toLowerCase().includes(t));
+    const list = materials.filter((m) => matchesSearch(`${m.name} ${m.sku}`, q));
     return MATERIAL_GROUPS.map((g) => ({ ...g, items: list.filter((m) => materialShape(m).group === g.id).sort(compareMaterials) })).filter((g) => g.items.length);
   }, [materials, q]);
 

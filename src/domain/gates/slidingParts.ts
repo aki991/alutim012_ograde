@@ -73,7 +73,7 @@ export const PART_DEFS: PartDef[] = [
     { key: 'rail.h', label: 'Visina šine iznad tla', def: 20, min: 2 },
   ] },
   { key: 'carrier', label: 'Noseći C-profil', button: 'C-profil', group: 'oslonac', support: 'cantilever', comps: ['carrier'], bom: ['carrier'], pos: ['carrierLength'], dims: [
-    { key: 'carrier.h', label: 'Visina C-profila', def: 80, min: 10 },
+    { key: 'carrier.h', label: 'Visina C-profila (iz profila)', def: 80, min: 10, hidden: true },
   ] },
   { key: 'tail', label: 'Rep (trouglasto ojačanje)', button: 'Rep', group: 'oslonac', support: 'cantilever', comps: ['tail'], bom: ['tail-diag', 'tail-bottom'], dims: [
     { key: 'tailLength', field: 'tailLength', label: 'Dužina repa', def: 1500, min: 100 },
