@@ -58,9 +58,22 @@ export async function saveAll(data: Omit<PersistedData, 'seeded'>): Promise<void
   await tx.done;
 }
 
+/** Briše lokalne podatke. Stanje sinhronizacije ('syncState') ostaje, da se obrisano pri sledećoj sinhronizaciji obriše i u bazi. */
 export async function wipeAll(): Promise<void> {
   const db = await getDb();
   const tx = db.transaction(['projects', 'customers', 'materials', 'kv'], 'readwrite');
-  await Promise.all(['projects', 'customers', 'materials', 'kv'].map((s) => tx.objectStore(s as 'projects').clear()));
+  await Promise.all(['projects', 'customers', 'materials'].map((s) => tx.objectStore(s as 'projects').clear()));
+  await Promise.all([tx.objectStore('kv').delete('settings'), tx.objectStore('kv').delete('seeded')]);
   await tx.done;
+}
+
+/** Šta je poslednji put usklađeno sa Supabase-om (po redu: vreme na serveru i otisak sadržaja). */
+export async function loadSyncState<T>(): Promise<T | null> {
+  const db = await getDb();
+  return ((await db.get('kv', 'syncState')) as T | undefined) ?? null;
+}
+
+export async function saveSyncState(state: unknown): Promise<void> {
+  const db = await getDb();
+  await db.put('kv', state, 'syncState');
 }

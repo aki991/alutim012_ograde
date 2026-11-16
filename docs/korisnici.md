@@ -33,4 +33,4 @@
 - **Izmena** (dugme „Izmeni"): ime i prezime, korisničko ime ili e-mail, nova lozinka (prazno = ostaje ista) i uloga administratora. **Brisanje** traži potvrdu. Zaštite: administrator ne može da obriše sebe, sebi oduzme ulogu ni promeni sopstvenu prijavu (lozinku može), a poslednji administrator se ne može obrisati ni degradirati.
 - Brisanjem naloga korisnik više ne može da se prijavi, ali projekti i kupci u njegovom pregledaču ostaju tamo.
 - Korisničko ime: 3–32 znaka, mala slova, brojevi, tačka, crtica i donja crta.
-- Podaci (projekti, kupci, cenovnik) i dalje žive u pregledaču; nalog samo kontroliše ulaz u aplikaciju.
+- Podaci (projekti, kupci, materijali, modeli ograda i kapija, šabloni, magacin, podešavanja) čuvaju se u Supabase tabelama `ograde_*` i zajednički su za sve prijavljene naloge; lokalna kopija u pregledaču omogućava rad bez interneta. Migracija: `supabase/migrations/202611160001_ograde_sync.sql` (pokrenuti jednom u SQL Editoru). Sinhronizacija: `src/services/cloudSync.ts`.

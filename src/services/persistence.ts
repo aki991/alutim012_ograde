@@ -1,5 +1,6 @@
 import { saveAll } from '../db';
 import { useAppStore } from '../store/useAppStore';
+import { schedulePush } from './cloudSync';
 
 const DEBOUNCE_MS = 500;
 let timer: ReturnType<typeof setTimeout> | null = null;
@@ -16,6 +17,7 @@ export function saveNow(): Promise<void> {
   inFlight = inFlight.then(async () => {
     try {
       await saveAll(snapshot);
+      schedulePush();
       const now = useAppStore.getState();
       // ako se u međuvremenu nešto promenilo, novi upis je već zakazan i status ostaje „Čuvanje..."
       const changed = now.projects !== snapshot.projects || now.customers !== snapshot.customers || now.materials !== snapshot.materials || now.settings !== snapshot.settings;

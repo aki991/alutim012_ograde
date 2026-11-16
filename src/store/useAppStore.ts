@@ -27,6 +27,14 @@ import { migrateProject } from '../domain/validation/project';
 import { applyPostTemplate as applyPostTemplateTo } from '../domain/models/postTemplates';
 import { uid } from '../utils/id';
 
+export interface RemotePatch {
+  projects?: { upsert: Project[]; remove: string[] };
+  customers?: { upsert: Customer[]; remove: string[] };
+  materials?: { upsert: Material[]; remove: string[] };
+  /** podešavanja se šalju kao cela vrednost (sklopljena iz redova) */
+  settings?: AppSettings;
+}
+
 export type SaveStatus = 'saved' | 'saving' | 'error';
 export type Selection = { type: 'item' | 'post'; id: string } | null;
 export type EditorView = 'front' | 'top' | 'three' | 'split' | 'dims' | 'bom' | 'photo';
@@ -70,6 +78,8 @@ interface AppState {
 
   init: () => Promise<void>;
   resetDemo: () => Promise<void>;
+  /** primena izmena iz baze (sinhronizacija): zamenjuje ili dodaje redove po ID-u i uklanja obrisane; ne dira otvoren projekat koji je menjan lokalno */
+  applyRemote: (patch: RemotePatch) => void;
   setSaveStatus: (s: SaveStatus, err?: string | null) => void;
 
   newProject: (opts?: { name?: string; customerId?: string | null; modelId?: FenceModelId; startGate?: GateType }) => string;
@@ -161,7 +171,7 @@ interface AppState {
 }
 
 /** Element čiji model više ne postoji (obrisan nacrtani model) prelazi na podrazumevani model, da se projekat i dalje otvara. */
-const dropUnknownModels = (p: Project): Project => {
+export const dropUnknownModels = (p: Project): Project => {
   const known = (id: string) => id in FENCE_MODELS;
   if (p.items.every((it) => it.kind === 'opening' || known(it.kind === 'fence' ? it.modelId : it.infillModelId))) return p;
   const d = FENCE_MODELS[DEFAULT_MODEL_ID];
@@ -204,6 +214,8 @@ const nextQuoteNo = (projects: Project[]): string => {
 /** privremen projekat za „Mere kapije“ u crtanju modela → projekat koji je bio otvoren pre njega */
 const DRAFT_PREV = new Map<string, string | null>();
 
+/** oznaka da su ranije napravljeni projekti na ovom uređaju obrisani (jednokratno, pre uključivanja baze) */
+export const PROJECTS_WIPED_KEY = 'alutim.projectsWipedV1';
 const LAST_PROJECT_KEY = 'alu-tim.lastProject';
 const rememberProject = (id: string) => { try { localStorage.setItem(LAST_PROJECT_KEY, id); } catch { /* privatni režim: bez pamćenja */ } };
 const recalledProject = (): string | null => { try { return localStorage.getItem(LAST_PROJECT_KEY); } catch { return null; } };
@@ -217,6 +229,19 @@ export function currentProjectId(): string | null {
   const newest = [...projects].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
   return newest?.id ?? null;
 }
+
+/** zamenjuje redove po ID-u (novi idu na početak), uklanja obrisane; vraća isti niz ako se ništa ne menja */
+function mergeById<T extends { id: string }>(cur: T[], upsert: T[], remove: string[]): T[] {
+  if (!upsert.length && !remove.length) return cur;
+  const rm = new Set(remove);
+  const byId = new Map(upsert.map((x) => [x.id, x]));
+  const seen = new Set<string>();
+  const kept = cur.filter((x) => !rm.has(x.id)).map((x) => { const n = byId.get(x.id); if (n) seen.add(x.id); return n ?? x; });
+  return [...upsert.filter((x) => !seen.has(x.id)), ...kept];
+}
+
+/** početni podaci nove instalacije: bez probnih projekata (projekti dolaze iz baze ili se prave ručno) */
+const freshSeed = () => ({ ...createSeedData(), projects: [] as Project[] });
 
 const seed = createSeedData();
 
@@ -248,8 +273,9 @@ export const useAppStore = create<AppState>((set, get) => {
       try {
         const data = await loadAll();
         if (!data.seeded) {
-          const s = createSeedData();
+          const s = freshSeed();
           await saveAll(s);
+          try { localStorage.setItem(PROJECTS_WIPED_KEY, '1'); } catch { /* bez localStorage-a: preskače se */ }
           set({ ...s, ready: true });
         } else {
           const settings = data.settings ?? seed.settings;
@@ -297,8 +323,19 @@ export const useAppStore = create<AppState>((set, get) => {
           // nacrtani modeli moraju biti u katalogu pre nego što se projekti učitaju
           registerCustomModels(settings.customModels, materials);
           setHiddenModels(settings.hiddenModels);
+          // jednokratno (pre povezivanja sa bazom): brišu se svi ranije napravljeni projekti na ovom uređaju
+          let wiped = false;
+          try {
+            if (localStorage.getItem(PROJECTS_WIPED_KEY) !== '1') wiped = true;
+          } catch { /* bez localStorage-a: preskače se */ }
           // privremeni projekti za uređivanje modela ne preživljavaju ponovno pokretanje
-          set({ projects: data.projects.filter((p) => !p.modelDraft).map(migrateProject).map(dropUnknownModels), customers: data.customers, materials, settings, ready: true });
+          set({ projects: wiped ? [] : data.projects.filter((p) => !p.modelDraft).map(migrateProject).map(dropUnknownModels), customers: data.customers, materials, settings, ready: true });
+          if (wiped) {
+            try {
+              await saveAll({ projects: [], customers: data.customers, materials, settings });
+              localStorage.setItem(PROJECTS_WIPED_KEY, '1');
+            } catch { /* neuspeh: pokušaće se opet pri sledećem pokretanju */ }
+          }
           if (backfilled || renamed || carriagesAdded || terraceAdded) {
             // autosave počinje tek posle init-a, pa se dodati materijali upisuju odmah; oznaka se postavlja tek kad je upis uspeo
             try {
@@ -312,20 +349,43 @@ export const useAppStore = create<AppState>((set, get) => {
         }
       } catch (e) {
         // IndexedDB nedostupan (npr. privatni režim): radimo u memoriji i jasno prijavljujemo grešku
-        const s = createSeedData();
+        const s = freshSeed();
         set({ ...s, ready: true, loadError: `Lokalna baza nije dostupna: ${(e as Error).message}. Podaci neće biti sačuvani.`, saveStatus: 'error' });
       }
     },
 
     async resetDemo() {
       await wipeAll();
-      const s = createSeedData();
+      const s = freshSeed();
       await saveAll(s);
       set({ ...s, editor: emptyEditor(), saveStatus: 'saved', saveError: null });
     },
 
     setSaveStatus(status, err = null) {
       set({ saveStatus: status, saveError: err });
+    },
+
+    applyRemote(patch) {
+      set((s) => {
+        const out: Partial<AppState> = {};
+        if (patch.projects) {
+          const up = patch.projects.upsert.filter((p) => !p.modelDraft).map(migrateProject).map(dropUnknownModels);
+          const projects = mergeById(s.projects, up, patch.projects.remove);
+          if (projects !== s.projects) out.projects = projects;
+          // otvoren projekat koji je obrisan u bazi se zatvara
+          if (s.editor.projectId && !projects.some((p) => p.id === s.editor.projectId)) out.editor = emptyEditor();
+        }
+        if (patch.customers) {
+          const customers = mergeById(s.customers, patch.customers.upsert, patch.customers.remove);
+          if (customers !== s.customers) out.customers = customers;
+        }
+        if (patch.materials) {
+          const materials = mergeById(s.materials, patch.materials.upsert.filter((m) => !isBuiltinMaterial(m)), patch.materials.remove);
+          if (materials !== s.materials) out.materials = materials;
+        }
+        if (patch.settings) out.settings = patch.settings;
+        return out;
+      });
     },
 
     newProject(opts = {}) {

@@ -100,7 +100,7 @@ export default function SettingsPage() {
           {done && <p role="status" className="text-sm text-[#067647] mt-3">Podaci su obrisani i vraćeni probni podaci.</p>}
         </section>
       </div>
-      {confirm && <ConfirmDialog title="Brisanje svih podataka" danger confirmLabel="Obriši sve" message="Svi projekti, kupci, materijali i podešavanja biće obrisani i zamenjeni početnim probnim podacima. Ovo se ne može poništiti." onCancel={() => setConfirm(false)} onConfirm={async () => { await resetDemo(); setConfirm(false); setDone(true); }} />}
+      {confirm && <ConfirmDialog title="Brisanje svih podataka" danger confirmLabel="Obriši sve" message="Svi projekti, kupci, materijali, modeli i podešavanja biće obrisani i zamenjeni početnim podacima, a kad je baza uključena brišu se i u bazi, za sve korisnike. Ovo se ne može poništiti." onCancel={() => setConfirm(false)} onConfirm={async () => { await resetDemo(); setConfirm(false); setDone(true); }} />}
     </Page>
   );
 }

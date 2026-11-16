@@ -20,6 +20,7 @@ import ReportsPage from '../pages/Reports/ReportsPage';
 import SettingsPage from '../pages/Settings/SettingsPage';
 import StockPage from '../pages/Stock/StockPage';
 import { useAuth } from '../services/auth';
+import { startCloudSync, useCloudStatus } from '../services/cloudSync';
 import { startAutosave } from '../services/persistence';
 import { useAppStore } from '../store/useAppStore';
 
@@ -35,13 +36,21 @@ export default function App() {
   }, []);
   useEffect(() => setMenu(false), [pathname]);
 
+  // prijavljen korisnik: podaci se usklađuju sa bazom (lokalna kopija ostaje za rad bez interneta)
+  const userId = auth.session?.user.id ?? null;
+  const cloudFirstDone = useCloudStatus((s) => s.firstDone);
+  useEffect(() => {
+    if (!userId || !ready) return;
+    return startCloudSync();
+  }, [userId, ready]);
+
   // prijava je uključena (Supabase podešen): bez sesije se vidi samo stranica za prijavu, na istoj adresi
   if (auth.enabled && auth.loading) return <div className="h-full grid place-items-center text-muted" data-testid="loading">Provera prijave...</div>;
   if (auth.enabled && !auth.session && !auth.guest) return <LoginPage />;
   if (!auth.enabled && pathname === '/prijava') return <LoginPage />;
 
-  if (!ready) {
-    return <div className="h-full grid place-items-center text-muted" data-testid="loading">Učitavanje aplikacije...</div>;
+  if (!ready || (auth.session && !cloudFirstDone)) {
+    return <div className="h-full grid place-items-center text-muted" data-testid="loading">{ready ? 'Usklađivanje podataka...' : 'Učitavanje aplikacije...'}</div>;
   }
 
   return (

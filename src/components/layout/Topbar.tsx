@@ -1,8 +1,9 @@
-import { Bell, Building2, ChevronDown, CircleHelp, FileText, LogOut, Menu, Plus, Settings } from 'lucide-react';
+import { AlertTriangle, Bell, Building2, Cloud, CloudOff, Loader2, ChevronDown, CircleHelp, FileText, LogOut, Menu, Plus, Settings } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
 import { useAuth } from '../../services/auth';
+import { useCloudStatus } from '../../services/cloudSync';
 import { initialsOf } from '../../utils/units';
 import { useFieldSpecs } from '../../hooks/useFieldSpecs';
 import { fmtDateTime, positionsLabel, SPEC_STATUS_LABELS, type FieldSpec } from '../../services/fieldSpecs';
@@ -24,6 +25,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
   const [user, setUser] = useState(false);
   const specs = useFieldSpecs();
   const [openSpec, setOpenSpec] = useState<FieldSpec | null>(null);
+  const cloud = useCloudStatus();
   const bellRef = useRef<HTMLDivElement>(null);
   const userRef = useRef<HTMLDivElement>(null);
   useOutside(bellRef, () => setBell(false));
@@ -38,6 +40,13 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
     <header className="h-[69px] shrink-0 brand-bg text-white border-b border-black/20 flex items-center gap-3 px-4 lg:px-6">
       <span className="lg:hidden"><button className="btn btn-icon !text-ink" aria-label="Otvori meni" onClick={onMenu}><Menu size={20} /></button></span>
       <div className="ml-auto flex items-center gap-2">
+        {auth.session && cloud.status !== 'off' && (
+          <span className="flex items-center gap-1.5 text-[12px] text-white/80 px-1" data-testid="cloud-status" data-state={cloud.status}
+            title={cloud.status === 'synced' ? `Podaci su u bazi${cloud.lastSync ? ` (${fmtDateTime(cloud.lastSync)})` : ''}` : cloud.status === 'syncing' ? 'Usklađivanje sa bazom...' : cloud.status === 'offline' ? 'Nema veze: radi se lokalno, izmene se šalju kad se veza vrati.' : `Greška sinhronizacije: ${cloud.error ?? ''}`}>
+            {cloud.status === 'syncing' ? <Loader2 size={16} className="animate-spin" /> : cloud.status === 'offline' ? <CloudOff size={16} /> : cloud.status === 'error' ? <AlertTriangle size={16} className="text-accent" /> : <Cloud size={16} />}
+            <span className="hidden md:inline">{cloud.status === 'synced' ? 'U bazi' : cloud.status === 'syncing' ? 'Usklađivanje' : cloud.status === 'offline' ? 'Bez veze' : 'Greška baze'}</span>
+          </span>
+        )}
         <button className="btn !bg-accent !text-brand-black !border-transparent hover:!brightness-95 !px-3 sm:!px-4" aria-label="Novi projekat" data-testid="topbar-new-project" onClick={() => { setBell(false); setUser(false); navigate(`/editor/${useAppStore.getState().newProject()}`); }}><Plus size={18} /><span className="hidden sm:inline">Novi projekat</span></button>
         <div className="relative" ref={bellRef}>
           <button className="btn btn-icon !border-transparent !bg-transparent !text-white hover:!bg-white/10 relative" aria-label={specs.unread > 0 ? `Obaveštenja (${specs.unread} nepročitano)` : 'Obaveštenja'} onClick={() => { setBell((b) => !b); setUser(false); if (!bell) void specs.reload(); }}>
