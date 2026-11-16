@@ -95,7 +95,7 @@ export default function ModelsPage({ terrace = false }: { terrace?: boolean }) {
               <div className="relative aspect-[16/10] bg-[#eef2f6] overflow-hidden border-b border-line p-3"><CustomModelThumb model={rep} materials={materials} /></div>
               <div className="p-4 flex-1 flex flex-col">
                 <h2 className="font-bold text-[17px]">{m.name}</h2>
-                <p className="text-sm text-muted mt-0.5">Dorađen crtež modela iz kataloga · {rep.parts.length} delova. Projekti sa ovim modelom koriste dorađen crtež.</p>
+                <p className="text-sm text-muted mt-0.5">{m.description}</p>
                 <div className="flex flex-wrap gap-2 mt-auto pt-4">
                   <div className="w-full flex gap-2">
                     <button className="btn flex-1" data-testid={`rework-model-${m.id}`} onClick={() => navigate(`${drawPath}/${rep.id}`, { state: { dorada: true } })}><Wrench size={16} />Doradi</button>

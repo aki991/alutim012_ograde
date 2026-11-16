@@ -646,20 +646,18 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
       </div>
 
       {/* traka dorade se vidi samo odmah posle klika na „Doradi“ (i dok dorađen crtež zamenjuje original); kasnije otvaranje crteža je običan model */}
-      {model.baseModelId && FENCE_MODELS[model.baseModelId as FenceModelId] && (fromDorada || model.replaces) && (() => {
+      {model.baseModelId && FENCE_MODELS[model.baseModelId as FenceModelId] && fromDorada && !model.replaces && (() => {
         const baseName = FENCE_MODELS[model.baseModelId as FenceModelId].name;
         // posle zamene ili vraćanja crtež se ponovo učitava iz podešavanja (naziv i oznaka zamene)
         const reload = () => { const saved = useAppStore.getState().settings.customModels?.find((m) => m.id === modelRef.current.id); if (saved) { modelRef.current = saved; setModel(saved); } };
         return (
           <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-[#eff8ff] border-b border-[#b2ddff] text-[13px]" data-testid="rework-bar">
-            {model.replaces
-              ? <span className="flex-1 min-w-[240px]">Dorada modela <b>{baseName}</b>: ovaj crtež je sada taj model iz kataloga (isti tip). Projekti sa ovim modelom koriste dorađen crtež.</span>
-              : <span className="flex-1 min-w-[240px]">Dorada modela <b>{baseName}</b>: izmene se čuvaju kao <b>nov tip</b> „{model.name}“, a original ostaje. Ako želite da ovo bude isti model, sačuvajte na istom tipu.</span>}
-            {!model.replaces && <button className="btn btn-sm btn-primary" data-testid="rework-replace" onClick={() => setTypeAction('replace')}>Sačuvaj na istom tipu</button>}
+            <span className="flex-1 min-w-[240px]">Dorada modela <b>{baseName}</b>: izmene se čuvaju kao <b>nov tip</b> „{model.name}“, a original ostaje. Ako želite da ovo bude isti model, sačuvajte na istom tipu.</span>
+            <button className="btn btn-sm btn-primary" data-testid="rework-replace" onClick={() => setTypeAction('replace')}>Sačuvaj na istom tipu</button>
             {typeAction && (
               <ConfirmDialog title={typeAction === 'replace' ? 'Sačuvaj na istom tipu' : 'Vrati originalni model'} confirmLabel={typeAction === 'replace' ? 'Sačuvaj na istom tipu' : 'Vrati original'}
                 message={typeAction === 'replace'
-                  ? <>Dorađen crtež postaje model <b>{baseName}</b>: stoji umesto originala u izboru modela, a <b>projekti koji koriste ovaj model prelaze na dorađen crtež</b>. Original se može vratiti na strani Modeli ograda.</>
+                  ? <>Dorađen crtež postaje model <b>{baseName}</b>: stoji umesto originala u izboru modela, a <b>projekti koji koriste ovaj model prelaze na dorađen crtež</b>.</>
                   : <>Model <b>{baseName}</b> se vraća na original iz kataloga i projekti ponovo dobijaju originalni crtež. Ovaj crtež ostaje kao nov tip „{baseName} — dorada“.</>}
                 onCancel={() => setTypeAction(null)}
                 onConfirm={() => { const st = useAppStore.getState(); if (typeAction === 'replace') st.replaceBuiltin(model.id); else st.restoreBuiltin(model.id); setTypeAction(null); reload(); }} />

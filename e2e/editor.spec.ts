@@ -1530,7 +1530,7 @@ test('dorada modela iz kataloga: crtež od delova, nov tip ili isti tip (projekt
   await page.getByTestId('rework-model-louver_dark').click();
   await page.getByTestId('rework-replace').click();
   await page.getByRole('dialog').getByRole('button', { name: 'Sačuvaj na istom tipu' }).click();
-  await expect(page.getByTestId('rework-bar')).toContainText('isti tip');
+  await expect(page.getByTestId('rework-bar')).toHaveCount(0);
   await page.getByTestId('designer-back').click();
   await expect(page.getByTestId('model-card-louver_dark')).toHaveAttribute('data-replaced', 'true');
   await expect(page.getByTestId('custom-model-card')).toHaveCount(1);
