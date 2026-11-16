@@ -233,3 +233,36 @@ describe('raspored prečki', () => {
     expect(r.values.gap).toBeGreaterThanOrEqual(0);
   });
 });
+
+describe('razmak između prečki različite debljine (slobodan crtež)', () => {
+  const KV30 = mat('m_kv30', 'KV000099', 'Kvadratna cev 30×20×1,5 mm, sirovo');
+  const M2 = [U60, KV80, KV30];
+  const free = (): CustomModel => ({
+    ...newCustomModel('cm_f'), widthMm: 1000, heightMm: 1000,
+    parts: [part('L', U60.id, 10, 0, 1000, 90), part('R', U60.id, 990, 0, 1000, 90),
+      part('a', KV80.id, 60, 900, 880, 0), part('b', KV30.id, 60, 700, 880, 0), part('c', KV80.id, 60, 400, 880, 0), part('d', KV30.id, 60, 100, 880, 0)],
+  });
+  it('jedan razmak važi za sve prečke, tanje i deblje', () => {
+    const m = free();
+    const info = barLayoutInfo(m, m.parts.find((p) => p.id === 'a')!, M2)!;
+    expect(info.count).toBe(4);
+    const r = layoutBars(m, 'a', M2, { count: 4, top: info.top, bottom: info.bottom, gap: 25, auto: 'bottom', lufta: 'sa' });
+    if ('error' in r) throw new Error(r.error);
+    const after = barLayoutInfo(r.model, r.model.parts.find((p) => p.id === 'a')!, M2)!;
+    expect(after.gap).toBe(25);
+    // razmak između svake dve susedne prečke je tačno 25 (proveravamo preko ivica)
+    const edges = r.model.parts.filter((p) => ['a', 'b', 'c', 'd'].includes(p.id)).map((p) => ({ id: p.id, y: p.y })).sort((x, y) => y.y - x.y);
+    expect(edges.map((e) => e.id)).toEqual(['a', 'b', 'c', 'd']);
+    const h = { a: 80, b: 30, c: 80, d: 30 } as Record<string, number>;
+    for (let i = 1; i < edges.length; i++) {
+      const prev = edges[i - 1]; const cur = edges[i];
+      const gapVal = (prev.y - h[prev.id] / 2) - (cur.y + h[cur.id] / 2); // y je sredina prečke
+      expect(Math.abs(gapVal - 25)).toBeLessThan(0.05);
+    }
+  });
+  it('broj prečki se ne menja kad su različite debljine', () => {
+    const m = free();
+    const r = layoutBars(m, 'a', M2, { count: 5, top: 0, bottom: 0, gap: 10, auto: 'bottom', lufta: 'sa', countChange: true });
+    expect('error' in r).toBe(true);
+  });
+});

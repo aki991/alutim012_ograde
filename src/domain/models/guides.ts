@@ -276,6 +276,9 @@ export interface BarGroup {
   yBot: number;
   /** grupa nije uklopljena u U profile: prostor je visina modela između ramova */
   free?: boolean;
+  /** slobodna grupa sa prečkama različite debljine: visina spreda i položaj gornje ivice (u1) svake prečke, istim redom kao `bars`; bez toga sve prečke imaju h i u1 */
+  hs?: number[];
+  u1s?: number[];
   /** najmanji razmak između dve susedne prečke (mm): 0 za uspravan presek, negativan kad se nagnute prečke uvlače jedna u drugu */
   gapMin: number;
 }
@@ -312,12 +315,22 @@ function freeBarGroup(model: CustomModel, bar: CustomPart, shape: MatShape | nul
   if (!shape || shape.type !== 'linear' || (norm(bar.angleDeg) !== 0 && norm(bar.angleDeg) !== 180)) return null;
   const sec = shape.section;
   const e = sectionFace(sec, partAngle(bar));
-  const top = (p: CustomPart) => p.y + sectionFace(sec, partAngle(p)).u1;
-  const same = (p: CustomPart) => !p.guides && p.materialId === bar.materialId && norm(p.angleDeg) === norm(bar.angleDeg) && Math.abs(partAngle(p) - partAngle(bar)) < 1e-6
-    && Math.abs(p.x - bar.x) < 1 && Math.abs(p.lengthMm - bar.lengthMm) < 1;
-  const bars = model.parts.filter(same).sort((a, b) => top(b) - top(a));
-  // ramovi uz ivice (vodoravni delovi koji nisu u grupi i dodiruju donju ili gornju ivicu) ograničavaju prostor za prečke
   const shapeOf = shapeLookup(materials);
+  const top = (p: CustomPart) => p.y + sectionFace(sec, partAngle(p)).u1;
+  const geom = (p: CustomPart) => !p.guides && norm(p.angleDeg) === norm(bar.angleDeg) && Math.abs(partAngle(p) - partAngle(bar)) < 1e-6 && Math.abs(p.x - bar.x) < 1 && Math.abs(p.lengthMm - bar.lengthMm) < 1;
+  // prečke druge debljine (drugi materijal) koje stoje između ramova ulaze u istu grupu: razmak se zadaje za sve prečke zajedno
+  const inner = (p: CustomPart): boolean => {
+    const s = shapeOf(p);
+    if (!s || s.type !== 'linear') return false;
+    const x = sectionFace(s.section, partAngle(p));
+    return p.y + x.u0 > 1 && p.y + x.u1 < model.heightMm - 1;
+  };
+  const same = (p: CustomPart) => geom(p) && (p.materialId === bar.materialId || inner(p));
+  const edgeOf = (p: CustomPart) => { const s = shapeOf(p) as Extract<MatShape, { type: 'linear' }>; return sectionFace(s.section, partAngle(p)); };
+  const topOf = (p: CustomPart) => p.y + edgeOf(p).u1;
+  const bars = model.parts.filter(same).sort((a, b) => topOf(b) - topOf(a));
+  void top;
+  // ramovi uz ivice (vodoravni delovi koji nisu u grupi i dodiruju donju ili gornju ivicu) ograničavaju prostor za prečke
   let yBot = 0; let yTop = model.heightMm;
   for (const p of model.parts) {
     if (same(p) || (norm(p.angleDeg) !== 0 && norm(p.angleDeg) !== 180)) continue;
@@ -328,7 +341,12 @@ function freeBarGroup(model: CustomModel, bar: CustomPart, shape: MatShape | nul
     if (lo < 1) yBot = Math.max(yBot, hi);
     if (hi > model.heightMm - 1) yTop = Math.min(yTop, lo);
   }
-  return { bars, h: e.face, u0: e.u0, u1: e.u1, yTop, yBot, gapMin: minGap(sec, partAngle(bar), e.face), free: true };
+  const faces = bars.map(edgeOf);
+  const hs = faces.map((x) => x.face);
+  const mixed = hs.some((x) => Math.abs(x - hs[0]) > 1e-6);
+  // najmanji razmak: za prečke različitih preseka uzima se najstroži (najbliži nuli)
+  const gapMin = Math.max(...bars.map((b) => { const x = edgeOf(b); const s = shapeOf(b) as Extract<MatShape, { type: 'linear' }>; return minGap(s.section, partAngle(b), x.face); }));
+  return { bars, h: e.face, u0: e.u0, u1: e.u1, yTop, yBot, gapMin: mixed ? gapMin : minGap(sec, partAngle(bar), e.face), free: true, ...(mixed ? { hs, u1s: faces.map((x) => x.u1) } : {}) };
 }
 
 const r2 = (n: number): number => Math.round(n * 100) / 100;
@@ -341,13 +359,14 @@ export type LayoutAuto = 'gap' | 'bottom' | 'top';
 export function barLayoutInfo(model: CustomModel, bar: CustomPart, materials: Material[]): (Omit<BarLayoutValues, 'gap'> & { H: number; h: number; gap: number | null; gapMin: number; lufta: Lufta; free: boolean }) | null {
   const grp = barGroup(model, bar, materials);
   if (!grp) return null;
-  const sec = (shapeLookup(materials)(bar) as Extract<MatShape, { type: 'linear' }>).section;
-  const edge = (p: CustomPart) => ({ t: p.y + sectionFace(sec, partAngle(p)).u1, b: p.y + sectionFace(sec, partAngle(p)).u0 });
+  const shapeOf = shapeLookup(materials);
+  const edge = (p: CustomPart) => { const x = sectionFace((shapeOf(p) as Extract<MatShape, { type: 'linear' }>).section, partAngle(p)); return { t: p.y + x.u1, b: p.y + x.u0 }; };
+  const sumH = grp.hs ? grp.hs.reduce((a, b) => a + b, 0) : grp.bars.length * grp.h;
   const first = edge(grp.bars[0]); const last = edge(grp.bars[grp.bars.length - 1]);
   const n = grp.bars.length;
-  const gap = n >= 2 ? r2((first.t - last.b - n * grp.h) / (n - 1)) : null;
+  const gap = n >= 2 ? r2((first.t - last.b - sumH) / (n - 1)) : null;
   return {
-    H: r2(grp.yTop - grp.yBot), h: r2(grp.h), gapMin: grp.gapMin, count: n, top: r2(grp.yTop - first.t), bottom: r2(last.b - grp.yBot), gap,
+    H: r2(grp.yTop - grp.yBot), h: r2(sumH / n), gapMin: grp.gapMin, count: n, top: r2(grp.yTop - first.t), bottom: r2(last.b - grp.yBot), gap,
     lufta: bar.lufta ?? (gap !== null && gap < 0 ? 'bez' : 'sa'), free: Boolean(grp.free),
   };
 }
@@ -380,7 +399,15 @@ export function layoutBars(model: CustomModel, barId: string, materials: Materia
   const n = Math.round(p.count);
   if (!(n >= 1)) return { error: 'Broj prečki mora biti najmanje 1.' };
   if (n > 200) return { error: 'Najviše 200 prečki.' };
-  const H = grp.yTop - grp.yBot; const h = grp.h;
+  const H = grp.yTop - grp.yBot;
+  const hsOf = grp.hs ?? grp.bars.map(() => grp.h);
+  const u1sOf = grp.u1s ?? grp.bars.map(() => grp.u1);
+  const sumH = hsOf.reduce((a, b) => a + b, 0);
+  const mixed = hsOf.some((x) => Math.abs(x - hsOf[0]) > 1e-6);
+  if (mixed && n !== grp.bars.length) return { error: 'Broj prečki ne može da se menja kad su prečke različite debljine. Razmak i odstojanja se zadaju za sve prečke zajedno.' };
+  const h = sumH / grp.bars.length;
+  /** ukupna visina n prečki */
+  const stack = (cnt: number) => (cnt === grp.bars.length ? sumH : cnt * h);
   let auto: LayoutAuto = n === 1 && p.auto === 'gap' ? 'bottom' : p.auto;
   let { top, bottom, gap } = p;
   if (n === 1) gap = 0;
@@ -397,10 +424,10 @@ export function layoutBars(model: CustomModel, barId: string, materials: Materia
     const gp = n - 1;
     gap = lufta === 'bez' ? Math.min(0, Math.max(gLo, gap)) : Math.max(0, gap);
     if (top < 0) top = 0;
-    if (n * h + top + gp * gap > H + 1e-6) {
-      const g = (H - top - n * h) / gp;
+    if (stack(n) + top + gp * gap > H + 1e-6) {
+      const g = (H - top - stack(n)) / gp;
       if (g >= gLo - 1e-6) gap = Math.max(gLo, g);
-      else { gap = gLo; top = Math.max(0, H - n * h - gp * gLo); }
+      else { gap = gLo; top = Math.max(0, H - stack(n) - gp * gLo); }
     }
     auto = 'bottom';
   }
@@ -410,20 +437,20 @@ export function layoutBars(model: CustomModel, barId: string, materials: Materia
   if (n > 1 && auto !== 'gap' && lufta === 'bez' && gap > 1e-6) return { error: `Operacija nije izvršena: razmak ${f(gap)} mm nije moguć: bez lufta razmak ne može biti veći od 0 mm (ostao bi procep između prečki). Za razmak veći od 0 izaberite „Sa luftom“.` };
   if (n > 1 && auto !== 'gap' && lufta === 'bez' && gap < gapMin - 1e-6) return { error: `Operacija nije izvršena: ${tooClose(gap)}` };
   const gaps = Math.max(0, n - 1);
-  if (auto === 'gap') gap = (H - top - bottom - n * h) / gaps;
-  else if (auto === 'bottom') bottom = H - top - n * h - gaps * gap;
-  else top = H - bottom - n * h - gaps * gap;
+  if (auto === 'gap') gap = (H - top - bottom - stack(n)) / gaps;
+  else if (auto === 'bottom') bottom = H - top - stack(n) - gaps * gap;
+  else top = H - bottom - stack(n) - gaps * gap;
   if (auto === 'gap' && lufta === 'bez' && gap > 1e-6) {
     const nMin = Math.ceil((H - top - bottom) / h - 1e-9);
     return { error: `Operacija nije izvršena: bez lufta prečke ne smeju da ostave procep, a ${n} prečki sa odstojanjem od vrha ${f(top)} mm i od dna ${f(bottom)} mm ostavlja razmak od ${f(gap)} mm. Potrebno je najmanje ${nMin} prečki (ili manja odstojanja), ili izaberite „Sa luftom“.` };
   }
   const computed = auto === 'gap' ? gap - gLo : auto === 'bottom' ? bottom : top;
   if (computed < -1e-6) {
-    const parts = [`${n} × prečka visine ${f(h)} mm (${f(n * h)} mm)`];
+    const parts = [`${n} × prečka visine ${f(h)} mm (${f(stack(n))} mm)`];
     if (auto !== 'top') parts.push(`odstojanje od vrha ${f(top)} mm`);
     if (auto !== 'bottom') parts.push(`odstojanje od dna ${f(bottom)} mm`);
     if (auto !== 'gap' && gaps > 0) parts.push(`${gaps} ${gaps === 1 ? 'razmak' : 'razmaka'} po ${f(gap)} mm (${f(gaps * gap)} mm)`);
-    const need = n * h + (auto !== 'top' ? top : 0) + (auto !== 'bottom' ? bottom : 0) + (auto !== 'gap' ? gaps * gap : gaps * gLo);
+    const need = stack(n) + (auto !== 'top' ? top : 0) + (auto !== 'bottom' ? bottom : 0) + (auto !== 'gap' ? gaps * gap : gaps * gLo);
     return { error: `Operacija nije izvršena: prečke ne staju u visinu bočnih strana. ${parts.join(' + ')}${auto === 'gap' && gaps > 0 ? (gLo < 0 ? ` (sa najmanjim mogućim razmakom ${f(gLo)} mm)` : ' (bez razmaka između prečki)') : ''} zahtevaju ${f(need)} mm, a visina bočnih strana je ${f(H)} mm (nedostaje ${f(need - H)} mm). Najviše prečki koje staje (uz najmanji razmak i bez odstojanja od vrha): ${maxCount}.` };
   }
   // koje prečke ostaju: pri smanjenju broja skidaju se one pri dnu, a izabrana prečka se zadržava
@@ -436,11 +463,18 @@ export function layoutBars(model: CustomModel, barId: string, materials: Materia
   }
   const slots: CustomPart[] = [...keep];
   while (slots.length < n) slots.push({ ...sel, id: uid('part') });
-  const step = grp.h + gap;
   const placed = new Map<string, CustomPart>();
+  const selIdx = Math.max(0, grp.bars.findIndex((x) => x.id === sel.id));
+  let acc = 0;
   slots.forEach((b, i) => {
-    const y = grp.yTop - top - i * step - grp.u1;
-    placed.set(b.id, { ...b, x: sel.x, lengthMm: sel.lengthMm, rot: sel.rot, tiltDeg: sel.tiltDeg, z: sel.z, lufta, y: Math.round(y * 1000) / 1000 });
+    const bi = grp.bars.findIndex((x) => x.id === b.id);
+    const hb = bi >= 0 ? hsOf[bi] : hsOf[selIdx];
+    const u1b = bi >= 0 ? u1sOf[bi] : u1sOf[selIdx];
+    const y = grp.yTop - top - acc - i * gap - u1b;
+    acc += hb;
+    // prečka drugog materijala zadržava svoju okrenutost i dubinu
+    const own = b.materialId === sel.materialId;
+    placed.set(b.id, { ...b, x: sel.x, lengthMm: sel.lengthMm, rot: own ? sel.rot : b.rot, tiltDeg: sel.tiltDeg, z: own ? sel.z : b.z, lufta, y: Math.round(y * 1000) / 1000 });
   });
   const removed = new Set(grp.bars.filter((b) => !placed.has(b.id)).map((b) => b.id));
   const parts = [...model.parts.filter((x) => !removed.has(x.id)).map((x) => placed.get(x.id) ?? x), ...slots.filter((b) => !model.parts.some((x) => x.id === b.id)).map((b) => placed.get(b.id)!)];

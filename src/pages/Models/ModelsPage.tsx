@@ -93,8 +93,7 @@ export default function ModelsPage({ terrace = false }: { terrace?: boolean }) {
           const rep = customModels?.find((c) => c.replaces === m.id);
           if (rep) return (
             <article key={m.id} className="card overflow-hidden flex flex-col" data-testid={`model-card-${m.id}`} data-replaced="true">
-              <div className="relative aspect-[16/10] bg-[#eef2f6] overflow-hidden border-b border-line p-3"><CustomModelThumb model={rep} materials={materials} />
-                <span className="absolute left-3 top-3 pill !text-[12px] bg-primary text-white" data-testid="badge-reworked">Dorađen</span></div>
+              <div className="relative aspect-[16/10] bg-[#eef2f6] overflow-hidden border-b border-line p-3"><CustomModelThumb model={rep} materials={materials} /></div>
               <div className="p-4 flex-1 flex flex-col">
                 <h2 className="font-bold text-[17px]">{m.name}</h2>
                 <p className="text-sm text-muted mt-0.5">Dorađen crtež modela iz kataloga · {rep.parts.length} delova. Projekti sa ovim modelom koriste dorađen crtež.</p>
