@@ -1,4 +1,4 @@
-import { ChevronDown, Download, Ruler, FileSpreadsheet, FileText, Plus, Search, Trash2, Upload } from 'lucide-react';
+import { ChevronDown, Download, PenTool, Ruler, FileSpreadsheet, FileText, Plus, Search, Trash2, Upload } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { NumberField, PriceInput, SelectField, TextField } from '../../components/forms/Fields';
 import { NumInput } from '../../components/forms/NumInput';
@@ -10,6 +10,8 @@ import { MaterialDrawing, materialFacts } from '../../components/models/Material
 import { compareMaterials, cProfileSpec, materialDimFields, materialShape, matchesSearch, syncNameDims } from '../../domain/models/materialShape';
 import { profileGeometry, profileSpecFor, type DimField } from '../../domain/models/profileDrawings';
 import { MaterialsImportModal } from '../../components/models/MaterialsImportModal';
+import { DrawSectionModal } from '../../components/models/DrawSectionModal';
+import { drawnName } from '../../domain/models/drawnSection';
 import { materialsToRows, parseCsv } from '../../domain/pricing/materialsIo';
 import { loadPdfJs, readPdfTable } from '../../services/pdfTable';
 import { readXlsx } from '../../services/xlsx';
@@ -38,6 +40,8 @@ export default function MaterialsPage() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+  /** prozor za crtanje preseka: „new“ = nov materijal od nacrtanog preseka, „form“ = presek materijala koji se menja */
+  const [drawFor, setDrawFor] = useState<'new' | 'form' | null>(null);
   const exportRef = useRef<HTMLDivElement>(null);
   // meni za izvoz se zatvara klikom van njega
   useEffect(() => {
@@ -79,7 +83,7 @@ export default function MaterialsPage() {
   const valid = form && form.name.trim().length > 0 && form.sku.trim().length > 0 && form.unitPrice >= 0;
   /** mere preseka izabranog materijala koje se mogu menjati; izmena A, B i zida menja i mere u nazivu (npr. 60×60×2 → 60×60×1,5) */
   const dimFields = form ? materialDimFields(form) : [];
-  const previewSpec = form ? (profileSpecFor(form) ?? cProfileSpec(form)) : null;
+  const previewSpec = form && !form.drawn ? (profileSpecFor(form) ?? cProfileSpec(form)) : null;
   const setDimValue = (f: DimField, v: number | null) => {
     if (!form) return;
     const next: Material = { ...form };
@@ -108,6 +112,7 @@ export default function MaterialsPage() {
               </div>
             )}
           </div>
+          <button className="btn" data-testid="btn-draw-element" title="Nacrtajte presek profila (U, C, L, cev …); nacrtan presek dobija 2D i 3D prikaz" onClick={() => setDrawFor('new')}><PenTool size={17} />Nacrtaj element</button>
           <button className="btn btn-primary" data-testid="btn-add-material" onClick={openNew}><Plus size={17} />Dodaj materijal</button>
         </div>} />
       {ioError && <p className="text-sm text-[#b42318] mb-2" role="alert">{ioError}</p>}
@@ -121,7 +126,7 @@ export default function MaterialsPage() {
             <thead><tr><th className="th">Šifra</th><th className="th">Naziv</th><th className="th">Kategorija</th><th className="th">Jedinica</th><th className="th text-right w-[150px]">Cena ({settings.currency}, neto)</th><th className="th text-right w-[90px]">Otpad %</th><th className="th w-24" /></tr></thead>
             <tbody>
               {list.map((m) => {
-                const spec = profileSpecFor(m) ?? cProfileSpec(m);
+                const spec = m.drawn ? null : (profileSpecFor(m) ?? cProfileSpec(m));
                 // svaki materijal ima crtež: detaljan sa kotama dobavljača (ako ga ima), inače oblik iz crtanja modela
                 const open = openId === m.id;
                 const toggle = (e: React.SyntheticEvent) => { if (!(e.target as Element).closest('input,select,button,a')) setOpenId(open ? null : m.id); };
@@ -131,7 +136,7 @@ export default function MaterialsPage() {
                   className={`cursor-pointer hover:bg-slate-50 ${open ? 'bg-primary-50' : ''}`}
                   onClick={toggle} onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); toggle(e); } }}>
                   <td className="td text-xs text-muted">{m.sku}</td>
-                  <td className="td font-medium">{m.name}<span className="ml-2 inline-flex items-center gap-1 text-[11.5px] font-semibold text-primary align-middle" title="Kliknite na red da vidite crtež i karakteristike"><Ruler size={13} />crtež</span>{m.demo && <span className="ml-2"><DemoBadge>demo</DemoBadge></span>}</td>
+                  <td className="td font-medium">{m.name}{m.drawn && <span className="ml-2 text-[11px] font-semibold text-slate-500 align-middle" data-testid="material-drawn-badge">nacrtan presek</span>}<span className="ml-2 inline-flex items-center gap-1 text-[11.5px] font-semibold text-primary align-middle" title="Kliknite na red da vidite crtež i karakteristike"><Ruler size={13} />crtež</span>{m.demo && <span className="ml-2"><DemoBadge>demo</DemoBadge></span>}</td>
                   <td className="td text-slate-600">{CATS[m.category]}</td>
                   <td className="td"><select aria-label={`Jedinica: ${m.name}`} className="input !w-20 !py-1" value={m.unit} onChange={(e) => upsertMaterial({ ...m, unit: e.target.value as MaterialUnit })}>{UNITS.map((u) => <option key={u}>{u}</option>)}</select></td>
                   <td className="td"><PriceInput label={`Cena: ${m.name}`} className="!py-1" rsd={m.unitPrice} onChange={(v) => upsertMaterial({ ...m, unitPrice: v })} /></td>
@@ -164,7 +169,15 @@ export default function MaterialsPage() {
         <p className="text-xs text-muted mt-3">Cena je neto jedinična cena u {fmtMoney(0, settings.currency).replace('0 ', '')}. Ako su cene unete kao bruto, uključite to u kalkulaciji — PDV se neće duplirati. Marža, popust i PDV podešavaju se po projektu (kalkulacija) i kao podrazumevane vrednosti u Podešavanjima.</p>
       </div>
       {imp && <MaterialsImportModal fileName={imp.name} table={imp.table} onClose={() => setImp(null)} />}
-      {form && (
+      {drawFor && (
+        <DrawSectionModal initial={drawFor === 'form' ? form?.drawn : undefined} onClose={() => setDrawFor(null)}
+          onSave={(d) => {
+            if (drawFor === 'form' && form) setForm({ ...form, drawn: d, wallMm: undefined, dims: undefined, unit: form.unit === 'kom' ? 'm' : form.unit });
+            else { setIsNew(true); setForm({ id: uid('mat'), sku: `NAC-${Date.now().toString(36).slice(-5).toUpperCase()}`, name: drawnName(d), category: 'profil', unit: 'm', unitPrice: 0, wastePercent: 0, demo: false, drawn: d }); }
+            setDrawFor(null);
+          }} />
+      )}
+      {form && !drawFor && (
         <Modal title={isNew ? 'Novi materijal' : 'Izmena materijala'} width={780} onClose={() => setForm(null)} footer={<><button className="btn" onClick={() => setForm(null)}>Otkaži</button><button className="btn btn-primary" disabled={!valid} data-testid="material-save" onClick={() => { upsertMaterial({ ...form, demo: isNew ? false : form.demo }); setForm(null); }}>Sačuvaj</button></>}>
           <div className="grid gap-x-5 md:grid-cols-[minmax(0,1fr)_260px]">
           <div>
@@ -172,6 +185,11 @@ export default function MaterialsPage() {
           <TextField label="Naziv" testId="material-name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} />
           <SelectField label="Kategorija" value={form.category} options={Object.entries(CATS).map(([value, label]) => ({ value: value as MaterialCategory, label }))} onChange={(v) => setForm({ ...form, category: v })} />
           <SelectField label="Jedinica mere" value={form.unit} options={UNITS.map((u) => ({ value: u, label: u }))} onChange={(v) => setForm({ ...form, unit: v })} />
+          <div className="rounded-lg border border-line p-2.5 my-1.5 flex flex-wrap items-center gap-2" data-testid="material-drawn">
+            <span className="text-[13px] flex-1 min-w-[180px]">{form.drawn ? <><b>Nacrtan presek</b> — koristi se u crtanju modela, 3D prikazu i krojnoj listi.</> : 'Presek se određuje po šifri i nazivu. Možete ga i nacrtati.'}</span>
+            <button className="btn btn-sm" data-testid="material-draw" onClick={() => setDrawFor('form')}><PenTool size={14} />{form.drawn ? 'Izmeni crtež' : 'Nacrtaj presek'}</button>
+            {form.drawn && <button className="btn btn-sm" data-testid="material-draw-remove" onClick={() => setForm({ ...form, drawn: undefined, wallMm: undefined })}>Ukloni crtež</button>}
+          </div>
           <NumberField label="Cena po jedinici" unit={settings.currency} value={toCurrency(form.unitPrice, settings.currency, settings.currencyRateToEur)} range={{ min: 0, max: 10_000_000 }} allowZero integer={false} step={settings.currency === 'EUR' ? 0.1 : 10} onCommit={(v) => setForm({ ...form, unitPrice: fromCurrency(v, settings.currency, settings.currencyRateToEur) })} />
           {dimFields.length > 0 && (
             <div className="rounded-lg border border-line p-2.5 my-1.5" data-testid="material-dims">

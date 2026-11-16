@@ -1,3 +1,4 @@
+import { leafHeightOf } from '../../domain/gates/slidingLayout';
 import { AlertTriangle, ChevronRight, FileDown, FlipHorizontal2, Info, Plus, Trash2 } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
 import { NumInput } from '../forms/NumInput';
@@ -369,7 +370,7 @@ function ProductionTab({ project, index, g, materials, clearStart, clearEnd }: {
   const layout = computeLayout(project);
   const li = layout.items[index];
   const infill = useMemo(() => {
-    const vars = specVars({ modelId: g.infillModelId, slopeFactor: 1, widthMm: gateSpecWidth(g, li.clearWidth), heightMm: g.heightMm, axisMm: li.axisEnd - li.axisStart, params: g.params, doubleGate: g.gateType === 'double', leafWidthsMm: g.gateType === 'double' ? gateLeafPoses(g, clearStart, clearEnd, 1).map((q) => q.widthMm) : undefined });
+    const vars = specVars({ modelId: g.infillModelId, slopeFactor: 1, widthMm: gateSpecWidth(g, li.clearWidth), heightMm: leafHeightOf(g), axisMm: li.axisEnd - li.axisStart, params: g.params, doubleGate: g.gateType === 'double', leafWidthsMm: g.gateType === 'double' ? gateLeafPoses(g, clearStart, clearEnd, 1).map((q) => q.widthMm) : undefined });
     // isti materijal u više delova specifikacije sabira se u jedan red; redovi bez količine se ne prikazuju
     const acc = new Map<string, { name: string; qty: number; unit: string; kgPerM?: number; meters: number }>();
     for (const ev of evaluateSpec(specFor(g.infillModelId, useAppStore.getState().settings.modelSpecs), vars)) {

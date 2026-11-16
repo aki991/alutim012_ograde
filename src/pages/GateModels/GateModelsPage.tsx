@@ -2,6 +2,7 @@ import { PencilRuler, RotateCcw, Trash2, Wrench } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CustomModelThumb } from '../../components/designer/PartsSvg';
+import { SlidingModelThumb } from '../../components/designer/SlidingModelThumb';
 import { ElementThumb, SlidingThumb } from '../../components/editor/Catalog';
 import { Page, PageHeader } from '../../components/ui/Common';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
@@ -60,10 +61,10 @@ export default function GateModelsPage() {
           <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
             {models.map((m) => (
               <article key={m.id} className="card overflow-hidden flex flex-col" data-testid="gate-model-card">
-                <div className="relative aspect-[16/10] bg-[#eef2f6] overflow-hidden border-b border-line p-3"><CustomModelThumb model={m} materials={materials} /></div>
+                <div className="relative aspect-[16/10] bg-[#eef2f6] overflow-hidden border-b border-line p-3">{m.gate?.gateType === 'sliding' && m.gate.sliding ? <SlidingModelThumb model={m} materials={materials} /> : <CustomModelThumb model={m} materials={materials} />}</div>
                 <div className="p-4 flex-1 flex flex-col">
                   <h3 className="font-bold text-[17px]" data-testid="gate-model-name">{m.name || 'Model bez naziva'}</h3>
-                  <p className="text-sm text-muted mt-0.5">Kapija · {m.widthMm} × {m.heightMm} mm · {m.parts.length} delova</p>
+                  <p className="text-sm text-muted mt-0.5">Kapija · {m.widthMm} × {m.heightMm + (m.gate?.gateType === 'sliding' ? m.gate.sliding?.frameBottomY ?? 0 : 0)} mm · {m.parts.length} delova</p>
                   <p className="text-[12.5px] text-muted">{GATE_TYPE_LABELS[m.gate?.gateType ?? 'pedestrian']} · mere kapije v{m.gate?.version ?? 1}</p>
                   <div className="flex flex-wrap gap-2 mt-auto pt-4">
                     <button className="btn btn-primary" data-testid="use-gate-model" disabled={m.parts.length === 0} onClick={() => useModel(m)}>Koristi model</button>

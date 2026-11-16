@@ -18,13 +18,13 @@ interface Props {
 
 const DASH = (px: number) => `${6 * px} ${5 * px}`;
 
-/** Indikator smera otvaranja krila (isprekidane linije ka strani šarki). */
+/** Indikator smera otvaranja krila: isprekidane linije idu od uglova na strani šarki i sastaju se na sredini strane brave. */
 function SwingMark({ x, y, w, h, hingeSide, px }: { x: number; y: number; w: number; h: number; hingeSide: 'left' | 'right'; px: number }) {
   const hx = hingeSide === 'left' ? x : x + w;
   const fx = hingeSide === 'left' ? x + w : x;
   return (
     <polyline
-      points={`${fx},${y} ${hx},${y + h / 2} ${fx},${y + h}`}
+      points={`${hx},${y} ${fx},${y + h / 2} ${hx},${y + h}`}
       fill="none"
       stroke="#f8fafc"
       strokeOpacity="0.85"

@@ -25,6 +25,8 @@ import { fmtMm, fmtMoney, fmtNum } from '../../utils/units';
 import { ColorField, NumberField, SegmentedField, SelectField, TextField, ToggleField } from '../forms/Fields';
 import { ConfirmDialog } from '../ui/Modal';
 import { PdfPreviewModal } from './PdfPreviewModal';
+import { templateFromPost } from '../../domain/models/postTemplates';
+import { uid } from '../../utils/id';
 import { GateDesignModal } from '../gates/GateDesignModal';
 import { SlidingPanel } from '../gates/SlidingPanel';
 import { resolveGate, SYSTEM_LABELS } from '../../domain/gates/design';
@@ -470,6 +472,10 @@ function PostPanel({ project, id }: { project: Project; id: string }) {
   const [allPosts, setAllPostsState] = useState(applyToAllPosts);
   const setAllPosts = (v: boolean) => { applyToAllPosts = v; setAllPostsState(v); };
   const multiPosts = useAppStore((s) => s.editor.multiPosts);
+  const templates = useAppStore((s) => s.settings.postTemplates) ?? [];
+  const materials = useAppStore((s) => s.materials);
+  const [tplName, setTplName] = useState<string | null>(null);
+  const [tplMsg, setTplMsg] = useState<string | null>(null);
   const st = useAppStore.getState();
   const layout = computeLayout(project);
   const lp = layout.posts.find((p) => p.post.id === id);
@@ -502,6 +508,29 @@ function PostPanel({ project, id }: { project: Project; id: string }) {
           </div>
         </div>
       ) : null}
+      <div className="py-1.5" data-testid="post-template">
+        <div className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.45fr)] items-center gap-x-3">
+          <label className="label" htmlFor="post-template-select">Šablon stuba</label>
+          <select id="post-template-select" className="input" data-testid="post-template-select" value={p.templateId && templates.some((t) => t.id === p.templateId) ? p.templateId : ''}
+            onChange={(e) => { if (e.target.value) { st.applyPostTemplate(e.target.value, targets); setTplMsg(null); } }}>
+            <option value="">{templates.length ? '— izaberite šablon —' : '— nema šablona —'}</option>
+            {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        </div>
+        {p.materialId && <div className="text-[12px] text-muted mt-1" data-testid="post-material">Presek: {materials.find((m) => m.id === p.materialId)?.name ?? 'materijal je obrisan iz cenovnika'}</div>}
+        {tplName === null
+          ? <button className="btn btn-sm mt-1.5" data-testid="post-template-save" onClick={() => { setTplName(''); setTplMsg(null); }}>Sačuvaj stub kao šablon</button>
+          : (
+            <div className="flex gap-1.5 mt-1.5">
+              <input className="input !py-1" data-testid="post-template-name" aria-label="Naziv šablona stuba" placeholder="Naziv šablona" value={tplName} autoFocus onChange={(e) => setTplName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Escape') setTplName(null); }} />
+              <button className="btn btn-sm btn-primary" data-testid="post-template-save-confirm" disabled={!tplName.trim()} onClick={() => { const t = templateFromPost(p, uid('pt'), tplName); st.upsertPostTemplate(t); st.patchPost(id, { templateId: t.id }); setTplMsg(`Šablon „${t.name}“ je sačuvan.`); setTplName(null); }}>Sačuvaj</button>
+              <button className="btn btn-sm" onClick={() => setTplName(null)}>Otkaži</button>
+            </div>
+          )}
+        {tplMsg && <div className="text-[12px] text-[#067647] mt-1" role="status">{tplMsg}</div>}
+        <div className="text-[11.5px] text-muted mt-1">Šabloni se prave i menjaju u Podešavanjima (Šabloni stubova). Izbor važi za stubove na koje važe izmene.</div>
+      </div>
       <SelectField label="Tip" testId="post-type" value={p.type} options={(Object.entries(POST_LABELS) as [typeof p.type, string][]).filter(([value]) => MANUAL_POST_TYPES.includes(value) || value === p.type).map(([value, label]) => ({ value, label }))} onChange={(v) => applyPatch({ type: v })} />
       <NumberField label="Širina preseka" value={p.widthMm} range={LIMITS.postWidth} onCommit={(v) => applyPatch({ widthMm: v }, 'pw')} />
       <div className="flex gap-1.5 pb-1.5">{POST_SIZES.map((s) => <button key={s} className={`btn btn-sm ${p.widthMm === s ? 'btn-primary' : ''}`} onClick={() => applyPatch({ widthMm: s })}>{s}×{s}</button>)}</div>

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { AppSettings, Customer, Material, Project } from '../../domain/models/types';
 import { downloadBlob, safeFilename } from '../../services/exports';
 import { buildQuotePdfBlob } from '../../services/pdf';
-import { buildCuttingList, cutOptions } from '../../domain/pricing/cutting';
+import { buildCuttingList, cutOptions, PRINT_SCOPE_LABELS, type PrintScope } from '../../domain/pricing/cutting';
 import { useAppStore } from '../../store/useAppStore';
 import { OffcutsPanel } from '../production/OffcutsPanel';
 import { Modal } from '../ui/Modal';
@@ -35,17 +35,21 @@ export function PdfPreviewModal({ project, customer, materials, settings, onClos
   const embed = canEmbedPdf();
   const patchProject = useAppStore((s) => s.patchProject);
   // korak pre krojne liste: ostaci materijala; PDF se pravi tek posle potvrde
-  const opts = cutOptions(settings);
-  const cutProfiles = useMemo(() => (cutlist && askOffcuts ? buildCuttingList(project, settings.modelSpecs, materials, opts) : null), [cutlist, askOffcuts, project, settings.modelSpecs, materials, opts.stockMm, opts.kerfMm]); // eslint-disable-line react-hooks/exhaustive-deps
+  // krojna lista i radni nalog mogu da se štampaju za ceo projekat, samo za kapije ili za ogradu bez kapija
+  const [scope, setScope] = useState<PrintScope>('all');
+  const canScope = (cutlist || workorder) && project.items.some((i) => i.kind === 'gate') && project.items.some((i) => i.kind === 'fence');
+  const opts = { ...cutOptions(settings), scope };
+  const cutProfiles = useMemo(() => (cutlist && askOffcuts ? buildCuttingList(project, settings.modelSpecs, materials, opts) : null), [cutlist, askOffcuts, project, settings.modelSpecs, materials, opts.stockMm, opts.kerfMm, opts.saveMaterial, scope]); // eslint-disable-line react-hooks/exhaustive-deps
   const [ready, setReady] = useState(!(cutlist && askOffcuts));
   const offcutsStep = !ready && !!cutProfiles && cutProfiles.totals.pieces > 0;
   useEffect(() => { if (!ready && cutProfiles && cutProfiles.totals.pieces === 0) setReady(true); }, [ready, cutProfiles]);
 
   useEffect(() => {
     if (!ready) return;
+    setBlob(null); setUrl(null); setError(null);
     let alive = true;
     let objectUrl: string | null = null;
-    (workorder ? import('../../services/pdfWorkorder').then((m) => m.buildWorkorderPdfBlob(project, customer, materials, settings)) : cutlist ? import('../../services/pdfCutlist').then((m) => m.buildCutlistPdfBlob(project, customer, materials, settings)) : buildQuotePdfBlob(project, customer, materials, settings))
+    (workorder ? import('../../services/pdfWorkorder').then((m) => m.buildWorkorderPdfBlob(project, customer, materials, settings, scope)) : cutlist ? import('../../services/pdfCutlist').then((m) => m.buildCutlistPdfBlob(project, customer, materials, settings, undefined, scope)) : buildQuotePdfBlob(project, customer, materials, settings))
       .then((b) => {
         if (!alive) return;
         objectUrl = URL.createObjectURL(b);
@@ -55,9 +59,10 @@ export function PdfPreviewModal({ project, customer, materials, settings, onClos
       .catch((e: Error) => { if (alive) setError(`PDF nije generisan: ${e.message}`); });
     return () => { alive = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready]);
+  }, [ready, scope]);
 
-  const save = () => { if (blob) downloadBlob(blob, workorder ? `radni-nalog_${safeFilename(project.name)}.pdf` : cutlist ? `krojna-lista_${safeFilename(project.name)}.pdf` : `ponuda_${safeFilename(project.quoteNo || project.name)}.pdf`); };
+  const suffix = scope === 'gates' ? '-kapije' : scope === 'fence' ? '-ograda' : '';
+  const save = () => { if (blob) downloadBlob(blob, workorder ? `radni-nalog${suffix}_${safeFilename(project.name)}.pdf` : cutlist ? `krojna-lista${suffix}_${safeFilename(project.name)}.pdf` : `ponuda_${safeFilename(project.quoteNo || project.name)}.pdf`); };
 
   return (
     <Modal
@@ -75,6 +80,16 @@ export function PdfPreviewModal({ project, customer, materials, settings, onClos
         </div>
       }
     >
+      {canScope && (
+        <div className="flex flex-wrap items-center gap-2 mb-2" data-testid="pdf-scope">
+          <span className="text-sm text-muted">Štampa:</span>
+          <span className="inline-flex rounded-lg border border-line overflow-hidden">
+            {(['all', 'gates', 'fence'] as PrintScope[]).map((s) => (
+              <button key={s} type="button" data-testid={`pdf-scope-${s}`} aria-pressed={scope === s} className={`px-3 py-1.5 text-[13px] font-semibold ${scope === s ? 'bg-brand-black text-white' : 'hover:bg-slate-50'}`} onClick={() => setScope(s)}>{PRINT_SCOPE_LABELS[s]}</button>
+            ))}
+          </span>
+        </div>
+      )}
       {offcutsStep ? (
         <div data-testid="offcuts-step">
           <OffcutsPanel project={project} materials={materials} stock={settings.stock ?? []} profiles={cutProfiles!.profiles.map((p) => p.profile)} onChange={(offcuts) => patchProject(project.id, { offcuts })} />

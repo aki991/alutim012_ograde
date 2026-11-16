@@ -1704,11 +1704,13 @@ test('crtanje modela: ram se okreće ceo (sva četiri dela), bez greške o prekl
   await page.getByTestId('frame-material').click();
   await page.getByTestId('frame-material-option').first().click();
   await expect(page.getByTestId('designer-part')).toHaveCount(before + 4);
-  for (const r of [90, 180, 270, 0]) {
-    await page.getByTestId('multi-rot-' + r).click();
+  // pravougaona cev se okreće čeonom stranom (dva dugmeta), a profil sa otvorom uglom (0/90/180/270)
+  const faces = (await page.getByTestId('multi-face-90').count()) > 0;
+  for (const r of faces ? [90, 0] : [90, 180, 270, 0]) {
+    await page.getByTestId((faces ? 'multi-face-' : 'multi-rot-') + r).click();
     await expect(page.getByTestId('designer-notice')).toHaveCount(0);
     await expect(page.getByTestId('designer-part')).toHaveCount(before + 4);
-    await expect(page.getByTestId('multi-rot-' + r)).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId((faces ? 'multi-face-' : 'multi-rot-') + r)).toHaveAttribute('aria-pressed', 'true');
   }
 });
 
@@ -1753,4 +1755,30 @@ test('crtanje modela kapije: Dodaj šarke postavlja šarke duž ivice, a komadni
   // komadni delovi se crtaju na kraju (iznad profila)
   const ids = await page.getByTestId('designer-part').evaluateAll((els) => els.map((e) => e.getAttribute('data-part-id')));
   expect(ids.length).toBe(before + 3);
+});
+
+test('krojna lista i radni nalog kapija se štampaju odvojeno od ograde (samo kapije / ograda bez kapija)', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('recent-row').filter({ hasText: 'Petrović' }).getByRole('link').click();
+  await page.getByTestId('btn-workorder').click();
+  await expect(page.getByTestId('pdf-scope')).toBeVisible();
+  await expect(page.getByTestId('pdf-scope-all')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('pdf-frame')).toBeVisible({ timeout: 30000 });
+  await page.getByTestId('pdf-scope-gates').click();
+  await expect(page.getByTestId('pdf-scope-gates')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('pdf-frame')).toBeVisible({ timeout: 30000 });
+  // (pregledač bez prikaza PDF-a može da preuzme i sam okvir kad se promeni: čeka se preuzimanje dugmetom „Sačuvaj PDF")
+  const [dl] = await Promise.all([page.waitForEvent('download', (d) => /^radni-nalog/.test(d.suggestedFilename())), page.getByTestId('pdf-save').click()]);
+  expect(dl.suggestedFilename()).toMatch(/^radni-nalog-kapije_.*\.pdf$/);
+  expect(fs.readFileSync((await dl.path())!).subarray(0, 5).toString()).toBe('%PDF-');
+  await page.getByTestId('pdf-close').click();
+
+  await page.getByTestId('btn-cutlist').click();
+  // korak sa ostacima: bez ostataka
+  const none = page.getByTestId('offcuts-none');
+  if (await none.isVisible().catch(() => false)) { await none.click(); await page.getByTestId('offcuts-continue').click(); }
+  await page.getByTestId('pdf-scope-fence').click();
+  await expect(page.getByTestId('pdf-frame')).toBeVisible({ timeout: 30000 });
+  const [dl2] = await Promise.all([page.waitForEvent('download', (d) => /^krojna-lista/.test(d.suggestedFilename())), page.getByTestId('pdf-save').click()]);
+  expect(dl2.suggestedFilename()).toMatch(/^krojna-lista-ograda_.*\.pdf$/);
 });

@@ -1,3 +1,4 @@
+import { hasAngledEnds } from './cutEnds';
 import { isRl10Item } from './rl10Spec';
 import { itemSlope } from '../geometry/stair';
 import { gateLeafPoses, gateSpecWidth } from '../geometry/gates';
@@ -13,7 +14,7 @@ import { isRail04 } from './railSpec';
 import { HW_ROLE_LABELS, missingHardware, resolveGate, systemOf, unknownHwLabel } from '../gates/design';
 import { gateCutRows } from '../gates/production';
 import { resolveSliding, slidingBom, variantTitle } from '../gates/slidingAssembly';
-import { slidingH } from '../gates/slidingLayout';
+import { leafHeightOf, slidingH } from '../gates/slidingLayout';
 
 export interface CutRow {
   element: string;
@@ -28,6 +29,12 @@ export interface CutRow {
   note?: string;
   /** deo rama: seče se pod 45° na oba kraja (dužina je spoljna mera) */
   miter?: boolean;
+  /** uglovi sečenja oba kraja (90° = ravan rez; dva ugla = zasek V); samo komadi koji se seku pod uglom (npr. ojačanja repa) */
+  ends?: [number[], number[]];
+  /** oblik krajeva za crtež šipke (vidi TailMember.endShape) */
+  endShape?: [[number, number][], [number, number][]];
+  /** širina profila u ravni reza (mm): za deljenje kosog reza (štednja materijala) */
+  faceMm?: number;
 }
 
 /**
@@ -51,19 +58,19 @@ export function buildCutList(project: Project, specs?: ModelSpecs, materials?: M
         if (b.cutMm === null || b.cutMm <= 0 || b.unit !== 'kom') continue;
         if (b.make !== 'izrada' && b.key !== 'rail' && b.key !== 'carrier') continue;
         const mat = b.materialId ? materials?.find((m) => m.id === b.materialId) : undefined;
-        rows.push({ element: name, index: li.index, part: b.name, profile: mat ? mat.name : b.materialText ? b.materialText : `${b.name} — nije definisano`, lengthMm: b.cutMm, qty: b.qty, note: [b.note, b.shownMm !== null && b.shownMm !== b.cutMm ? `prikazano ${b.shownMm} mm` : ''].filter(Boolean).join(' · ') || undefined });
+        rows.push({ element: name, index: li.index, part: b.name, profile: mat ? mat.name : b.materialText ? b.materialText : `${b.name} — nije definisano`, lengthMm: b.cutMm, qty: b.qty, ...(b.ends && hasAngledEnds(b.ends) ? { ends: b.ends, ...(b.endShape ? { endShape: b.endShape } : {}), ...(b.faceMm ? { faceMm: b.faceMm } : {}) } : {}), note: [b.note, b.shownMm !== null && b.shownMm !== b.cutMm ? `prikazano ${b.shownMm} mm` : ''].filter(Boolean).join(' · ') || undefined });
       }
       if (!it.sliding.drawnLeaf) continue;
     }
     const slope = itemSlope(li);
     const stairNote = slope.factor > 1 ? `stepenište: krajevi pod uglom ${Math.round(slope.deg)}°` : '';
-    const vars = specVars({ modelId, slopeFactor: slope.factor, widthMm: it.kind === 'gate' ? gateSpecWidth(it, li.clearWidth) : li.clearWidth, heightMm: it.heightMm, axisMm: li.axisEnd - li.axisStart, params: it.params, doubleGate: it.kind === 'gate' && it.gateType === 'double', leafWidthsMm: it.kind === 'gate' && it.gateType === 'double' ? gateLeafPoses(it, li.clearStart, li.clearEnd, 1).map((q) => q.widthMm) : undefined });
-    const geo = computeInfill(modelId, it.kind === 'gate' ? gateSpecWidth(it, li.clearWidth) : li.clearWidth, it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount, it.params.liftMm, undefined, it.params.archMm);
+    const vars = specVars({ modelId, slopeFactor: slope.factor, widthMm: it.kind === 'gate' ? gateSpecWidth(it, li.clearWidth) : li.clearWidth, heightMm: it.kind === 'gate' ? leafHeightOf(it) : it.heightMm, axisMm: li.axisEnd - li.axisStart, params: it.params, doubleGate: it.kind === 'gate' && it.gateType === 'double', leafWidthsMm: it.kind === 'gate' && it.gateType === 'double' ? gateLeafPoses(it, li.clearStart, li.clearEnd, 1).map((q) => q.widthMm) : undefined });
+    const geo = computeInfill(modelId, it.kind === 'gate' ? gateSpecWidth(it, li.clearWidth) : li.clearWidth, it.kind === 'gate' ? leafHeightOf(it) : it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount, it.params.liftMm, undefined, it.params.archMm);
     if (geo.glass) {
       rows.push({ element: name, index: li.index, glass: true, part: 'Staklo', profile: FENCE_MODELS[modelId].parts.main, lengthMm: Math.round(geo.glass.w), qty: 1, note: slope.factor > 1 ? `paralelogram: ${Math.round(geo.glass.w)} mm horizontalno × ${Math.round(geo.glass.h)} mm vertikalno, nagib ${Math.round(slope.deg)}°` : `${Math.round(geo.glass.w)} × ${Math.round(geo.glass.h)} mm` });
     }
     const group = new Map<string, CutRow>();
-    const slats = slatCutLengths({ modelId, slopeFactor: slope.factor, widthMm: it.kind === 'gate' ? gateSpecWidth(it, li.clearWidth) : li.clearWidth, heightMm: it.heightMm, axisMm: li.axisEnd - li.axisStart, params: it.params, doubleGate: it.kind === 'gate' && it.gateType === 'double', leafWidthsMm: it.kind === 'gate' && it.gateType === 'double' ? gateLeafPoses(it, li.clearStart, li.clearEnd, 1).map((q) => q.widthMm) : undefined });
+    const slats = slatCutLengths({ modelId, slopeFactor: slope.factor, widthMm: it.kind === 'gate' ? gateSpecWidth(it, li.clearWidth) : li.clearWidth, heightMm: it.kind === 'gate' ? leafHeightOf(it) : it.heightMm, axisMm: li.axisEnd - li.axisStart, params: it.params, doubleGate: it.kind === 'gate' && it.gateType === 'double', leafWidthsMm: it.kind === 'gate' && it.gateType === 'double' ? gateLeafPoses(it, li.clearStart, li.clearEnd, 1).map((q) => q.widthMm) : undefined });
     if (it.kind === 'gate' && it.design && !it.sliding) {
       // mere kapije: ram krila, noseći profil, rep, šina — red koji još nema meru ostaje u prozoru „Mere kapije“ (ne ide u plan rezanja)
       for (const r of gateCutRows(it, resolveGate(it, li.clearWidth), materials ?? [])) {
@@ -82,20 +89,23 @@ export function buildCutList(project: Project, specs?: ModelSpecs, materials?: M
       if (qty <= 0 || len <= 0) continue;
       const profile = materials ? materialName(materials, project.partMaterials?.[ev.part.materialId] ?? ev.part.materialId) : ev.part.name;
       const miter = ev.part.group === 'Ramovi' || undefined;
+      // deo nacrtanog modela nosi naziv svoje uloge (npr. „Ram — gornja i donja prečka“), da se zna koji je koji deo
+      const partName = ev.part.role ?? ev.part.name;
+      const faceMm = miter ? ev.part.miterMm : undefined;
       // tarabice sa lukom: svaka grupa iste dužine je poseban red krojne liste
       if (slats && ev.part.lengthMm === 'MAINLEN-CAPH') {
         const byLen = new Map<number, number>();
         for (const l of slats) byLen.set(Math.round(l), (byLen.get(Math.round(l)) ?? 0) + 1);
         for (const [l, n] of [...byLen].sort((a, b) => b[0] - a[0])) {
           if (l <= 0) continue;
-          group.set(`${ev.part.name}|${l}`, { element: name, index: li.index, part: ev.part.name, profile, lengthMm: l, qty: n, note: [ev.part.note, 'luk: tarabice različitih dužina', stairNote].filter(Boolean).join(' · ') });
+          group.set(`${partName}|${l}`, { element: name, index: li.index, part: partName, profile, lengthMm: l, qty: n, note: [ev.part.note, 'luk: tarabice različitih dužina', stairNote].filter(Boolean).join(' · ') });
         }
         continue;
       }
-      const key = `${ev.part.name}|${len}`;
+      const key = `${partName}|${len}`;
       const cur = group.get(key);
       if (cur) cur.qty += qty;
-      else group.set(key, { element: name, index: li.index, part: ev.part.name, profile, lengthMm: len, qty, miter, note: [ev.part.note, miter && !/45/.test(ev.part.note ?? '') ? 'rez 45° na oba kraja' : '', stairNote].filter(Boolean).join(' · ') || undefined });
+      else group.set(key, { element: name, index: li.index, part: partName, profile, lengthMm: len, qty, miter, ...(faceMm ? { faceMm } : {}), note: [ev.part.note, miter && !/45/.test(ev.part.note ?? '') ? 'rez 45° na oba kraja' : '', stairNote].filter(Boolean).join(' · ') || undefined });
     }
     rows.push(...group.values());
   }

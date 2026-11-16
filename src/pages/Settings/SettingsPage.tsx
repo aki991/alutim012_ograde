@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { NumberField, SegmentedField, TextField, ToggleField } from '../../components/forms/Fields';
 import { Page, PageHeader } from '../../components/ui/Common';
 import { UsersAdmin } from '../../components/settings/UsersAdmin';
+import { PostTemplatesSection } from '../../components/settings/PostTemplates';
 import { ConfirmDialog } from '../../components/ui/Modal';
 import { useAuth } from '../../services/auth';
 import { saveNow } from '../../services/persistence';
@@ -73,6 +74,8 @@ export default function SettingsPage() {
           <h2 className="font-bold mb-1">Sečenje materijala (krojna lista)</h2>
           <p className="text-sm text-muted mb-2">Širina testere se dodaje na svaki rez, pa utiče na to koliko komada staje u jednu šipku i koliki je ostatak.</p>
           <NumberField label="Širina testere" testId="set-kerf" value={cutOptions(settings).kerfMm} range={{ min: 0, max: 50 }} allowZero integer={false} step={0.5} onCommit={(v) => update({ cutting: { ...cutOptions(settings), kerfMm: v } })} hint="Debljina lista testere (rez). Uobičajeno 2–4 mm." />
+          <ToggleField label="Štednja materijala" checked={cutOptions(settings).saveMaterial === true} onLabel="Uključena" offLabel="Isključena" testId="set-savematerial" onChange={(v) => update({ cutting: { ...cutOptions(settings), saveMaterial: v } })} />
+          <p className="text-[12px] text-muted -mt-1 mb-2">Kad je uključena, komadi sa istim kosim uglom (npr. ram pod 45°) se raspoređuju tako da dele rez: jedan rez za dva komada, pa se manje materijala baca. Kad je isključena, svaki komad ima svoje rezove.</p>
           <NumberField label="Dužina nabavne šipke" testId="set-stock" value={cutOptions(settings).stockMm} range={{ min: 500, max: 20000 }} onCommit={(v) => update({ cutting: { ...cutOptions(settings), stockMm: v } })} hint="Dužina cele šipke kako stiže od dobavljača (najčešće 6000 mm)." />
         </section>
         <section className="card p-5">
@@ -80,6 +83,7 @@ export default function SettingsPage() {
           <ToggleField label="Napredni prikaz dužina" checked={Boolean(settings.advancedLengths)} onLabel="Uključen" offLabel="Isključen" onChange={(v) => update({ advancedLengths: v })} testId="set-advanced" />
           <ToggleField label="Simulacija na fotografiji" checked={settings.photoSimEnabled !== false} onLabel="Uključena" offLabel="Isključena" onChange={(v) => update({ photoSimEnabled: v })} testId="set-photosim" />
         </section>
+        <PostTemplatesSection />
         {auth.enabled && !auth.guest && auth.role === 'admin' && <UsersAdmin />}
         <section className="card p-5 lg:col-span-2">
           <h2 className="font-bold mb-1">Podaci</h2>

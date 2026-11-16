@@ -19,14 +19,14 @@ import { SketchSvg } from '../../components/designer/Sketch';
 import { downloadSketchPdf, downloadSketchSvg } from '../../services/pdfSketch';
 import { resolveParts, ShapeIcon } from '../../components/designer/PartsSvg';
 import { colorHex, FENCE_MODELS, normalizeColorKey } from '../../domain/models/catalog';
-import { ColorChartModal } from '../../components/forms/ColorChartModal';
-import { CUSTOM_KIND_LABELS, customBom, newCustomModel, repeatPart, type CustomModel, type CustomPart } from '../../domain/models/custom';
+import { ColorChartModal, normalizeFavorites } from '../../components/forms/ColorChartModal';
+import { CUSTOM_KIND_LABELS, customBom, newCustomModel, repeatPart, setPartsColor, type CustomModel, type CustomPart } from '../../domain/models/custom';
 import { attachToGuides, barGroup, barLayoutInfo, gapRange, guideReport, layoutBars, type LayoutAuto } from '../../domain/models/guides';
 import type { Lufta } from '../../domain/models/custom';
 import { checkNewOverlap } from '../../domain/models/overlap';
 import { replaceMaterial, replaceOptions, replaceRole, replaceTargets } from '../../domain/models/replace';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
-import { compareMaterials, MATERIAL_GROUPS, materialShape, matchesSearch, sectionFace, type MaterialGroupId } from '../../domain/models/materialShape';
+import { compareMaterials, isSymmetricRect, MATERIAL_GROUPS, materialShape, matchesSearch, sectionFace, type MaterialGroupId, type Section } from '../../domain/models/materialShape';
 import type { FenceModelId, GateType, Material } from '../../domain/models/types';
 import { useAppStore } from '../../store/useAppStore';
 import { uid } from '../../utils/id';
@@ -137,6 +137,60 @@ function BarLayoutBox({ model, bar, materials, onApply, onError }: { model: Cust
   );
 }
 
+/** Čeona strana pravougaone cevi: dva dugmeta sa merama stranica preseka (npr. 60 mm i 40 mm); izabrana je okrenuta ka posmatraču. */
+/**
+ * Boja izabranih delova (npr. crn ram, a sive prečke i bočni U profil): pet boja za brzi izbor i cela karta boja (RAL), kao na
+ * strani Trenutni projekat. „Boja modela“ vraća delove na boju modela.
+ */
+function PartColorField({ testPrefix, colors, modelColor, onPick }: { testPrefix: string; colors: (string | undefined)[]; modelColor: string; onPick: (color: string | null) => void }) {
+  const [open, setOpen] = useState(false);
+  const favorites = normalizeFavorites(useAppStore((s) => s.settings.favoriteColors));
+  const distinct = [...new Set(colors.map((c) => c ?? ''))];
+  const cur = distinct.length === 1 ? distinct[0] : null; // '' = boja modela, null = različite boje
+  const label = cur === null ? 'različite boje' : cur ? normalizeColorKey(cur) : `boja modela (${normalizeColorKey(modelColor)})`;
+  const own = colors.some((c) => !!c);
+  return (
+    <div className="py-1.5 text-[13px]" data-testid={`${testPrefix}-color-box`}>
+      <div className="flex items-baseline justify-between gap-2 mb-1">
+        <span className="text-slate-600">{colors.length > 1 ? 'Boja izabranih delova' : 'Boja dela'}</span>
+        <span className="text-[12px] text-slate-600 tabular-nums" data-testid={`${testPrefix}-color-value`}>{label}</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5" role="radiogroup" aria-label={colors.length > 1 ? 'Boja izabranih delova' : 'Boja dela'}>
+        {favorites.map((k) => (
+          <button key={k} type="button" role="radio" aria-checked={cur === k} aria-label={k} title={k} data-color={k} onClick={() => onPick(k)}
+            className={`w-6 h-6 rounded-full shrink-0 ${cur === k ? 'ring-2 ring-primary ring-offset-2' : 'ring-1 ring-black/15 hover:ring-2 hover:ring-slate-400'}`} style={{ background: colorHex(k) }} />
+        ))}
+        <button type="button" className="btn btn-sm !px-2" data-testid={`${testPrefix}-color`} aria-label="Otvori kartu boja za izabrane delove" onClick={() => setOpen(true)}>
+          <span className="w-4 h-4 rounded-full ring-1 ring-black/20" style={{ background: colorHex(cur || modelColor) }} />Karta boja
+        </button>
+        <button type="button" className="btn btn-sm !px-2" data-testid={`${testPrefix}-color-reset`} disabled={!own} title="Delovi dobijaju boju modela" onClick={() => onPick(null)}>Boja modela</button>
+      </div>
+      {open && <ColorChartModal value={cur || ''} favorites={favorites} onPick={(k) => onPick(k)} onFavorites={(list) => useAppStore.getState().updateSettings({ favoriteColors: list })} onClose={() => setOpen(false)} />}
+    </div>
+  );
+}
+
+function FaceChoice({ testPrefix, a, b, firstPressed, secondPressed, mixed, onPick }: { testPrefix: string; a: number; b: number; firstPressed: boolean; secondPressed?: boolean; mixed?: boolean; onPick: (rot: number) => void }) {
+  const f = (n: number) => String(Math.round(n * 100) / 100).replace('.', ',');
+  const sq = Math.abs(a - b) < 0.05;
+  const second = secondPressed ?? !firstPressed;
+  return (
+    <div className="grid gap-1 py-1 text-[13px]" data-testid={`${testPrefix}-face`}>
+      <span className="text-slate-600">Čeona strana{sq ? '' : ` cevi ${f(a)}×${f(b)}`}{mixed ? ' (različito)' : ''}</span>
+      {sq ? <p className="text-[11.5px] text-muted">Kvadratni presek: nema šta da se okreće.</p> : (
+        <>
+          <span className="grid grid-cols-2 rounded-lg border border-line overflow-hidden">
+            {([[0, a, firstPressed], [90, b, second]] as [number, number, boolean][]).map(([r, v, on]) => (
+              <button key={r} data-testid={`${testPrefix}-face-${r}`} aria-pressed={on} className={`py-1 text-[12px] font-semibold ${on ? 'bg-brand-black text-white' : 'hover:bg-slate-50'}`} onClick={() => onPick(r)}>{f(v)} mm</button>
+            ))}
+          </span>
+          <p className="text-[11.5px] text-muted">Stranica okrenuta ka posmatraču (širina cevi na crtežu). Uglovi sečenja ostaju isti, a menjaju se dužine u krojnoj listi.</p>
+        </>
+      )}
+    </div>
+  );
+}
+
 function Palette({ materials, activeId, onPick }: { materials: Material[]; activeId: string | null; onPick: (id: string | null) => void }) {
   const [q, setQ] = useState('');
   const groups = useMemo(() => {
@@ -196,9 +250,15 @@ export default function ModelDesignerPage() {
 function Designer({ id }: { id: string }) {
   const materials = useAppStore((s) => s.materials);
   const settings = useAppStore((s) => s.settings);
-  const locState = useLocation().state as { dorada?: boolean; kind?: 'gate' } | null;
+  const location = useLocation();
+  const locState = location.state as { dorada?: boolean; kind?: CustomModel['kind'] } | null;
   const [model, setModel] = useState<CustomModel>(() => useAppStore.getState().settings.customModels?.find((m) => m.id === id)
     ?? (locState?.kind === 'gate' ? { ...newCustomModel(id), kind: 'gate', name: 'Nova kapija', widthMm: 1000, heightMm: 1500, gate: defaultGateConfig() } : newCustomModel(id)));
+  // vrsta crteža ide u stanje adrese (ista adresa, bez ponovnog učitavanja): meni označava „Modeli kapija“ dok se crta kapija
+  const navigateKind = useNavigate();
+  useEffect(() => {
+    if (locState?.kind !== model.kind) navigateKind(location.pathname, { replace: true, state: { ...(locState ?? {}), kind: model.kind } });
+  }, [model.kind, locState, location.pathname, navigateKind]);
   /** „Mere kapije“ otvorene iz crtanja: privremen projekat sa kapijom ovog modela */
   const [draft, setDraft] = useState<{ projectId: string; itemId: string } | null>(null);
   /** pitanje „od kog elementa je ram“ pre dodavanja rama oko platna */
@@ -287,7 +347,7 @@ function Designer({ id }: { id: string }) {
   // klizna kapija: klizni okov (točkići, šina, valjci, graničnici …) se crta preko crteža krila i podešava u panelu desno
   const [hwSel, setHwSel] = useState<string | null>(null);
   const slSpec = model.kind === 'gate' && model.gate?.gateType === 'sliding' ? model.gate.sliding : undefined;
-  const slGate = useMemo(() => (slSpec ? { ...createGate('sliding', { sliding: { ...slSpec, drawnLeaf: true }, heightMm: model.heightMm, opening: model.gate?.opening ?? 'right', color: model.color }), id: model.id } : null), [slSpec, model.heightMm, model.gate?.opening, model.color, model.id]);
+  const slGate = useMemo(() => (slSpec ? { ...createGate('sliding', { sliding: { ...slSpec, drawnLeaf: true }, heightMm: model.heightMm + slSpec.frameBottomY, opening: model.gate?.opening ?? 'right', color: model.color }), id: model.id } : null), [slSpec, model.heightMm, model.gate?.opening, model.color, model.id]);
   const slPlaced = useMemo(() => (slGate ? placeSliding(slGate, { clearStart: 0, clearEnd: model.widthMm, clearWidth: model.widthMm }) : null), [slGate, model.widthMm]);
   const slBounds = useMemo(() => (slPlaced && slSpec ? { x0: slPlaced.minX, y0: -slSpec.frameBottomY - 320, x1: slPlaced.maxX, y1: model.heightMm + 160 } : null), [slPlaced, slSpec, model.heightMm]);
   const patchSliding = (p: Partial<SlidingSpec>) => change((m) => (m.gate?.sliding ? { ...m, gate: { ...m.gate, sliding: { ...m.gate.sliding, ...p } } } : m));
@@ -468,7 +528,8 @@ function Designer({ id }: { id: string }) {
           </>
         )}
         <Num label="Širina" value={model.widthMm} min={50} max={20000} testId="designer-width" onChange={(v) => resizeTo(Math.round(v), modelRef.current.heightMm)} />
-        <Num label="Visina" value={model.heightMm} min={50} max={6000} testId="designer-height" onChange={(v) => resizeTo(modelRef.current.widthMm, Math.round(v))} />
+        {/* klizna kapija: visina je ukupna visina od tla (do vrha krila), isto kao ograda i stubovi; crtež je krilo, podignuto od tla */}
+        <Num label="Visina" value={model.heightMm + (slSpec?.frameBottomY ?? 0)} min={50 + (slSpec?.frameBottomY ?? 0)} max={6000} testId="designer-height" onChange={(v) => resizeTo(modelRef.current.widthMm, Math.round(v) - (modelRef.current.gate?.sliding?.frameBottomY ?? 0))} />
         <label className="flex items-center gap-1.5 text-[13px]" title="Ukupna širina i visina crteža; mere modela proizlaze iz crteža"><input type="checkbox" checked={showDims} data-testid="designer-dims" onChange={(e) => setShowDims(e.target.checked)} />Kote</label>
         <button type="button" className="input !w-auto !py-1.5 inline-flex items-center gap-2" aria-label={`Boja: ${normalizeColorKey(model.color)}. Otvori kartu boja`} data-testid="designer-color" onClick={() => setChartOpen(true)}>
           <span className="w-5 h-5 rounded-full ring-1 ring-black/20" style={{ background: colorHex(model.color) }} />{normalizeColorKey(model.color)}
@@ -549,8 +610,9 @@ function Designer({ id }: { id: string }) {
           {view !== '3d' && view !== 'skica' && (
             <Designer2D model={model} parts={parts} active={active} selectedIds={selectedIds} ortho={ortho} gridMm={grid}
               onSelect={(ids) => { setSelectedIds(ids); if (ids.length) setHwSel(null); }} placing={placingParts} onPlace={placeClip} showDims={showDims} viewShift={viewShift} fitTick={fitTick} onMoveEnd={() => change((m) => ({ ...m }), false)}
-              groundY={slSpec ? slSpec.frameBottomY : 0} extraBounds={slBounds} onOverlayPick={(c) => { const k = compPart(c); if (k) { setHwSel(k); setSelectedIds([]); } }}
-              overlay={slGate ? (px) => <SlidingAssemblyArt gate={slGate} clearStart={0} clearEnd={model.widthMm} clearWidth={model.widthMm} floorY={slSpec!.frameBottomY} px={px} hex={colorHex(model.color)} noLeaf testPct={0} onPartClick={() => undefined} highlight={hwSelValid ? partDef(hwSelValid)?.comps : undefined} /> : undefined}
+              groundY={slSpec ? slSpec.frameBottomY : 0} extraBounds={slBounds} onOverlayPick={(c, member) => { const k = compPart(c); if (k) { setHwSel(k); setSelectedIds([]); useAppStore.getState().setTailSel(model.id, k === 'tail' ? member ?? null : null); } }}
+              underlay={slGate ? (px) => <SlidingAssemblyArt gate={slGate} clearStart={0} clearEnd={model.widthMm} clearWidth={model.widthMm} floorY={slSpec!.frameBottomY} px={px} hex={colorHex(model.color)} noLeaf layer="back" testPct={0} onPartClick={() => undefined} highlight={hwSelValid ? partDef(hwSelValid)?.comps : undefined} /> : undefined}
+              overlay={slGate ? (px) => <SlidingAssemblyArt gate={slGate} clearStart={0} clearEnd={model.widthMm} clearWidth={model.widthMm} floorY={slSpec!.frameBottomY} px={px} hex={colorHex(model.color)} noLeaf layer="front" testPct={0} onPartClick={() => undefined} highlight={hwSelValid ? partDef(hwSelValid)?.comps : undefined} /> : undefined}
               onAdd={(p0) => { const p = restOnSurface(modelRef.current, p0, materialsRef.current); const next = { ...modelRef.current, parts: [...modelRef.current.parts, p] }; const fitted = p.angleDeg === 0 ? attach(next, p.id, true) : null; if (change(() => fitted ?? next)) setSelectedId(p.id); }}
               onMoveStart={record}
               onMove={(moves) => { const at = new Map(moves.map((v) => [v.id, v])); change((m) => ({ ...m, parts: m.parts.map((p) => { const v = at.get(p.id); return v ? { ...p, x: v.x, y: v.y } : p; }) }), false, false); }} />
@@ -558,14 +620,14 @@ function Designer({ id }: { id: string }) {
           {view !== '2d' && view !== 'skica' && (
             <div className={`min-h-0 ${view === 'split' ? 'border-t xl:border-t-0 xl:border-l border-line' : ''}`}>
               <Suspense fallback={<div className="h-full grid place-items-center text-muted text-sm">Učitavanje 3D prikaza…</div>}>
-                <Designer3D model={model} parts={parts} selectedId={selectedId ?? selectedIds[0] ?? null} />
+                <Designer3D model={model} parts={parts} selectedId={selectedId ?? selectedIds[0] ?? null} sliding={slPlaced && slSpec ? { res: slPlaced.res, X: slPlaced.X, hex: colorHex(model.color), groundMm: slSpec.frameBottomY } : null} />
               </Suspense>
             </div>
           )}
         </section>
 
         <aside className="border-l border-line bg-white min-h-0 overflow-auto scroll-thin p-3">
-          {slSpec && (hwSelValid || (!sel && !multi.length)) && <SlidingDesignerPanel spec={slSpec} W={model.widthMm} leafH={model.heightMm} onSpec={patchSliding} selected={hwSelValid} onSelect={setHwSel} />}
+          {slSpec && (hwSelValid || (!sel && !multi.length)) && <SlidingDesignerPanel slideId={model.id} spec={slSpec} W={model.widthMm} leafH={model.heightMm} onSpec={patchSliding} selected={hwSelValid} onSelect={setHwSel} />}
           <h2 className="font-bold text-[15px] mb-1">Izabrani deo</h2>
           {!sel && !multi.length && <p className="text-sm text-muted mb-4" data-testid="designer-no-selection">Izaberite materijal levo i nacrtajte ga na polju, ili kliknite na nacrtani deo da ga izmenite. Ctrl + klik ili prevlačenje po praznom biraju više delova.</p>}
           {multi.length > 0 && (() => {
@@ -590,6 +652,7 @@ function Designer({ id }: { id: string }) {
               <div className="mb-4" data-testid="designer-multi">
                 <div className="text-[13px] font-semibold">Izabrano delova: {multi.length}</div>
                 <div className="text-[11.5px] text-muted mb-2">{sameMat ? (first.material?.name ?? 'Materijal je obrisan iz cenovnika') : 'različiti materijali'}. Izmena važi za sve izabrane delove; polje sa oznakom „različito“ prikazuje vrednost prvog dela.</div>
+                <PartColorField testPrefix="multi" colors={multi.map((r) => r.part.color)} modelColor={model.color} onPick={(c) => change((m) => setPartsColor(m, ids, c))} />
                 {options.length > 0 && (
                   <div className="grid gap-1 mb-2 text-[13px]">
                     <span className="text-slate-600">Zameni materijal (svim izabranim)</span>
@@ -609,7 +672,13 @@ function Designer({ id }: { id: string }) {
                 {noPiece && field(sheets ? 'Širina' : 'Dužina', (p) => p.lengthMm, (v) => ({ lengthMm: v }), { min: 1, testId: 'multi-length' })}
                 {sheets && field('Visina', (p) => p.heightMm ?? 0, (v) => ({ heightMm: v }), { min: 1, testId: 'multi-height' })}
                 {!sheets && field('Ugao', (p) => p.angleDeg, (v) => ({ angleDeg: v }), { min: -360, max: 360, unit: '°', testId: 'multi-angle' })}
-                {linear && (
+                {linear && multi.every((r) => r.shape.type === 'linear' && isSymmetricRect(r.shape.section)) && (() => {
+                  const e = sectionFace((first.shape as { section: Section }).section, 0);
+                  const same = multi.every((r) => r.shape.type === 'linear' && Math.abs(sectionFace(r.shape.section, 0).face - e.face) < 0.01 && Math.abs(sectionFace(r.shape.section, 0).depth - e.depth) < 0.01);
+                  const pick = (r: number) => (multi.some((q) => isFramePart(q.part)) ? rotateFrame(r) : setAll({ rot: r }));
+                  return <FaceChoice testPrefix="multi" a={e.u1 - e.u0} b={e.v1 - e.v0} firstPressed={rot.same && rot.value % 180 === 0} secondPressed={rot.same && rot.value % 180 === 90} mixed={!same || !rot.same} onPick={pick} />;
+                })()}
+                {linear && !multi.every((r) => r.shape.type === 'linear' && isSymmetricRect(r.shape.section)) && (
                   <div className="grid gap-1 py-1 text-[13px]">
                     <span className="text-slate-600">Okretanje preseka{rot.same ? '' : ' (različito)'}</span>
                     <span className="grid grid-cols-4 rounded-lg border border-line overflow-hidden">
@@ -665,12 +734,20 @@ function Designer({ id }: { id: string }) {
                   <p className="text-[11.5px] text-muted -mt-0.5">{sel.shape.u ? <>Unutrašnji otvor U profila: <b data-testid="part-u-opening">{String(Math.round((sel.shape.u.a - 2 * sel.shape.u.c) * 100) / 100).replace('.', ',')} mm</b>. </> : null}Menja materijal u cenovniku, pa važi za sve delove od njega.</p>
                 </div>
               )}
+              <PartColorField testPrefix="part" colors={[sel.part.color]} modelColor={model.color} onPick={(c) => change((m) => setPartsColor(m, [sel.part.id], c))} />
               <Num label="X" value={sel.part.x} testId="part-x" onChange={(v) => patchPart(sel.part.id, { x: v })} />
               <Num label="Y (od tla)" value={sel.part.y} testId="part-y" onChange={(v) => patchPart(sel.part.id, { y: v })} />
               {sel.shape.type !== 'piece' && <Num label={sel.shape.type === 'sheet' ? 'Širina' : 'Dužina'} value={sel.part.lengthMm} min={1} testId="part-length" onChange={(v) => patchPart(sel.part.id, { lengthMm: v })} />}
               {sel.shape.type === 'sheet' && <Num label="Visina" value={sel.part.heightMm ?? 0} min={1} testId="part-height" onChange={(v) => patchPart(sel.part.id, { heightMm: v })} />}
               {sel.shape.type !== 'sheet' && <Num label="Ugao" unit="°" value={sel.part.angleDeg} min={-360} max={360} testId="part-angle" onChange={(v) => patchPart(sel.part.id, { angleDeg: v })} />}
-              {sel.shape.type === 'linear' && (
+              {sel.shape.type === 'linear' && isSymmetricRect(sel.shape.section) && (() => {
+                // pravougaona cev ili traka: bira se čeona strana (koja stranica preseka je okrenuta ka posmatraču), ne ugao
+                const e = sectionFace(sel.shape.section, 0);
+                const first = sel.part.rot % 180 === 0;
+                const pick = (r: number) => (isFramePart(sel.part) ? rotateFrame(r) : patchPart(sel.part.id, { rot: r }));
+                return <FaceChoice testPrefix="part" a={e.u1 - e.u0} b={e.v1 - e.v0} firstPressed={first} onPick={pick} />;
+              })()}
+              {sel.shape.type === 'linear' && !isSymmetricRect(sel.shape.section) && (
                 <div className="grid gap-1 py-1 text-[13px]">
                   <span className="text-slate-600">Okretanje preseka</span>
                   <span className="grid grid-cols-4 rounded-lg border border-line overflow-hidden">

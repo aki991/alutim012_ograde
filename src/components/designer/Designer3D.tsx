@@ -3,10 +3,15 @@ import { Canvas } from '@react-three/fiber';
 import { useMemo } from 'react';
 import * as THREE from 'three';
 import type { CustomModel, CustomPart } from '../../domain/models/custom';
-import { partAngle } from '../../domain/models/custom';
-import { rotateDeg, type MatShape, type Section, type Solid } from '../../domain/models/materialShape';
+import { partAngle, zExtent, zExtentTop } from '../../domain/models/custom';
+import { materialKey, rotateDeg, type MatShape, type Section, type Solid } from '../../domain/models/materialShape';
 import { bodyMaterial, boxGeometry, glassMaterial } from '../editor/three/materials';
 import type { ResolvedPart } from './PartsSvg';
+import { SlidingParts3D } from '../gates/SlidingParts3D';
+import type { SlidingResult } from '../../domain/gates/slidingAssembly';
+
+/** klizni okov nacrtane kapije: sklop (šina, točkići, rep, vođica …), preslikavanje po smeru otvaranja i odstojanje krila od tla */
+export interface SlidingOverlay3D { res: SlidingResult; X: (x: number) => number; hex: string; groundMm: number }
 
 const cylGeometry = new THREE.CylinderGeometry(1, 1, 1, 28);
 /** piramida sa kvadratnom osnovom stranice 1 i visinom 1 (osnova u y = −0,5) */
@@ -62,21 +67,35 @@ export function PartMesh({ part, shape, hex, materialKey, selected }: { part: Cu
 }
 
 /** 3D prikaz nacrtanog modela: profili su izvučeni iz svog poprečnog preseka, komadni delovi su sklopljeni iz jednostavnih tela. */
-export default function Designer3D({ model, parts, selectedId }: { model: CustomModel; parts: ResolvedPart[]; selectedId: string | null }) {
+export default function Designer3D({ model, parts, selectedId, sliding }: { model: CustomModel; parts: ResolvedPart[]; selectedId: string | null; sliding?: SlidingOverlay3D | null }) {
+  const ground = sliding ? sliding.groundMm / 1000 : 0;
   const W = model.widthMm / 1000; const H = model.heightMm / 1000;
   const dist = Math.max(W, H) * 1.5 + 0.8;
+  // okov stoji u sredini krila po dubini (Z), ne na unapred zadatoj ravni
+  const zx = useMemo(() => zExtent(parts), [parts]);
+  const zMid = zx?.mid ?? 0; const leafHalf = Math.max(15, (zx?.depth ?? 50) / 2);
+  // valjci vođice leže na gornji deo krila (gornja prečka), koji može biti tanji od najdubljeg profila
+  const zt = useMemo(() => zExtentTop(parts, model.heightMm), [parts, model.heightMm]);
+  const guideHalf = zt ? zt.depth / 2 : leafHalf; const guideOff = zt && zx ? zt.mid - zx.mid : 0;
   return (
-    <div className="h-full w-full bg-[#e6ecf2]" data-testid="designer-3d">
+    <div className="h-full w-full bg-[#e6ecf2]" data-testid="designer-3d" data-hw-parts={sliding ? sliding.res.components.length : 0}>
       <Canvas frameloop="demand" shadows dpr={[1, 1.75]} camera={{ fov: 40, near: 0.02, far: 400, position: [W / 2 + dist * 0.45, H * 0.75 + 0.3, dist] }}>
         <ambientLight intensity={0.9} />
         <directionalLight position={[W / 2 + 3, H + 4, 5]} intensity={1.6} castShadow shadow-mapSize={[1024, 1024]} />
         <directionalLight position={[-3, 2, -4]} intensity={0.5} />
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[W / 2, -0.001, 0]} receiveShadow>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[W / 2, -0.001 - ground, 0]} receiveShadow>
           <planeGeometry args={[Math.max(W, 2) * 4, Math.max(W, 2) * 4]} />
           <meshStandardMaterial color="#cfd6dd" roughness={1} />
         </mesh>
         <group scale={0.001}>
-          {parts.map((r) => <PartMesh key={r.part.id} part={r.part} shape={r.shape} hex={r.hex} materialKey={r.material ? `${r.material.sku}|${r.material.name}` : 'x'} selected={r.part.id === selectedId} />)}
+          {parts.map((r) => <PartMesh key={r.part.id} part={r.part} shape={r.shape} hex={r.hex} materialKey={r.material ? materialKey(r.material) : 'x'} selected={r.part.id === selectedId} />)}
+          {/* klizni okov: tlo je ispod krila za odstojanje donje ivice rama */}
+          {sliding && (
+            <group position={[0, -sliding.groundMm, 0]}>
+              <SlidingParts3D components={sliding.res.components} moving={false} mapX={sliding.X} hex={sliding.hex} z={zMid} leafHalf={leafHalf} guideHalf={guideHalf} guideOff={guideOff} />
+              <SlidingParts3D components={sliding.res.components} moving mapX={sliding.X} hex={sliding.hex} z={zMid} leafHalf={leafHalf} guideHalf={guideHalf} guideOff={guideOff} />
+            </group>
+          )}
         </group>
         <OrbitControls makeDefault enableDamping={false} target={[W / 2, H / 2, 0]} minDistance={0.15} maxDistance={Math.max(30, W * 4)} />
       </Canvas>

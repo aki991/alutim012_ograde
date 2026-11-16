@@ -76,8 +76,8 @@ describe('krojna lista projekta', () => {
 
   it('prazan projekat nema profila; podrazumevana šipka 6000 / testera 3', () => {
     expect(buildCuttingList(createProject('p'), undefined, SEED_MATERIALS, OPTS).totals.pieces).toBe(0);
-    expect(cutOptions({})).toEqual({ stockMm: 6000, kerfMm: 3 });
-    expect(cutOptions({ cutting: { stockMm: 6500, kerfMm: 5 } })).toEqual({ stockMm: 6500, kerfMm: 5 });
+    expect(cutOptions({})).toEqual({ stockMm: 6000, kerfMm: 3, saveMaterial: false });
+    expect(cutOptions({ cutting: { stockMm: 6500, kerfMm: 5 } })).toEqual({ stockMm: 6500, kerfMm: 5, saveMaterial: false });
   });
 });
 

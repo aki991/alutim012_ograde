@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Save } from 'lucide-react';
 import { computeLayout, postHalfSum } from '../../domain/geometry/layout';
 import { variantTitle } from '../../domain/gates/slidingAssembly';
-import { slidingH } from '../../domain/gates/slidingLayout';
+import { leafHeightOf, slidingH } from '../../domain/gates/slidingLayout';
 import type { Gate, Project } from '../../domain/models/types';
 import { useAppStore } from '../../store/useAppStore';
 import { SlidingForm } from './SlidingForm';
@@ -24,7 +24,7 @@ export function SlidingPanel({ project, gate }: { project: Project; gate: Gate }
   const [tplMsg, setTplMsg] = useState('');
   const [part, setPart] = useState<string | null>(null);
   const ref = SLIDING_REFS[`${spec.support}|${spec.actuation}`];
-  const frameH = spec.drawnLeaf ? gate.heightMm : Math.max(100, gate.heightMm - spec.frameBottomY);
+  const frameH = leafHeightOf(gate);
 
   return (
     <div className="space-y-2" data-testid="sliding-panel">
@@ -32,8 +32,8 @@ export function SlidingPanel({ project, gate }: { project: Project; gate: Gate }
         spec={spec} W={li.clearWidth} H={slidingH(gate)} opening={gate.opening} slideId={gate.id} selectedPart={part} onSelectPart={setPart}
         onSpec={(p, key) => st.patchSliding(gate.id, p, key)}
         onWidth={(v) => st.setWidth(gate.id, v + 2 * half, `w:${gate.id}`)}
-        onHeight={(v) => st.patchItem(gate.id, { heightMm: spec.drawnLeaf ? v : v + spec.frameBottomY }, 'h')}
-        onFrameBottom={(v) => { st.patchSliding(gate.id, { frameBottomY: v }); if (!spec.drawnLeaf) st.patchItem(gate.id, { heightMm: frameH + v }); }}
+        onHeight={(v) => st.patchItem(gate.id, { heightMm: v + spec.frameBottomY }, 'h')}
+        onFrameBottom={(v) => { st.patchSliding(gate.id, { frameBottomY: v }); st.patchItem(gate.id, { heightMm: frameH + v }); }}
         onOpening={(v) => st.patchItem(gate.id, { opening: v })} />
 
       <div className="rounded-lg border border-line p-2 space-y-1.5" data-testid="sl-template">

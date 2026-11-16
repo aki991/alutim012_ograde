@@ -37,6 +37,8 @@ export interface CustomPart {
   miter?: 'lo' | 'hi';
   /** pomeraj po dubini (mm, + ka posmatraču) */
   z: number;
+  /** sopstvena boja dela (RAL ključ ili #hex), npr. crn ram a sive prečke; bez vrednosti deo je u boji modela */
+  color?: string;
 }
 
 export interface CustomModel {
@@ -64,8 +66,18 @@ export const newCustomModel = (id: string): CustomModel => ({ id, name: 'Novi mo
 /** Ukupan ugao preseka: okretanje + nagib (stepeni). */
 export const partAngle = (p: Pick<CustomPart, 'rot' | 'tiltDeg'>): number => p.rot + (p.tiltDeg ?? 0);
 
-/** Boja dela na crtežu (hex). */
-export const partHex = (mat: Material | undefined, model: Pick<CustomModel, 'color'>): string => (mat && materialOwnColor(mat.name)) || colorHex(model.color);
+/**
+ * Boja dela na crtežu (hex): sopstvena boja dela (izabrana u crtanju modela), pa RAL / inox iz naziva materijala, pa boja modela.
+ * U projektu je boja modela boja polja, a delovi sa sopstvenom bojom je zadržavaju.
+ */
+export const partHex = (mat: Material | undefined, model: Pick<CustomModel, 'color'>, part?: Pick<CustomPart, 'color'>): string =>
+  (part?.color ? colorHex(part.color) : null) || (mat && materialOwnColor(mat.name)) || colorHex(model.color);
+
+/** Delovi sa sopstvenom bojom dobijaju novu boju (null = boja modela); ostali delovi se ne menjaju. */
+export function setPartsColor(model: CustomModel, ids: string[], color: string | null): CustomModel {
+  const s = new Set(ids);
+  return { ...model, parts: model.parts.map((p) => { if (!s.has(p.id)) return p; const { color: _old, ...rest } = p; return color ? { ...rest, color } : rest; }) };
+}
 
 /** Okvir dela u koordinatama crteža (za izbor, uklapanje pogleda i minijaturu). */
 export function partBounds(p: CustomPart, shape: MatShape): { x0: number; y0: number; x1: number; y1: number } {
@@ -125,6 +137,30 @@ export function extentBounds(items: { part: CustomPart; shape: MatShape }[]): { 
   return x1 >= x0 ? { x0, y0, x1, y1 } : null;
 }
 
+/**
+ * Opseg nacrtanog po dubini (Z, napred–nazad): profili zauzimaju z + presek (v0 … v1), ploče z ± debljina / 2. Komadni delovi se ne računaju.
+ * Sredina opsega je ravan krila: klizni okov (C-profil, rep, vođica) se postavlja u nju, da stoji tačno iza/ispred platna.
+ */
+export function zExtent(items: { part: CustomPart; shape: MatShape }[]): { z0: number; z1: number; mid: number; depth: number } | null {
+  let z0 = Infinity; let z1 = -Infinity;
+  for (const { part, shape } of items) {
+    if (shape.type === 'sheet') { z0 = Math.min(z0, part.z - shape.thick / 2); z1 = Math.max(z1, part.z + shape.thick / 2); continue; }
+    if (shape.type !== 'linear') continue;
+    const e = sectionFace(shape.section, partAngle(part));
+    z0 = Math.min(z0, part.z + e.v0); z1 = Math.max(z1, part.z + e.v1);
+  }
+  return z1 >= z0 ? { z0, z1, mid: (z0 + z1) / 2, depth: z1 - z0 } : null;
+}
+
+/**
+ * Opseg po dubini (Z) samo onih delova koji dopiru do gornje ivice krila (gornja prečka rama, krajevi bočnih profila): tu stoje valjci
+ * gornje vođice, pa moraju da leže na stvarnu debljinu gornjeg dela, a ne na najdublji profil krila. Bez takvih delova: ceo opseg.
+ */
+export function zExtentTop(items: { part: CustomPart; shape: MatShape }[], heightMm: number): { z0: number; z1: number; mid: number; depth: number } | null {
+  const top = items.filter(({ part, shape }) => shape.type !== 'piece' && partBounds(part, shape).y1 >= heightMm - 1);
+  return zExtent(top.length ? top : items);
+}
+
 /** Okvir svih nacrtanih delova (vidi extentBounds); null kad nema delova. */
 export function contentBounds(model: Pick<CustomModel, 'parts'>, shapeOf: (p: CustomPart) => MatShape | null): { x0: number; y0: number; x1: number; y1: number } | null {
   const items: { part: CustomPart; shape: MatShape }[] = [];
@@ -160,7 +196,7 @@ export function resolveParts(model: Pick<CustomModel, 'parts' | 'color'>, materi
   const all = ordered.map((part) => {
     const material = byId.get(part.materialId);
     const shape = material ? materialShape(material) : materialShape({ sku: '', name: part.heightMm ? 'ploča' : 'profil 40x20', unit: part.heightMm ? 'm2' : 'm', category: 'ostalo' });
-    return { part, shape, hex: material ? partHex(material, model) : '#94a3b8', material };
+    return { part, shape, hex: material ? partHex(material, model, part) : part.color ? colorHex(part.color) : '#94a3b8', material };
   });
   // komadni delovi (brave, šarke, kape) se crtaju na kraju: uvek su iznad profila i mogu da stoje bilo gde, i na ramu
   return [...all.filter((r) => r.shape.type !== 'piece'), ...all.filter((r) => r.shape.type === 'piece')];

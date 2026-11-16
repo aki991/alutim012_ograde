@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { create } from 'zustand';
 import { isBuiltinMaterial } from '../data/materials';
-import { missingModelMaterials } from '../data/modelMaterials';
+import { DEFAULT_CARRIAGES, missingModelMaterials } from '../data/modelMaterials';
 import { createSeedData } from '../data/seed';
 import { loadAll, saveAll, wipeAll } from '../db';
 import {
@@ -23,6 +23,7 @@ import type {
   AppSettings, Customer, FenceModelId, FenceSection, Gate, GateType, LayoutItem, Material, Post, Project, SlidingTemplate,
 } from '../domain/models/types';
 import { migrateProject } from '../domain/validation/project';
+import { applyPostTemplate as applyPostTemplateTo } from '../domain/models/postTemplates';
 import { uid } from '../utils/id';
 
 export type SaveStatus = 'saved' | 'saving' | 'error';
@@ -51,6 +52,8 @@ interface EditorState {
   notice: string | null;
   /** proba hoda kliznih kapija (0–100 %) po ID-u kapije: samo prikaz, ne menja projekat */
   slideTest: Record<string, number>;
+  /** izabrano ojačanje/cev repa klizne kapije (ključ stavke, npr. tail-diag, tail-brace-x1) po kapiji: ističe se na crtežu radi poređenja sa krojnom listom */
+  tailSel?: Record<string, string | null>;
 }
 
 interface AppState {
@@ -139,9 +142,16 @@ interface AppState {
   patchSliding: (itemId: string, patch: Partial<import('../domain/gates/slidingAssembly').SlidingSpec>, key?: string) => void;
   /** proba hoda (0–100 %): pomera samo pokretne delove na crtežu */
   setSlideTest: (itemId: string, pct: number) => void;
+  /** izbor jedne cevi repa (null = bez izbora) */
+  setTailSel: (itemId: string, key: string | null) => void;
   /** čuva kliznu kapiju kao imenovan šablon (nezavisna kopija); vraća ID šablona */
   saveSlidingTemplate: (itemId: string, name: string) => string | null;
   removeSlidingTemplate: (id: string) => void;
+  /** dodaje ili menja šablon stuba (Podešavanja → Šabloni stubova) */
+  upsertPostTemplate: (t: import('../domain/models/types').PostTemplate) => void;
+  removePostTemplate: (id: string) => void;
+  /** primenjuje šablon stuba na stubove aktivnog projekta (jedna izmena u istoriji) */
+  applyPostTemplate: (templateId: string, postIds: string[]) => void;
   /** Doradi: nov model klizne kapije iz polazne varijante (nezavisna kopija koja se menja u crtežu modela) */
   startSlidingDorada: (presetId: import('../domain/gates/slidingAssembly').SlidingPresetId) => string;
   /** izmena modela klizne kapije; projekti koji su ga već koristili imaju svoju kopiju i ne menjaju se */
@@ -262,17 +272,30 @@ export const useAppStore = create<AppState>((set, get) => {
               if (!renamed) localStorage.setItem(NAMES_KEY, '1');
             }
           } catch { /* bez localStorage-a: preskače se */ }
+          // jednokratno: primeri kolica samonoseće kapije (materijal sa merama koje se menjaju) dobijaju mesto u cenovniku
+          const CARRIAGES_KEY = 'alutim.carriagesV1';
+          let carriagesAdded = false;
+          try {
+            if (localStorage.getItem(CARRIAGES_KEY) !== '1') {
+              if (!materials.some((m) => /kolic/i.test(m.name))) {
+                const have = new Set(materials.map((m) => m.id));
+                materials = [...materials, ...DEFAULT_CARRIAGES.filter((m) => !have.has(m.id)).map((m) => ({ ...m }))];
+                carriagesAdded = true;
+              } else localStorage.setItem(CARRIAGES_KEY, '1');
+            }
+          } catch { /* bez localStorage-a: preskače se */ }
           // nacrtani modeli moraju biti u katalogu pre nego što se projekti učitaju
           registerCustomModels(settings.customModels, materials);
           setHiddenModels(settings.hiddenModels);
           // privremeni projekti za uređivanje modela ne preživljavaju ponovno pokretanje
           set({ projects: data.projects.filter((p) => !p.modelDraft).map(migrateProject).map(dropUnknownModels), customers: data.customers, materials, settings, ready: true });
-          if (backfilled || renamed) {
+          if (backfilled || renamed || carriagesAdded) {
             // autosave počinje tek posle init-a, pa se dodati materijali upisuju odmah; oznaka se postavlja tek kad je upis uspeo
             try {
               await saveAll({ projects: get().projects, customers: get().customers, materials, settings });
               if (backfilled) localStorage.setItem(BACKFILL_KEY, '1');
               if (renamed) localStorage.setItem(NAMES_KEY, '1');
+              if (carriagesAdded) localStorage.setItem(CARRIAGES_KEY, '1');
             } catch { /* neuspeh ne sme da sakrije učitane podatke; pokušaće se opet pri sledećem pokretanju */ }
           }
         }
@@ -618,12 +641,13 @@ export const useAppStore = create<AppState>((set, get) => {
       if ('preset' in source) {
         const d = specFromPreset(source.preset);
         // krilo je izabrani model ograde (menja se kao kod ostalih kapija); sklop daje klizni okov
-        spec = { ...d.spec, drawnLeaf: true }; frameWidth = d.frameWidth; heightMm = d.frameHeight;
+        // visina kapije je ukupna visina od tla: visina krila + odstojanje donje ivice rama
+        spec = { ...d.spec, drawnLeaf: true, heightTotal: true }; frameWidth = d.frameWidth; heightMm = d.frameHeight + d.spec.frameBottomY;
       } else {
         const t = (get().settings.slidingTemplates ?? []).find((x) => x.id === source.template);
         if (!t) return null;
         // nezavisna kopija: kasnije izmene šablona ili ove kapije ne utiču jedna na drugu
-        spec = JSON.parse(JSON.stringify(t.spec)) as SlidingSpec; frameWidth = t.frameWidth; heightMm = t.heightMm; opening = t.opening; color = t.color;
+        spec = { ...(JSON.parse(JSON.stringify(t.spec)) as SlidingSpec), ...(t.spec.drawnLeaf ? { heightTotal: true } : {}) }; frameWidth = t.frameWidth; heightMm = t.heightMm; opening = t.opening; color = t.color;
       }
       const id = get().addElement({ kind: 'gate', gateType: 'sliding' });
       if (!id) return null;
@@ -639,6 +663,9 @@ export const useAppStore = create<AppState>((set, get) => {
       if (!g || g.kind !== 'gate' || !g.sliding) return;
       const next = { ...g.sliding, ...patch };
       get().mutate((p) => updateItem(p, itemId, { sliding: next, automation: next.actuation === 'motor' } as Partial<Gate>), key ? `sl:${key}:${itemId}` : null);
+    },
+    setTailSel(itemId, key) {
+      set((s) => ({ editor: { ...s.editor, tailSel: { ...(s.editor.tailSel ?? {}), [itemId]: key } } }));
     },
     setSlideTest(itemId, pct) {
       set((s) => ({ editor: { ...s.editor, slideTest: { ...s.editor.slideTest, [itemId]: Math.max(0, Math.min(100, pct)) } } }));
@@ -672,6 +699,20 @@ export const useAppStore = create<AppState>((set, get) => {
       const id = get().addSlidingGate(source);
       if (!id) { get().removeProject(pid); return null; }
       return pid;
+    },
+    upsertPostTemplate(t) {
+      set((s) => {
+        const list = s.settings.postTemplates ?? [];
+        return { settings: { ...s.settings, postTemplates: list.some((x) => x.id === t.id) ? list.map((x) => (x.id === t.id ? t : x)) : [...list, t] } };
+      });
+    },
+    removePostTemplate(id) {
+      set((s) => ({ settings: { ...s.settings, postTemplates: (s.settings.postTemplates ?? []).filter((t) => t.id !== id) } }));
+    },
+    applyPostTemplate(templateId, postIds) {
+      const t = (get().settings.postTemplates ?? []).find((x) => x.id === templateId);
+      if (!t || !postIds.length) return;
+      get().mutate((p) => applyPostTemplateTo(p, postIds, t), null);
     },
     removeSlidingTemplate(id) {
       set((s) => ({ settings: { ...s.settings, slidingTemplates: (s.settings.slidingTemplates ?? []).filter((t) => t.id !== id) } }));

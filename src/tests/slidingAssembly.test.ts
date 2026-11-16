@@ -85,10 +85,17 @@ describe('provere', () => {
     expect(JSON.parse(JSON.stringify(spec)).clearOpening).toBeNull();
   });
 
-  it('graničnik ispred kraja hoda daje grešku sa razlikom', () => {
+  it('ručno zadat hod: graničnik ispred kraja hoda daje grešku sa razlikom', () => {
     const { spec, frameWidth, frameHeight } = specFromPreset('klizna_sina_rucna');
-    const r = resolveSliding({ ...spec, manual: { ...spec.manual, stop: 5800 } }, frameWidth, H(frameHeight, spec));
+    const r = resolveSliding({ ...spec, travelSet: true, manual: { ...spec.manual, stop: 5800 } }, frameWidth, H(frameHeight, spec));
     expect(check(r, 'stop')?.msg).toMatch(/100 mm ranije/);
+  });
+  it('računski hod: krilo staje na ručno pomerenom graničniku (hod i zona uvlačenja se skraćuju)', () => {
+    const { spec, frameWidth, frameHeight } = specFromPreset('klizna_sina_rucna');
+    const base = resolveSliding(spec, frameWidth, H(frameHeight, spec));
+    const r = resolveSliding({ ...spec, manual: { ...spec.manual, stop: base.at('stop') - 100 } }, frameWidth, H(frameHeight, spec));
+    expect(r.spec.travel).toBe(base.spec.travel - 100);
+    expect(check(r, 'stop')).toBeUndefined();
   });
 });
 
@@ -387,30 +394,84 @@ describe('rep: koso ojačanje u uglu (V zasek) i uredan polazni raspored', () =>
     expect(b.y0).toBeCloseTo(chordTop, 0);   // na pojasnici
     expect(d.ends[0]).toHaveLength(2);       // V zasek
     expect(d.ends[0][0] + d.ends[0][1]).toBeCloseTo(90, 0);
-    expect(d.ends[1]).toHaveLength(1);
+    expect(d.ends[1].length).toBeGreaterThanOrEqual(1); // gornji kraj: kosnik, a po potrebi i ivice uspravnog/vodoravnog ojačanja
     // pomereno desno od ugla: običan rez uz pojasnicu
     const { spec } = specFromPreset('samonoseca_rucna');
     const moved = resolveSliding({ ...spec, braces: [{ id: 'd', kind: 'diagonal', pos: 3400 }] }, 3000, 1400).tail!.find((m) => m.bomKey === 'tail-brace-d')!;
     expect(moved.ends[0]).toHaveLength(1);
   });
-  it('tri ojačanja polazno: vodoravno, uspravno i koso ojačanje se sastaju u istom čvoru na kosniku', () => {
+  /** površina preseka dva konveksna poligona (mm²) */
+  const overlap = (p: [number, number][], q: [number, number][]): number => {
+    let out = p;
+    const orient = q.reduce((sum, a, i) => { const c = q[(i + 1) % q.length]; return sum + (a[0] * c[1] - c[0] * a[1]); }, 0) >= 0 ? 1 : -1;
+    for (let i = 0; i < q.length && out.length; i++) {
+      const a = q[i]; const c = q[(i + 1) % q.length];
+      const side = (x: [number, number]) => orient * ((c[0] - a[0]) * (x[1] - a[1]) - (c[1] - a[1]) * (x[0] - a[0]));
+      const inp = out; out = [];
+      for (let k = 0; k < inp.length; k++) {
+        const u = inp[k]; const w = inp[(k + 1) % inp.length]; const su = side(u); const sw = side(w);
+        if (su >= 0) out.push(u);
+        if ((su >= 0) !== (sw >= 0)) { const t = su / (su - sw); out.push([u[0] + (w[0] - u[0]) * t, u[1] + (w[1] - u[1]) * t]); }
+      }
+    }
+    return Math.abs(out.reduce((sum, u, i) => { const w = out[(i + 1) % out.length]; return sum + (u[0] * w[1] - w[0] * u[1]); }, 0) / 2);
+  };
+  /** nagib kosog ojačanja prema vodoravnoj (°), iz dužeg boka poligona */
+  const norm2 = (poly: [number, number][]): number => { let best = 0; let ang = 0; for (let i = 0; i < poly.length; i++) { const a = poly[i]; const c = poly[(i + 1) % poly.length]; const l = Math.hypot(c[0] - a[0], c[1] - a[1]); if (l > best) { best = l; ang = (Math.atan2(Math.abs(c[1] - a[1]), Math.abs(c[0] - a[0])) * 180) / Math.PI; } } return Math.round(ang * 10) / 10; };
+  const braces = (r: ReturnType<typeof all>) => r.tail!.filter((m) => m.bomKey.startsWith('tail-brace-'));
+  const noOverlaps = (r: ReturnType<typeof all>) => {
+    const list = braces(r);
+    for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) expect(overlap(list[i].poly, list[j].poly)).toBeLessThan(3);
+  };
+
+  it('tri ojačanja polazno: vodoravno se vari na koso ojačanje (rez po nagibu kosog), uspravno se ne dodiruje sa vodoravnim', () => {
     const r = all();
+    noOverlaps(r);
     const h = r.tail!.find((m) => m.bomKey === 'tail-brace-h')!;
     const v = r.tail!.find((m) => m.bomKey === 'tail-brace-v')!;
     const d = r.tail!.find((m) => m.bomKey === 'tail-brace-d')!;
     const bh = bbox(h.poly); const bv = bbox(v.poly); const bd = bbox(d.poly);
-    const chordTop = bbox(r.tail!.find((m) => m.bomKey === 'tail-bottom')!.poly).y1;
-    expect(bh.y0).toBeGreaterThan(chordTop);
-    expect(bh.x0).toBeCloseTo(3000, 0);                // od rama
-    // čvor: vrh uspravnog i gornji kraj kosog i desni kraj vodoravnog su u istoj tački kosnika
-    expect(Math.abs(bh.x1 - bv.x1)).toBeLessThan(60);
-    expect(Math.abs(bh.y1 - bv.y1)).toBeLessThan(60);
-    expect(Math.abs(bd.x1 - bv.x1)).toBeLessThan(60);
-    expect(h.ends[0]).toEqual([90]);
+    expect(bh.x0).toBeCloseTo(3000, 0);        // vodoravno ide od rama
+    // vodoravno je spušteno (ispod levog gornjeg ugla uspravnog) i vari se na koso ojačanje: kraj je zasečen pod nagibom kosog, a ne po kosini repa
+    const vLeftTop = Math.max(...v.poly.filter((p) => Math.abs(p[0] - bv.x0) < 0.5).map((p) => p[1]));
+    expect(bh.y1).toBeLessThan(vLeftTop);
+    expect(bh.y1).toBeLessThanOrEqual(bd.y1 + 0.6);
     expect(h.ends[1]).toHaveLength(1);
-    expect(h.ends[1][0]).toBeLessThan(90);              // kraj uz kosnik je zasečen pod uglom
-    // koso ojačanje i uspravno se spajaju u istom čvoru na kosniku
-    expect(bd.x1).toBeGreaterThan(bv.x0 - 1);
+    const dAxis = norm2(d.poly);
+    expect(Math.abs(h.ends[1][0] - dAxis)).toBeLessThan(2);
+    expect(overlap(h.poly, d.poly)).toBeLessThan(3);
+    // koso ojačanje je zasečeno uz uspravno/vodoravno (više rezova na gornjem kraju) i ne ulazi u njih
+    expect(d.ends[1].length).toBeGreaterThanOrEqual(1);
+    expect(bd.x1).toBeLessThanOrEqual(bv.x0 + 0.6);
+    // glavni kosnik i pojasnica: ojačanja ih ne preklapaju
+    for (const base of ['tail-diag', 'tail-bottom']) { const m = r.tail!.find((x) => x.bomKey === base)!; for (const br of braces(r)) expect(overlap(m.poly, br.poly)).toBeLessThan(2); }
+  });
+  it('vodoravno ojačanje zadato prenisko (ispod pojasnice) se podiže na najnižu visinu na kojoj se vari na koso', () => {
+    const { spec } = specFromPreset('samonoseca_rucna');
+    const r = resolveSliding({ ...spec, braces: [{ id: 'v', kind: 'vertical' }, { id: 'h', kind: 'horizontal', pos: 100 }, { id: 'd', kind: 'diagonal' }] }, 3000, 1400);
+    noOverlaps(r as never);
+    const h = r.tail!.find((m) => m.bomKey === 'tail-brace-h')!;
+    const chordTop = bbox(r.tail!.find((m) => m.bomKey === 'tail-bottom')!.poly).y1;
+    expect(bbox(h.poly).y0).toBeGreaterThanOrEqual(chordTop - 0.6); // podignuto iznad pojasnice
+  });
+  it('raspon mera ojačanja: vodoravno ne može više od najviše tačke kosog ojačanja, a zadata veća vrednost se svodi na najveću', () => {
+    const { spec } = specFromPreset('samonoseca_rucna');
+    const base = resolveSliding({ ...spec, braces: [{ id: 'v', kind: 'vertical' }, { id: 'h', kind: 'horizontal' }, { id: 'd', kind: 'diagonal' }] }, 3000, 1400);
+    const range = base.tailRanges!.h.pos!;
+    expect(range.max).toBeGreaterThan(range.min);
+    const high = resolveSliding({ ...spec, braces: [{ id: 'v', kind: 'vertical' }, { id: 'h', kind: 'horizontal', pos: range.max + 500 }, { id: 'd', kind: 'diagonal' }] }, 3000, 1400);
+    const hm = high.tail!.find((m) => m.bomKey === 'tail-brace-h')!;
+    expect(bbox(hm.poly).y1).toBeLessThanOrEqual(bbox(high.tail!.find((m) => m.bomKey === 'tail-brace-d')!.poly).y1 + 0.6);
+    // ostali rasponi: uspravno (X), koso (donji i gornji kraj)
+    expect(base.tailRanges!.v.pos!.min).toBeLessThan(base.tailRanges!.v.pos!.max);
+    expect(base.tailRanges!.d.pos!.min).toBe(3000);
+    expect(base.tailRanges!.d.pos2!.max).toBeGreaterThan(base.tailRanges!.d.pos2!.min);
+  });
+  it('uspravno pomereno udesno: vodoravno ostaje gde je (donja ivica ne dodiruje uspravno)', () => {
+    const { spec } = specFromPreset('samonoseca_rucna');
+    const r = resolveSliding({ ...spec, braces: [{ id: 'v', kind: 'vertical', pos: 4000 }, { id: 'h', kind: 'horizontal', pos: 900 }] }, 3000, 1400);
+    noOverlaps(r as never);
+    expect(r.tail!.some((m) => m.bomKey === 'tail-brace-h')).toBe(true);
   });
 });
 
@@ -443,5 +504,54 @@ describe('materijal upisan ručno (nije u cenovniku)', () => {
     // izabran materijal iz cenovnika ima prednost nad upisanim tekstom
     const item = slidingBom(resolveSliding({ ...spec, partMat: { carrier: 'm1' } }, 3200, 1400)).find((b) => b.key === 'carrier')!;
     expect(item.materialId).toBe('m1'); expect(item.materialText).toBeUndefined();
+  });
+});
+
+describe('okretanje cevi repa: čeona strana menja širinu, dužine i beleške u krojnoj listi', () => {
+  const diag = (w: number, d: number) => {
+    const { spec } = specFromPreset('samonoseca_rucna');
+    const r = resolveSliding({ ...spec, dims: { 'tail.diag.w': w, 'tail.diag.d': d } }, 3000, 1400);
+    return { m: r.tail!.find((x) => x.bomKey === 'tail-diag')!, r };
+  };
+  it('cev 60×40: čeona strana 60 ili 40; uglovi reza su isti, a dužina po dužoj strani prati širinu', () => {
+    const a = diag(60, 40); const b = diag(40, 60);
+    expect(a.m.w).toBe(60); expect(b.m.w).toBe(40);
+    expect(a.m.ends).toEqual(b.m.ends);          // ugao reza zavisi od nagiba kosnika, ne od okretanja cevi
+    expect(a.m.len).not.toBe(b.m.len);           // dužina po dužoj strani zavisi od čeone strane
+    expect(a.m.len).toBeGreaterThan(b.m.len);
+    // beleška u krojnoj listi sadrži čeonu stranu i uglove
+    const note = slidingBom(a.r).find((i) => i.key === 'tail-diag')!.note!;
+    expect(note).toContain('čeona strana 60 mm'); expect(note).toContain('rez pod uglom');
+    expect(slidingBom(b.r).find((i) => i.key === 'tail-diag')!.note).toContain('čeona strana 40 mm');
+    // dubina u 3D prati drugu stranu preseka
+    expect(a.r.components.find((c) => c.key === 'tail')!.depth).toBe(40);
+    expect(b.r.components.find((c) => c.key === 'tail')!.depth).toBe(60);
+  });
+});
+
+describe('pomeren stub vođice: krilo ostaje u vođici', () => {
+  it.each(['samonoseca_rucna', 'klizna_sina_rucna'] as const)('%s: vođica je na stubu, a hod, graničnik i zona uvlačenja se skraćuju za pomeraj stuba', (id) => {
+    const { spec, frameWidth, frameHeight } = specFromPreset(id);
+    const h = H(frameHeight, spec);
+    const base = resolveSliding(spec, frameWidth, h);
+    const moved = resolveSliding({ ...spec, manual: { ...spec.manual, guidePost: base.at('upperGuide') - 300 } }, frameWidth, h);
+    expect(moved.at('upperGuide')).toBe(base.at('upperGuide') - 300);
+    expect(moved.spec.travel).toBe(base.spec.travel - 300);
+    expect(moved.at('stop')).toBe(base.at('stop') - 300);
+    expect(moved.open.front).toBeLessThanOrEqual(moved.at('upperGuide'));
+    expect(moved.checks.find((c) => c.key === 'guideTravel')).toBeUndefined();
+  });
+  it('u projektu: stub ograde kao stub vođice (guideOverhang) pomera vođicu i skraćuje hod', () => {
+    const { spec, frameWidth, frameHeight } = specFromPreset('samonoseca_rucna');
+    const h = H(frameHeight, spec);
+    const base = resolveSliding(spec, frameWidth, h);
+    const r = resolveSliding({ ...spec, guideOverhang: 335 }, frameWidth, h);
+    expect(r.at('upperGuide')).toBe(frameWidth - 335);
+    expect(r.spec.travel).toBe(base.spec.travel - 300);
+  });
+  it('ručno zadat hod preko vođice: greška „krilo izlazi iz vođice“', () => {
+    const { spec, frameWidth, frameHeight } = specFromPreset('samonoseca_rucna');
+    const r = resolveSliding({ ...spec, travelSet: true, travel: frameWidth, guideOverhang: 335 }, frameWidth, H(frameHeight, spec));
+    expect(r.checks.find((c) => c.key === 'guideTravel')?.level).toBe('error');
   });
 });

@@ -1,3 +1,4 @@
+import { endsLabel } from '../../domain/pricing/cutEnds';
 import { Scissors } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { Customer, Material, Project } from '../../domain/models/types';
@@ -5,7 +6,7 @@ import { buildCuttingList, cutOptions, groupBars } from '../../domain/pricing/cu
 import { barSvg, positionColors } from '../../services/cutlistSvg';
 import { useAppStore } from '../../store/useAppStore';
 import { fmtNum } from '../../utils/units';
-import { NumberField } from '../forms/Fields';
+import { NumberField, ToggleField } from '../forms/Fields';
 import { PdfPreviewModal } from '../editor/PdfPreviewModal';
 import { OffcutsPanel } from './OffcutsPanel';
 
@@ -19,7 +20,7 @@ export function CutlistSection({ project, customer, materials }: { project: Proj
   const asked = project.offcuts !== undefined; // krojna lista se prikazuje tek kad poslovođa odgovori ima li ostataka
   const [open, setOpen] = useState(false);
   const opts = cutOptions(settings);
-  const list = useMemo(() => buildCuttingList(project, settings.modelSpecs, materials, opts), [project, settings.modelSpecs, materials, opts.stockMm, opts.kerfMm]); // eslint-disable-line react-hooks/exhaustive-deps
+  const list = useMemo(() => buildCuttingList(project, settings.modelSpecs, materials, opts), [project, settings.modelSpecs, materials, opts.stockMm, opts.kerfMm, opts.saveMaterial]); // eslint-disable-line react-hooks/exhaustive-deps
   const colors = useMemo(() => positionColors(list.positions), [list.positions]);
   const t = list.totals;
   const setCutting = (patch: Partial<typeof opts>) => update({ cutting: { ...opts, ...patch } });
@@ -37,6 +38,7 @@ export function CutlistSection({ project, customer, materials }: { project: Proj
       <div className="grid gap-x-6 sm:grid-cols-2 xl:grid-cols-4 mb-3">
         <NumberField label="Dužina šipke" testId="cut-stock" value={opts.stockMm} range={{ min: 500, max: 20000 }} onCommit={(v) => setCutting({ stockMm: v })} />
         <NumberField label="Širina testere" testId="cut-kerf" value={opts.kerfMm} range={{ min: 0, max: 50 }} allowZero integer={false} step={0.5} onCommit={(v) => setCutting({ kerfMm: v })} />
+        <ToggleField label="Štednja materijala" checked={opts.saveMaterial === true} onLabel="Uključena" offLabel="Isključena" testId="cut-savematerial" onChange={(v) => setCutting({ saveMaterial: v })} />
       </div>
 
       {t.pieces > 0 && <OffcutsPanel project={project} materials={materials} stock={settings.stock ?? []} profiles={list.profiles.map((p) => p.profile)} onChange={(offcuts) => patchProject(project.id, { offcuts })} />}
@@ -88,7 +90,7 @@ export function CutlistSection({ project, customer, materials }: { project: Proj
                   </div>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-x-5 gap-y-0.5 text-[12.5px] text-slate-600">
-                  {p.summary.map((s) => <span key={`${s.lengthMm}-${s.miter ? 'm' : 's'}`} data-miter={s.miter ? 'true' : undefined}><b className="tabular-nums">{fmtNum(s.lengthMm, 0)}</b>{s.miter ? <svg viewBox="0 0 30 10" width="30" height="10" className="ml-1 inline-block text-primary" aria-label="rez 45° na oba kraja"><polygon points="0,0 30,0 20,10 10,10" fill="currentColor" /></svg> : null} × {s.qty} <span className="text-muted">({s.positions.map(posTag).join(', ')})</span></span>)}
+                  {p.summary.map((s) => <span key={`${s.lengthMm}-${s.miter ? 'm' : 's'}-${s.ends ? endsLabel(s.ends) : ''}`} data-miter={s.miter ? 'true' : undefined}><b className="tabular-nums">{fmtNum(s.lengthMm, 0)}</b>{s.ends ? <span className="ml-1 text-[11px] text-primary font-semibold" data-testid="cut-ends">uglovi {endsLabel(s.ends)}</span> : null}{s.miter ? <svg viewBox="0 0 30 10" width="30" height="10" className="ml-1 inline-block text-primary" aria-label="rez 45° na oba kraja"><polygon points="0,0 30,0 20,10 10,10" fill="currentColor" /></svg> : null} × {s.qty} <span className="text-muted">({s.positions.map(posTag).join(', ')})</span></span>)}
                 </div>
               </div>
             ))}

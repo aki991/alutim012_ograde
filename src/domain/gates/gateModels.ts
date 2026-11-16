@@ -1,5 +1,6 @@
+import { leafHeightOf } from './slidingLayout';
 import { emptyDesign, systemOf, type GateDesign } from './design';
-import { slidingForModel, type SlidingSpec } from './slidingAssembly';
+import { resolveSliding, slidingForModel, type SlidingSpec } from './slidingAssembly';
 import type { CustomModel } from '../models/custom';
 import type { AutomationType, Gate, GateType, HingeType, LockType, Mm, OpeningSide, SwingDirection } from '../models/types';
 
@@ -46,21 +47,38 @@ export function gateConfigFromGate(g: Gate, clearWidthMm: Mm, version: number): 
   // veza sa modelom se postavlja pri primeni modela, ne čuva se u samom modelu
   delete design.template;
   return {
-    gateType: g.gateType, version, clearWidthMm, heightMm: g.heightMm, opening: g.opening, swing: g.swing, lock: g.lock, hinge: g.hinge,
+    gateType: g.gateType, version, clearWidthMm, heightMm: leafHeightOf(g), opening: g.opening, swing: g.swing, lock: g.lock, hinge: g.hinge,
     automation: g.automation, automationType: g.automationType, unequalLeaves: g.unequalLeaves, leftLeafMm: g.leftLeafMm, design,
     ...(g.sliding?.drawnLeaf ? { sliding: clone(g.sliding) } : {}),
   };
+}
+
+/**
+ * Klizni okov modela kao okov kapije u projektu: nezavisna kopija, krilo je crtež modela, visina je ukupna visina od tla.
+ * Stub vođice: u projektu je to stub ograde, pa se poseban stub ne postavlja, a njegov X iz crteža postaje položaj stuba ograde — osa stuba
+ * je (dužina krila − X) pre kraja krila (guideOverhang), pa krilo na strani vođice prelazi preko stuba.
+ */
+function slidingForProject(m: CustomModel, s: SlidingSpec): SlidingSpec {
+  const out: SlidingSpec = { ...clone(s), drawnLeaf: true, heightTotal: true, guidePost: false, ...(s.enabled ? { enabled: { ...s.enabled, guidePost: false } } : {}) };
+  const W = gateClearWidth(m);
+  const x = resolveSliding(s, W, m.heightMm + s.frameBottomY).at('guidePost');
+  out.guideOverhang = Math.max(0, Math.round((W - x) * 10) / 10);
+  const { guidePost: _gp, ...manual } = out.manual;
+  out.manual = manual;
+  return out;
 }
 
 /** polja kapije koja model postavlja (ispuna i parametri ostaju od modela, širina zavisi od mesta u projektu) */
 export function gateFieldsFromModel(m: CustomModel): Partial<Gate> {
   const c = m.gate ?? defaultGateConfig();
   return {
-    gateType: c.gateType, heightMm: m.heightMm, color: m.color, opening: c.opening, swing: c.swing, lock: c.lock, hinge: c.hinge,
+    // visina kapije je ukupna visina od tla: crtež modela je krilo, pa se dodaje odstojanje donje ivice rama
+    gateType: c.gateType, heightMm: m.heightMm + (c.gateType === 'sliding' && c.sliding ? c.sliding.frameBottomY : 0), color: m.color, opening: c.opening, swing: c.swing, lock: c.lock, hinge: c.hinge,
     automation: c.automation, automationType: c.automationType, unequalLeaves: c.unequalLeaves, leftLeafMm: c.leftLeafMm,
     design: { ...clone(c.design), template: { id: m.id, name: m.name, version: c.version } },
-    // klizni okov: nezavisna kopija; krilo je crtež modela
-    ...(c.gateType === 'sliding' && c.sliding ? { sliding: { ...clone(c.sliding), drawnLeaf: true }, automation: c.sliding.actuation === 'motor' } : { sliding: undefined }),
+    // klizni okov: nezavisna kopija; krilo je crtež modela. Poseban stub vođice postoji samo u crtanju kapije: u projektu je stub vođice
+    // običan stub ograde (betonski, aluminijumski …), pa se poseban stub ne crta i ne računa (može da se uključi u podešavanjima kapije)
+    ...(c.gateType === 'sliding' && c.sliding ? { sliding: slidingForProject(m, c.sliding), automation: c.sliding.actuation === 'motor' } : { sliding: undefined }),
   };
 }
 

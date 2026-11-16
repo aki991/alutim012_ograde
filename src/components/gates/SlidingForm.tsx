@@ -5,9 +5,9 @@ import {
   POS_LABELS, resolveSliding, slidingBom, variantTitle,
   type CheckLevel, type PosKey, type SlidingActuation, type SlidingBomItem, type SlidingResult, type SlidingSpec, type SlidingSupport,
 } from '../../domain/gates/slidingAssembly';
-import { dimDefault, dimOf, isPartOn, partsFor, PART_GROUP_LABELS, type DimDef, type PartDef, type PartGroup } from '../../domain/gates/slidingParts';
+import { dimDefault, dimOf, isPartOn, MATERIAL_TO_DIMS, partsFor, PART_GROUP_LABELS, type DimDef, type PartDef, type PartGroup } from '../../domain/gates/slidingParts';
 import { BRACE_LABELS, type BraceKind, type TailBrace } from '../../domain/gates/slidingTail';
-import { materialShape, sectionFace } from '../../domain/models/materialShape';
+import { materialDimFields, materialShape, sectionFace } from '../../domain/models/materialShape';
 import type { Material } from '../../domain/models/types';
 import { useAppStore } from '../../store/useAppStore';
 import { uid } from '../../utils/id';
@@ -104,7 +104,7 @@ export function SlidingForm({ spec, W, H, opening, onSpec, onWidth, onHeight, on
           {placed && hasIssue && <AlertTriangle size={14} className="text-amber-700" />}
           {placed && undefinedCount > 0 && items.length > 0 && <span className="text-[11px] font-normal text-amber-800" data-testid={`sl-part-undef-${p.key}`}>nije definisano{items.length > 1 ? ` (${undefinedCount})` : ''}</span>}
         </button>
-        {isOpen && <div className="px-2.5 pb-2.5"><SlidingPartBody part={p} spec={spec} res={res} bom={bom} onSpec={onSpec} onFrameBottom={onFrameBottom} /></div>}
+        {isOpen && <div className="px-2.5 pb-2.5"><SlidingPartBody part={p} spec={spec} res={res} bom={bom} onSpec={onSpec} onFrameBottom={onFrameBottom} slideId={slideId} /></div>}
       </div>
     );
   };
@@ -213,24 +213,75 @@ export function SlidingForm({ spec, W, H, opening, onSpec, onWidth, onHeight, on
 
 const isProfile = (b: SlidingBomItem): boolean => b.make === 'izrada' || b.key === 'rail' || b.key === 'carrier';
 
-/** širina cevi u pogledu iz naziva upisanog ručno (npr. „kvadratna cev 40×40×2“); 0 kad se mere ne prepoznaju */
-const faceOfText = (text: string): number => {
+/** mere preseka cevi: čeona strana (širina u pogledu spreda) i dubina (ka posmatraču) kad je presek neokrenut */
+interface FD { face: number; depth: number }
+const r1 = (n: number): number => Math.round(n * 10) / 10;
+const fdOfText = (text: string): FD => {
   const sh = materialShape({ sku: '', name: text, unit: 'm', category: 'profil' });
-  return sh.type === 'linear' && sh.exact ? Math.round(sectionFace(sh.section, 0).face * 10) / 10 : 0;
+  if (sh.type !== 'linear' || !sh.exact) return { face: 0, depth: 0 };
+  const e = sectionFace(sh.section, 0);
+  return { face: r1(e.face), depth: r1(e.depth) };
 };
+const faceOfText = (text: string): number => fdOfText(text).face;
+const fdOfMaterial = (m: Material): FD => { const sh = materialShape(m); if (sh.type !== 'linear') return { face: 0, depth: 0 }; const e = sectionFace(sh.section, 0); return { face: r1(e.face), depth: r1(e.depth) }; };
+
+/** izabran profil stavke (iz cenovnika ili upisan ručno) */
+const profileFD = (spec: SlidingSpec, materials: Material[], key: string): FD | null => {
+  const id = spec.partMat?.[key];
+  const m = id ? materials.find((x) => x.id === id) : undefined;
+  if (m) { const f = fdOfMaterial(m); return f.face > 0 ? f : null; }
+  const t = spec.partText?.[key];
+  if (t) { const f = fdOfText(t); return f.face > 0 ? f : null; }
+  return null;
+};
+/** vidljiva širina i dubina cevi posle okretanja preseka (90 = čeona strana je kraća stranica) */
+const visibleFD = (fd: FD, rot: number | undefined): { w: number; d: number } => (rot === 90 ? { w: fd.depth, d: fd.face } : { w: fd.face, d: fd.depth });
+
+/** gde se čuvaju vidljiva širina i dubina profila u sklopu (ključ stavke → ključevi mera) */
+const PROFILE_DIMS: Record<string, { w: string; d?: string }> = {
+  carrier: { w: 'carrier.h', d: 'carrier.d' }, 'tail-diag': { w: 'tail.diag.w', d: 'tail.diag.d' }, 'tail-bottom': { w: 'tail.bottom.w', d: 'tail.bottom.d' },
+};
+
+/** okretanje preseka: čeona strana cevi se menja, pa se menja i širina na crtežu, dužine i uglovi sečenja */
+function rotatePatch(spec: SlidingSpec, materials: Material[], key: string, rot: number): { patch: Partial<SlidingSpec>; w: number } {
+  const pr = { ...(spec.partRot ?? {}), [key]: rot };
+  const dims = { ...(spec.dims ?? {}) };
+  const fd = profileFD(spec, materials, key);
+  const v = fd ? visibleFD(fd, rot) : { w: 0, d: 0 };
+  const dk = PROFILE_DIMS[key];
+  if (dk) { if (v.w > 0) dims[dk.w] = v.w; else delete dims[dk.w]; if (dk.d) { if (v.d > 0) dims[dk.d] = v.d; else delete dims[dk.d]; } }
+  return { patch: { partRot: pr, dims }, w: v.w };
+}
+
+/** podaci za izbor čeone strane: samo za pravougaone preseke (kvadratna cev nema šta da se okreće) */
+function orientFor(spec: SlidingSpec, materials: Material[], key: string): { face: number; depth: number; rot: number } | undefined {
+  const fd = profileFD(spec, materials, key);
+  if (!fd || Math.abs(fd.face - fd.depth) < 0.05) return undefined;
+  return { ...fd, rot: spec.partRot?.[key] === 90 ? 90 : 0 };
+}
 
 /** izbor za stavku sastavnice: materijal iz cenovnika ili ručno upisan naziv (npr. „C profil 60×60×2“); prazno = nije definisano */
 interface Choice { materialId?: string; text?: string }
 
-/** izbor → izmene spec-a; mera koja dolazi iz profila (širina u pogledu) ide u `dimKey`, a vraća se i kao `w` */
-function choicePatch(spec: SlidingSpec, materials: Material[], key: string, c: Choice, dimKey?: string): { patch: Partial<SlidingSpec>; w: number } {
+/** izbor → izmene spec-a; vidljiva širina i dubina profila (uz izabranu čeonu stranu) idu u mere sklopa, a širina se vraća i kao `w` */
+function choicePatch(spec: SlidingSpec, materials: Material[], key: string, c: Choice): { patch: Partial<SlidingSpec>; w: number } {
   const pm = { ...(spec.partMat ?? {}) }; const pt = { ...(spec.partText ?? {}) }; const dims = { ...(spec.dims ?? {}) };
   let w = 0;
   const text = c.text?.trim();
-  if (c.materialId) { const m = materials.find((x) => x.id === c.materialId); pm[key] = c.materialId; delete pt[key]; w = m ? faceOf(m) : 0; }
-  else if (text) { delete pm[key]; pt[key] = text; w = faceOfText(text); }
+  if (c.materialId) {
+    const m = materials.find((x) => x.id === c.materialId); pm[key] = c.materialId; delete pt[key];
+    // izabrana kolica (ili drugi okov sa merama) prenose svoje mere u sklop
+    const map = MATERIAL_TO_DIMS[key];
+    if (m && map) for (const f of materialDimFields(m)) { const sk = map[f.key]; if (sk && f.value > 0) dims[sk] = f.value; }
+  }
+  else if (text) { delete pm[key]; pt[key] = text; }
   else { delete pm[key]; delete pt[key]; }
-  if (dimKey) { if (w > 0) dims[dimKey] = w; else delete dims[dimKey]; }
+  const next = { ...spec, partMat: pm, partText: pt };
+  const fd = profileFD(next, materials, key);
+  const v = fd ? visibleFD(fd, spec.partRot?.[key]) : { w: 0, d: 0 };
+  w = v.w;
+  const dk = PROFILE_DIMS[key];
+  if (dk) { if (v.w > 0) dims[dk.w] = v.w; else delete dims[dk.w]; if (dk.d) { if (v.d > 0) dims[dk.d] = v.d; else delete dims[dk.d]; } }
   return { patch: { partMat: pm, partText: pt, dims }, w };
 }
 
@@ -238,8 +289,10 @@ function choicePatch(spec: SlidingSpec, materials: Material[], key: string, c: C
  * Izbor materijala za deo: lista iz cenovnika (grupe, mere od najmanje do najveće, pretraga) ili ručno upisan naziv koji ide u krojnu
  * listu i radni nalog. Upisan naziv može dugmetom da se doda u „Materijali i cene“, pa se posle bira iz liste. Bez izbora: „nije definisano“.
  */
-function MaterialField({ label, kind, materialId, text, materials, testId, onChange }: {
+function MaterialField({ label, kind, materialId, text, materials, testId, onChange, orient }: {
   label: string; kind: 'profile' | 'hardware'; materialId?: string; text?: string; materials: Material[]; testId: string; onChange: (c: Choice) => void;
+  /** pravougaona cev: čeona strana (okrenuta ka posmatraču); 90 = kraća stranica preseka */
+  orient?: { face: number; depth: number; rot: number; onRot: (rot: number) => void };
 }) {
   const options = materials.filter((m) => (kind === 'profile' ? materialShape(m).type === 'linear' : HW_CATEGORIES.includes(m.category)));
   const chosen = materialId ? materials.find((m) => m.id === materialId) : undefined;
@@ -255,7 +308,8 @@ function MaterialField({ label, kind, materialId, text, materials, testId, onCha
     if (!existing) useAppStore.getState().upsertMaterial(mat);
     onChange({ materialId: mat.id });
   };
-  const face = chosen ? faceOf(chosen) : text ? faceOfText(text) : 0;
+  const face0 = chosen ? faceOf(chosen) : text ? faceOfText(text) : 0;
+  const face = orient ? (orient.rot === 90 ? orient.depth : orient.face) : face0;
   return (
     <div className="space-y-1" data-testid={`${testId}-field`}>
       <div className="text-[12.5px] leading-tight">{label}{kind === 'profile' && face > 0 && <span className="text-[11px] text-muted"> · širina u pogledu {face} mm</span>}</div>
@@ -268,6 +322,17 @@ function MaterialField({ label, kind, materialId, text, materials, testId, onCha
           onChange={(e) => setDraft(e.target.value)} onBlur={commit} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } }} />
         <button className="btn btn-sm shrink-0" disabled={!draft.trim()} title="Upisuje materijal u „Materijali i cene“ i bira ga iz liste" data-testid={`${testId}-add`} onClick={addToPrice}><Plus size={14} />Dodaj</button>
       </div>
+      {orient && (
+        <div className="space-y-1" data-testid={`${testId}-orient`}>
+          <div className="text-[11.5px] text-slate-600">Čeona strana cevi {orient.face}×{orient.depth} (okrenuta ka posmatraču)</div>
+          <span className="grid grid-cols-2 rounded-lg border border-line overflow-hidden">
+            {([[0, orient.face], [90, orient.depth]] as [number, number][]).map(([r, v]) => (
+              <button key={r} type="button" aria-pressed={orient.rot === r} data-testid={`${testId}-orient-${r}`} className={`py-1 text-[12.5px] font-semibold ${orient.rot === r ? 'bg-brand-black text-white' : 'bg-white hover:bg-slate-50'}`} onClick={() => orient.onRot(r)}>čeona strana {v} mm</button>
+            ))}
+          </span>
+          <p className="text-[11px] text-muted">Menja širinu cevi na crtežu, dužine i uglove sečenja u krojnoj listi.</p>
+        </div>
+      )}
       {text && !chosen && <p className="text-[11px] text-muted" data-testid={`${testId}-manual`}>Upisano ručno: ide u krojnu listu i radni nalog. Nije u cenovniku — „Dodaj“ ga upisuje u „Materijali i cene“.</p>}
       {chosen && chosen.unitPrice === 0 && <p className="text-[11px] text-amber-800">Cena nije upisana: upišite je u „Materijali i cene“.</p>}
     </div>
@@ -300,7 +365,9 @@ export function withPartOn(spec: SlidingSpec, key: string, placed: boolean): Par
  * Podešavanja jednog dela klizne kapije: postavljen ili ne, mere (veličina), položaj (od početka, razmak, broj), okov ili materijal
  * iz cenovnika i broj komada. Isto u crtanju modela i u panelu kapije u projektu.
  */
-export function SlidingPartBody({ part: p, spec, res, bom, onSpec, onFrameBottom, onRemove }: {
+export function SlidingPartBody({ part: p, spec, res, bom, onSpec, onFrameBottom, onRemove, slideId }: {
+  /** ID kapije (ili modela) čiji se crtež prikazuje: za isticanje jedne cevi repa */
+  slideId: string;
   part: PartDef; spec: SlidingSpec; res: SlidingResult; bom: SlidingBomItem[];
   onSpec: (patch: Partial<SlidingSpec>, key?: string) => void; onFrameBottom?: (v: number) => void;
   /** dugme „Ukloni sa kapije“ (crtanje modela); bez njega je prekidač „Postavljen na kapiju“ */
@@ -333,7 +400,8 @@ export function SlidingPartBody({ part: p, spec, res, bom, onSpec, onFrameBottom
         <div className="space-y-1.5" data-testid={`sl-part-profiles-${p.key}`}>
           {/* mera dela koja dolazi iz profila (npr. visina C-profila = širina izabranog profila u pogledu) */}
           {items.filter(isProfile).map((b) => <MaterialField key={b.key} label={b.name} kind="profile" materialId={b.materialId} text={b.materialText} materials={materials} testId={`sl-profile-${b.key}`}
-            onChange={(c) => onSpec(choicePatch(spec, materials, b.key, c, PROFILE_DIM[b.key]).patch)} />)}
+            orient={(() => { const o = orientFor(spec, materials, b.key); return o ? { ...o, onRot: (r: number) => onSpec(rotatePatch(spec, materials, b.key, r).patch) } : undefined; })()}
+            onChange={(c) => onSpec(choicePatch(spec, materials, b.key, c).patch)} />)}
         </div>
       )}
       {placed && p.dims.filter((d) => !d.hidden).map((d) => {
@@ -370,7 +438,7 @@ export function SlidingPartBody({ part: p, spec, res, bom, onSpec, onFrameBottom
           </div>
         );
       })}
-      {placed && p.key === 'tail' && <TailEditor spec={spec} res={res} onSpec={onSpec} />}
+      {placed && p.key === 'tail' && <TailEditor spec={spec} res={res} onSpec={onSpec} slideId={slideId} />}
       {placed && items.some((b) => !isProfile(b)) && (
         <div className="rounded-md bg-slate-50 p-2 space-y-2" data-testid={`sl-part-bom-${p.key}`}>
           <div className="text-[11px] font-bold uppercase text-muted">Okov iz cenovnika</div>
@@ -382,9 +450,6 @@ export function SlidingPartBody({ part: p, spec, res, bom, onSpec, onFrameBottom
   );
 }
 
-/** mera dela koja se uzima iz izabranog profila: ključ stavke → ključ mere */
-const PROFILE_DIM: Record<string, string> = { carrier: 'carrier.h' };
-
 /** širina cevi u pogledu spreda (mm) iz izabranog profila */
 const faceOf = (m: Material): number => { const sh = materialShape(m); return sh.type === 'linear' ? Math.round(sectionFace(sh.section, 0).face * 10) / 10 : 0; };
 
@@ -392,8 +457,11 @@ const faceOf = (m: Material): number => { const sh = materialShape(m); return sh
  * Rep samonoseće kapije: profili kosnika i donje pojasnice (padajući meni), ojačanja (bez, ili više njih: uspravno, vodoravno, koso)
  * sa svojim položajem i profilom. Uz svaku cev su dužina i uglovi sečenja, koji idu u krojnu listu.
  */
-function TailEditor({ spec, res, onSpec }: { spec: SlidingSpec; res: SlidingResult; onSpec: (p: Partial<SlidingSpec>) => void }) {
+function TailEditor({ spec, res, onSpec, slideId }: { spec: SlidingSpec; res: SlidingResult; onSpec: (p: Partial<SlidingSpec>) => void; slideId: string }) {
   const materials = useAppStore((s) => s.materials);
+  // izabrana cev repa se ističe na crtežu, da se uporedi sa krojnom listom (isti naziv, dužina i uglovi)
+  const sel = useAppStore((s) => s.editor.tailSel?.[slideId] ?? null);
+  const pick = (key: string) => useAppStore.getState().setTailSel(slideId, sel === key ? null : key);
   const braces: TailBrace[] = spec.braces ?? [{ id: 'b1', kind: 'vertical' }];
   const fh = res.frameHeight; const fb = spec.frameBottomY; const W = res.W;
   const dflt = res.tailDefaults ?? { vertical: Math.round(res.pos.tailBrace.value), horizontal: Math.round(fb + fh * 0.62), diagX1: W, diagX2: Math.round(res.pos.tailBrace.value) };
@@ -403,12 +471,45 @@ function TailEditor({ spec, res, onSpec }: { spec: SlidingSpec; res: SlidingResu
     if (!m) return <p className="text-[11.5px] text-amber-800">Cev ne staje na ovom položaju.</p>;
     const d = (n: number) => String(n).replace('.', ',');
     const e = (a: number[]) => (a.length > 1 ? `V ${a.map(d).join('° + ')}` : d(a[0] ?? 90));
-    return <p className="text-[11.5px] text-muted" data-testid={`sl-cutinfo-${key}`}>dužina {m.len} mm · rez pod uglom {e(m.ends[0])}° / {e(m.ends[1])}° (90° = ravan rez; V = zasek u dva reza)</p>;
+    const on = sel === key;
+    return (
+      <div className={`flex items-start gap-2 rounded-md ${on ? 'ring-2 ring-primary bg-primary-50 p-1.5' : ''}`} data-selected={on ? 'true' : undefined}>
+        <p className="text-[11.5px] text-muted flex-1" data-testid={`sl-cutinfo-${key}`}>{on && <b className="text-ink">{m.label} · </b>}čeona strana {m.w} mm · dužina {m.len} mm · rez pod uglom {e(m.ends[0])}° / {e(m.ends[1])}° (90° = ravan rez; V = zasek u dva reza)</p>
+        <button className={`btn btn-sm shrink-0 ${on ? 'btn-dark' : ''}`} aria-pressed={on} data-testid={`sl-tail-pick-${key}`} title="Ističe ovu cev na crtežu, da se uporedi sa krojnom listom" onClick={() => pick(key)}>{on ? 'Istaknuto' : 'Istakni'}</button>
+      </div>
+    );
   };
-  const pickMain = (key: 'tail-diag' | 'tail-bottom', dimKey: string) => (c: Choice) => onSpec(choicePatch(spec, materials, key, c, dimKey).patch);
+  const pickMain = (key: 'tail-diag' | 'tail-bottom') => (c: Choice) => onSpec(choicePatch(spec, materials, key, c).patch);
+  const rotMain = (key: string) => (r: number) => onSpec(rotatePatch(spec, materials, key, r).patch);
+  const orientMain = (key: string) => { const o = orientFor(spec, materials, key); return o ? { ...o, onRot: rotMain(key) } : undefined; };
   const textOfKey = (key: string): string | undefined => spec.partText?.[key];
   const setBraces = (next: TailBrace[]) => onSpec({ braces: next });
   const patchBrace = (id: string, p: Partial<TailBrace>) => setBraces(braces.map((b) => (b.id === id ? { ...b, ...p } : b)));
+  // mere ojačanja imaju dozvoljen raspon (zavisi od repa i ostalih ojačanja): veća ili manja vrednost se svodi na granicu uz obaveštenje ispod polja
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const rangeOf = (id: string, field: 'pos' | 'pos2') => res.tailRanges?.[id]?.[field];
+  const commitPos = (id: string, field: 'pos' | 'pos2', v: number) => {
+    const r = rangeOf(id, field);
+    let val = Math.round(v); let msg = '';
+    if (r && r.max < r.min) msg = 'Ojačanje ne staje na ovom repu.';
+    else if (r && val > r.max) { val = r.max; msg = `Vrednost ne može biti veća od ${r.max} mm.`; }
+    else if (r && val < r.min) { val = r.min; msg = `Vrednost ne može biti manja od ${r.min} mm.`; }
+    setNotes((n) => ({ ...n, [`${id}.${field}`]: msg }));
+    patchBrace(id, { [field]: val });
+  };
+  const rangeNote = (id: string, field: 'pos' | 'pos2', i: number) => {
+    const r = rangeOf(id, field); const msg = notes[`${id}.${field}`];
+    return (
+      <>
+        {r && r.max >= r.min && <p className="text-[11px] text-muted -mt-1" data-testid={`sl-brace-range-${i}-${field}`}>dozvoljeno {r.min}–{r.max} mm</p>}
+        {msg && <p className="text-[11.5px] font-semibold text-amber-800" role="alert" data-testid={`sl-brace-note-${i}-${field}`}>{msg}</p>}
+      </>
+    );
+  };
+  const orientBrace = (b: TailBrace) => {
+    const key = `tail-brace-${b.id}`; const o = orientFor(spec, materials, key);
+    return o ? { ...o, onRot: (r: number) => { const x = rotatePatch(spec, materials, key, r); onSpec({ ...x.patch, braces: braces.map((y) => (y.id === b.id ? { ...y, w: x.w > 0 ? x.w : undefined } : y)) }); } } : undefined;
+  };
   const pickBrace = (b: TailBrace) => (c: Choice) => {
     const r = choicePatch(spec, materials, `tail-brace-${b.id}`, c);
     onSpec({ ...r.patch, braces: braces.map((x) => (x.id === b.id ? { ...x, w: r.w > 0 ? r.w : undefined } : x)) });
@@ -417,9 +518,9 @@ function TailEditor({ spec, res, onSpec }: { spec: SlidingSpec; res: SlidingResu
   const KIND_OPTS: BraceKind[] = ['vertical', 'horizontal', 'diagonal'];
   return (
     <div className="space-y-2" data-testid="sl-tail-editor">
-      <MaterialField label="Profil kosnika" kind="profile" materialId={spec.partMat?.['tail-diag']} text={textOfKey('tail-diag')} materials={materials} onChange={pickMain('tail-diag', 'tail.diag.w')} testId="sl-profile-tail-diag" />
+      <MaterialField label="Profil kosnika" kind="profile" materialId={spec.partMat?.['tail-diag']} text={textOfKey('tail-diag')} materials={materials} orient={orientMain('tail-diag')} onChange={pickMain('tail-diag')} testId="sl-profile-tail-diag" />
       {info('tail-diag')}
-      <MaterialField label="Profil donje pojasnice" kind="profile" materialId={spec.partMat?.['tail-bottom']} text={textOfKey('tail-bottom')} materials={materials} onChange={pickMain('tail-bottom', 'tail.bottom.w')} testId="sl-profile-tail-bottom" />
+      <MaterialField label="Profil donje pojasnice" kind="profile" materialId={spec.partMat?.['tail-bottom']} text={textOfKey('tail-bottom')} materials={materials} orient={orientMain('tail-bottom')} onChange={pickMain('tail-bottom')} testId="sl-profile-tail-bottom" />
       {info('tail-bottom')}
       <div className="rounded-md bg-slate-50 p-2 space-y-2" data-testid="sl-braces">
         <div className="flex items-center gap-2">
@@ -436,21 +537,25 @@ function TailEditor({ spec, res, onSpec }: { spec: SlidingSpec; res: SlidingResu
               <span className="flex-1" />
               <button className="btn btn-icon !w-7 !h-7" aria-label="Ukloni ojačanje" data-testid={`sl-brace-remove-${i}`} onClick={() => setBraces(braces.filter((x) => x.id !== b.id))}><Trash2 size={13} /></button>
             </div>
-            <MaterialField label="Profil" kind="profile" materialId={spec.partMat?.[`tail-brace-${b.id}`]} text={textOfKey(`tail-brace-${b.id}`)} materials={materials} onChange={pickBrace(b)} testId={`sl-brace-profile-${i}`} />
+            <MaterialField label="Profil" kind="profile" materialId={spec.partMat?.[`tail-brace-${b.id}`]} text={textOfKey(`tail-brace-${b.id}`)} materials={materials} orient={orientBrace(b)} onChange={pickBrace(b)} testId={`sl-brace-profile-${i}`} />
             {b.kind === 'vertical' && (
               <label className="grid grid-cols-[minmax(0,1fr)_96px] gap-2 items-center text-[12.5px]"><span>Položaj (X od početka krila)</span>
-                <NumInput value={Math.round(b.pos ?? dflt.vertical)} testId={`sl-brace-pos-${i}`} ariaLabel="Položaj ojačanja" onCommit={(v) => { if (v !== null) patchBrace(b.id, { pos: Math.round(v) }); }} /></label>
+                <NumInput value={Math.round(b.pos ?? dflt.vertical)} testId={`sl-brace-pos-${i}`} ariaLabel="Položaj ojačanja" onCommit={(v) => { if (v !== null) commitPos(b.id, 'pos', v); }} /></label>
             )}
+            {b.kind === 'vertical' && rangeNote(b.id, 'pos', i)}
             {b.kind === 'horizontal' && (
               <label className="grid grid-cols-[minmax(0,1fr)_96px] gap-2 items-center text-[12.5px]"><span>Visina od tla</span>
-                <NumInput value={Math.round(b.pos ?? dflt.horizontal)} testId={`sl-brace-pos-${i}`} ariaLabel="Visina ojačanja" onCommit={(v) => { if (v !== null) patchBrace(b.id, { pos: Math.round(v) }); }} /></label>
+                <NumInput value={Math.round(b.pos ?? dflt.horizontal)} testId={`sl-brace-pos-${i}`} ariaLabel="Visina ojačanja" onCommit={(v) => { if (v !== null) commitPos(b.id, 'pos', v); }} /></label>
             )}
+            {b.kind === 'horizontal' && rangeNote(b.id, 'pos', i)}
             {b.kind === 'diagonal' && (
               <>
                 <label className="grid grid-cols-[minmax(0,1fr)_96px] gap-2 items-center text-[12.5px]"><span>Donji kraj (X; polazno u uglu uz ram)</span>
-                  <NumInput value={Math.round(b.pos ?? dflt.diagX1)} testId={`sl-brace-pos-${i}`} ariaLabel="Donji kraj ojačanja" onCommit={(v) => { if (v !== null) patchBrace(b.id, { pos: Math.round(v) }); }} /></label>
+                  <NumInput value={Math.round(b.pos ?? dflt.diagX1)} testId={`sl-brace-pos-${i}`} ariaLabel="Donji kraj ojačanja" onCommit={(v) => { if (v !== null) commitPos(b.id, 'pos', v); }} /></label>
+                {rangeNote(b.id, 'pos', i)}
                 <label className="grid grid-cols-[minmax(0,1fr)_96px] gap-2 items-center text-[12.5px]"><span>Gornji kraj (X, na kosniku)</span>
-                  <NumInput value={Math.round(b.pos2 ?? dflt.diagX2)} testId={`sl-brace-pos2-${i}`} ariaLabel="Gornji kraj ojačanja" onCommit={(v) => { if (v !== null) patchBrace(b.id, { pos2: Math.round(v) }); }} /></label>
+                  <NumInput value={Math.round(b.pos2 ?? dflt.diagX2)} testId={`sl-brace-pos2-${i}`} ariaLabel="Gornji kraj ojačanja" onCommit={(v) => { if (v !== null) commitPos(b.id, 'pos2', v); }} /></label>
+                {rangeNote(b.id, 'pos2', i)}
               </>
             )}
             {info(`tail-brace-${b.id}`)}

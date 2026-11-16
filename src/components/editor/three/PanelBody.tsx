@@ -1,7 +1,9 @@
 import { isTubesModel } from '../../../domain/models/tubes';
 import { TubesWithRam } from './TubesPanel';
 import { customPartsFor } from '../../../domain/models/customRegistry';
+import { zExtent } from '../../../domain/models/custom';
 import { PartMesh } from '../../designer/Designer3D';
+import { materialKey } from '../../../domain/models/materialShape';
 import { useTexture } from '@react-three/drei';
 import { Suspense, useLayoutEffect, useMemo } from 'react';
 import * as THREE from 'three';
@@ -28,6 +30,8 @@ export interface PanelProps {
   skipLeftPost?: boolean;
   /** tarabica: prepust levo i desno kad se razlikuje (krilo dvokrilne kapije nema prepust uz sredinu) */
   overhangs?: [number, number];
+  /** ručno nacrtan model: sredina dubine (Z) se postavlja u ravan polja (klizno krilo, uz koje stoji okov) */
+  centerZ?: boolean;
 }
 
 const FRAME_DEPTH = 0.04;
@@ -141,9 +145,11 @@ function RailArtPanel({ url, rail, axisWidthMm, heightMm, rodCount }: { url: str
 export function PanelBody(props: PanelProps) {
   // ručno nacrtan model: isti delovi kao na crtežu (profili izvučeni iz preseka), razvučeni na veličinu polja
   if (FENCE_MODELS[props.modelId].style === 'custom') {
+    const resolved = customPartsFor(props.modelId, props.widthMm, props.heightMm, colorHex(props.color));
+    const zMid = props.centerZ ? zExtent(resolved)?.mid ?? 0 : 0;
     return (
-      <group position={[-s(props.widthMm) / 2, 0, 0]} scale={s(1)}>
-        {customPartsFor(props.modelId, props.widthMm, props.heightMm, colorHex(props.color)).map((r) => <PartMesh key={r.part.id} part={r.part} shape={r.shape} hex={r.hex} materialKey={r.material ? `${r.material.sku}|${r.material.name}` : 'x'} selected={false} />)}
+      <group position={[-s(props.widthMm) / 2, 0, -s(zMid)]} scale={s(1)}>
+        {resolved.map((r) => <PartMesh key={r.part.id} part={r.part} shape={r.shape} hex={r.hex} materialKey={r.material ? materialKey(r.material) : 'x'} selected={false} />)}
       </group>
     );
   }

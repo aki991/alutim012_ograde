@@ -233,7 +233,7 @@ function SwingSketch({ gate, res, W, H, from, onPick, width, showDims, postHs, p
               <rect x={x} y={top} width={w} height={hPx} fill="#fff" />
               {Array.from({ length: slats }, (_, j) => <rect key={j} x={x + 3} y={top + 3 + j * ((hPx - 6) / slats)} width={Math.max(w - 6, 0)} height={((hPx - 6) / slats) * 0.62} fill="#374151" />)}
               <rect x={x} y={top} width={w} height={hPx} fill="none" stroke={l.assumed ? MISS : '#dc2626'} strokeWidth={2} strokeDasharray={l.assumed ? '5 4' : undefined} />
-              {l.hinge && <path d={`M ${l.hinge === 'left' ? x + w : x} ${top} L ${l.hinge === 'left' ? x : x + w} ${top + hPx / 2} L ${l.hinge === 'left' ? x + w : x} ${top + hPx}`} fill="none" stroke="#fff" strokeDasharray="6 4" strokeWidth={1.2} />}
+              {l.hinge && <path d={`M ${l.hinge === 'left' ? x : x + w} ${top} L ${l.hinge === 'left' ? x + w : x} ${top + hPx / 2} L ${l.hinge === 'left' ? x : x + w} ${top + hPx}`} fill="none" stroke="#fff" strokeDasharray="6 4" strokeWidth={1.2} />}
               </>)}
               {/* brava: na visini „Visina brave“ od donje ivice krila (bez mere — na sredini) */}
               <rect data-testid={`sk-lock-${i}`} x={lockX - 2} y={lockCy - 14} width={4} height={28} rx={2} fill="#d1d5db" stroke={edge} strokeWidth={0.6} />

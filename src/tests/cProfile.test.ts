@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cProfileSpec, materialDimFields, materialShape, matchesSearch, searchKey, sectionFace, syncNameDims } from '../domain/models/materialShape';
+import { cProfileSpec, isSymmetricRect, materialDimFields, materialShape, matchesSearch, searchKey, sectionFace, syncNameDims } from '../domain/models/materialShape';
 import { profileGeometry } from '../domain/models/profileDrawings';
 import { cleanMaterialName } from '../domain/models/materialTitle';
 
@@ -102,5 +102,41 @@ describe('izmena mera preseka materijala', () => {
     expect(syncNameDims('C profil 60x60x2', f(60, 60, 2), f(50, 60, 2))).toBe('C profil 50×60×2');
     expect(syncNameDims('Šina za kapiju', f(60, 60, 2), f(50, 60, 2))).toBe('Šina za kapiju');
     expect(syncNameDims('Cev 160×60×2', f(60, 60, 2), f(50, 60, 2))).toBe('Cev 160×60×2');
+  });
+});
+
+describe('kolica samonoseće kapije kao materijal', () => {
+  const kol = { sku: 'KOL-210', name: 'Kolica za samonoseću kapiju 210×100', unit: 'kom' as const, category: 'okov' as const };
+  it('kolica su komadni deo sa merama koje se mogu menjati (iz naziva: dužina i širina ploče)', () => {
+    const sh = materialShape(kol);
+    expect(sh.type).toBe('piece');
+    const f = Object.fromEntries(materialDimFields(kol).map((x) => [x.key, x.value]));
+    expect(f).toEqual({ plateW: 210, plateD: 100, plateH: 30, stemW: 86, stemH: 90, wheelD: 52, wheelGap: 68 });
+    const bigger = materialShape({ ...kol, dims: { wheelD: 70, plateH: 40 } });
+    expect(JSON.stringify(bigger)).not.toBe(JSON.stringify(sh));
+    expect(Object.fromEntries(materialDimFields({ ...kol, dims: { wheelD: 70 } }).map((x) => [x.key, x.value])).wheelD).toBe(70);
+    // naziv drugih mera menja dužinu i širinu ploče
+    expect(materialDimFields({ ...kol, name: 'Kolica 160×120' }).slice(0, 2).map((x) => x.value)).toEqual([160, 120]);
+  });
+  it('polazna kolica su u spisku materijala, a mere materijala se mapiraju na mere sklopa', async () => {
+    const { MODEL_MATERIALS, DEFAULT_CARRIAGES } = await import('../data/modelMaterials');
+    const { MATERIAL_TO_DIMS, dimDef } = await import('../domain/gates/slidingParts');
+    expect(DEFAULT_CARRIAGES.length).toBeGreaterThanOrEqual(2);
+    for (const c of DEFAULT_CARRIAGES) expect(MODEL_MATERIALS.some((m) => m.id === c.id)).toBe(true);
+    const keys = materialDimFields(DEFAULT_CARRIAGES[0]).map((f) => f.key);
+    for (const [from, to] of Object.entries(MATERIAL_TO_DIMS.carriages)) { expect(keys).toContain(from); expect(dimDef(to), to).toBeDefined(); }
+    // lakša kolica imaju manje mere
+    const light = Object.fromEntries(materialDimFields(DEFAULT_CARRIAGES[1]).map((f) => [f.key, f.value]));
+    expect(light.wheelD).toBe(45); expect(light.plateW).toBe(160);
+  });
+});
+
+describe('čeona strana: koji preseci se okreću čeonom stranom', () => {
+  const sec = (name: string) => { const s = materialShape({ sku: 'Z1', name, unit: 'm', category: 'profil' }); return s.type === 'linear' ? s.section : null; };
+  it('pravougaone cevi i trake da; profili sa otvorom, kraci i okrugle cevi ne', () => {
+    expect(isSymmetricRect(sec('Kvadratna cev 60×40×2')!)).toBe(true);
+    expect(isSymmetricRect(sec('Kvadratna cev 40×40×2')!)).toBe(true);
+    expect(isSymmetricRect(sec('Traka 30×3')!)).toBe(true);
+    for (const n of ['U profil 60×28×2', 'L profil 40×40×2', 'C profil 60×60×2', 'Okrugla cev Ø50×2', 'Zakošena letvica 80×20×1']) expect(isSymmetricRect(sec(n)!), n).toBe(false);
   });
 });

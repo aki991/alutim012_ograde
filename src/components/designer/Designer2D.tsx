@@ -42,12 +42,15 @@ interface Props {
   onPlace?: (dx: number, dy: number) => void;
   /** dodatni sloj preko crteža (klizni okov), u koordinatama SVG-a (y naniže); px = mm po pikselu */
   overlay?: (px: number) => React.ReactNode;
+  /** dodatni sloj ISPOD crteža (fiksni klizni okov koji stoji iza krila) */
+  underlay?: (px: number) => React.ReactNode;
   /** y linije tla u koordinatama SVG-a (klizna kapija: krilo je podignuto od tla); bez vrednosti tlo je donja ivica crteža */
   groundY?: number;
   /** okvir koji uklapanje pogleda uzima u obzir pored delova (mm, y nagore) */
   extraBounds?: { x0: number; y0: number; x1: number; y1: number } | null;
   /** klik na deo dodatnog sloja (atribut data-sliding-part) */
-  onOverlayPick?: (key: string) => void;
+  /** klik na deo okova na crtežu; za cev repa se šalje i ključ cevi (tail-diag, tail-brace-…) */
+  onOverlayPick?: (key: string, member?: string) => void;
 }
 
 const snap = (v: number, g: number): number => Math.round(v / g) * g;
@@ -100,7 +103,7 @@ function DimsLayer({ box, fs }: { box: { x0: number; y0: number; x1: number; y1:
  * Ctrl + klik dodaje ili skida deo iz izbora, prevlačenje po praznom bira sve delove koje okvir dotakne; prevlačenje izabranog
  * dela pomera ceo izbor. Desni (ili srednji) taster pomera papir. Pokazivač je obična strelica.
  */
-export function Designer2D({ parts, active, selectedIds, ortho, gridMm, onSelect, onAdd, onMoveStart, onMove, placing, onPlace, showDims = true, viewShift, fitTick = 0, onMoveEnd, overlay, groundY = 0, extraBounds, onOverlayPick }: Props) {
+export function Designer2D({ parts, active, selectedIds, ortho, gridMm, onSelect, onAdd, onMoveStart, onMove, placing, onPlace, showDims = true, viewShift, fitTick = 0, onMoveEnd, overlay, underlay, groundY = 0, extraBounds, onOverlayPick }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ w: 800, h: 500 });
@@ -114,7 +117,8 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, onSelect
   const activeShape = useMemo(() => (active ? materialShape(active) : null), [active]);
   const vh = (view.w * size.h) / size.w;
   /** okvir crteža (svi delovi): odatle su ukupne mere */
-  const dimsBox = useMemo(() => extentBounds(parts), [parts]);
+  // kote idu od tla: kod klizne kapije je krilo podignuto od tla, pa visina obuhvata i taj razmak (ukupna visina od dna ograde)
+  const dimsBox = useMemo(() => { const b = extentBounds(parts); return b && groundY > 0 ? { ...b, y0: Math.min(b.y0, -groundY) } : b; }, [parts, groundY]);
   // nalepljeni delovi: sredina njihovog okvira stoji na pokazivaču (na mreži)
   const placeOffset = useMemo(() => {
     if (!placing?.length || !cursor) return null;
@@ -193,7 +197,7 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, onSelect
     if (active) { drag.current = { mode: 'draw', sx: snap(p.x, gridMm), sy: snap(p.y, gridMm) }; return; }
     if (e.button !== 0) return;
     const hw = onOverlayPick ? (e.target as Element).closest('[data-sliding-part]')?.getAttribute('data-sliding-part') : null;
-    if (hw && hw !== 'leaf') { onOverlayPick!(hw); return; }
+    if (hw && hw !== 'leaf') { onOverlayPick!(hw, (e.target as Element).closest('[data-tail-member]')?.getAttribute('data-tail-member') ?? undefined); return; }
     const add = e.ctrlKey || e.metaKey;
     const id = (e.target as Element).closest('[data-part-id]')?.getAttribute('data-part-id');
     const hit = id ? parts.find((r) => r.part.id === id) : undefined;
@@ -272,6 +276,7 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, onSelect
         {lines}
         <line x1={view.x} y1={groundY} x2={view.x + view.w} y2={groundY} stroke="#64748b" strokeWidth={1.5} vectorEffect="non-scaling-stroke" data-testid="designer-ground" />
         {showDims && dimsBox && <DimsLayer box={dimsBox} fs={fs} />}
+        {underlay && <g data-testid="designer-underlay">{underlay(view.w / size.w)}</g>}
         <g transform="scale(1,-1)">
           {parts.map((r) => <PartSvg key={r.part.id} part={r.part} shape={r.shape} hex={r.hex} selected={selected.has(r.part.id)} />)}
           {box && <rect data-testid="designer-select-box" x={box.x0} y={box.y0} width={box.x1 - box.x0} height={box.y1 - box.y0} fill="#2563eb" fillOpacity={0.08} stroke="#2563eb" strokeWidth={1} strokeDasharray="5 4" vectorEffect="non-scaling-stroke" pointerEvents="none" />}

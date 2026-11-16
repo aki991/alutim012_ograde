@@ -2,6 +2,8 @@ import { computeInfill } from '../domain/geometry/infill';
 import { computeLayout, isSpacer, outerWidthMm } from '../domain/geometry/layout';
 import type { Project } from '../domain/models/types';
 import { itemLabel } from '../utils/labels';
+import { localToWorld } from '../domain/gates/slidingAssembly';
+import { slidingDrawnItems, type Drawn } from './slidingWorkSvg';
 
 /**
  * Shema ograde za radni nalog: svaki element u boji svoje pozicije (kao na krojnoj listi), sa oznakom, nazivom i merom.
@@ -40,16 +42,29 @@ export function schemaSvg(project: Project, keyOfItem: (index: number) => string
   const solid = real.filter((li) => li.item.kind !== 'opening');
   const visiblePosts = layout.posts.filter((lp) => !lp.hidden);
   const maxPost = Math.max(0, ...project.posts.map((p) => p.widthMm));
-  const totalMm = Math.max(1, layout.totalModularMm + maxPost);
+  // klizne kapije se crtaju kako stvarno izgledaju (krilo iz crteža, rep, C-profil, kolica); rep može da izađe van ograde
+  const slidingArt = new Map<number, Drawn[]>();
+  for (const li of solid) {
+    const it = li.item;
+    if (it.kind !== 'gate' || !it.sliding) continue;
+    const got = slidingDrawnItems(it, li, (x) => localToWorld(x, it.opening, li.clearStart, li.clearEnd));
+    // graničnik hoda stoji daleko od kapije (na kraju hoda): ne crta se, da shema ne bude sitna
+    if (got) slidingArt.set(li.index, got.items.filter((d) => d.comp !== 'stop'));
+  }
+  const artXs = [...slidingArt.values()].flat().flatMap((d) => (d.poly ? d.poly.map((p) => p[0]) : d.circle ? [d.circle.cx - d.circle.r, d.circle.cx + d.circle.r] : []));
+  const extraL = Math.max(0, -maxPost / 2 - Math.min(0, ...artXs));
+  const extraR = Math.max(0, Math.max(0, ...artXs) - (layout.totalModularMm + maxPost / 2));
+  const totalMm = Math.max(1, layout.totalModularMm + maxPost + extraL + extraR);
 
   // stvarna visina: ograda stoji na svom podnožju (koje se ne crta), kapija i otvor na zemlji; posle stepeništa na novom nivou
   const baseOf = (li: (typeof real)[number]) => li.floorStart + (li.item.kind === 'fence' ? li.plinthMm : 0);
   const riseOf = (li: (typeof real)[number]) => li.floorEnd - li.floorStart;
   const postTopOf = (lp: (typeof visiblePosts)[number]) => lp.floorMm + lp.topMm;
-  const maxH = Math.max(1, ...real.map((li) => baseOf(li) + Math.max(0, riseOf(li)) + li.item.heightMm), ...visiblePosts.map(postTopOf));
+  const artTop = (i: number) => Math.max(0, ...(slidingArt.get(i) ?? []).flatMap((d) => (d.poly ? d.poly.map((p) => p[1]) : d.circle ? [d.circle.cy + d.circle.r] : [])));
+  const maxH = Math.max(1, ...real.map((li) => baseOf(li) + Math.max(0, riseOf(li)) + Math.max(li.item.heightMm, artTop(li.index))), ...visiblePosts.map(postTopOf));
   const s = Math.min((W - 2 * padX) / totalMm, 230 / maxH);
   const drawW = totalMm * s;
-  const ox = (W - drawW) / 2 + (maxPost * s) / 2; // x nule (osa prvog stuba)
+  const ox = (W - drawW) / 2 + (maxPost * s) / 2 + extraL * s; // x nule (osa prvog stuba)
 
   // oznake pozicija iznad elemenata: redovi bez preklapanja
   const tags = solid.map((li) => {
@@ -108,16 +123,31 @@ export function schemaSvg(project: Project, keyOfItem: (index: number) => string
     const y = ground - baseOf(li) * s - h;
     // stepenište: element se iskosi (vertikale ostaju vertikalne)
     const t = li.axisEnd > li.axisStart ? riseOf(li) / (li.axisEnd - li.axisStart) : 0;
+    const art = slidingArt.get(li.index);
+    if (art) {
+      // klizna kapija: stvarni izgled (delovi krila, rep i C-profil u boji pozicije, okov sivo)
+      const base = baseOf(li);
+      const P = (q: [number, number]) => `${(ox + q[0] * s).toFixed(1)},${(ground - (base + q[1]) * s).toFixed(1)}`;
+      for (const kind of ['fixed', 'part', 'hw'] as const) {
+        for (const d of art) {
+          if (d.kind !== kind) continue;
+          const fill = kind === 'part' ? color : kind === 'hw' ? '#94a3b8' : '#e2e8f0';
+          const stroke = kind === 'part' ? color : '#64748b';
+          if (d.poly) out.push(`<polygon data-sliding-art="${kind}" points="${d.poly.map(P).join(' ')}" fill="${fill}" fill-opacity="${kind === 'part' ? 0.35 : 1}" stroke="${stroke}" stroke-width="0.7" stroke-linejoin="round"/>`);
+          if (d.circle) out.push(`<circle cx="${(ox + d.circle.cx * s).toFixed(1)}" cy="${(ground - (base + d.circle.cy) * s).toFixed(1)}" r="${Math.max(1.5, d.circle.r * s).toFixed(1)}" fill="#fff" stroke="#64748b" stroke-width="0.8"/>`);
+        }
+      }
+    }
     if (t) out.push(`<g transform="matrix(1 ${(-t).toFixed(5)} 0 1 0 ${(t * x).toFixed(2)})">`);
-    out.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="${color}" fill-opacity="0.14" stroke="${color}" stroke-width="2"/>`);
+    if (!art) out.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="${color}" fill-opacity="0.14" stroke="${color}" stroke-width="2"/>`);
     // ispuna iz istog proračuna kao crtež
     const modelId = it.kind === 'fence' ? it.modelId : it.infillModelId;
     const geo = computeInfill(modelId, li.clearWidth, it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount, it.params.liftMm, undefined, it.params.archMm);
     const ix = ox + li.clearStart * s;
-    for (const b of geo.bars) {
+    for (const b of art ? [] : geo.bars) {
       out.push(`<rect x="${(ix + b.x * s).toFixed(1)}" y="${(y + b.y * s).toFixed(1)}" width="${Math.max(0.8, b.w * s).toFixed(1)}" height="${Math.max(0.8, b.h * s).toFixed(1)}" fill="${color}" fill-opacity="0.55"/>`);
     }
-    if (it.kind === 'gate') out.push(`<line x1="${x.toFixed(1)}" y1="${(y + h).toFixed(1)}" x2="${(x + w).toFixed(1)}" y2="${y.toFixed(1)}" stroke="${color}" stroke-width="1.2" stroke-dasharray="6 5" opacity="0.8"/>`);
+    if (it.kind === 'gate' && !art) out.push(`<line x1="${x.toFixed(1)}" y1="${(y + h).toFixed(1)}" x2="${(x + w).toFixed(1)}" y2="${y.toFixed(1)}" stroke="${color}" stroke-width="1.2" stroke-dasharray="6 5" opacity="0.8"/>`);
     if (t) out.push('</g>');
 
     // naziv i mera na elementu: vodoravno ako staje, inače uspravno
@@ -174,7 +204,7 @@ export function schemaSvg(project: Project, keyOfItem: (index: number) => string
   // ukupna zauzeta dužina
   const y0 = lowest + 10;
   out.push(`<line x1="${(ox - maxPost * s / 2).toFixed(1)}" y1="${y0.toFixed(1)}" x2="${(ox + (layout.totalModularMm + maxPost / 2) * s).toFixed(1)}" y2="${y0.toFixed(1)}" stroke="#94a3b8" stroke-width="1"/>`);
-  out.push(`<text x="${(W / 2).toFixed(1)}" y="${(y0 + 13).toFixed(1)}" text-anchor="middle" font-family="${FONT}" font-size="11.5" fill="#475569">ukupna dužina ${Math.round(layout.occupiedMm)} mm</text>`);
+  out.push(`<text x="${(ox + layout.totalModularMm * s / 2).toFixed(1)}" y="${(y0 + 13).toFixed(1)}" text-anchor="middle" font-family="${FONT}" font-size="11.5" fill="#475569">ukupna dužina ${Math.round(layout.occupiedMm)} mm</text>`);
 
   return { svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">${out.join('')}</svg>`, width: W, height: H };
 }

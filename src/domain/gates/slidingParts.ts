@@ -74,12 +74,15 @@ export const PART_DEFS: PartDef[] = [
   ] },
   { key: 'carrier', label: 'Noseći C-profil', button: 'C-profil', group: 'oslonac', support: 'cantilever', comps: ['carrier'], bom: ['carrier'], pos: ['carrierLength'], dims: [
     { key: 'carrier.h', label: 'Visina C-profila (iz profila)', def: 80, min: 10, hidden: true },
+    { key: 'carrier.d', label: 'Dubina C-profila (iz profila)', def: 60, min: 10, hidden: true },
   ] },
   { key: 'tail', label: 'Rep (trouglasto ojačanje)', button: 'Rep', group: 'oslonac', support: 'cantilever', comps: ['tail'], bom: ['tail-diag', 'tail-bottom'], dims: [
     { key: 'tailLength', field: 'tailLength', label: 'Dužina repa', def: 1500, min: 100 },
     { key: 'tail.diag.w', label: 'Širina kosnika (iz profila)', def: 60, min: 5, hidden: true },
     { key: 'tail.bottom.w', label: 'Širina donje pojasnice (iz profila)', def: 60, min: 5, hidden: true },
     { key: 'tail.brace', label: 'Širina ojačanja (iz profila)', def: 40, min: 5, hidden: true },
+    { key: 'tail.diag.d', label: 'Dubina kosnika (iz profila)', def: 40, min: 5, hidden: true },
+    { key: 'tail.bottom.d', label: 'Dubina donje pojasnice (iz profila)', def: 40, min: 5, hidden: true },
     { key: 'tail.rise', label: 'Donja pojasnica iznad donje ivice rama', def: 30, min: 0 },
   ] },
   { key: 'noseRoller', label: 'Čeoni točkić', button: 'Čeoni točkić', group: 'oslonac', support: 'cantilever', comps: ['noseRoller'], bom: ['noseRoller'], pos: ['noseRoller'], dims: [
@@ -93,6 +96,7 @@ export const PART_DEFS: PartDef[] = [
     { key: 'car.gap', label: 'Razmak između kolica (osa–osa)', def: (s, _fh, W) => (s.manual.carriage2 ?? W + 1170) - (s.manual.carriage1 ?? W + 200), min: 0 },
     { key: 'car.plateW', label: 'Širina ploče kolica', def: 210, min: 10 },
     { key: 'car.plateH', label: 'Debljina ploče kolica', def: 30, min: 2 },
+    { key: 'car.plateD', label: 'Širina ploče kolica (3D dubina)', def: 100, min: 10 },
     { key: 'car.postW', label: 'Širina nosača kolica', def: 86, min: 5 },
     { key: 'car.wheelD', label: 'Prečnik valjka kolica', def: 52, min: 5 },
     { key: 'car.wheelGap', label: 'Razmak valjaka u kolicima', def: 68, min: 0 },
@@ -109,16 +113,17 @@ export const PART_DEFS: PartDef[] = [
   { key: 'upperGuide', label: 'Gornja vođica i valjci', button: 'Valjci (vođica)', group: 'vodjenje', comps: ['upperGuide', 'guideRollers'], bom: ['upperGuide', 'guideRollers'], pos: ['upperGuide'], dims: [
     { key: 'guide.w', label: 'Širina vođice', def: 160, min: 10 },
     { key: 'guide.h', label: 'Visina vođice', def: 110, min: 10 },
-    { key: 'guide.drop', label: 'Vođica ispod vrha krila', def: 20, min: 0 },
+    // valjci su u donjem delu vođice: sa 80 mm oni su na gornjem delu krila (dodiruju gornju prečku), a prečka vođice je iznad krila
+    { key: 'guide.drop', label: 'Vođica ispod vrha krila', def: 80, min: 0 },
     { key: 'guide.rollerD', label: 'Prečnik valjka', def: 36, min: 5 },
     { key: 'guide.rollerH', label: 'Visina valjka', def: 60, min: 5 },
     { key: 'guide.rollerGap', label: 'Razmak osa valjaka', def: 70, min: 0 },
   ] },
-  { key: 'guidePost', label: 'Stub gornje vođice (poseban)', button: 'Stub vođice', group: 'vodjenje', comps: ['guidePost'], bom: ['guidePost'], toggle: 'guidePost', dims: [
+  { key: 'guidePost', label: 'Stub gornje vođice (poseban)', button: 'Stub vođice', group: 'vodjenje', comps: ['guidePost'], bom: ['guidePost'], pos: ['guidePost'], toggle: 'guidePost', dims: [
     { key: 'gpost.w', label: 'Širina stuba', def: 80, min: 10 },
     { key: 'gpost.embed', label: 'Ukopan / usidren deo ispod tla', def: 0, min: 0 },
   ], note: 'Uključite ako se vođica montira na poseban stub, a ne na stub ograde.' },
-  { key: 'catch', label: 'Prihvatnik krila', button: 'Prihvatnik', group: 'vodjenje', comps: ['catch'], bom: ['catch'], pos: ['catch'], dims: [
+  { key: 'catch', label: 'Prihvatnik krila', button: 'Prihvatnik', group: 'vodjenje', comps: ['catch'], bom: ['catch'], pos: ['catch', 'catchPost'], dims: [
     { key: 'catch.w', label: 'Širina prihvatnika', def: 130, min: 5 },
     { key: 'catch.h', label: 'Visina prihvatnika', def: 120, min: 5 },
     { key: 'catch.drop', label: 'Donja ivica ispod vrha krila', def: 260, min: 0 },
@@ -173,6 +178,11 @@ export const dimDef = (key: string): DimDef | undefined => DEF_INDEX[key];
 const COMP_PART: Record<string, string> = Object.fromEntries(PART_DEFS.flatMap((p) => p.comps.map((c) => [c, p.key])));
 const BOM_PART: Record<string, string> = Object.fromEntries(PART_DEFS.flatMap((p) => p.bom.map((b) => [b, p.key])));
 /** deo (ključ iz PART_DEFS) kome pripada deo crteža ili stavka sastavnice */
+/** mere materijala koje se kopiraju u sklop kad se izabere materijal za stavku: ključ stavke → (mera materijala → mera sklopa) */
+export const MATERIAL_TO_DIMS: Record<string, Record<string, string>> = {
+  carriages: { plateW: 'car.plateW', plateD: 'car.plateD', plateH: 'car.plateH', stemW: 'car.postW', wheelD: 'car.wheelD', wheelGap: 'car.wheelGap' },
+};
+
 export const compPart = (compKey: string): string | undefined => COMP_PART[compKey];
 export const bomPart = (bomKey: string): string | undefined => BOM_PART[bomKey] ?? (bomKey.startsWith('tail-brace-') ? 'tail' : undefined);
 export const partDef = (key: string): PartDef | undefined => PART_DEFS.find((p) => p.key === key);

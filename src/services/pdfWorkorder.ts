@@ -1,6 +1,6 @@
 import { STATUS_LABELS } from '../domain/models/catalog';
 import type { AppSettings, Customer, Material, Project } from '../domain/models/types';
-import { cutOptions } from '../domain/pricing/cutting';
+import { cutOptions, PRINT_SCOPE_LABELS, type PrintScope } from '../domain/pricing/cutting';
 import { buildWorkOrder, type WorkElement } from '../domain/pricing/workorder';
 import { fmtDate, fmtNum } from '../utils/units';
 import { positionColors } from './cutlistSvg';
@@ -9,6 +9,7 @@ import { loadHeaderLogos } from './pdfHeader';
 import { downloadBlob, safeFilename } from './exports';
 import { getPdfMake, renderBlob } from './pdf';
 import { schemaSvg } from './workorderSvg';
+import { slidingWorkSvg } from './slidingWorkSvg';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -33,9 +34,11 @@ const box = (t: string): any => ({
 const blank = (w = 90) => ({ canvas: [{ type: 'line', x1: 0, y1: 10, x2: w, y2: 10, lineWidth: 0.7, lineColor: '#94a3b8' }] });
 
 /** Radni nalog za majstora koji sklapa ogradu: shema u bojama pozicija, delovi po elementima, stubovi, okovi i kontrolne tačke. */
-export async function buildWorkorderPdfBlob(project: Project, customer: Customer | null, materials: Material[], settings: AppSettings): Promise<Blob> {
+export async function buildWorkorderPdfBlob(project: Project, customer: Customer | null, materials: Material[], settings: AppSettings, scope: PrintScope = 'all'): Promise<Blob> {
+  // deo projekta (samo kapije / ograda bez kapija) se vidi u naslovu, zaglavlju i podnožju
+  const part = scope === 'all' ? '' : ` — ${PRINT_SCOPE_LABELS[scope].toLowerCase()}`;
   const pdfMake = await getPdfMake();
-  const wo = buildWorkOrder(project, settings.modelSpecs, materials, cutOptions(settings));
+  const wo = buildWorkOrder(project, settings.modelSpecs, materials, { ...cutOptions(settings), scope });
   const colors = positionColors(wo.cutting.positions);
   const logos = await loadHeaderLogos();
   const info = settings.companyInfo ?? {};
@@ -45,7 +48,7 @@ export async function buildWorkorderPdfBlob(project: Project, customer: Customer
   const schemaW = 786;
   const schemaH = (schema.height / schema.width) * schemaW;
 
-  const header = docHeader('RADNI NALOG', `Ponuda: ${project.quoteNo || '—'}  ·  ${fmtDate(new Date().toISOString())}`, settings.companyName, contact, logos);
+  const header = docHeader(`RADNI NALOG${part.toUpperCase()}`, `Ponuda: ${project.quoteNo || '—'}  ·  ${fmtDate(new Date().toISOString())}`, settings.companyName, contact, logos);
   const stripe: any = { canvas: [{ type: 'rect', x: 0, y: 0, w: 786, h: 3, color: BRAND_RED }], margin: [0, 0, 0, 8] };
 
   const cell = (l: string, ...v: any[]) => ({ stack: [label(l), ...v] });
@@ -86,10 +89,12 @@ export async function buildWorkorderPdfBlob(project: Project, customer: Customer
   const partsTable = (e: WorkElement): any => (e.parts.length
     ? {
         table: {
-          widths: ['*', 130, 54, 30],
+          // klizna kapija: prva kolona je broj dela na sklopnom crtežu
+          widths: [...(e.slidingIndex !== undefined ? [18] : []), '*', 130, 54, 30],
           body: [
-            [label('DEO'), label('PROFIL'), { ...label('DUŽINA'), alignment: 'right' }, { ...label('KOM.'), alignment: 'right' }],
+            [...(e.slidingIndex !== undefined ? [label('BR.')] : []), label('DEO'), label('PROFIL'), { ...label('DUŽINA'), alignment: 'right' }, { ...label('KOM.'), alignment: 'right' }],
             ...e.parts.map((p) => [
+              ...(e.slidingIndex !== undefined ? [{ text: p.no !== undefined ? String(p.no) : '', fontSize: 9, bold: true, color: colors.get(e.key) ?? INK }] : []),
               { text: p.part, fontSize: 9, bold: true },
               { text: p.profile, fontSize: 8.5, color: MUTED },
               { text: p.lengthMm === null ? (p.note ?? '—') : fmtNum(p.lengthMm, 0), fontSize: 9, alignment: 'right' },
@@ -109,13 +114,15 @@ export async function buildWorkorderPdfBlob(project: Project, customer: Customer
 
   const cards2: any[] = wo.elements.map((e) => {
     const col = colors.get(e.key) ?? '#475569';
-    const checks = [
-      'Delovi isečeni po krojnoj listi',
-      e.isGate ? 'Kapija sklopljena' : 'Element sklopljen',
-      ...(e.isGate ? ['Šarke i brava ugrađene', 'Funkcija proverena'] : []),
-      'Mere proverene',
-      'Boja bez oštećenja',
-    ];
+    const checks = e.slidingIndex !== undefined
+      ? ['Delovi isečeni po krojnoj listi', 'Krilo i rep zavareni po crtežu', 'Okov ugrađen', 'Hod proveren', 'Mere proverene', 'Boja bez oštećenja']
+      : [
+          'Delovi isečeni po krojnoj listi',
+          e.isGate ? 'Kapija sklopljena' : 'Element sklopljen',
+          ...(e.isGate ? ['Šarke i brava ugrađene', 'Funkcija proverena'] : []),
+          'Mere proverene',
+          'Boja bez oštećenja',
+        ];
     return {
       unbreakable: true,
       margin: [0, 0, 0, 8],
@@ -148,6 +155,41 @@ export async function buildWorkorderPdfBlob(project: Project, customer: Customer
       },
     };
   });
+
+  // klizne kapije: sklopni crtež sa brojevima delova (iz tabele dela) i slovima okova (legenda pored crteža)
+  const assemblies: any[] = [];
+  for (const e of wo.elements) {
+    if (e.slidingIndex === undefined) continue;
+    const col = colors.get(e.key) ?? '#475569';
+    const d = slidingWorkSvg(project, e.slidingIndex, e.parts, materials, col);
+    if (!d) continue;
+    const png = await svgToPng(d.svg, d.width * 2, d.height * 2);
+    const imgW = 540;
+    const legend: any = d.hardware.length
+      ? {
+          table: {
+            widths: [16, '*', 34],
+            body: [
+              [label(''), label('OKOV NA CRTEŽU'), { ...label('KOM.'), alignment: 'right' }],
+              ...d.hardware.map((h, i) => [
+                i > 0 && d.hardware[i - 1].tag === h.tag ? { text: '' } : { text: h.tag, bold: true, fontSize: 9, color: '#ffffff', fillColor: '#334155', alignment: 'center' },
+                { text: h.name, fontSize: 8.5 },
+                { text: `${fmtNum(h.qty, 0)} ${h.unit}`, fontSize: 8.5, alignment: 'right' },
+              ]),
+            ],
+          },
+          layout: { hLineColor: () => LINE, hLineWidth: (i: number, node: any) => (i === 0 || i === node.table.body.length ? 0 : 0.4), vLineWidth: () => 0, paddingTop: () => 2.5, paddingBottom: () => 2.5, paddingLeft: () => 3, paddingRight: () => 3 },
+        }
+      : { text: 'Okov nije postavljen na kapiju.', fontSize: 8.5, color: MUTED };
+    assemblies.push({
+      unbreakable: true,
+      margin: [0, 0, 0, 10],
+      stack: [
+        section(`Sklopni crtež — ${tag(e.key)} ${e.label}`, 'Broj u krugu je broj dela iz tabele elementa (naziv, profil, dužina i uglovi). Slovo je okov iz legende. Kote su u mm, pogled spreda, u stvarnom smeru otvaranja.'),
+        { columns: [{ width: imgW, image: png, fit: [imgW, 400] }, { width: '*', stack: [legend], margin: [10, 0, 0, 0] }] },
+      ],
+    });
+  }
 
   const postsTable: any = wo.posts.length
     ? {
@@ -198,10 +240,10 @@ export async function buildWorkorderPdfBlob(project: Project, customer: Customer
     pageOrientation: 'landscape',
     pageMargins: [28, 26, 28, 38],
     defaultStyle: { font: 'Roboto', fontSize: 9.5, color: INK },
-    info: { title: `Radni nalog — ${project.name}`, author: settings.companyName },
+    info: { title: `Radni nalog${part} — ${project.name}`, author: settings.companyName },
     footer: (page: number, pages: number) => ({
       columns: [
-        { text: `${settings.companyName}  ·  Radni nalog  ·  ${project.name}`, fontSize: 8, color: MUTED },
+        { text: `${settings.companyName}  ·  Radni nalog${part}  ·  ${project.name}`, fontSize: 8, color: MUTED },
         { text: `Strana ${page} od ${pages}`, alignment: 'right', fontSize: 8, color: MUTED },
       ],
       margin: [28, 12, 28, 0],
@@ -216,6 +258,7 @@ export async function buildWorkorderPdfBlob(project: Project, customer: Customer
       ...(cards2.length
         ? [{ unbreakable: true, stack: [section('Elementi za sklapanje', 'Za svaki element: delovi sa dužinama i brojem komada, podaci i kontrolne tačke (čekiraj kad je gotovo).'), cards2[0]] }, ...cards2.slice(1)]
         : [section('Elementi za sklapanje'), { text: 'Projekat nema elemenata za sklapanje.', color: MUTED }]),
+      ...assemblies,
       section('Stubovi'),
       postsTable,
       section('Okovi i sitan materijal', 'Ukupno za projekat, bez rezerve.'),

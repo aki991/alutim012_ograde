@@ -2,10 +2,13 @@ import type { LaidOutItem } from '../geometry/layout';
 import type { Gate } from '../models/types';
 
 /**
- * Visina sklopa od tla do vrha rama. Kod krila iz modela (nacrtano ili model ograde) visina kapije je visina krila, a krilo je
- * podignuto od tla za odstojanje donje ivice rama.
+ * Visina klizne kapije je UVEK ukupna visina od tla do vrha krila (isto kao kod ograde i stubova pored nje): visina kapije = visina sklopa.
+ * Krilo je kraće za odstojanje donje ivice rama od tla (vidi leafHeightOf).
  */
-export const slidingH = (g: Pick<Gate, 'heightMm' | 'sliding'>): number => g.heightMm + (g.sliding?.drawnLeaf ? g.sliding.frameBottomY : 0);
+export const slidingH = (g: Pick<Gate, 'heightMm' | 'sliding'>): number => g.heightMm;
+
+/** Visina samog krila (rama sa ispunom): ukupna visina minus odstojanje donje ivice rama od tla; kod ostalih kapija visina kapije. */
+export const leafHeightOf = (g: Pick<Gate, 'heightMm' | 'sliding'>): number => (g.sliding ? Math.max(100, g.heightMm - g.sliding.frameBottomY) : g.heightMm);
 import { localToWorld, resolveSliding, type SlidingResult } from './slidingAssembly';
 
 /** Klizni sklop postavljen u projekat: rezultat i preslikavanje lokalne ose X u X crteža. */

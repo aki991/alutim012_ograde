@@ -50,7 +50,8 @@ async function pickMaterial(page: Page, testId: string, text: string | RegExp) {
   await page.getByTestId(`${testId}-option`).filter({ hasText: text }).first().click();
 }
 
-const overlay = (page: Page) => page.getByTestId('designer-overlay');
+/** crtež sa okovom: fiksni delovi su ispod krila, pokretni iznad (oba u crtežu modela) */
+const overlay = (page: Page) => page.getByTestId('designer-2d');
 const wheelCx = (page: Page) => overlay(page).locator('[data-sliding-part="wheels"] circle').evaluateAll((els) => els.map((e) => Number(e.getAttribute('cx'))));
 
 test('Doradi klizne kapije: crtanje modela sa kliznim okovom, podešavanje točkića, okov iz cenovnika, model u projektu', async ({ page }) => {
@@ -286,4 +287,246 @@ test('Materijali i cene: dugme Izmeni menja sve mere preseka (C profil otvor 30 
   await page.getByTestId('material-dims-reset').click();
   await expect(page.getByTestId('material-dim-slot')).toHaveValue('25');
   expect(errors).toEqual([]);
+});
+
+test('3D prikaz: klizna kapija se prikazuje kompletna (krilo + klizni okov), u crtanju modela i u projektu', async ({ page }) => {
+  const errors = trackErrors(page);
+  await page.goto('/modeli-kapija');
+  await page.getByTestId('rework-sliding-samonoseca_motorna').click();
+  await expect(page.getByTestId('designer-sliding-bar')).toBeVisible();
+  await page.getByTestId('designer-view-3d').click();
+  const d3 = page.getByTestId('designer-3d');
+  await expect(d3).toBeVisible();
+  // delovi okova su u 3D prikazu (C-profil, rep, kolica, vođica, graničnik, letva, motor …)
+  expect(Number(await d3.getAttribute('data-hw-parts'))).toBeGreaterThan(8);
+  await expect(d3.locator('canvas')).toBeVisible();
+  // sklop je na crtežu kao i u 3D: uklanjanje dela smanjuje broj delova
+  await page.getByTestId('designer-view-2d').click();
+  await page.getByTestId('sl-add-stop').click();
+  await page.getByTestId('sl-remove-stop').click();
+  await page.getByTestId('designer-view-3d').click();
+  expect(Number(await page.getByTestId('designer-3d').getAttribute('data-hw-parts'))).toBeGreaterThan(7);
+  // projekat: 3D prikaz sa kapijom iz modela
+  await page.getByTestId('designer-back').click();
+  await page.getByTestId('use-gate-model').first().click();
+  await expect(page).toHaveURL(/\/editor\/proj_/);
+  await page.getByTestId('tab-three').click();
+  await expect(page.locator('canvas').first()).toBeVisible();
+  await page.waitForTimeout(800);
+  expect(errors.filter((e) => !/WebGL|GPU|swiftshader|ANGLE/i.test(e))).toEqual([]);
+});
+
+test('kolica: materijal sa merama koje se menjaju; izbor kolica iz liste prenosi mere u sklop', async ({ page }) => {
+  const errors = trackErrors(page);
+  await seedMaterials(page, '/materijali');
+  // polazna kolica su u cenovniku, a sve mere se menjaju u „Izmeni“
+  const row = page.getByTestId('material-row').filter({ hasText: 'Kolica za samonoseću kapiju 210×100' });
+  await expect(row).toHaveCount(1);
+  await row.getByTestId('material-edit').click();
+  for (const k of ['plateW', 'plateD', 'plateH', 'stemW', 'stemH', 'wheelD', 'wheelGap']) await expect(page.getByTestId(`material-dim-${k}`)).toBeVisible();
+  await expect(page.getByTestId('material-dim-wheelD')).toHaveValue('52');
+  await setNum(page, 'material-dim-wheelD', '60');
+  await page.getByTestId('material-save').click();
+  // u crtanju modela se kolica biraju iz padajućeg menija i prenose mere
+  await page.goto('/modeli-kapija');
+  await page.getByTestId('rework-sliding-samonoseca_rucna').click();
+  await page.getByTestId('sl-add-carriages').click();
+  await expect(page.getByTestId('sl-dim-car.wheelD')).toHaveValue('52');
+  await pickMaterial(page, 'sl-mat-carriages', '160×100');
+  await expect(page.getByTestId('sl-dim-car.plateW')).toHaveValue('160');
+  await expect(page.getByTestId('sl-dim-car.wheelD')).toHaveValue('45');
+  await pickMaterial(page, 'sl-mat-carriages', '210×100');
+  await expect(page.getByTestId('sl-dim-car.wheelD')).toHaveValue('60');
+  expect(errors).toEqual([]);
+});
+
+test('rep: okretanje pravougaone cevi (čeona strana), uglovi sečenja ostaju, dužine se menjaju', async ({ page }) => {
+  const errors = trackErrors(page);
+  await seedMaterials(page, '/modeli-kapija');
+  await page.getByTestId('rework-sliding-samonoseca_rucna').click();
+  await page.getByTestId('sl-add-tail').click();
+  const polyW = () => overlay(page).locator('[data-sliding-part="tail"] polygon').first().getAttribute('points');
+  // kvadratna cev nema izbor čeone strane; pravougaona ima
+  await pickMaterial(page, 'sl-profile-tail-diag', '40×40');
+  await expect(page.getByTestId('sl-profile-tail-diag-orient')).toHaveCount(0);
+  await pickMaterial(page, 'sl-profile-tail-diag', '30×20');
+  await expect(page.getByTestId('sl-profile-tail-diag-orient')).toBeVisible();
+  await expect(page.getByTestId('sl-profile-tail-diag-orient-0')).toContainText('30 mm');
+  await expect(page.getByTestId('sl-profile-tail-diag-orient-90')).toContainText('20 mm');
+  const info = () => page.getByTestId('sl-cutinfo-tail-diag').innerText();
+  const before = await polyW(); const t0 = await info();
+  expect(t0).toContain('čeona strana 30 mm');
+  await page.getByTestId('sl-profile-tail-diag-orient-90').click();
+  await expect.poll(polyW).not.toBe(before);
+  const t1 = await info();
+  expect(t1).toContain('čeona strana 20 mm');
+  // uglovi sečenja su isti, dužina se promenila
+  const angles = (t: string) => /rez pod uglom ([^(]+)/.exec(t)![1].trim();
+  expect(angles(t1)).toBe(angles(t0));
+  expect(/dužina (\d+) mm/.exec(t1)![1]).not.toBe(/dužina (\d+) mm/.exec(t0)![1]);
+  // isto za ojačanje
+  await expect(page.getByTestId('sl-brace-0')).toBeVisible();
+  await pickMaterial(page, 'sl-brace-profile-0', '30×20');
+  await expect(page.getByTestId('sl-brace-profile-0-orient')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('crtanje modela: pravougaona cev se okreće čeonom stranom (bez biranja uglova), profil sa otvorom ostaje na uglovima', async ({ page }) => {
+  const errors = trackErrors(page);
+  await seedMaterials(page, '/modeli');
+  await page.getByTestId('rework-model-h_narrow').click();
+  await page.getByTestId('designer-part').first().waitFor();
+  // ram od pravougaone cevi: čeona strana (dva dugmeta sa merama), a ne uglovi
+  await page.getByTestId('designer-add-frame').click();
+  await page.getByTestId('frame-material').click();
+  await page.getByTestId('frame-material-option').filter({ hasText: '30×20' }).first().click();
+  await expect(page.getByTestId('multi-face')).toBeVisible();
+  await expect(page.getByTestId('multi-rot-90')).toHaveCount(0);
+  await expect(page.getByTestId('multi-face-0')).toContainText('30 mm');
+  await expect(page.getByTestId('multi-face-90')).toContainText('20 mm');
+  const w0 = Number(await page.getByTestId('designer-width').inputValue());
+  await page.getByTestId('multi-face-90').click();
+  await expect(page.getByTestId('multi-face-90')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('designer-notice')).toHaveCount(0);
+  // ram sa užom čeonom stranom menja ukupnu širinu crteža
+  expect(Number(await page.getByTestId('designer-width').inputValue())).toBeLessThan(w0);
+  await page.getByTestId('multi-face-0').click();
+  expect(Number(await page.getByTestId('designer-width').inputValue())).toBe(w0);
+  expect(errors).toEqual([]);
+});
+
+test('Modeli kapija: minijatura klizne kapije je crtež krila sa repom, bez zone uvlačenja i fiksnog okova', async ({ page }) => {
+  const errors = trackErrors(page);
+  await page.goto('/modeli-kapija');
+  await page.getByTestId('rework-sliding-samonoseca_rucna').click();
+  await expect(page.getByTestId('model-designer')).toBeVisible();
+  await page.getByTestId('designer-back').click();
+  const thumb = page.getByTestId('gate-model-card').first().getByTestId('custom-model-thumb');
+  await expect(thumb).toHaveAttribute('data-sliding-thumb', 'true');
+  // krilo (delovi crteža) i rep; bez zone uvlačenja, kote i fiksnog okova
+  expect(await thumb.locator('[data-part-id]').count()).toBeGreaterThan(4);
+  await expect(thumb.locator('[data-sliding-part="tail"]')).toHaveCount(1);
+  await expect(thumb.locator('[data-testid="sliding-retract-zone"]')).toHaveCount(0);
+  await expect(thumb.locator('[data-testid="sliding-dims"]')).toHaveCount(0);
+  await expect(thumb.locator('[data-sliding-part="upperGuide"]')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('stub vođice: položaj po X se zadaje poljem, podrazumevano prati vođicu, a vrednost ide uz kapiju u projekat', async ({ page }) => {
+  const errors = trackErrors(page);
+  await page.goto('/modeli-kapija');
+  await page.getByTestId('rework-sliding-samonoseca_rucna').click();
+  await expect(page.getByTestId('model-designer')).toBeVisible();
+  await page.getByTestId('sl-add-guidePost').click();
+  await expect(page.getByTestId('sliding-designer-part')).toContainText('Stub');
+  const post = overlay(page).locator('[data-sliding-part="guidePost"] rect').first();
+  const x0 = Number(await post.getAttribute('x'));
+  // bez ručne vrednosti stoji uz vođicu: isto X kao vođica
+  const guideX = await overlay(page).locator('[data-sliding-part="upperGuide"] rect').first().evaluate((e) => Number(e.getAttribute('x')) + Number(e.getAttribute('width')) / 2);
+  const postW = Number(await post.getAttribute('width'));
+  expect(Math.abs(x0 + postW / 2 - guideX)).toBeLessThan(1);
+  await setNum(page, 'sl-pos-guidePost', '2000');
+  await expect(post).not.toHaveAttribute('x', String(x0));
+  expect(Math.abs(Number(await post.getAttribute('x')) + postW / 2 - guideX)).toBeGreaterThan(100);
+  expect(errors).toEqual([]);
+});
+
+test('stub prihvatnika: polje za položaj stuba (X) uz prihvatnik, računska vrednost i ručna izmena', async ({ page }) => {
+  const errors = trackErrors(page);
+  await page.goto('/modeli-kapija');
+  await page.getByTestId('rework-sliding-samonoseca_rucna').click();
+  await expect(page.getByTestId('model-designer')).toBeVisible();
+  await page.getByTestId('sl-add-catch').click();
+  const f = page.getByTestId('sl-pos-catchPost');
+  await expect(f).toBeVisible();
+  const auto = Number(await f.inputValue());
+  await setNum(page, 'sl-pos-catchPost', '-20');
+  await expect(page.getByTestId('sl-pos-state-catchPost')).toContainText('ručno');
+  expect(Number(await f.inputValue())).toBe(-20);
+  expect(auto).not.toBe(-20);
+  expect(errors).toEqual([]);
+});
+
+test('rep: svaka cev (kosnik, pojasnica, ojačanja) se bira zasebno, na crtežu i dugmetom, i ističe radi poređenja sa krojnom listom', async ({ page }) => {
+  const errors = trackErrors(page);
+  await page.goto('/modeli-kapija');
+  await page.getByTestId('rework-sliding-samonoseca_rucna').click();
+  await expect(page.getByTestId('model-designer')).toBeVisible();
+  await page.getByTestId('sl-add-tail').click();
+  const members = overlay(page).locator('[data-tail-member]');
+  expect(await members.count()).toBeGreaterThanOrEqual(3); // kosnik, pojasnica, bar jedno ojačanje
+  await expect(overlay(page).locator('[data-tail-member][data-selected="true"]')).toHaveCount(0);
+  // dugme „Istakni“ pored podataka o rezu: ističe tu cev na crtežu
+  await page.getByTestId('sl-tail-pick-tail-diag').click();
+  await expect(overlay(page).locator('[data-tail-member="tail-diag"][data-selected="true"]')).toHaveCount(1);
+  await expect(page.getByTestId('sl-cutinfo-tail-diag')).toContainText('Rep');
+  // klik na drugu cev na crtežu bira nju
+  const brace = overlay(page).locator('[data-tail-member^="tail-brace-"]').first();
+  const key = await brace.getAttribute('data-tail-member');
+  // pravi klik mišem na tačku koja je zaista unutar cevi (ojačanje je kosa/uska cev)
+  const pt = await brace.evaluate((el) => { const r = el.getBoundingClientRect(); for (let i = 0; i <= 40; i++) for (let j = 0; j <= 40; j++) { const x = r.left + (r.width * i) / 40; const y = r.top + (r.height * j) / 40; if (document.elementFromPoint(x, y) === el) return { x, y }; } return null; });
+  expect(pt).not.toBeNull();
+  await page.mouse.click(pt!.x, pt!.y);
+  await expect(overlay(page).locator(`[data-tail-member="${key}"][data-selected="true"]`)).toHaveCount(1);
+  await expect(overlay(page).locator('[data-tail-member="tail-diag"][data-selected="true"]')).toHaveCount(0);
+  await expect(page.getByTestId(`sl-tail-pick-${key}`)).toHaveAttribute('aria-pressed', 'true');
+  // ponovni klik na dugme skida isticanje
+  await page.getByTestId(`sl-tail-pick-${key}`).click();
+  await expect(overlay(page).locator('[data-tail-member][data-selected="true"]')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('ojačanja repa: vodoravno se vari na koso; vrednost van dozvoljenog raspona se svodi na granicu uz obaveštenje ispod polja', async ({ page }) => {
+  const errors = trackErrors(page);
+  await page.goto('/modeli-kapija');
+  await page.getByTestId('rework-sliding-samonoseca_rucna').click();
+  await expect(page.getByTestId('model-designer')).toBeVisible();
+  await page.getByTestId('sl-add-tail').click();
+  await page.getByTestId('sl-brace-add-diagonal').click();
+  await page.getByTestId('sl-brace-add-horizontal').click();
+  // brace 0 = uspravno, 1 = koso, 2 = vodoravno
+  const range = await page.getByTestId('sl-brace-range-2-pos').innerText();
+  const max = Number(/–(\d+) mm/.exec(range)![1]);
+  await setNum(page, 'sl-brace-pos-2', String(max + 500));
+  await expect(page.getByTestId('sl-brace-note-2-pos')).toContainText(`ne može biti veća od ${max} mm`);
+  await expect(page.getByTestId('sl-brace-pos-2')).toHaveValue(String(max));
+  // vrednost u rasponu: bez obaveštenja
+  await setNum(page, 'sl-brace-pos-2', String(max - 100));
+  await expect(page.getByTestId('sl-brace-note-2-pos')).toHaveCount(0);
+  // manje od najmanje: obaveštenje o donjoj granici
+  await setNum(page, 'sl-brace-pos-2', '1');
+  await expect(page.getByTestId('sl-brace-note-2-pos')).toContainText('ne može biti manja od');
+  expect(errors).toEqual([]);
+});
+
+test('podešavanja: štednja materijala se uključuje i pamti, a isto stanje je na stranici Proizvodnja', async ({ page }) => {
+  const errors = trackErrors(page);
+  await page.goto('/podesavanja');
+  const sw = page.getByTestId('set-savematerial');
+  await expect(sw).toHaveAttribute('aria-checked', 'false');
+  await sw.click();
+  await expect(sw).toHaveAttribute('aria-checked', 'true');
+  await page.reload();
+  await expect(page.getByTestId('set-savematerial')).toHaveAttribute('aria-checked', 'true');
+  await page.goto('/proizvodnja');
+  await expect(page.getByTestId('cut-savematerial')).toHaveAttribute('aria-checked', 'true');
+  await page.getByTestId('cut-savematerial').click();
+  await expect(page.getByTestId('cut-savematerial')).toHaveAttribute('aria-checked', 'false');
+  await page.waitForTimeout(500); // upis u lokalnu bazu
+  await page.goto('/podesavanja');
+  await expect(page.getByTestId('set-savematerial')).toHaveAttribute('aria-checked', 'false');
+  expect(errors).toEqual([]);
+});
+
+test('meni: dok je otvoren crtež kapije označena je stavka Modeli kapija, a kod crteža ograde Modeli ograda', async ({ page }) => {
+  await page.goto('/modeli-kapija');
+  await page.getByTestId('rework-sliding-samonoseca_rucna').click();
+  await expect(page.getByTestId('model-designer')).toBeVisible();
+  const nav = page.locator('aside[aria-label="Glavna navigacija"]').first();
+  await expect(nav.getByRole('link', { name: 'Modeli kapija' })).toHaveClass(/bg-accent/);
+  await expect(nav.getByRole('link', { name: 'Modeli ograda' })).not.toHaveClass(/bg-accent/);
+  // vrsta crteža se promeni u ogradu: označena je stavka Modeli ograda
+  await page.getByTestId('designer-kind').selectOption('fence');
+  await expect(nav.getByRole('link', { name: 'Modeli ograda' })).toHaveClass(/bg-accent/);
+  await expect(nav.getByRole('link', { name: 'Modeli kapija' })).not.toHaveClass(/bg-accent/);
 });

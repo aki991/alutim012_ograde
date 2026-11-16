@@ -1,3 +1,4 @@
+import { closingPostOffset, guideOverhangOf } from '../gates/slidingAssembly';
 import { rl10AuxPostShift, rl10JointShift } from '../models/rl10';
 import { capTiers, isTarabicaPost, postCaps } from '../models/tarabica';
 import { PLINTH_DEFAULT_MM, type LayoutItem, Mm, Post, Project } from '../models/types';
@@ -15,6 +16,11 @@ export interface LaidOutItem {
   clearStart: Mm;
   clearEnd: Mm;
   clearWidth: Mm;
+  /**
+   * Klizno krilo prelazi preko stuba na strani zatvaranja (sa prednje strane): krilo počinje na osi tog stuba, pa prihvatnik i zasun
+   * mogu da se montiraju na njega. Toliko (mm) je krilo duže od svetlog otvora; 0 kod ostalih elemenata.
+   */
+  overlapMm?: Mm;
   /** Visina betonskog podnožja ispod elementa (0 ako ga nema) */
   plinthMm: Mm;
   /** Početak i kraj podnožja po osi (mm): podrazumevano od spoljne ivice levog do spoljne ivice desnog stuba, pa ide i ispod stubova */
@@ -118,12 +124,23 @@ export function computeLayout(project: Pick<Project, 'items' | 'posts'>): Projec
     const right = posts[i + 1];
     const axisStart = x;
     const axisEnd = x + item.widthMm;
-    const clearStart = axisStart + wOf(i) / 2;
-    const clearEnd = axisEnd - wOf(i + 1) / 2;
+    let clearStart = axisStart + wOf(i) / 2;
+    let clearEnd = axisEnd - wOf(i + 1) / 2;
+    // klizno krilo (sklop) prelazi preko stubova sa prednje strane: na strani zatvaranja počinje na osi stuba (prihvatnik i zasun su na stubu),
+    // a na strani vođice se završava iza ose stuba vođice (stub vođice je stub ograde na X stuba vođice)
+    let overlapMm = 0;
+    if (item.kind === 'gate' && item.gateType === 'sliding' && item.sliding) {
+      const orig = clearEnd - clearStart;
+      const ovl = guideOverhangOf(item.sliding);
+      // stub prihvatnika: osa stuba je c od početka krila (okov je skroz levo na stubu, a stub ne ide udesno više nego što mu debljina dozvoljava)
+      const c = closingPostOffset(item.sliding, item.opening === 'left' ? wOf(i + 1) : wOf(i));
+      if (item.opening === 'left') { clearEnd = axisEnd + c; clearStart = axisStart - ovl; } else { clearStart = axisStart - c; clearEnd = axisEnd + ovl; }
+      overlapMm = clearEnd - clearStart - orig;
+    }
     // podrazumevano podnožje ide od spoljne ivice levog do spoljne ivice desnog stuba (dopune i ručna širina se primenjuju posle stubova)
     const plinthX0 = axisStart - wOf(i) / 2;
     const plinthX1 = axisEnd + wOf(i + 1) / 2;
-    laidItems.push({ item, index: i, axisStart, axisEnd, clearStart, clearEnd, clearWidth: Math.max(0, clearEnd - clearStart), plinthMm: itemPlinthMm(item, left, right), plinthX0, plinthX1, floorStart: 0, floorEnd: 0 });
+    laidItems.push({ item, index: i, axisStart, axisEnd, clearStart, clearEnd, clearWidth: Math.max(0, clearEnd - clearStart), overlapMm, plinthMm: itemPlinthMm(item, left, right), plinthX0, plinthX1, floorStart: 0, floorEnd: 0 });
     laidPosts[i].x = axisStart;
     x = axisEnd;
   });
@@ -198,7 +215,7 @@ export function computeLayout(project: Pick<Project, 'items' | 'posts'>): Projec
     posts: laidPosts,
     totalModularMm,
     occupiedMm: totalModularMm + (first + last) / 2,
-    totalClearMm: laidItems.reduce((s, i) => s + i.clearWidth, 0),
+    totalClearMm: laidItems.reduce((s, i) => s + i.clearWidth - (i.overlapMm ?? 0), 0),
     postCount: hidden.filter((h) => !h).length,
     sharedPostCount: Math.max(0, hidden.slice(1, -1).filter((h) => !h).length),
     naivePostCount: items.length * 2,
@@ -217,6 +234,8 @@ export function postHalfSum(project: Pick<Project, 'items' | 'posts'>, index: nu
   const it = project.items[index];
   if (!it || (it.kind === 'opening' && it.bendDeg !== undefined)) return 0;
   const w = (i: number) => (isHiddenPost(project.items, i) ? 0 : project.posts[i]?.widthMm ?? 0);
+  // klizno krilo prelazi preko oba stuba: dužina krila je osa–osa + deo iza ose stuba vođice (vidi overlapMm), pa je „polovina stubova“ negativna
+  if (it.kind === 'gate' && it.gateType === 'sliding' && it.sliding) return -(guideOverhangOf(it.sliding) + closingPostOffset(it.sliding, w(it.opening === 'left' ? index + 1 : index)));
   return (w(index) + w(index + 1)) / 2;
 }
 

@@ -1,4 +1,5 @@
 import { isRl10Post } from '../models/rl10';
+import { postMaterialLine } from '../models/postTemplates';
 import { buildRl10Sheet, isRl10Item } from './rl10Spec';
 import { itemSlope } from '../geometry/stair';
 import { gateLeafPoses, gateSpecWidth } from '../geometry/gates';
@@ -12,7 +13,7 @@ import { isTarabicaPost, tarabicaPostLines } from '../models/tarabica';
 import { missingHardware, resolveGate, systemOf, unknownHwLabel, type HwRole } from '../gates/design';
 import { gateCutRows } from '../gates/production';
 import { resolveSliding, slidingBom, type SlidingBomItem } from '../gates/slidingAssembly';
-import { slidingH } from '../gates/slidingLayout';
+import { leafHeightOf, slidingH } from '../gates/slidingLayout';
 
 const HW_GROUP: Record<HwRole, BomGroup> = {
   hinge_left: 'Šarke', hinge_right: 'Šarke', hinge: 'Šarke', lock: 'Brave', catch: 'Brave', drop_bolt: 'Brave', ground_stop: 'Nosači i spojnice', trolley: 'Točkići', carrier_kit: 'Točkići',
@@ -147,7 +148,7 @@ export function buildBom(project: Project, materials: Material[], specs?: ModelS
     // krilo iz modela (nacrtano ili model ograde) ide po specifikaciji modela, kao kod ostalih kapija; klizni okov iz sklopa
     if (it.kind === 'gate' && it.sliding) { for (const l of slidingBomLines(it, li.clearWidth, materials)) add(l.group, l.materialId, l.qty, l.label, l.unit); if (!it.sliding.drawnLeaf) continue; }
     // elementi specifikacije modela (podrazumevani ili izmenjeni): količine i dužine po formulama
-    const vars = specVars({ modelId, slopeFactor: itemSlope(li).factor, widthMm: it.kind === 'gate' ? gateSpecWidth(it, li.clearWidth) : li.clearWidth, heightMm: it.heightMm, axisMm: li.axisEnd - li.axisStart, params: it.params, doubleGate: it.kind === 'gate' && it.gateType === 'double', leafWidthsMm: it.kind === 'gate' && it.gateType === 'double' ? gateLeafPoses(it, li.clearStart, li.clearEnd, 1).map((q) => q.widthMm) : undefined });
+    const vars = specVars({ modelId, slopeFactor: itemSlope(li).factor, widthMm: it.kind === 'gate' ? gateSpecWidth(it, li.clearWidth) : li.clearWidth, heightMm: it.kind === 'gate' ? leafHeightOf(it) : it.heightMm, axisMm: li.axisEnd - li.axisStart, params: it.params, doubleGate: it.kind === 'gate' && it.gateType === 'double', leafWidthsMm: it.kind === 'gate' && it.gateType === 'double' ? gateLeafPoses(it, li.clearStart, li.clearEnd, 1).map((q) => q.widthMm) : undefined });
     for (const ev of evaluateSpec(specFor(modelId, specs), vars)) add(ev.part.group, ev.part.materialId, ev.materialQty);
 
     if (it.kind === 'gate' && it.sliding) {
@@ -185,6 +186,9 @@ export function buildBom(project: Project, materials: Material[], specs?: ModelS
     if (isRl10Post(project.items, i) && !hasCustomSpec('rail_inox', specs)) return;
     // betonski stubovi se crtaju (na šta se kapija montira), ali ne ulaze u ponudu: aluminijumska radnja ih ne izvodi
     if (p.type === 'concrete' || p.type === 'concrete_plinth') return;
+    // stub sa izabranim materijalom (šablon stuba): profil po dužini stuba, ostalo po komadu
+    const own = postMaterialLine(project, i, materials, layout.posts[i]?.lengthMm ?? p.heightMm);
+    if (own) { add('Stubovi', own.materialId, own.qty); return; }
     add('Stubovi', POST_MATERIAL[p.type], 1);
   });
   {

@@ -16,6 +16,10 @@ export function migrateProject(p: Project): Project {
   let out = p;
   if (out.items.length === 0 && out.posts.length > 0) out = { ...out, posts: [] };
   if (out.schemaVersion !== SCHEMA_VERSION) out = { ...out, schemaVersion: SCHEMA_VERSION };
+  // klizna kapija sa nacrtanim krilom: visina kapije je ukupna visina od tla (ranije visina krila), kao kod ograde i stubova pored nje
+  if (out.items.some((it) => it.kind === 'gate' && it.sliding?.drawnLeaf && !it.sliding.heightTotal)) {
+    out = { ...out, items: out.items.map((it) => (it.kind === 'gate' && it.sliding?.drawnLeaf && !it.sliding.heightTotal ? { ...it, heightMm: it.heightMm + it.sliding.frameBottomY, sliding: { ...it.sliding, heightTotal: true } } : it)) };
+  }
   // v2 → v3: stari modeli ispune zamenjeni su novim kataloškim modelima
   if (out.items.some((it) => (it.kind === 'fence' && it.modelId in LEGACY_MODEL_MAP) || (it.kind === 'gate' && it.infillModelId in LEGACY_MODEL_MAP))) {
     out = {

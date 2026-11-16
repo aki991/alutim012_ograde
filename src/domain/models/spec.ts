@@ -24,6 +24,10 @@ export interface SpecPart {
   lengthMm?: string;
   enabled: boolean;
   note?: string;
+  /** deo rama (rez 45°): širina profila u ravni spoja (mm): od nje zavisi koliko se štedi kad dva komada dele kosi rez */
+  miterMm?: number;
+  /** uloga dela na crtežu (npr. „Ram — gornja i donja prečka“): naziv dela u krojnoj listi i radnom nalogu; bez vrednosti naziv je materijal */
+  role?: string;
 }
 
 export const BOM_GROUPS: BomGroup[] = ['Profili ispune', 'Ramovi', 'Stubovi', 'Nosači i spojnice', 'Vijci', 'Šarke', 'Brave', 'Točkići', 'Automatika', 'Dodatni materijal'];

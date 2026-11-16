@@ -1,8 +1,9 @@
+import { endsLabel } from '../domain/pricing/cutEnds';
 import { STATUS_LABELS } from '../domain/models/catalog';
-import { buildCuttingList, cutOptions, groupBars, type CuttingList } from '../domain/pricing/cutting';
+import { buildCuttingList, cutOptions, groupBars, PRINT_SCOPE_LABELS, type CuttingList, type PrintScope } from '../domain/pricing/cutting';
 import type { AppSettings, Customer, Material, Project } from '../domain/models/types';
 import { fmtDate, fmtNum } from '../utils/units';
-import { barSvg, positionColors } from './cutlistSvg';
+import { BAR_VIEW_H, barSvg, positionColors } from './cutlistSvg';
 import { downloadBlob, safeFilename } from './exports';
 import { getPdfMake, renderBlob } from './pdf';
 import { AMBER, BRAND_DARK, BRAND_RED, docHeader, loadHeaderLogos, toDataUrl } from './pdfHeader';
@@ -27,9 +28,11 @@ export const fmtMm = (v: number) => `${fmtNum(v, 0)} mm`;
 export const effColor = (pct: number) => (pct >= 85 ? '#15803d' : pct >= 65 ? '#b45309' : BRAND_RED);
 
 /** Krojna lista za sve šipkaste profile projekta: raspored komada na šipke, ostatak, pozicije u boji. */
-export async function buildCutlistPdfBlob(project: Project, customer: Customer | null, materials: Material[], settings: AppSettings, list?: CuttingList): Promise<Blob> {
+export async function buildCutlistPdfBlob(project: Project, customer: Customer | null, materials: Material[], settings: AppSettings, list?: CuttingList, scope: PrintScope = 'all'): Promise<Blob> {
   const pdfMake = await getPdfMake();
-  const cl = list ?? buildCuttingList(project, settings.modelSpecs, materials, cutOptions(settings));
+  const cl = list ?? buildCuttingList(project, settings.modelSpecs, materials, { ...cutOptions(settings), scope });
+  // deo projekta (samo kapije / ograda bez kapija) se vidi u naslovu, zaglavlju i podnožju
+  const part = scope === 'all' ? '' : ` — ${PRINT_SCOPE_LABELS[scope].toLowerCase()}`;
   const colors = positionColors(cl.positions);
   const logos = await loadHeaderLogos();
   const info = settings.companyInfo ?? {};
@@ -39,7 +42,7 @@ export async function buildCutlistPdfBlob(project: Project, customer: Customer |
   let uid = 0;
   const barImages = new Map<string, string>();
   for (const p of cl.profiles) {
-    for (const g of groupBars(p.bars)) barImages.set(`${p.profile}|${g.from}`, await svgToPng(barSvg(g.bar, cl.stockMm, cl.kerfMm, colors, String(uid++)), 2000, 104));
+    for (const g of groupBars(p.bars)) barImages.set(`${p.profile}|${g.from}`, await svgToPng(barSvg(g.bar, cl.stockMm, cl.kerfMm, colors, String(uid++)), 2000, BAR_VIEW_H * 2));
   }
 
   const card = (label: string, value: string, color = INK) => ({
@@ -47,7 +50,7 @@ export async function buildCutlistPdfBlob(project: Project, customer: Customer |
   });
   const infoCell = (label: string, value: string) => ({ stack: [{ text: label, fontSize: 7.5, color: MUTED, bold: true, characterSpacing: 0.5 }, { text: value || '—', fontSize: 10, bold: true, margin: [0, 1, 0, 0] }] });
 
-  const header: any = docHeader('KROJNA LISTA', `Ponuda: ${project.quoteNo || '—'}  ·  ${fmtDate(new Date().toISOString())}`, settings.companyName, contact, logos);
+  const header: any = docHeader(`KROJNA LISTA${part.toUpperCase()}`, `Ponuda: ${project.quoteNo || '—'}  ·  ${fmtDate(new Date().toISOString())}`, settings.companyName, contact, logos);
   const stripe: any = { canvas: [{ type: 'rect', x: 0, y: 0, w: 786, h: 3, color: BRAND_RED }], margin: [0, 0, 0, 8] };
 
   const infoRow: any = {
@@ -120,7 +123,7 @@ export async function buildCutlistPdfBlob(project: Project, customer: Customer |
         widths: [70, 40, '*'],
         body: [
           [{ text: 'DUŽINA', fontSize: 7.5, bold: true, color: MUTED }, { text: 'KOM.', fontSize: 7.5, bold: true, color: MUTED, alignment: 'right' }, { text: 'POZICIJE', fontSize: 7.5, bold: true, color: MUTED }],
-          ...p.summary.map((s) => [(s.miter ? { columns: [{ text: fmtMm(s.lengthMm), fontSize: 9, width: 'auto' }, { canvas: [{ type: 'polyline', closePath: true, color: '#475569', lineColor: '#475569', points: [{ x: 0, y: 1 }, { x: 24, y: 1 }, { x: 16, y: 9 }, { x: 8, y: 9 }] }], width: 26, margin: [5, 0, 0, 0] }] } : { text: fmtMm(s.lengthMm), fontSize: 9 }), { text: String(s.qty), fontSize: 9, bold: true, alignment: 'right' }, { text: s.positions.map((k) => (/^\d/.test(k) ? `P${k}` : k)).join(', '), fontSize: 8.5, color: MUTED }]),
+          ...p.summary.map((s) => [(s.miter ? { columns: [{ text: fmtMm(s.lengthMm), fontSize: 9, width: 'auto' }, { canvas: [{ type: 'polyline', closePath: true, color: '#475569', lineColor: '#475569', points: [{ x: 0, y: 1 }, { x: 24, y: 1 }, { x: 16, y: 9 }, { x: 8, y: 9 }] }], width: 26, margin: [5, 0, 0, 0] }] } : s.ends ? { stack: [{ text: fmtMm(s.lengthMm), fontSize: 9 }, { text: `uglovi ${endsLabel(s.ends)}`, fontSize: 7, color: '#475569' }] } : { text: fmtMm(s.lengthMm), fontSize: 9 }), { text: String(s.qty), fontSize: 9, bold: true, alignment: 'right' }, { text: s.positions.map((k) => (/^\d/.test(k) ? `P${k}` : k)).join(', '), fontSize: 8.5, color: MUTED }]),
         ],
       },
       layout: { hLineColor: () => LINE, hLineWidth: (i: number, node: any) => (i === 0 || i === node.table.body.length ? 0 : 0.4), vLineWidth: () => 0, paddingTop: () => 2, paddingBottom: () => 2 },
@@ -145,10 +148,10 @@ export async function buildCutlistPdfBlob(project: Project, customer: Customer |
     pageOrientation: 'landscape',
     pageMargins: [28, 26, 28, 38],
     defaultStyle: { font: 'Roboto', fontSize: 9.5, color: INK },
-    info: { title: `Krojna lista — ${project.name}`, author: settings.companyName },
+    info: { title: `Krojna lista${part} — ${project.name}`, author: settings.companyName },
     footer: (page: number, pages: number) => ({
       columns: [
-        { text: `${settings.companyName}  ·  Krojna lista  ·  ${project.name}`, fontSize: 8, color: MUTED },
+        { text: `${settings.companyName}  ·  Krojna lista${part}  ·  ${project.name}`, fontSize: 8, color: MUTED },
         { text: `Strana ${page} od ${pages}`, alignment: 'right', fontSize: 8, color: MUTED },
       ],
       margin: [28, 12, 28, 0],

@@ -31,12 +31,16 @@ const active = 'bg-accent text-brand-black font-semibold shadow-[0_4px_14px_rgba
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const navigate = useNavigate();
-  const { pathname } = useLocation();
+  const location = useLocation();
+  const { pathname } = location;
   const newProject = useAppStore((s) => s.newProject);
   const inEditor = pathname.startsWith('/editor');
+  // crtež modela je na adresi /modeli/crtanje: dok se crta kapija, označena je stavka „Modeli kapija“, a ne „Modeli ograda“
+  const drawingGate = pathname.startsWith('/modeli/crtanje') && (location.state as { kind?: string } | null)?.kind === 'gate';
+  const activeOf = (to: string, isActive: boolean) => (to === '/modeli' ? isActive && !drawingGate : to === '/modeli-kapija' ? isActive || drawingGate : isActive);
 
   const renderItem = (it: Item) => (
-    <NavLink key={it.to} to={it.to} end={it.end} onClick={onNavigate} className={({ isActive }) => `${base} ${isActive ? active : idle}`}>
+    <NavLink key={it.to} to={it.to} end={it.end} onClick={onNavigate} className={({ isActive }) => `${base} ${activeOf(it.to, isActive) ? active : idle}`}>
       <it.icon size={20} strokeWidth={1.8} />
       <span>{it.label}</span>
     </NavLink>

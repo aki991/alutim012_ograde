@@ -44,7 +44,7 @@ export function SlidingPartButtons({ spec, selected, onSpec, onSelect }: { spec:
  * valjci, graničnici …), podešavanja izabranog dela (veličina, položaj, razmak, broj, okov iz cenovnika), provere i okov u sastavnici.
  * Ram, U-profili i prečke su sam crtež modela (materijali iz cenovnika), kao kod ostalih kapija.
  */
-export function SlidingDesignerPanel({ spec, W, leafH, onSpec, selected, onSelect }: { spec: SlidingSpec; W: number; leafH: number; onSpec: (p: Partial<SlidingSpec>) => void; selected: string | null; onSelect: (k: string | null) => void }) {
+export function SlidingDesignerPanel({ spec, W, leafH, onSpec, selected, onSelect, slideId }: { slideId: string; spec: SlidingSpec; W: number; leafH: number; onSpec: (p: Partial<SlidingSpec>) => void; selected: string | null; onSelect: (k: string | null) => void }) {
   const materials = useAppStore((s) => s.materials);
   const H = leafH + spec.frameBottomY;
   const res = useMemo(() => resolveSliding(spec, W, H), [spec, W, H]);
@@ -62,7 +62,7 @@ export function SlidingDesignerPanel({ spec, W, leafH, onSpec, selected, onSelec
             <span className="font-semibold text-[14px] flex-1">{sel.label}</span>
             <button className="btn btn-sm" data-testid="sliding-designer-part-close" onClick={() => onSelect(null)}>Zatvori</button>
           </div>
-          <SlidingPartBody part={sel} spec={spec} res={res} bom={bom} onSpec={onSpec} onRemove={() => { onSpec(withPartOn(spec, sel.key, false)); onSelect(null); }} />
+          <SlidingPartBody part={sel} spec={spec} res={res} bom={bom} onSpec={onSpec} slideId={slideId} onRemove={() => { onSpec(withPartOn(spec, sel.key, false)); onSelect(null); }} />
         </div>
       ) : (
         <>

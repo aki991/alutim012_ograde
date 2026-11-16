@@ -36,14 +36,20 @@ interface Props {
   noLeaf?: boolean;
   /** bez zone uvlačenja i konture otvorenog položaja */
   noZone?: boolean;
+  /**
+   * Sloj crteža: „back“ (zona, fiksni delovi, kontura otvorenog položaja) ide ISPOD krila, „front“ (pokretni delovi i kote) IZNAD njega.
+   * Fiksni delovi (stub vođice, prihvatnik, šina, kolica) stoje iza krila, pa ga ne smeju zaklanjati; bez vrednosti crta se sve.
+   */
+  layer?: 'all' | 'back' | 'front';
 }
 
 /**
  * Klizni sklop na crtežu projekta. Sve nastaje iz podataka kapije: lokalna osa X (ka strani otvaranja) se preslikava pri otvaranju
  * ulevo, pa se sklop postavlja na mesto elementa. Proba hoda pomera samo pokretne delove za hod × procenat / 100.
  */
-export function SlidingAssemblyArt({ gate, clearStart, clearEnd, clearWidth, floorY, px, hex, showDims, realistic, testPct, onPartClick, highlight, noLeaf, noZone }: Props) {
+export function SlidingAssemblyArt({ gate, clearStart, clearEnd, clearWidth, floorY, px, hex, showDims, realistic, testPct, onPartClick, highlight, noLeaf, noZone, layer = 'all' }: Props) {
   const stored = useAppStore((s) => s.editor.slideTest[gate.id]);
+  const tailSel = useAppStore((s) => s.editor.tailSel?.[gate.id]) ?? null;
   const placed = placeSliding(gate, { clearStart, clearEnd, clearWidth });
   if (!placed) return null;
   const { res, X } = placed;
@@ -73,7 +79,15 @@ export function SlidingAssemblyArt({ gate, clearStart, clearEnd, clearWidth, flo
         style={{ ...(onPartClick ? { cursor: 'pointer' } : {}), ...(highlight?.includes(c.key) ? { filter: 'drop-shadow(0 0 5px #d92d20)' } : {}) }}
         onClick={onPartClick ? (e) => { e.stopPropagation(); onPartClick(c.key); } : undefined}>
         <title>{c.label}{c.moving ? ' (pokretno)' : ' (fiksno)'}</title>
-        {c.shapes.map((s, i) => shapeEl(s, `${c.key}-${i}`, dx, fill))}
+        {c.shapes.map((s, i) => {
+          // rep: svaka cev je zaseban deo (data-tail-member), pa može da se izabere i uporedi sa krojnom listom
+          const m = c.key === 'tail' ? res.tail?.[i] : undefined;
+          if (!m) return shapeEl(s, `${c.key}-${i}`, dx, fill);
+          const on = tailSel === m.bomKey;
+          return shapeEl(s, `${c.key}-${i}`, dx, fill, {
+            'data-tail-member': m.bomKey, ...(on ? { 'data-selected': 'true', stroke: '#d92d20', strokeWidth: 4 * px, strokeLinejoin: 'round', style: { filter: 'drop-shadow(0 0 5px #d92d20)' } } : tailSel ? { opacity: 0.45 } : {}),
+          });
+        })}
       </g>
     );
   };
@@ -107,7 +121,7 @@ export function SlidingAssemblyArt({ gate, clearStart, clearEnd, clearWidth, flo
     );
   })();
 
-  // kote ispod tla (ispod kota osa–osa i ukupne dužine): hod, šina ili C-profil, svetli otvor; ram i rep iznad krila
+  // kote ispod tla (ispod kota osa–osa i ukupne dužine): hod, šina ili C-profil, svetli otvor; rep iznad krila
   const dims = (() => {
     if (!showDims || realistic) return null;
     const rows: { a: number; b: number; text: string; key: string }[] = [{ a: 0, b: T, text: `Hod ${fmt(T)}`, key: 'travel' }];
@@ -130,7 +144,7 @@ export function SlidingAssemblyArt({ gate, clearStart, clearEnd, clearWidth, flo
     const above = Y(top) - 22 * px;
     return (
       <g data-testid="sliding-dims">
-        {line(0, W, above, `Ram ${fmt(W)}`, 'frame')}
+        {/* širina rama se ne kotira ovde: ista je kao kota elementa u projektu (bila bi dvaput, jedna preko druge) */}
         {cant && line(W, mvEnd, above, `Rep ${fmt(mvEnd - W)}`, 'tail')}
         {rows.map((r, i) => line(r.a, r.b, y0 + i * 30 * px, r.text, r.key))}
       </g>
@@ -139,17 +153,14 @@ export function SlidingAssemblyArt({ gate, clearStart, clearEnd, clearWidth, flo
 
   return (
     <g data-testid="sliding-assembly" data-variant={spec.presetId} data-opening={gate.opening} data-pct={pct}>
-      {zone}
-      {fixed.map(draw)}
-      {openOutline}
-      {spec.drawnLeaf && !noLeaf && (
+      {layer !== 'front' && <>{zone}{fixed.map(draw)}{openOutline}</>}
+      {layer === 'all' && spec.drawnLeaf && !noLeaf && (
         // krilo iz modela (nacrtan model ili model ograde), podignuto od tla za odstojanje donje ivice rama; u probi hoda klizi sa okovom
         <g data-sliding-part="leaf" data-moving="true" transform={`translate(${X(t) - X(0)} 0)`}>
           <InfillArt modelId={gate.infillModelId} x={Math.min(X(0), X(W))} y={Y(top)} w={W} h={res.frameHeight} frame={gate.params.frameMm} barSize={gate.params.barSizeMm} gap={gate.params.gapMm} lift={gate.params.liftMm} arch={gate.params.archMm} hex={hex} colorKey={gate.color} ram={ramInsets(gate.infillModelId, gate.params)} uid={`${gate.id}-sl`} />
         </g>
       )}
-      {moving.map(draw)}
-      {dims}
+      {layer !== 'back' && <>{moving.map(draw)}{dims}</>}
     </g>
   );
 }

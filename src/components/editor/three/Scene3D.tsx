@@ -495,7 +495,7 @@ export function SceneContent(p: ContentProps) {
                   <PanelBody modelId={it.modelId} widthMm={li.clearWidth} heightMm={it.heightMm} params={it.params} color={it.color} axisWidthMm={li.axisEnd - li.axisStart} skipLeftPost={leftPostShared(project.items, li.index)} />
                 </group>
               )}
-              {it.kind === 'gate' && <group position={[0, s(li.plinthMm), 0]}><GateMesh gate={it} li={li} showZones={showZones && !p.still} /></group>}
+              {it.kind === 'gate' && <group position={[0, s(li.plinthMm), 0]}><GateMesh gate={it} li={li} showZones={showZones && !p.still} postWidthMm={Math.max(0, ...layout.posts.map((q) => (q.hidden ? 0 : q.widthMm)))} /></group>}
               {it.kind === 'opening' && isCorner(it) && (() => {
                 const info = cornerInfo(project, li.index);
                 return info ? <CornerMesh x0={li.axisStart} x1={li.axisEnd} bendDeg={it.bendDeg!} info={info} /> : null;

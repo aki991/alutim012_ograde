@@ -1,6 +1,6 @@
 import PRESETS_JSON from '../../data/slidingGatePresets.json';
 import { bomPart, compPart, dimOf, isPartOn } from './slidingParts';
-import { tailGeometry, type TailBrace, type TailDefaults, type TailMember } from './slidingTail';
+import { tailGeometry, type TailBrace, type TailDefaults, type TailMember, type TailResult } from './slidingTail';
 
 export type { TailBrace } from './slidingTail';
 
@@ -24,12 +24,12 @@ export const ACTUATION_LABELS: Record<SlidingActuation, string> = { manual: 'Ru�
 
 /** pozicije koje se računaju iz osnovnih mera, a mogu i ručno da se zadaju */
 export type PosKey =
-  | 'catch' | 'upperGuide' | 'stop' | 'wheel1' | 'wheel2' | 'railStart' | 'railLength'
+  | 'catch' | 'catchPost' | 'upperGuide' | 'guidePost' | 'stop' | 'wheel1' | 'wheel2' | 'railStart' | 'railLength'
   | 'carriage1' | 'carriage2' | 'carrierLength' | 'tailBrace' | 'noseRoller' | 'lowerCatch'
   | 'rackStart' | 'pinion' | 'handle' | 'latch' | 'latchReceiver';
 
 export const POS_LABELS: Record<PosKey, string> = {
-  catch: 'Prihvatnik krila (X)', upperGuide: 'Gornja vođica (X)', stop: 'Graničnik otvaranja — tačka dodira (X)',
+  catch: 'Prihvatnik krila (X)', catchPost: 'Stub prihvatnika — centar (X)', upperGuide: 'Gornja vođica (X)', guidePost: 'Stub vođice — centar (X)', stop: 'Graničnik otvaranja — tačka dodira (X)',
   wheel1: 'Prvi donji točkić — centar (X)', wheel2: 'Drugi donji točkić — centar (X)', railStart: 'Početak šine (X)', railLength: 'Dužina šine',
   carriage1: 'Prva kolica — centar (X)', carriage2: 'Druga kolica — centar (X)', carrierLength: 'Noseći C-profil — dužina', tailBrace: 'Uspravno ojačanje repa (X)',
   noseRoller: 'Čeoni točkić — centar (X)', lowerCatch: 'Donji prihvat čeonog točkića (X)',
@@ -38,7 +38,7 @@ export const POS_LABELS: Record<PosKey, string> = {
 
 /** koje pozicije postoje za dati oslonac i pogon */
 export function posKeysFor(support: SlidingSupport, actuation: SlidingActuation): PosKey[] {
-  const base: PosKey[] = ['catch', 'upperGuide', 'stop'];
+  const base: PosKey[] = ['catch', 'catchPost', 'upperGuide', 'guidePost', 'stop'];
   const sup: PosKey[] = support === 'ground_rail' ? ['wheel1', 'wheel2', 'railStart', 'railLength'] : ['carriage1', 'carriage2', 'carrierLength', 'tailBrace', 'noseRoller', 'lowerCatch'];
   const act: PosKey[] = actuation === 'motor' ? ['rackStart', 'pinion'] : ['handle', 'latch', 'latchReceiver'];
   return [...base, ...sup, ...act];
@@ -86,6 +86,8 @@ export interface SlidingSpec {
   dims?: Record<string, number>;
   /** materijal iz cenovnika po stavci sastavnice (ključ stavke → ID materijala); bez zapisa stavka je „nije definisano“ */
   partMat?: Record<string, string>;
+  /** okretanje preseka cevi po stavci: 90 = čeona strana je kraća stranica preseka (npr. 40 od 60×40) */
+  partRot?: Record<string, number>;
   /** ručno upisan naziv materijala po stavci (kad ga nema u cenovniku): ide u krojnu listu i radni nalog */
   partText?: Record<string, string>;
   /** ručno zadat broj komada po stavci sastavnice (kupljeni delovi) */
@@ -100,11 +102,74 @@ export interface SlidingSpec {
   enabled?: Record<string, boolean>;
   /** krilo (ram, U-profili, prečke) je nacrtano u crtanju modela; sklop daje samo klizni okov */
   drawnLeaf?: boolean;
+  /** visina kapije u projektu je ukupna visina od tla (stariji projekti su čuvali visinu krila: migracija ih prebacuje i postavlja ovu oznaku) */
+  heightTotal?: boolean;
+  /**
+   * Na strani vođice krilo prelazi preko stuba ograde: osa stuba je ovoliko (mm) pre kraja krila. Tu stoji stub vođice, pa je to mera
+   * „stub vođice — centar (X)“ računata od kraja krila (X = dužina krila − ova mera). Bez vrednosti: kao vođica (35 samonoseća, 60 na šini).
+   */
+  guideOverhang?: number;
 }
 
-/** Hod: ručno zadat ili po širini rama (polazni primeri: 3000 − 100 = 2900 na šini, 3000 − 70 = 2930 samonoseća). */
-export function travelOf(spec: Pick<SlidingSpec, 'travel' | 'travelSet' | 'support'>, W: number): number {
-  return spec.travelSet ? spec.travel : Math.max(0, W - (spec.support === 'cantilever' ? 70 : 100));
+/** polazna debljina stuba (mm) za prikaz računske vrednosti „stub prihvatnika“ u crtanju kapije, gde stuba nema */
+export const REF_POST_MM = 100;
+/** razmak (mm) od ivice stuba do ivice prihvatnika / pločice zasuna pri montaži */
+export const CATCH_POST_MARGIN = 10;
+
+/**
+ * Stub na strani zatvaranja (prihvatnik i pločica zasuna se montiraju na njega): položaj ose stuba po X od početka krila (mm, + ka krilu).
+ * Prihvatnik i zasun moraju da leže na stubu, pa osa može da ide udesno (ispod krila) samo dok leva ivica stuba ne pređe levu ivicu
+ * najlevljeg dela okova: što je stub uži, manje može udesno. Bez zadate vrednosti stub je pomeren do kraja, tj. okov je skroz levo na stubu.
+ * Zadata vrednost (manual.catchPost) se ograničava na raspon u kome okov stoji na stubu. Bez prihvatnika i pločice nema ograničenja: 0.
+ */
+export function closingPostOffset(spec: Pick<SlidingSpec, 'enabled' | 'drawnLeaf' | 'guidePost' | 'manual' | 'actuation' | 'dims'>, postWidthMm: number): number {
+  const catchX = typeof spec.manual.catch === 'number' ? spec.manual.catch : 0;
+  const lrX = typeof spec.manual.latchReceiver === 'number' ? spec.manual.latchReceiver : -23;
+  const lrW = typeof spec.dims?.['lrec.w'] === 'number' ? spec.dims['lrec.w'] : 40;
+  const spans: [number, number][] = [];
+  if (isPartOn(spec, 'catch')) spans.push([catchX - CATCH_BACK, catchX]);
+  if (spec.actuation === 'manual' && isPartOn(spec, 'latchReceiver')) spans.push([lrX - 30, lrX - 30 + lrW]);
+  if (!spans.length) return 0;
+  const left = Math.min(...spans.map((s) => s[0])); const right = Math.max(...spans.map((s) => s[1]));
+  const cMax = left + postWidthMm / 2 - CATCH_POST_MARGIN; // leva ivica stuba ne sme desno od najlevljeg dela okova
+  const cMin = right - postWidthMm / 2 + CATCH_POST_MARGIN; // desna ivica stuba ne sme levo od najdesnijeg dela okova
+  if (cMin > cMax) return Math.round(((cMin + cMax) / 2) * 10) / 10;
+  const want = typeof spec.manual.catchPost === 'number' && Number.isFinite(spec.manual.catchPost) ? spec.manual.catchPost : cMax;
+  return Math.round(Math.min(cMax, Math.max(cMin, want)) * 10) / 10;
+}
+
+/** Koliko je osa stuba vođice pre kraja krila (mm); vidi SlidingSpec.guideOverhang. */
+export const guideOverhangOf = (spec: Pick<SlidingSpec, 'support' | 'guideOverhang'>): number => Math.max(0, spec.guideOverhang ?? (spec.support === 'cantilever' ? 35 : 60));
+
+/** ručno zadata pozicija (samo ključ koji varijanta ima), inače null */
+function manualPos(spec: Pick<SlidingSpec, 'support' | 'actuation' | 'manual'>, k: PosKey): number | null {
+  const v = spec.manual?.[k];
+  return posKeysFor(spec.support, spec.actuation).includes(k) && typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+
+/**
+ * X gornje vođice: vođica je na stubu vođice, pa prati stub. Redom: ručno zadata vođica, ručno zadat stub vođice (crtanje modela),
+ * položaj stuba ograde u projektu (dužina krila − guideOverhang), polazna vrednost (35 / 60 mm pre kraja krila).
+ */
+export function guideXOf(spec: SlidingSpec, W: number): number {
+  const cant = spec.support === 'cantilever';
+  return manualPos(spec, 'upperGuide') ?? manualPos(spec, 'guidePost') ?? (spec.guideOverhang !== undefined ? W - Math.max(0, spec.guideOverhang) : W - (cant ? 35 : 60));
+}
+
+/** koliko prednja ivica krila na punom hodu ostaje pre vođice (kao kod polazne vođice: 35 samonoseća, 40 na šini) */
+export const guideKeep = (spec: Pick<SlidingSpec, 'support'>): number => (spec.support === 'cantilever' ? 35 : 40);
+
+/**
+ * Hod: ručno zadat ili po širini rama (polazni primeri: 3000 − 100 = 2900 na šini, 3000 − 70 = 2930 samonoseća). Računski hod je kraći kad je
+ * stub vođice pomeren ka sredini krila (krilo ne sme da izađe iz vođice) i kad je graničnik ručno postavljen bliže (krilo staje na njemu).
+ */
+export function travelOf(spec: SlidingSpec, W: number): number {
+  if (spec.travelSet) return spec.travel;
+  const cant = spec.support === 'cantilever';
+  let t = Math.min(W - (cant ? 70 : 100), guideXOf(spec, W) - guideKeep(spec));
+  const stop = manualPos(spec, 'stop');
+  if (stop !== null && isPartOn(spec, 'stop')) t = Math.min(t, stop - movingLength(spec, W) - (cant ? 25 : 30));
+  return Math.max(0, t);
 }
 
 interface PresetJson {
@@ -169,7 +234,11 @@ export function autoPositions(spec: SlidingSpec, W: number): Record<PosKey, numb
   const mvEnd = movingLength(spec, W);
   return {
     catch: 0,
+    // stub prihvatnika: računska vrednost za stub od REF_POST_MM; u projektu važi stvarna debljina stuba (vidi closingPostOffset)
+    catchPost: closingPostOffset(spec, REF_POST_MM),
     upperGuide: cant ? W - 35 : W - 60,
+    // stub vođice stoji uz vođicu (isti X) dok se ne zada ručno; vidi resolveSliding
+    guidePost: cant ? W - 35 : W - 60,
     stop: mvEnd + spec.travel + (cant ? 25 : 30),
     wheel1: Math.round(W * 0.14),
     wheel2: W - Math.round(W * 0.14),
@@ -209,6 +278,8 @@ export interface Component {
   /** sitan okov: crta se tek pri većem uvećanju */
   detail: boolean;
   shapes: Shape[];
+  /** dubina dela u 3D prikazu (mm), kad se razlikuje od podrazumevane */
+  depth?: number;
 }
 
 export interface SlidingResult {
@@ -229,12 +300,17 @@ export interface SlidingResult {
   tail?: TailMember[];
   /** polazni raspored ojačanja repa (idealan na početku; korisnik može da menja X i Y) */
   tailDefaults?: TailDefaults;
+  /** dozvoljen raspon mera ojačanja po ID-u ojačanja (pos, pos2): veća ili manja vrednost se ne prihvata */
+  tailRanges?: TailResult['ranges'];
 }
 
 const r1 = (n: number): number => Math.round(n * 10) / 10;
 const fmt = (n: number): string => `${Math.round(n).toLocaleString('sr-RS')} mm`;
 
 /** Geometrija sklopa, provere i komponente iz podataka kapije (W = širina rama, H = visina kapije od tla do vrha rama). */
+/** debljina zadnjeg zida prihvatnika (mm): krilo ulazi do njega, pa je tačka prihvata (X) na unutrašnjoj strani zida */
+export const CATCH_BACK = 10;
+
 export function resolveSliding(spec0: SlidingSpec, W: number, H: number): SlidingResult {
   const spec: SlidingSpec = { ...spec0, travel: travelOf(spec0, W) };
   const on = (partKey: string): boolean => isPartOn(spec, partKey);
@@ -246,6 +322,9 @@ export function resolveSliding(spec0: SlidingSpec, W: number, H: number): Slidin
     const has = keys.includes(k) && typeof m === 'number' && Number.isFinite(m);
     pos[k] = { value: has ? m! : auto[k], auto: auto[k], manual: has };
   }
+  // vođica je na stubu vođice: prati ručno zadat stub (ili stub ograde u projektu); stub vođice prati vođicu dok mu X nije zadat ručno
+  if (!pos.upperGuide.manual) pos.upperGuide.value = guideXOf(spec, W);
+  if (!pos.guidePost.manual) pos.guidePost.value = pos.upperGuide.value;
   const at = (k: PosKey): number => pos[k].value;
   const cant = spec.support === 'cantilever';
   const fb = spec.frameBottomY;
@@ -288,6 +367,7 @@ export function resolveSliding(spec0: SlidingSpec, W: number, H: number): Slidin
   let fitCheck: SlidingCheck | null = null;
   let tail: TailMember[] | undefined;
   let tailDefaults: TailDefaults | undefined;
+  let tailRanges: TailResult['ranges'] | undefined;
   if (!cant) {
     const wr = spec.wheelDiameter / 2;
     const railTop = D('rail.h');
@@ -303,11 +383,11 @@ export function resolveSliding(spec0: SlidingSpec, W: number, H: number): Slidin
     const L = at('carrierLength');
     const cH = D('carrier.h'); const cY = fb - cH;
     const rise = D('tail.rise');
-    add({ key: 'carrier', label: 'Noseći C-profil', moving: true, role: 'leaf', detail: false, shapes: [{ t: 'rect', x: 0, y: cY, w: L, h: cH }] });
+    add({ key: 'carrier', label: 'Noseći C-profil', moving: true, role: 'leaf', detail: false, shapes: [{ t: 'rect', x: 0, y: cY, w: L, h: cH }], depth: D('carrier.d') });
     if (on('tail')) {
       const tg = tailGeometry({ W, ff, fb, top, L, rise, diagW: D('tail.diag.w'), bottomW: D('tail.bottom.w'), braceW: D('tail.brace'), braces: spec.braces ?? [{ id: 'b1', kind: 'vertical' }], defaultVerticalX: at('tailBrace') });
-      tail = tg.members; tailDefaults = tg.defaults;
-      add({ key: 'tail', label: 'Trouglasti rep s ojačanjem', moving: true, role: 'leaf', detail: false, shapes: tail.map((m) => ({ t: 'poly' as const, pts: m.poly })) });
+      tail = tg.members; tailDefaults = tg.defaults; tailRanges = tg.ranges;
+      add({ key: 'tail', label: 'Trouglasti rep s ojačanjem', moving: true, role: 'leaf', detail: false, shapes: tail.map((m) => ({ t: 'poly' as const, pts: m.poly })), depth: Math.max(D('tail.diag.d'), D('tail.bottom.d')) });
     }
     add({ key: 'noseRoller', label: 'Čeoni točkić', moving: true, role: 'guide', detail: true, shapes: [{ t: 'circle', cx: at('noseRoller'), cy: cY + cH / 2, r: D('nose.d') / 2 }] });
     const capW = D('cap.w');
@@ -317,7 +397,7 @@ export function resolveSliding(spec0: SlidingSpec, W: number, H: number): Slidin
       { t: 'rect' as const, x: x - pW / 2, y: 0, w: pW, h: pH },
       { t: 'rect' as const, x: x - postW / 2, y: pH, w: postW, h: Math.max(0, cY - pH + 20) },
       { t: 'circle' as const, cx: x - cg, cy: cY + 20, r: cr }, { t: 'circle' as const, cx: x + cg, cy: cY + 20, r: cr },
-    ]) });
+    ]), depth: D('car.plateD') });
     const fd = D('found.depth'); const fm = D('found.margin');
     add({ key: 'foundation', label: 'Temelj kolica', moving: false, role: 'fixed', detail: false, shapes: [{ t: 'rect', x: carXs[0] - fm, y: -fd, w: carXs[carXs.length - 1] - carXs[0] + 2 * fm, h: fd }] });
     add({ key: 'lowerCatch', label: 'Donji prihvat čeonog točkića', moving: false, role: 'guide', detail: true, shapes: [{ t: 'rect', x: at('lowerCatch') - D('lcatch.w') / 2, y: 0, w: D('lcatch.w'), h: D('lcatch.h') }] });
@@ -328,12 +408,12 @@ export function resolveSliding(spec0: SlidingSpec, W: number, H: number): Slidin
   const gW = D('guide.w'); const gH = D('guide.h'); const gDrop = D('guide.drop');
   {
     const pw = D('gpost.w'); const emb = D('gpost.embed');
-    add({ key: 'guidePost', label: 'Stub gornje vođice', moving: false, role: 'fixed', detail: false, shapes: [{ t: 'rect', x: at('upperGuide') - pw / 2, y: -emb, w: pw, h: top - gDrop + gH + emb }] });
+    add({ key: 'guidePost', label: 'Stub gornje vođice', moving: false, role: 'fixed', detail: false, shapes: [{ t: 'rect', x: at('guidePost') - pw / 2, y: -emb, w: pw, h: top - gDrop + gH + emb }] });
   }
   add({ key: 'upperGuide', label: 'Gornja vođica s parom valjaka', moving: false, role: 'guide', detail: false, shapes: [{ t: 'rect', x: at('upperGuide') - gW / 2, y: top - gDrop, w: gW, h: gH }] });
   const rD = D('guide.rollerD'); const rH = D('guide.rollerH'); const rG = D('guide.rollerGap');
   add({ key: 'guideRollers', label: 'Valjci gornje vođice', moving: false, role: 'drive', detail: true, shapes: [-1, 1].map((sgn) => ({ t: 'rect' as const, x: at('upperGuide') + (sgn * rG) / 2 - rD / 2, y: top - gDrop + (gH - rH) / 2, w: rD, h: rH })) });
-  add({ key: 'catch', label: 'Prihvatnik krila', moving: false, role: 'guide', detail: false, shapes: [{ t: 'rect', x: at('catch') - D('catch.w') / 2, y: top - D('catch.drop'), w: D('catch.w'), h: D('catch.h') }] });
+  add({ key: 'catch', label: 'Prihvatnik krila', moving: false, role: 'guide', detail: false, shapes: [{ t: 'rect', x: at('catch') - CATCH_BACK, y: top - D('catch.drop'), w: D('catch.w'), h: D('catch.h') }] });
   add({ key: 'stop', label: 'Mehanički graničnik otvaranja', moving: false, role: 'guide', detail: false, shapes: [{ t: 'rect', x: at('stop'), y: 0, w: D('stop.w'), h: D('stop.h') }] });
 
   // ---- pogon ----
@@ -353,8 +433,8 @@ export function resolveSliding(spec0: SlidingSpec, W: number, H: number): Slidin
   } else {
     const hy = D('handle.y');
     add({ key: 'handle', label: 'Ručka', moving: true, role: 'drive', detail: false, shapes: [{ t: 'rect', x: at('handle') - 10, y: hy, w: D('handle.w'), h: D('handle.h') }] });
-    add({ key: 'latch', label: 'Klizni zasun i pločica', moving: true, role: 'drive', detail: true, shapes: [{ t: 'rect', x: at('latch') - 15, y: hy + D('latch.rise'), w: D('latch.w'), h: D('latch.h') }] });
-    add({ key: 'latchReceiver', label: 'Prihvatna pločica zasuna s nosačem', moving: false, role: 'drive', detail: true, shapes: [{ t: 'rect', x: at('latchReceiver') - 30, y: hy + D('lrec.rise'), w: D('lrec.w'), h: D('lrec.h') }] });
+    add({ key: 'latch', label: 'Klizni zasun i pločica', moving: true, role: 'drive', detail: false, shapes: [{ t: 'rect', x: at('latch') - 15, y: hy + D('latch.rise'), w: D('latch.w'), h: D('latch.h') }] });
+    add({ key: 'latchReceiver', label: 'Prihvatna pločica zasuna s nosačem', moving: false, role: 'drive', detail: false, shapes: [{ t: 'rect', x: at('latchReceiver') - 30, y: hy + D('lrec.rise'), w: D('lrec.w'), h: D('lrec.h') }] });
   }
 
   // ---- provere (pravolinijski hod po jednoj trasi: zatvoreno je pomeraj 0, otvoreno pomeraj = hod) ----
@@ -362,6 +442,8 @@ export function resolveSliding(spec0: SlidingSpec, W: number, H: number): Slidin
   const T = spec.travel;
   const res = Math.max(0, spec.reserve);
   if (!(T > 0)) checks.push({ key: 'travel', level: 'error', title: 'Hod', field: 'travel', msg: 'Hod mora biti veći od nule.' });
+  // ručno zadat hod: prednja ivica krila na punom hodu ne sme da prođe vođicu
+  if (on('upperGuide') && T > at('upperGuide') - guideKeep(spec) + 0.5) checks.push({ key: 'guideTravel', level: 'error', title: 'Krilo i gornja vođica', field: 'travel', msg: `Na punom hodu prednja ivica krila dolazi do X ${fmt(T)}, a vođica je na X ${fmt(at('upperGuide'))}: krilo izlazi iz vođice. Smanjite hod na najviše ${fmt(Math.max(0, at('upperGuide') - guideKeep(spec)))}.` });
   if (W < 500) checks.push({ key: 'width', level: 'error', title: 'Širina rama', field: 'width', msg: `Širina rama ${fmt(W)} je premala za kliznu kapiju.` });
   if (fh < 300) checks.push({ key: 'height', level: 'error', title: 'Visina rama', field: 'height', msg: `Visina rama ${fmt(fh)} je premala.` });
   if (fitCheck) checks.push(fitCheck);
@@ -438,7 +520,7 @@ export function resolveSliding(spec0: SlidingSpec, W: number, H: number): Slidin
   const xr = (sh: Shape): [number, number] => (sh.t === 'rect' ? [sh.x, sh.x + sh.w] : sh.t === 'circle' ? [sh.cx - sh.r, sh.cx + sh.r] : sh.t === 'line' ? [Math.min(sh.x1, sh.x2) - sh.sw / 2, Math.max(sh.x1, sh.x2) + sh.sw / 2] : [Math.min(...sh.pts.map((q) => q[0])), Math.max(...sh.pts.map((q) => q[0]))]);
   for (const c of comps) for (const sh of c.shapes) { const [a, b] = xr(sh); minX = Math.min(minX, a - 60); maxX = Math.max(maxX, b + (c.moving ? T : 0) + 60); }
 
-  return { spec, W, frameHeight: fh, pos, at, components: comps, checks, extents: { minX, maxX }, open: { front: T, end: openEnd }, rack, tail, tailDefaults };
+  return { spec, W, frameHeight: fh, pos, at, components: comps, checks, extents: { minX, maxX }, open: { front: T, end: openEnd }, rack, tail, tailDefaults, tailRanges };
 }
 
 /* ---------------- sastavnica ---------------- */
@@ -465,6 +547,10 @@ export interface SlidingBomItem {
   note?: string;
   /** uglovi sečenja oba kraja (90° = ravan rez); samo cevi koje se seku pod uglom */
   ends?: [number[], number[]];
+  /** oblik krajeva za crtež šipke (vidi TailMember.endShape) */
+  endShape?: [[number, number][], [number, number][]];
+  /** širina cevi u ravni reza (mm) */
+  faceMm?: number;
   /** materijal iz cenovnika izabran za ovu stavku; bez njega je stavka „nije definisano“ */
   materialId?: string;
   /** ručno upisan naziv materijala (nije u cenovniku) */
@@ -482,9 +568,9 @@ export function slidingBom(r: SlidingResult): SlidingBomItem[] {
   const qtyOf = (key: string, def: number): number => { const v = s.qtys?.[key]; return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.round(v) : def; };
   const textOf = (key: string): string | undefined => { const t = s.partText?.[key]?.trim(); return t ? t : undefined; };
   const push = (it: Omit<SlidingBomItem, 'materialId' | 'materialText'>): void => { items.push({ ...it, materialId: matOf(it.key), materialText: matOf(it.key) ? undefined : textOf(it.key) }); };
-  const prof = (key: string, name: string, qty: number, shown: number, cutKnown: number | null, note?: string, group: SlidingBomItem['group'] = 'Ram i ispuna', ends?: [number[], number[]]): void => {
+  const prof = (key: string, name: string, qty: number, shown: number, cutKnown: number | null, note?: string, group: SlidingBomItem['group'] = 'Ram i ispuna', ends?: [number[], number[]], endShape?: SlidingBomItem['endShape'], faceMm?: number): void => {
     const c = cut(key) ?? cutKnown;
-    push({ key, name, qty, unit: 'kom', shownMm: Math.round(shown), cutMm: c === null ? null : Math.round(c), buyMm: null, totalM: Math.round((qty * (c ?? shown)) / 10) / 100, make: 'izrada', group, confirm: c === null, note, ends });
+    push({ key, name, qty, unit: 'kom', shownMm: Math.round(shown), cutMm: c === null ? null : Math.round(c), buyMm: null, totalM: Math.round((qty * (c ?? shown)) / 10) / 100, make: 'izrada', group, confirm: c === null, note, ends, endShape, faceMm });
   };
   const ff = s.frameFace;
   prof('frame-h', `Ram — horizontala (profil ${ff} mm)`, 2, W, null, 'krojna mera zavisi od spoja uglova (45° ili čeono)');
@@ -505,7 +591,7 @@ export function slidingBom(r: SlidingResult): SlidingBomItem[] {
       const deg = (n: number) => String(n).replace('.', ',');
       const endTxt = (e: number[]) => (e.length > 1 ? `V ${e.map(deg).join('° + ')}` : deg(e[0] ?? 90));
       const straight = m.ends.every((e) => e.length === 1 && e[0] === 90);
-      prof(m.bomKey, m.label, 1, m.len, m.len, straight ? 'ravni rezovi' : `rez pod uglom: ${endTxt(m.ends[0])}° / ${endTxt(m.ends[1])}° (90° = ravan rez; V = zasek u dva reza); mera po dužoj strani`, 'Ram i ispuna', m.ends);
+      prof(m.bomKey, m.label, 1, m.len, m.len, straight ? `čeona strana ${deg(m.w)} mm · ravni rezovi` : `čeona strana ${deg(m.w)} mm · rez pod uglom: ${endTxt(m.ends[0])}° / ${endTxt(m.ends[1])}° (90° = ravan rez; V = zasek u dva reza); mera po dužoj strani`, 'Ram i ispuna', m.ends, m.endShape, m.w);
     }
     buy('carriages', 'Kolica samonoseće kapije', Math.max(1, Math.round(D('car.count'))), 'kom', 'Oslonac i vođenje', true, 'položaj, razmak i ploče prema kompletu');
     buy('carriagePlates', 'Ploča za kolica / temelj', Math.max(1, Math.round(D('car.count'))), 'kom', 'Oslonac i vođenje', true, 'veličina temelja prema kompletu i terenu');

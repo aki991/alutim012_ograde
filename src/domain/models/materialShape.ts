@@ -3,6 +3,7 @@ import { profileGeometry, profileSpecFor, specDimFields, specWall, withDims, typ
 
 export type { DimField } from './profileDrawings';
 import type { Material } from './types';
+import { drawnBounds, drawnPolys, drawnValid } from './drawnSection';
 
 /**
  * Oblik materijala za crtanje modela: svaki materijal iz cenovnika dobija poprečni presek (profili), ploču (staklo, paneli)
@@ -165,13 +166,37 @@ export function solidsBounds(solids: Solid[]): { x0: number; y0: number; x1: num
 
 const piece = (group: MaterialGroupId, kind: PieceKind, w: number, d: number): MatShape => ({ type: 'piece', group, solids: pieceSolids(kind, w, d) });
 
+/** Mere kolica samonoseće kapije (mm): ploča sa otvorima za sidrenje, nosač i telo sa valjcima koji idu u C-profil. */
+export interface CarriageParams { plateW: number; plateD: number; plateH: number; stemW: number; stemH: number; wheelD: number; wheelGap: number }
+
+export const CARRIAGE_FIELDS: { key: keyof CarriageParams; label: string; def: number }[] = [
+  { key: 'plateW', label: 'Dužina ploče', def: 210 }, { key: 'plateD', label: 'Širina ploče', def: 100 }, { key: 'plateH', label: 'Debljina ploče', def: 30 },
+  { key: 'stemW', label: 'Širina nosača', def: 86 }, { key: 'stemH', label: 'Visina nosača', def: 90 },
+  { key: 'wheelD', label: 'Prečnik valjka', def: 52 }, { key: 'wheelGap', label: 'Razmak valjaka (osa–osa)', def: 68 },
+];
+
+/** Kolica: ploča sa četiri vijka, nosač i telo sa četiri valjka (valjci su u C-profilu i sa strane se ne vide). */
+export function carriageSolids(p: CarriageParams): Solid[] {
+  const bodyH = p.wheelD + 16;
+  const by = p.plateH + p.stemH + bodyH / 2;
+  const out: Solid[] = [box(p.plateW, p.plateH, p.plateD, 0, p.plateH / 2), box(p.stemW * 0.5, p.stemH, p.plateD * 0.35, 0, p.plateH + p.stemH / 2), box(p.wheelGap + p.wheelD * 0.8, bodyH, p.plateD * 0.5, 0, by)];
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    out.push(cyl(p.wheelD / 2, 14, 'z', (sx * p.wheelGap) / 2, by, sz * p.plateD * 0.3));
+    out.push(cyl(7, 4, 'y', sx * (p.plateW / 2 - 18), p.plateH + 2, sz * (p.plateD / 2 - 18)));
+  }
+  return out;
+}
+
 const cache = new Map<string, Resolved>();
 
 /** Oblik materijala (uvek postoji: nepoznat materijal dobija opšti oblik prema jedinici mere). */
-type ShapeInput = Pick<Material, 'sku' | 'name' | 'unit' | 'category'> & { wallMm?: number; dims?: Record<string, number> };
+type ShapeInput = Pick<Material, 'sku' | 'name' | 'unit' | 'category'> & { wallMm?: number; dims?: Record<string, number>; drawn?: Material['drawn'] };
+
+/** Ključ oblika materijala: isti ključ = isti presek (za keš oblika i 3D tela). */
+export const materialKey = (m: ShapeInput): string => `${m.sku}|${m.name}|${m.unit}|${m.category}|${m.wallMm ?? ''}|${m.dims ? JSON.stringify(m.dims) : ''}|${m.drawn ? JSON.stringify(m.drawn) : ''}`;
 
 function resolved(m: ShapeInput): Resolved {
-  const key = `${m.sku}|${m.name}|${m.unit}|${m.category}|${m.wallMm ?? ''}|${m.dims ? JSON.stringify(m.dims) : ''}`;
+  const key = materialKey(m);
   let s = cache.get(key);
   if (!s) { s = resolveShape(m); cache.set(key, s); }
   return s;
@@ -194,7 +219,29 @@ const fromSpec = (spec: ProfileSpec, group: MaterialGroupId, exact: boolean): Re
   fields: specDimFields(spec),
 });
 
+const DRAWN_GROUP: Record<NonNullable<Material['drawn']>['kind'], MaterialGroupId> = { u: 'u', c: 'c', l: 'l', z: 'z', kv: 'kv', traka: 'trake', ostalo: 'trake' };
+
+/** Presek iz ručno nacrtane linije zida, centriran u (0, 0); debljina zida materijala (wallMm) ima prednost nad nacrtanom. */
+export function sectionOfDrawn(d: NonNullable<Material['drawn']>, wallMm?: number): Section {
+  const polys = drawnPolys({ ...d, wall: wallMm && wallMm > 0 ? wallMm : d.wall });
+  const b = drawnBounds(polys);
+  const cx = (b.x0 + b.x1) / 2; const cy = (b.y0 + b.y1) / 2;
+  const mv = (pts: Pt[]): Pt[] => pts.map(([x, y]) => [x - cx, y - cy] as Pt);
+  const r = (n: number) => Math.round(n * 1e6) / 1e6;
+  return { polys: polys.map((p) => ({ outline: mv(p.outline), holes: p.holes.map(mv) })), w: r(b.x1 - b.x0), h: r(b.y1 - b.y0) };
+}
+
 function resolveShape(m: ShapeInput): Resolved {
+  // ručno nacrtan presek ima prednost nad presekom iz šifre i naziva
+  if (drawnValid(m.drawn)) {
+    const d = m.drawn;
+    const wall = m.wallMm && m.wallMm > 0 ? m.wallMm : d.wall;
+    const section = sectionOfDrawn(d, m.wallMm);
+    return {
+      shape: { type: 'linear', group: DRAWN_GROUP[d.kind] ?? 'trake', section, exact: true, wall, u: d.kind === 'u' ? { a: section.w, b: section.h, c: wall } : undefined },
+      fields: [{ key: 'c', label: d.kind === 'traka' ? 'Debljina' : 'Debljina zida', value: wall, wall: true }],
+    };
+  }
   const ov = m.dims ?? {};
   const spec = profileSpecFor(m);
   if (spec) {
@@ -208,6 +255,14 @@ function resolveShape(m: ShapeInput): Resolved {
   const w = dims[0] ?? rd?.d ?? 60;
   const d = dims[1] ?? rd?.d ?? w;
   const has = (re: RegExp): boolean => re.test(n);
+  const posOv = (k: string): number | undefined => { const v = ov[k]; return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : undefined; };
+
+  // kolica samonoseće kapije: sve mere se mogu menjati (mere iz naziva su dužina i širina ploče)
+  if (has(/\bkolic/)) {
+    const cp = {} as CarriageParams;
+    for (const f of CARRIAGE_FIELDS) cp[f.key] = posOv(f.key) ?? (f.key === 'plateW' ? dims[0] : f.key === 'plateD' ? dims[1] : undefined) ?? f.def;
+    return { shape: { type: 'piece', group: 'okov', solids: carriageSolids(cp) }, fields: CARRIAGE_FIELDS.map((f) => ({ key: f.key, label: f.label, value: cp[f.key] })) };
+  }
 
   // komadni delovi (naziv često sadrži i meru profila na koji idu, zato se proveravaju pre profila)
   if (has(/\bkap[aeu]\b/)) return plain(piece('kape', has(/pismo|piramid|siljat/) ? 'cap_pyramid' : 'cap_flat', w, d));
@@ -261,6 +316,22 @@ function resolveShape(m: ShapeInput): Resolved {
   }
   if (m.category === 'okov') return plain(piece('okov', 'bracket', Math.min(w, 60), Math.min(d, 60)));
   return plain(piece('ostalo', 'box', w, d));
+}
+
+/**
+ * Presek je pravougaonik (puna traka ili cev sa pravougaonim otvorom), pa se okreće samo „čeonom stranom“: koja stranica preseka
+ * je okrenuta ka posmatraču (npr. 60 ili 40 kod cevi 60×40). Profili sa otvorom ili krakom (U, L, C, H …) nisu takvi: kod njih je bitno
+ * i na koju stranu gleda otvor, pa se okreću uglom.
+ */
+export function isSymmetricRect(section: Section): boolean {
+  if (section.round || section.polys.length !== 1) return false;
+  const { outline, holes } = section.polys[0];
+  const rect = (pts: Pt[]): boolean => {
+    if (pts.length !== 4) return false;
+    const xs = [...new Set(pts.map((p) => Math.round(p[0] * 1000)))]; const ys = [...new Set(pts.map((p) => Math.round(p[1] * 1000)))];
+    return xs.length === 2 && ys.length === 2 && xs[0] + xs[1] === 0 && ys[0] + ys[1] === 0;
+  };
+  return rect(outline) && (holes.length === 0 || (holes.length === 1 && rect(holes[0])));
 }
 
 /** Presek okrenut oko ose profila za 0 / 90 / 180 / 270°. */

@@ -10,6 +10,12 @@ const m = (id: string, sku: string, name: string, category: Material['category']
   id, sku, name, category, unit, unitPrice, wastePercent, demo: false,
 });
 
+/** Kolica samonoseće klizne kapije: polazni primeri sa merama (sve mere se menjaju u „Izmeni“), cena se upisuje ručno. */
+export const DEFAULT_CARRIAGES: Material[] = [
+  { id: 'mat_kolica_210', sku: 'KOL-210', name: 'Kolica za samonoseću kapiju 210×100', category: 'okov', unit: 'kom', unitPrice: 0, wastePercent: 0, demo: false },
+  { id: 'mat_kolica_160', sku: 'KOL-160', name: 'Kolica za samonoseću kapiju 160×100, lakša', category: 'okov', unit: 'kom', unitPrice: 0, wastePercent: 0, demo: false, dims: { stemW: 70, wheelD: 45, wheelGap: 50 } },
+];
+
 const RAW_MODEL_MATERIALS: Material[] = [
   m('mat_alu_profil', 'DEMO-HP-100', 'Aluminijumski profil 100×20', 'profil', 'm', 520, 6),
   m('mat_alu_panel', 'DEMO-PP-250', 'Aluminijumski panel-profil 250×20', 'profil', 'm', 1150, 5),
@@ -94,4 +100,4 @@ export function missingModelMaterials(existing: Material[]): Material[] {
 }
 
 /** nazivi su vrsta pa dimenzije (bez beleški iz uvoza), npr. „Kvadratna cev 30×30×2“ */
-export const MODEL_MATERIALS: Material[] = RAW_MODEL_MATERIALS.map((m) => ({ ...m, name: cleanMaterialName(m.name) }));
+export const MODEL_MATERIALS: Material[] = [...RAW_MODEL_MATERIALS, ...DEFAULT_CARRIAGES].map((m) => ({ ...m, name: cleanMaterialName(m.name) }));

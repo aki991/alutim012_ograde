@@ -155,6 +155,29 @@ export interface Post {
   /** Kapa na vrhu i u dnu stuba uz model „tarabica“ (katalog Ekoluka Key); bez izbora: ravna kapa gore, dole bez kape */
   capTop?: PostCap;
   capBottom?: PostCap;
+  /** materijal stuba iz cenovnika (presek); bez vrednosti obračunava se uobičajen stub prema tipu */
+  materialId?: string;
+  /** šablon stuba iz koga je stub napravljen (Podešavanja → Šabloni stubova) */
+  templateId?: string;
+}
+
+/** Šablon stuba: sačuvan tip, presek, mere, montaža, boja i kape; bira se za stub u projektu. */
+export interface PostTemplate {
+  id: string;
+  name: string;
+  type: PostType;
+  widthMm: Mm;
+  /** visina stuba; bez vrednosti visina prati ogradu (automatska) */
+  heightMm?: Mm;
+  color: string;
+  finish?: Finish;
+  mounting: MountingType;
+  materialId?: string;
+  round?: boolean;
+  capTop?: PostCap;
+  capBottom?: PostCap;
+  /** visina podnožja (samo „betonski stub sa podnožjem“) */
+  plinthMm?: Mm;
 }
 
 export type PostCap = 'none' | 'flat' | 'pyramid' | 'rosette';
@@ -294,6 +317,22 @@ export interface Material {
   dims?: Record<string, number>;
   /** masa po metru (kg/m) iz deklaracije profila; bez vrednosti masa se ne računa (prikazuje se kao nepoznata) */
   kgPerM?: number;
+  /** ručno nacrtan poprečni presek (dugme „Nacrtaj element“): ima prednost nad presekom iz šifre i naziva */
+  drawn?: DrawnSection;
+}
+
+/** Vrsta nacrtanog preseka (određuje grupu u spiskovima; „u“ se ponaša kao bočna U vođica). */
+export type DrawnKind = 'u' | 'c' | 'l' | 'z' | 'kv' | 'traka' | 'ostalo';
+
+/**
+ * Ručno nacrtan presek profila: linija zida (sredina zida, mm, y nagore) i debljina zida. Otvorena linija daje profil sa
+ * krakovima (U, C, L, Z, traka), zatvorena daje cev. Presek se crta po toj liniji, debljine zida.
+ */
+export interface DrawnSection {
+  kind: DrawnKind;
+  pts: [number, number][];
+  wall: number;
+  closed: boolean;
 }
 
 /** Stavka magacina: komadi jednog materijala iste dužine. */
@@ -328,6 +367,8 @@ export interface AppSettings {
   hiddenModels?: string[];
   /** korisnički šabloni kliznih kapija (sklop sa merama, smerom i stanjem potvrde) */
   slidingTemplates?: SlidingTemplate[];
+  /** šabloni stubova (tip, presek, mere, montaža, boja, kape) za izbor u panelu stuba */
+  postTemplates?: PostTemplate[];
   /** sopstveni okovi radionice (šarke, brave, kolica …) za izbor u merama kapije */
   gateHardware?: import('../gates/design').GateHardware[];
   /** sopstveni profili radionice za ram, noseći profil i rep kapije */
@@ -336,7 +377,7 @@ export interface AppSettings {
   /** podaci firme za zaglavlja dokumenata (krojna lista); prazna polja se ne prikazuju */
   companyInfo?: { address?: string; phone?: string; email?: string; pib?: string };
   /** nabavna dužina šipke i širina reza testere za krojnu listu (mm); bez vrednosti važi 6000 / 3 */
-  cutting?: { stockMm: number; kerfMm: number };
+  cutting?: { stockMm: number; kerfMm: number; /** štednja materijala: kosi rezovi se dele (jedan rez za dva komada) */ saveMaterial?: boolean };
   /** magacin: materijal na stanju (cele šipke i ostaci) */
   stock?: StockItem[];
   currency: string;

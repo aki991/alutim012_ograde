@@ -6,12 +6,16 @@ import type { ModelSpecs } from '../models/spec';
 import type { Material, Project } from '../models/types';
 import { indexOfNumber, itemLabel, itemNumber } from '../../utils/labels';
 import { buildBom } from './calc';
-import { buildCuttingList, type CutOptions, type CuttingList, type CutPosition } from './cutting';
+import { isCustomModel } from '../models/customRegistry';
+import { resolveSliding, variantTitle } from '../gates/slidingAssembly';
+import { slidingH } from '../gates/slidingLayout';
+import { buildCuttingList, inPrintScope, scopedProject, type CutOptions, type CuttingList, type CutPosition } from './cutting';
 import { buildCutList } from './production';
 
 /** Radni nalog za majstora koji sklapa ogradu: elementi sa delovima, stubovi, okovi i sitan materijal, kontrolne tačke. */
 
-export interface WorkPart { part: string; profile: string; lengthMm: number | null; qty: number; note?: string }
+/** deo za sklapanje; name = naziv bez oznake uglova (za povezivanje sa sklopnim crtežom), no = broj dela na sklopnom crtežu */
+export interface WorkPart { part: string; name?: string; profile: string; lengthMm: number | null; qty: number; note?: string; no?: number }
 export interface WorkFact { label: string; value: string }
 
 export interface WorkElement {
@@ -25,6 +29,8 @@ export interface WorkElement {
   facts: WorkFact[];
   /** kapija: dodatne tačke kontrole (okov, funkcija) */
   isGate: boolean;
+  /** klizna kapija kao sklop: redni broj elementa u projektu (za sklopni crtež sa brojevima delova) */
+  slidingIndex?: number;
 }
 
 export interface WorkPost { name: string; where: string; type: string; widthMm: number; heightMm: number; mounting: string; color: string; plinthMm?: number }
@@ -59,12 +65,21 @@ export function positionOfItem(positions: CutPosition[], index: number): string 
 
 const isStubKey = (k: string) => /^S\d+$/.test(k);
 
+/** redosled delova klizne kapije u radnom nalogu (i brojeva na sklopnom crtežu): ram, U vođice, ispuna, C-profil ili šina, rep, ostalo */
+function assemblyRank(name: string): number {
+  const order: [RegExp, number][] = [[/^Ram/, 0], [/^Bočn/, 1], [/^Ispuna|^Prečka|^Ploča/, 2], [/C-profil|^Podna šina/, 3], [/^Rep — kosnik/, 4], [/^Rep — donja/, 5], [/^Rep/, 6]];
+  return order.find(([re]) => re.test(name))?.[1] ?? 7;
+}
+
 export function buildWorkOrder(project: Project, specs: ModelSpecs | undefined, materials: Material[], opts: CutOptions): WorkOrder {
   const cutting = buildCuttingList(project, specs, materials, opts);
-  const layout = computeLayout(project);
+  // deo projekta koji se štampa (ceo, samo kapije ili ograda bez kapija): elementi van njega su prazni otvori, pa stubovi uz njih ne ulaze
+  const scope = opts.scope ?? 'all';
+  const sp = scopedProject(project, scope);
+  const layout = computeLayout(sp);
   const glassBy = new Map<string, WorkPart[]>();
   for (const c of buildCutList(project, specs, materials)) {
-    if (!c.glass) continue;
+    if (!c.glass || !inPrintScope(project.items[c.index], scope)) continue;
     const key = String(c.index + 1);
     const list = glassBy.get(key) ?? [];
     list.push({ part: c.part, profile: c.profile, lengthMm: null, qty: c.qty, note: c.note });
@@ -79,7 +94,7 @@ export function buildWorkOrder(project: Project, specs: ModelSpecs | undefined, 
         const m = partsBy.get(pc.pos) ?? new Map<string, WorkPart>();
         const k = `${prof.profile}|${pc.part}|${pc.lengthMm}`;
         const cur = m.get(k);
-        if (cur) cur.qty += 1; else m.set(k, { part: pc.part, profile: prof.profile, lengthMm: pc.lengthMm, qty: 1 });
+        if (cur) cur.qty += 1; else m.set(k, { part: pc.part, name: pc.name ?? pc.part, profile: prof.profile, lengthMm: pc.lengthMm, qty: 1 });
         partsBy.set(pc.pos, m);
       }
     }
@@ -87,7 +102,7 @@ export function buildWorkOrder(project: Project, specs: ModelSpecs | undefined, 
       const m = partsBy.get(pc.pos) ?? new Map<string, WorkPart>();
       const k = `${prof.profile}|${pc.part}|${pc.lengthMm}`;
       const cur = m.get(k);
-      if (cur) cur.qty += 1; else m.set(k, { part: pc.part, profile: prof.profile, lengthMm: pc.lengthMm, qty: 1 });
+      if (cur) cur.qty += 1; else m.set(k, { part: pc.part, name: pc.name ?? pc.part, profile: prof.profile, lengthMm: pc.lengthMm, qty: 1 });
       partsBy.set(pc.pos, m);
     }
   }
@@ -95,27 +110,46 @@ export function buildWorkOrder(project: Project, specs: ModelSpecs | undefined, 
   const elements: WorkElement[] = [];
   for (const pos of cutting.positions) {
     if (isStubKey(pos.key)) continue; // stubovi su u zasebnoj tabeli
+    const idx = /^\d+$/.test(pos.key) ? indexOfNumber(project.items, Number(pos.key)) : -1;
+    const it = idx >= 0 ? project.items[idx] : undefined;
+    const sliding = it?.kind === 'gate' && it.sliding ? it.sliding : undefined;
     const parts = [...(partsBy.get(pos.key)?.values() ?? []), ...(glassBy.get(pos.key) ?? [])]
-      .sort((a, b) => a.profile.localeCompare(b.profile, 'sr') || (b.lengthMm ?? 0) - (a.lengthMm ?? 0));
+      .sort((a, b) => (sliding ? assemblyRank(a.name ?? a.part) - assemblyRank(b.name ?? b.part) : 0) || a.profile.localeCompare(b.profile, 'sr') || (b.lengthMm ?? 0) - (a.lengthMm ?? 0));
+    // klizna kapija: delovi su numerisani kao na sklopnom crtežu (redom sklapanja: ram, ispuna, C-profil, rep)
+    if (sliding) parts.forEach((p, i) => { p.no = i + 1; });
     const facts: WorkFact[] = [];
     let color = '';
     let isGate = false;
-    const idx = /^\d+$/.test(pos.key) ? indexOfNumber(project.items, Number(pos.key)) : -1;
-    const it = idx >= 0 ? project.items[idx] : undefined;
     if (it && it.kind !== 'opening') {
       color = colorLabel(it.color, it.finish);
       isGate = it.kind === 'gate';
       const modelId = it.kind === 'fence' ? it.modelId : it.infillModelId;
       const li = layout.items[idx];
       const geo = computeInfill(modelId, li.clearWidth, it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount, it.params.liftMm, undefined, it.params.archMm);
+      const bars = geo.bars.filter((b) => b.tone === 'main').length;
       facts.push(
-        { label: 'Ukupna širina', value: `${Math.round(outerWidthMm(project, idx))} mm` },
-        { label: 'Visina', value: `${Math.round(it.heightMm)} mm` },
+        ...(sliding ? [] : [{ label: 'Ukupna širina', value: `${Math.round(outerWidthMm(project, idx))} mm` }, { label: 'Visina', value: `${Math.round(it.heightMm)} mm` }]),
         { label: 'Boja', value: colorLabel(it.color, it.finish) },
-        { label: 'Profila ispune', value: String(geo.bars.filter((b) => b.tone === 'main').length) },
+        ...(bars > 0 && !isCustomModel(modelId) ? [{ label: 'Profila ispune', value: String(bars) }] : []),
         ...(isStair(it) ? [{ label: 'Stepenište', value: stairGroupSummary(stairGroupAt(project.items, idx)!) }] : []),
       );
-      if (it.kind === 'gate') {
+      if (it.kind === 'gate' && sliding) {
+        // klizna kapija: mere sklopa koje majstoru trebaju (krilo, visina od tla, rep, C-profil ili šina, hod)
+        const r = resolveSliding(sliding, li.clearWidth, slidingH(it));
+        const fb = r.spec.frameBottomY;
+        facts.unshift(
+          { label: 'Izvedba', value: variantTitle(r.spec) },
+          { label: 'Krilo (š × v)', value: `${Math.round(r.W)} × ${Math.round(r.frameHeight)} mm` },
+          { label: 'Ram od tla', value: `${Math.round(fb)} mm` },
+          { label: 'Visina od tla', value: `${Math.round(fb + r.frameHeight)} mm` },
+          ...(r.spec.support === 'cantilever'
+            ? [{ label: 'Rep', value: `${Math.round(r.at('carrierLength') - r.W)} mm` }, { label: 'C-profil', value: `${Math.round(r.at('carrierLength'))} mm` }]
+            : [{ label: 'Šina', value: `${Math.round(r.at('railLength'))} mm` }]),
+          { label: 'Hod', value: `${Math.round(r.spec.travel)} mm` },
+        );
+        facts.push({ label: 'Klizanje', value: SLIDE[it.opening] }, { label: 'Pogon', value: r.spec.actuation === 'manual' ? 'Ručni' : 'Motorni' });
+        if (it.availableSpaceMm) facts.push({ label: 'Prostor za povlačenje', value: `${Math.round(it.availableSpaceMm)} mm` });
+      } else if (it.kind === 'gate') {
         facts.push(
           it.gateType === 'sliding'
             ? { label: 'Klizanje', value: SLIDE[it.opening] }
@@ -128,7 +162,7 @@ export function buildWorkOrder(project: Project, specs: ModelSpecs | undefined, 
         if (it.gateType === 'double' && it.unequalLeaves) facts.push({ label: 'Levo krilo', value: `${Math.round(it.leftLeafMm)} mm` });
       }
     }
-    elements.push({ key: pos.key, label: pos.label, detail: pos.detail, color, parts, facts, isGate });
+    elements.push({ key: pos.key, label: pos.label, detail: pos.detail, color, parts, facts, isGate, ...(sliding && idx >= 0 ? { slidingIndex: idx } : {}) });
   }
 
   const posts: WorkPost[] = project.posts.flatMap((p, i) => (layout.posts[i]?.hidden ? [] : [{ p, i }])).map(({ p, i }) => {
@@ -144,17 +178,19 @@ export function buildWorkOrder(project: Project, specs: ModelSpecs | undefined, 
 
   // okovi i sitan materijal: ukupno za projekat (bez profila, stubova i rezerve u novcu)
   const SMALL_GROUPS = new Set(['Nosači i spojnice', 'Vijci', 'Šarke', 'Brave', 'Točkići', 'Automatika']);
-  const small: WorkSmallItem[] = buildBom(project, materials, specs)
-    .filter((l) => SMALL_GROUPS.has(l.group) && l.geometricQty > 0)
+  // profil koji se seče po krojnoj listi (npr. C-profil) je već među delovima elementa, pa se ne ponavlja u okovu
+  const cutProfiles = new Set(cutting.profiles.map((p) => p.profile));
+  const small: WorkSmallItem[] = buildBom(sp, materials, specs)
+    .filter((l) => SMALL_GROUPS.has(l.group) && l.geometricQty > 0 && !(l.unit === 'm' && cutProfiles.has(l.name)))
     .map((l) => ({ name: l.name, qty: l.unit === 'kom' || l.unit === 'set' ? Math.ceil(l.geometricQty - 1e-9) : Math.round(l.geometricQty * 100) / 100, unit: l.unit }));
 
-  const gates = project.items.filter((i) => i.kind === 'gate').length;
+  const gates = project.items.filter((i) => i.kind === 'gate' && inPrintScope(i, scope)).length;
   return {
     cutting,
     elements,
     posts,
     small,
-    summary: { occupiedMm: layout.occupiedMm, elements: project.items.filter((i) => i.kind !== 'opening').length, gates, posts: layout.postCount, maxHeightMm: layout.maxHeightMm },
+    summary: { occupiedMm: layout.occupiedMm, elements: project.items.filter((i) => i.kind !== 'opening' && inPrintScope(i, scope)).length, gates, posts: layout.postCount, maxHeightMm: layout.maxHeightMm },
     positionOfItem: (index) => positionOfItem(cutting.positions, itemNumber(project.items, index) - 1),
   };
 }
