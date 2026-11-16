@@ -171,7 +171,10 @@ test('promena oslonca i pogona menja samo pripadajuće delove; šablon je nezavi
 test('stara klizna kapija (bez sklopa) radi kao ranije', async ({ page }) => {
   const errors = trackErrors(page);
   await newProject(page);
-  await page.getByTestId('cat-gate-sliding-add').click();
+  await page.getByTestId('cat-fence-add').click();
+  await page.getByTestId('add-end').click({ force: true });
+  await page.getByTestId('add-kind-sliding').click();
+  await page.getByTestId('add-apply').click();
   await page.locator('[data-hit="item"]').last().click();
   await expect(page.getByTestId('sliding-panel')).toHaveCount(0);
   await expect(page.getByTestId('btn-gate-design')).toBeVisible();

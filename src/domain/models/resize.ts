@@ -18,7 +18,61 @@ function mapper(size: number, newSize: number, marginLo: number, marginHi: numbe
   return (c) => (c <= marginLo ? c : c >= size - marginHi ? c + d : marginLo + (c - marginLo) * k);
 }
 
+/** polje uže od ovoga (mm) nije polje za razvlačenje: smatra se delom krutog bloka */
+const MIN_FIELD_MM = 50;
+
+/**
+ * Polja između uspravnih „krutih“ delova (ram, U profili, razdelne cevi): kruti delovi zadržavaju tačnu širinu i samo se pomeraju,
+ * a nova širina se deli na polja između njih podjednako (tri polja rastu za isti iznos). Unutar krutog dela pomeraj je isti za
+ * svaku tačku, pa prečke koje ulaze u U profil ostaju u njemu na istoj dubini; unutar polja se razvlači linearno.
+ */
+export function pieceMapper(size: number, newSize: number, rigid: [number, number][]): ((c: number) => number) | null {
+  const all = [[0, 0], ...rigid, [size, size]].map(([lo, hi]) => [Math.max(0, lo), Math.min(size, hi)] as [number, number]).sort((p, q) => p[0] - q[0]);
+  const R: [number, number][] = [];
+  // dodirnuti blokovi i polja uža od MIN_FIELD_MM čine jedan kruti blok
+  for (const iv of all) { const last = R[R.length - 1]; if (last && iv[0] <= last[1] + MIN_FIELD_MM - 1e-9) last[1] = Math.max(last[1], iv[1]); else R.push([iv[0], iv[1]]); }
+  const n = R.length - 1;
+  if (n < 1) return null;
+  const d = newSize - size;
+  const add = d / n;
+  const gaps = Array.from({ length: n }, (_, j) => R[j + 1][0] - R[j][1]);
+  if (gaps.some((g) => g + add < 1)) return null;
+  const ns: number[] = [0];
+  for (let j = 0; j < n; j++) ns.push(ns[j] + (R[j][1] - R[j][0]) + gaps[j] + add);
+  return (c) => {
+    if (c <= 0) return c;
+    if (c >= size) return c + d;
+    for (let j = 0; j <= n; j++) {
+      if (c >= R[j][0] && c <= R[j][1]) return ns[j] + (c - R[j][0]);
+      if (j < n && c > R[j][1] && c < R[j + 1][0]) return ns[j] + (R[j][1] - R[j][0]) + (c - R[j][1]) * ((gaps[j] + add) / gaps[j]);
+    }
+    return c + d;
+  };
+}
+
 const r3 = (n: number): number => Math.round(n * 1000) / 1000;
+
+/** dodir ili zalazak do ove mere (mm) spaja uspravne delove u jedan kruti blok (npr. U profil uz razdelnu cev) */
+const TOUCH_MM = 5;
+
+/** Vodoravni opsezi (x0, x1) uspravnih krutih delova: u njih ulaze krajevi vodoravnih (ram, U profili sa prečkama) ili dodiruju takav deo. */
+export function rigidIntervals(model: CustomModel, shapeOf: (p: CustomPart) => MatShape | null): [number, number][] {
+  const a = (p: CustomPart): number => ((p.angleDeg % 360) + 360) % 360;
+  const isV = (p: CustomPart) => a(p) === 90 || a(p) === 270;
+  const isH = (p: CustomPart) => a(p) === 0 || a(p) === 180;
+  const linear = model.parts.filter((p) => shapeOf(p)?.type === 'linear');
+  const hEnds = linear.filter(isH).flatMap((p) => [p.x, p.x + (a(p) === 0 ? p.lengthMm : -p.lengthMm)]);
+  const verts = linear.filter(isV).map((p) => ({ p, b: partBounds(p, shapeOf(p)!) }));
+  const rigidSet = new Set(verts.filter((v) => hEnds.some((e) => e >= v.b.x0 - 1 && e <= v.b.x1 + 1)).map((v) => v.p.id));
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const v of verts) {
+      if (rigidSet.has(v.p.id)) continue;
+      if (verts.some((o) => rigidSet.has(o.p.id) && v.b.x0 <= o.b.x1 + TOUCH_MM && v.b.x1 >= o.b.x0 - TOUCH_MM)) { rigidSet.add(v.p.id); changed = true; }
+    }
+  }
+  return verts.filter((v) => rigidSet.has(v.p.id)).map((v): [number, number] => [v.b.x0, v.b.x1]);
+}
 
 export function resizeModel(model: CustomModel, widthMm: number, heightMm: number, materials: Material[]): CustomModel {
   const W = model.widthMm; const H = model.heightMm;
@@ -41,7 +95,15 @@ export function resizeModel(model: CustomModel, widthMm: number, heightMm: numbe
     if (isV(p)) { if (b.x0 < 1) mL = Math.max(mL, b.x1); if (b.x1 > W - 1) mR = Math.max(mR, W - b.x0); }
     if (isH(p)) { if (b.y0 < 1) mB = Math.max(mB, b.y1); if (b.y1 > H - 1) mT = Math.max(mT, H - b.y0); }
   }
-  const mx = mapper(W, widthMm, mL, mR);
+  const rigid = rigidIntervals(model, shapeOf);
+  // pravilo važi samo kad ima razdelnih (unutrašnjih) krutih blokova; inače je dovoljno staro pravilo (ram uz ivice, niz letvica)
+  const interior = rigid.length > 0 && (() => {
+    const merged: [number, number][] = [];
+    for (const iv of [...rigid].sort((p, q) => p[0] - q[0])) { const last = merged[merged.length - 1]; if (last && iv[0] <= last[1] + TOUCH_MM) last[1] = Math.max(last[1], iv[1]); else merged.push([iv[0], iv[1]]); }
+    return merged.some(([lo, hi]) => lo > 1 && hi < W - 1);
+  })();
+  const piece = interior ? pieceMapper(W, widthMm, rigid) : null;
+  const mx = piece ?? mapper(W, widthMm, mL, mR);
   const my = mapper(H, heightMm, mB, mT);
 
   /**
@@ -56,6 +118,7 @@ export function resizeModel(model: CustomModel, widthMm: number, heightMm: numbe
   for (const list of rows.values()) {
     if (list.length < 3) continue;
     const horiz = isH(list[0]);
+    if (!horiz && piece) continue; // uspravni delovi idu po krutim blokovima, ne kao niz letvica
     const sh = shapeOf(list[0]);
     if (sh?.type !== 'linear') continue;
     const e = sectionFace(sh.section, list[0].rot + (list[0].tiltDeg ?? 0));

@@ -1,7 +1,7 @@
 import { leafHeightOf } from '../../domain/gates/slidingLayout';
 import { useState } from 'react';
 import { Modal } from '../ui/Modal';
-import { gateConfigFromGate, GATE_TYPE_LABELS } from '../../domain/gates/gateModels';
+import { gateConfigFromGate, GATE_TYPE_LABELS, type GateConfig } from '../../domain/gates/gateModels';
 import { builtinToCustom } from '../../domain/models/fromBuiltin';
 import { customModelOf } from '../../domain/models/customRegistry';
 import type { CustomModel } from '../../domain/models/custom';
@@ -13,7 +13,7 @@ import { uid } from '../../utils/id';
  * Čuvanje kapije kao model kapije: nov model (crtež ispune kapije + podešavanja iz „Mere kapije“) ili prepravka postojećeg modela.
  * Model kapije je ručno nacrtan model vrste „Kapija“, pa se čuva i otvara kao i modeli ograda.
  */
-export function SaveGateModelDialog({ gate, clearWidthMm, defaultName, onSaved, onClose }: { gate: Gate; clearWidthMm: number; defaultName: string; onSaved: (modelId: string, name: string, version: number) => void; onClose: () => void }) {
+export function SaveGateModelDialog({ gate, clearWidthMm, defaultName, posts, onSaved, onClose }: { gate: Gate; clearWidthMm: number; defaultName: string; /** ručno zadate mere stubova uz kapiju */ posts?: GateConfig['posts']; onSaved: (modelId: string, name: string, version: number) => void; onClose: () => void }) {
   const all = useAppStore((s) => s.settings.customModels);
   const models = (all ?? []).filter((m) => m.kind === 'gate' && !m.replaces);
   const sourceId = gate.design?.template?.id;
@@ -31,7 +31,7 @@ export function SaveGateModelDialog({ gate, clearWidthMm, defaultName, onSaved, 
     if (base) {
       // prepravka: crtež modela ostaje, menjaju se podešavanja kapije (mere, okovi, tip), visina i boja
       const version = (base.gate?.version ?? 1) + 1;
-      const next: CustomModel = { ...base, heightMm: leafHeightOf(gate), color: gate.color, gate: gateConfigFromGate(gate, clearWidthMm, version), updatedAt: now };
+      const next: CustomModel = { ...base, heightMm: leafHeightOf(gate), color: gate.color, gate: gateConfigFromGate(gate, clearWidthMm, version, posts), updatedAt: now };
       st.updateSettings({ customModels: list.map((m) => (m.id === base.id ? next : m)) });
       onSaved(base.id, base.name, version);
       return;
@@ -39,7 +39,7 @@ export function SaveGateModelDialog({ gate, clearWidthMm, defaultName, onSaved, 
     const id = uid('cm');
     const src = customModelOf(gate.infillModelId) ?? builtinToCustom(gate.infillModelId as FenceModelId, st.materials, id, clearWidthMm, leafHeightOf(gate));
     const copy = JSON.parse(JSON.stringify(src)) as CustomModel;
-    const next: CustomModel = { ...copy, id, name: name.trim(), kind: 'gate', replaces: undefined, heightMm: leafHeightOf(gate), color: gate.color, gate: gateConfigFromGate(gate, clearWidthMm, 1), updatedAt: now };
+    const next: CustomModel = { ...copy, id, name: name.trim(), kind: 'gate', replaces: undefined, heightMm: leafHeightOf(gate), color: gate.color, gate: gateConfigFromGate(gate, clearWidthMm, 1, posts), updatedAt: now };
     st.updateSettings({ customModels: [...list, next] });
     onSaved(id, next.name, 1);
   };

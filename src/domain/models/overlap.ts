@@ -1,4 +1,4 @@
-import { partAngle, partBounds, type CustomModel, type CustomPart } from './custom';
+import { miterEndsOf, partAngle, partBounds, type CustomModel, type CustomPart } from './custom';
 import { materialShape, rotateDeg, sectionFace, type Section } from './materialShape';
 import type { Material } from './types';
 
@@ -77,12 +77,15 @@ function boxOf(p: CustomPart, materials: Map<string, Material>): Box | null {
   const c = Math.cos(a); const s = Math.sin(a);
   // deo rama sa uglovima 45°: trapez umesto pravougaonika (duža ivica je spoljna), da se ramovi na uglovima ne preklapaju
   const L = p.lengthMm; const fc = e.u1 - e.u0;
-  const local: [number, number][] = p.cut45 && p.miter && L > 2 * fc
-    ? (p.miter === 'lo' ? [[0, e.u0], [L, e.u0], [L - fc, e.u1], [fc, e.u1]] : [[fc, e.u0], [L - fc, e.u0], [L, e.u1], [0, e.u1]])
+  const [ma, mb] = miterEndsOf(p);
+  const oa = ma ? fc : 0; const ob = mb ? fc : 0;
+  const slanted = !!p.miter && (oa > 0 || ob > 0) && L > oa + ob;
+  const local: [number, number][] = slanted
+    ? (p.miter === 'lo' ? [[0, e.u0], [L, e.u0], [L - ob, e.u1], [oa, e.u1]] : [[oa, e.u0], [L - ob, e.u0], [L, e.u1], [0, e.u1]])
     : [[0, e.u0], [L, e.u0], [L, e.u1], [0, e.u1]];
   const corners = local.map(([lx, ly]) => [p.x + lx * c - ly * s, p.y + lx * s + ly * c] as [number, number]);
   const axes: [number, number][] = [[c, s], [-s, c]];
-  if (local.length === 4 && (local[0][0] !== 0 || local[3][0] !== 0)) {
+  if (slanted) {
     for (let i = 0; i < 4; i++) { const [x1, y1] = corners[i]; const [x2, y2] = corners[(i + 1) % 4]; const d = Math.hypot(x2 - x1, y2 - y1) || 1; axes.push([-(y2 - y1) / d, (x2 - x1) / d]); }
   }
   return { id: p.id, corners, axes, z0: p.z + e.v0, z1: p.z + e.v1, name: m?.name ?? 'deo', dir: [c, s], ox: p.x, oy: p.y, len: p.lengthMm, z: p.z, hull: sectionHull(shape.section, partAngle(p)) };

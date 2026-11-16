@@ -392,7 +392,7 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
             {it.kind === 'fence' && !isRl10Model(it.modelId) && (
               <InfillArt modelId={it.modelId} x={x} y={y} w={w} h={it.heightMm} frame={it.params.frameMm} barSize={it.params.barSizeMm} gap={it.params.gapMm} lift={it.params.liftMm} arch={it.params.archMm} hex={colorHex(it.color)} colorKey={it.color} skipLeftPost={leftPostShared(project.items, li.index) || isStairPost(project.items, li.index)} skipRightPost={isStairPost(project.items, li.index + 1)} sloped={li.floorStart !== li.floorEnd} axis={{ x: li.axisStart, w: li.axisEnd - li.axisStart }} rodCount={rodCountFor(it.modelId, it.params, it.heightMm) ?? undefined} ram={ramInsets(it.modelId, it.params)} uid={it.id} />
             )}
-            {/* klizna kapija (sklop) se crta posle stubova: krilo prelazi preko stuba sa prednje strane */}
+            {/* klizna kapija (sklop) se crta posebno, iza stubova (vidi dole) */}
             {it.kind === 'gate' && !(it.gateType === 'sliding' && it.sliding) && <GateArt gate={it} x={x} y={y} w={w} h={it.heightMm} hex={colorHex(it.color)} px={px} realistic={opts.transparent} showDims={opts.showDimensions && !compact} />}
             {it.kind === 'opening' && isCorner(it) && (() => {
               // ugaoni spoj: prečke i rukohvat se savijaju između dva stuba (u razvijenom prikazu — kratka cev sa oznakom ugla)
@@ -419,6 +419,21 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
               x={li.axisStart + 0} y={y - 10} width={li.axisEnd - li.axisStart} height={it.heightMm + li.plinthMm + 20}
               fill="transparent" data-hit="item" data-id={it.id} style={{ cursor: 'grab', touchAction: 'none' }}
             />}
+          </g>
+        );
+      })}
+
+      {/* klizno krilo je sa strane dvorišta, iza stubova (gleda se sa ulice): crta se pre stubova, pa stub prekriva kraj krila */}
+      {layout.items.map((li) => {
+        const it = li.item;
+        if (it.kind !== 'gate' || it.gateType !== 'sliding' || !it.sliding) return null;
+        const floorY = groundY - li.floorStart;
+        const y = floorY - li.plinthMm - it.heightMm;
+        const run = li.axisEnd - li.axisStart;
+        const t = run > 0 ? (li.floorEnd - li.floorStart) / run : 0;
+        return (
+          <g key={`sl-${it.id}`} opacity={dimmedId === it.id ? 0.3 : 1} data-item-art={it.id} pointerEvents="none" transform={t !== 0 ? `matrix(1 ${-t} 0 1 0 ${t * li.axisStart})` : undefined}>
+            <GateArt gate={it} x={li.clearStart} y={y} w={li.clearWidth} h={it.heightMm} hex={colorHex(it.color)} px={px} realistic={opts.transparent} showDims={opts.showDimensions && !compact} />
           </g>
         );
       })}
@@ -464,21 +479,6 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
           <g key={`rl-${it.id}`} transform={t !== 0 ? `matrix(1 ${-t} 0 1 0 ${t * li.axisStart})` : undefined} opacity={dimmedId === it.id ? 0.3 : 1} pointerEvents="none">
             <Rl10FieldArt x0={li.axisStart} x1={li.axisEnd} floorY={groundY - li.floorStart - li.plinthMm} heightMm={it.heightMm} params={it.params}
               left={rl10Ends(project.items, layout, li.index, project.posts).left} right={rl10Ends(project.items, layout, li.index, project.posts).right} tan={rl10Tan(li)} />
-          </g>
-        );
-      })}
-
-      {/* klizno krilo prelazi preko stuba na strani zatvaranja (sa prednje strane), pa se crta posle stubova */}
-      {layout.items.map((li) => {
-        const it = li.item;
-        if (it.kind !== 'gate' || it.gateType !== 'sliding' || !it.sliding) return null;
-        const floorY = groundY - li.floorStart;
-        const y = floorY - li.plinthMm - it.heightMm;
-        const run = li.axisEnd - li.axisStart;
-        const t = run > 0 ? (li.floorEnd - li.floorStart) / run : 0;
-        return (
-          <g key={`sl-${it.id}`} opacity={dimmedId === it.id ? 0.3 : 1} data-item-art={it.id} pointerEvents="none" transform={t !== 0 ? `matrix(1 ${-t} 0 1 0 ${t * li.axisStart})` : undefined}>
-            <GateArt gate={it} x={li.clearStart} y={y} w={li.clearWidth} h={it.heightMm} hex={colorHex(it.color)} px={px} realistic={opts.transparent} showDims={opts.showDimensions && !compact} />
           </g>
         );
       })}

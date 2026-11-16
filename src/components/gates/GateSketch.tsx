@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
 import type { Gate } from '../../domain/models/types';
-import { DIM_BY_KEY, fmt, hingePositions, type GateDesign, type GateResult } from '../../domain/gates/design';
+import { DIM_BY_KEY, fmt, hingePositions, VIEW_LABEL, type GateDesign, type GateResult } from '../../domain/gates/design';
 
 /**
  * Skica kapije uz mere: zatvoren i otvoren položaj, referentne ivice (montažna lica stubova, ivice otvora), kote i zazori.
  * Kota koja nedostaje ima crvenu oznaku „?“ na mestu merenja. Klik na kotu otvara njeno polje u listi mera.
- * Podrazumevano se gleda iz dvorišta; za kliznu se skica preslikava prema smeru otvaranja.
+ * Pogled je uvek sa ulice (kao pogled spreda u projektu); za kliznu se skica preslikava prema smeru otvaranja.
  */
 /** zumiranje (točkić ili dugmad) i pomeranje (prevlačenje) skice, da se detalj može razgledati izbliza */
 function ZoomPan({ children }: { children: ReactNode }) {
@@ -67,8 +67,8 @@ export function GateSketchSvg({ gate, res, onPick, width = 900, showDims = true,
   const v = (k: string): number | null => res.values[k]?.v ?? null;
   const W = v('W') ?? 0;
   const H = v('H') ?? gate.heightMm;
-  const from = gate.design?.viewFrom === 'ulica' ? 'gledano sa ulice' : 'gledano iz dvorišta';
-  if (res.system === 'cantilever' || res.system === 'rail') return <SlidingSketch gate={gate} res={res} W={W} H={H} from={from} onPick={onPick} width={width} />;
+  const from = VIEW_LABEL;
+  if (res.system === 'cantilever' || res.system === 'rail') return <SlidingSketch gate={gate} res={res} W={W} H={H} from={from} onPick={onPick} width={width} showDims={showDims} postHs={postHs} postWs={postWs} />;
   return <SwingSketch gate={gate} res={res} W={W} H={H} from={from} onPick={onPick} width={width} showDims={showDims} postHs={postHs} postWs={postWs} />;
 }
 
@@ -77,23 +77,6 @@ type P = { gate: Gate & { design?: GateDesign }; res: GateResult; W: number; H: 
 const POST = 120;
 const INK = '#1f2937';
 const MISS = '#d92d20';
-
-function Dim({ x0, x1, y, k, val, s, onPick, label }: { x0: number; x1: number; y: number; k: string; val: number | null; s: number; onPick?: (key: string) => void; label?: string }) {
-  const missing = val === null;
-  const c = missing ? MISS : INK;
-  const mid = (x0 + x1) / 2;
-  const txt = missing ? `${label ?? k} ?` : `${label ?? k} ${fmt(val, '')}`;
-  return (
-    <g data-testid={`sk-dim-${k}`} data-value={val ?? ''} style={{ cursor: onPick ? 'pointer' : undefined }} onClick={() => onPick?.(k)}>
-      <title>{`${DIM_BY_KEY[k]?.label ?? k}: ${missing ? 'nije uneto — mesto merenja' : fmt(val)}${DIM_BY_KEY[k]?.ref ? ` (${DIM_BY_KEY[k].ref})` : ''}`}</title>
-      <line x1={x0 * s} y1={y} x2={x1 * s} y2={y} stroke={c} strokeWidth={1} strokeDasharray={missing ? '4 3' : undefined} />
-      <line x1={x0 * s} y1={y - 5} x2={x0 * s} y2={y + 5} stroke={c} />
-      <line x1={x1 * s} y1={y - 5} x2={x1 * s} y2={y + 5} stroke={c} />
-      <rect x={mid * s - 4 - txt.length * 3.1} y={y - 15} width={txt.length * 6.2 + 8} height={13} fill="white" opacity={0.85} />
-      <text x={mid * s} y={y - 5} textAnchor="middle" fontSize={11} fill={c} fontWeight={missing ? 700 : 500}>{txt}</text>
-    </g>
-  );
-}
 
 const BLUE = '#2563eb';
 const GREEN = '#0f766e';
@@ -137,7 +120,7 @@ function SwingSketch({ gate, res, W, H, from, onPick, width, showDims, postHs, p
   const double = res.system === 'swing_double';
   const gB = v('gB');
   // tlocrt: otvoren položaj (krila zaokrenuta za ugao otvaranja)
-  const ang = ((v('angle') ?? 90) * Math.PI) / 180;
+  const ang = (Math.min(Math.max(v('angle') ?? 90, 0), 180) * Math.PI) / 180;
   const inward = gate.swing === 'inward';
   const dir = 1; // na tlocrtu se krila uvek otvaraju naniže; natpis kaže koja je to strana (dvorište ili ulica)
   // crtež prati svaku meru: nepoznat zazor se crta kao 0 (krilo uz stub), nepoznata širina krila popunjava ostatak otvora
@@ -177,12 +160,29 @@ function SwingSketch({ gate, res, W, H, from, onPick, width, showDims, postHs, p
   }
   const unplaced = chain.filter((c) => c.x0 === null || c.x1 === null);
   const planY = showDims ? groundY + 118 + (unplaced.length ? 24 : 0) + 34 : groundY + 74;
-  // tlocrt je umanjen da ne bude viši od pogleda spreda (krilo od 2 m bi inače bilo dvostruko više od crteža)
-  const rawDepth = Math.max(...res.leaves.map((l) => (l.w ?? W / 2) * s)) * Math.max(Math.sin(ang), 0.2);
-  const k = Math.min(1, 150 / Math.max(rawDepth, 1));
+  // tlocrt se umanjuje toliko da stane ceo otvoren položaj: i u širinu (krilo otvoreno do 180° leži van stubova) i u dubinu
+  let minMm = -pLw; let maxMm = W + pRw; let depthMm = 0;
+  for (const l of res.leaves) {
+    if (l.x === null || l.w === null) continue;
+    const hx = l.hinge === 'right' ? l.x + l.w : l.x;
+    const sg = l.hinge === 'right' ? -1 : 1;
+    for (let n = 0; n <= 36; n++) {
+      const t = (ang * n) / 36;
+      const px = hx + sg * l.w * Math.cos(t);
+      minMm = Math.min(minMm, px); maxMm = Math.max(maxMm, px);
+      depthMm = Math.max(depthMm, l.w * Math.sin(t));
+    }
+  }
+  depthMm = Math.max(depthMm, 100);
+  const k = Math.min(1, (width - 40) / Math.max(maxMm - minMm, 1) / s, 150 / (depthMm * s));
   const ps = s * k;
-  const planOx = ((W * s) - W * ps) / 2;
-  const swingDepth = rawDepth * k;
+  // sredina tlocrta ispod sredine otvora; ceo tlocrt ostaje unutar crteža
+  let planOx = (W * s) / 2 - ((minMm + maxMm) / 2) * ps;
+  const rightOver = planOx + maxMm * ps - (width - 20 - ox);
+  if (rightOver > 0) planOx -= rightOver;
+  const leftOver = 20 - ox - (planOx + minMm * ps);
+  if (leftOver > 0) planOx += leftOver;
+  const swingDepth = depthMm * ps;
   const height = planY + swingDepth + 34;
   return (
     <svg viewBox={`0 0 ${width} ${height}`} xmlns="http://www.w3.org/2000/svg" width="100%" data-testid="gate-sketch" className="bg-white">
@@ -295,87 +295,142 @@ function SwingSketch({ gate, res, W, H, from, onPick, width, showDims, postHs, p
             </g>
           );
         })}
-        {k < 1 && <text x={(W * s)} y={planY - 12} textAnchor="end" fontSize={9} fill="#6b7280">umanjeno {Math.round(k * 100)}%</text>}
-        <text x={(W * s) / 2} y={planY - 12} textAnchor="middle" fontSize={9.5} fill="#6b7280">{inward ? 'ulica' : 'dvorište'}</text>
-        <text x={(W * s) / 2} y={planY + swingDepth + 22} textAnchor="middle" fontSize={9.5} fill="#6b7280">{inward ? 'dvorište' : 'ulica'}</text>
+        {k < 1 && <text x={planOx + maxMm * ps} y={planY - 12} textAnchor="end" fontSize={9} fill="#6b7280">umanjeno {Math.round(k * 100)}%</text>}
+        <text x={planOx + (W * ps) / 2} y={planY - 12} textAnchor="middle" fontSize={9.5} fill="#6b7280">{inward ? 'ulica' : 'dvorište'}</text>
+        <text x={planOx + (W * ps) / 2} y={planY + swingDepth + 22} textAnchor="middle" fontSize={9.5} fill="#6b7280">{inward ? 'dvorište' : 'ulica'}</text>
       </g>
     </svg>
   );
 }
 
-function SlidingSketch({ gate, res, W, H, from, onPick, width }: P) {
+function SlidingSketch({ gate, res, W, H, from, onPick, width, showDims, postHs, postWs }: P & { showDims: boolean; postHs?: (number | undefined)[]; postWs?: (number | undefined)[] }) {
   const v = (k: string): number | null => res.values[k]?.v ?? null;
-  const a = v('a'); const b = v('b'); const T = res.system === 'cantilever' ? v('T') : 0; const S = v('S'); const P = v('P');
+  const cant = res.system === 'cantilever';
+  const a = v('a'); const b = v('b'); const T = cant ? v('T') : 0; const S = v('S'); const P = v('P');
   const right = gate.opening !== 'left';
-  const leafW = res.derived.leafFrameW;
   const L = v('L');
-  const closedEnd = W + (b ?? 0) + (T ?? 0);
-  const openEnd = closedEnd + (S ?? W);
+  const gB = v('gB') ?? 0;
+  const pLw = postWs?.[0] ?? POST; const pRw = postWs?.[1] ?? POST;
+  // crtež prati svaku meru; nepoznata mera se crta kao pretpostavka (isprekidano), da se kapija uvek prepozna
+  const aa = a ?? 50; const bb = b ?? 50;
+  const tt = cant ? (T ?? Math.round(W * 0.45)) : 0;
+  const hop = S ?? W + aa;
+  const closedEnd = W + bb + tt;
+  const openEnd = closedEnd + hop;
   const extent = Math.max(openEnd, W + (P ?? 0), W + (res.derived.Pmin ?? 0)) + 200;
-  const left0 = -(a ?? 0) - POST - 100;
+  const left0 = -aa - pLw - 100;
   const span = extent - left0;
-  const s = (width - 40) / span;
+  const leftM = showDims ? 70 : 20; const rightM = 20;
+  // jedinstvena razmera po obe ose: kapija je srazmerna pravoj
+  const s = (width - leftM - rightM) / span;
+  const pL = postHs?.[0] ?? H; const pR = postHs?.[1] ?? H; const Hmax = Math.max(H + gB, pL, pR);
   // preslikavanje: otvaranje ulevo crta se kao ogledalo (iste dužine, suprotan smer)
-  const X = (x: number) => (right ? x - left0 : W - x - left0) * s + 20;
+  const X = (x: number) => (right ? x - left0 : extent - x) * s + leftM;
   const xs = (x0: number, x1: number) => [Math.min(X(x0), X(x1)), Math.abs(X(x1) - X(x0))] as const;
-  const hPx = Math.min(H * s, 120);
-  const row1 = 40; const row2 = row1 + hPx + 110;
-  const ground1 = row1 + hPx + 18; const ground2 = row2 + hPx + 18;
-  const DimX = ({ x0, x1, y, k, val, label }: { x0: number; x1: number; y: number; k: string; val: number | null; label?: string }) => {
+  const hPx = H * s;
+  const top1 = showDims ? 96 : 40;
+  const rowGap = showDims ? 190 : 80;
+  const ground1 = top1 + Hmax * s + 10;
+  const ground2 = ground1 + rowGap + Hmax * s;
+  const carrierH = Math.max(60 * s, 5);
+  /** kota u stilu crteža ograde, u mm duž krila */
+  const D = ({ x0, x1, y, k, val, text, sub, bold, color }: { x0: number; x1: number; y: number; k?: string; val?: number | null; text?: string; sub?: string; bold?: boolean; color?: string }) => {
     const [l, w] = xs(x0, x1);
-    return <Dim k={k} val={val} x0={(l - 20) / 1} x1={(l + w - 20) / 1} y={y} s={1} onPick={onPick} label={label} />;
+    const miss = k !== undefined && val === null;
+    return <DimPx k={k} x={l} y={y} len={w} missing={miss} text={text ?? (miss ? '?' : fmt(val ?? 0, ''))} sub={sub ?? (k ? DIM_BY_KEY[k]?.label.replace(/ \(.*\)$/, '') : undefined)} bold={bold} color={color} onPick={onPick} tip={k ? `${DIM_BY_KEY[k]?.label ?? k}${DIM_BY_KEY[k]?.ref ? ` (${DIM_BY_KEY[k].ref})` : ''}${miss ? ' — nije uneto' : ''}` : undefined} />;
   };
-  const leafShape = (shift: number, top: number, ground: number, dashed: boolean, tid: string) => {
-    const aa = a ?? 0;
-    const fx0 = -aa + shift; const fx1 = (leafW ?? W + aa + (b ?? 0)) - aa + shift;
+  /** krilo (pogled sa ulice): okvir sa letvicama, rep kao trougao, nosač po dnu i kolica */
+  const leaf = (shift: number, ground: number, dashed: boolean, tid: string) => {
+    const bottom = ground - gB * s;
+    const top = bottom - hPx;
+    const fx0 = -aa + shift; const fx1 = W + bb + shift; const endT = fx1 + tt;
     const [lx, lw] = xs(fx0, fx1);
-    const carrierY = ground - 8;
-    const endT = fx1 + (T ?? 0);
-    const [cx, cw] = xs(fx0, res.system === 'cantilever' ? endT : fx1);
-    const stroke = dashed ? '#6b7280' : INK;
+    const [cx, cw] = xs(fx0, cant ? endT : fx1);
+    const stroke = dashed ? '#6b7280' : showDims ? INK : '#dc2626';
+    const assumed = a === null || b === null;
+    const frameBottom = bottom - carrierH;
+    const slats = Math.max(Math.floor((frameBottom - top) / 7), 1);
+    const dash = dashed ? '5 4' : undefined;
+    const x1 = X(fx1); const x2 = X(endT);
+    const mx = x1 + (x2 - x1) * 0.5; const my = top + (frameBottom - top) * 0.5;
     return (
-      <g data-testid={tid} strokeDasharray={dashed ? '5 4' : undefined}>
-        <rect x={lx} y={top} width={lw} height={carrierY - top - 6} fill={dashed ? 'none' : '#fef2f2'} stroke={stroke} strokeWidth={1.5} />
-        <rect x={cx} y={carrierY - 6} width={cw} height={6} fill={dashed ? 'none' : '#cbd5e1'} stroke={stroke} />
-        {res.system === 'cantilever' && T !== null && T > 0 && <line x1={X(fx1)} y1={top} x2={X(endT)} y2={carrierY - 6} stroke={stroke} strokeWidth={1.5} />}
+      <g data-testid={tid}>
+        {!dashed && showDims && <rect x={lx} y={top} width={lw} height={frameBottom - top} fill="#fef2f2" />}
+        {!dashed && !showDims && <>
+          <rect x={lx} y={top} width={lw} height={frameBottom - top} fill="#fff" />
+          {Array.from({ length: slats }, (_, j) => <rect key={j} x={lx + 3} y={top + 3 + j * ((frameBottom - top - 6) / slats)} width={Math.max(lw - 6, 0)} height={((frameBottom - top - 6) / slats) * 0.62} fill="#374151" />)}
+        </>}
+        <rect x={lx} y={top} width={lw} height={frameBottom - top} fill="none" stroke={stroke} strokeWidth={dashed ? 1.5 : 2} strokeDasharray={dash ?? (assumed ? '5 4' : undefined)} />
+        {/* noseći profil po dnu krila (i repa) */}
+        <rect x={cx} y={bottom - carrierH} width={cw} height={carrierH} fill={dashed ? 'none' : '#cbd5e1'} stroke={stroke} strokeWidth={1.2} strokeDasharray={dash} />
+        {cant && tt > 0 && (<>
+          <polygon points={`${x1},${top} ${x2},${frameBottom} ${x1},${frameBottom}`} fill="none" stroke={stroke} strokeWidth={dashed ? 1.5 : 2.2} strokeDasharray={dash ?? (T === null ? '5 4' : undefined)} />
+          <line x1={x1} y1={frameBottom} x2={mx} y2={my} stroke={stroke} strokeWidth={1.2} strokeDasharray={dash} />
+          <line x1={mx} y1={my} x2={mx} y2={frameBottom} stroke={stroke} strokeWidth={1.2} strokeDasharray={dash} />
+          <text x={x1 + (x2 - x1) * 0.28} y={frameBottom - 6} fontSize={9.5} textAnchor="middle" fill="#6b7280">rep</text>
+        </>)}
+        {showDims && !dashed && <text x={lx + lw / 2} y={top + (frameBottom - top) / 2} textAnchor="middle" fontSize={12} fill={INK}>krilo</text>}
+        {/* kolica (samonoseća) ili točkovi (po šini) */}
+        {cant && ['t1', 't2'].map((k) => {
+          const t = v(k); if (t === null) return null;
+          const cxm = X(W + t);
+          return <g key={k} data-testid={`sk-${k}`}><rect x={cxm - 9} y={ground - 8} width={18} height={8} rx={2} fill="#9ca3af" stroke={INK} /><circle cx={cxm} cy={ground - 5} r={3} fill="#fff" stroke={INK} /></g>;
+        })}
+        {!cant && ['w1', 'w2'].map((k) => {
+          const t = v(k); if (t === null) return null;
+          const cxm = X(-aa + t + shift);
+          return <g key={k} data-testid={`sk-${k}`}><circle cx={cxm} cy={ground - 6} r={6} fill="#fff" stroke={INK} strokeWidth={1.5} /></g>;
+        })}
       </g>
     );
   };
-  const posts = (top: number, ground: number) => (
+  const post = (xm0: number, xm1: number, ground: number, h: number, tid: string) => {
+    const [px, pw] = xs(xm0, xm1);
+    return <rect data-testid={tid} x={px} y={ground - h * s} width={pw} height={h * s} fill={showDims ? '#e5e7eb' : '#000'} stroke={INK} />;
+  };
+  const row = (ground: number, shift: number, dashed: boolean, tid: string) => (
     <>
-      <rect x={xs(-POST, 0)[0]} y={top - 10} width={POST * s} height={ground - top + 10} fill="#e5e7eb" stroke={INK} />
-      <rect x={xs(W, W + POST)[0]} y={top - 10} width={POST * s} height={ground - top + 10} fill="#e5e7eb" stroke={INK} />
-      <line x1={20} y1={ground} x2={width - 20} y2={ground} stroke={INK} strokeWidth={1.5} />
+      {/* krilo je sa strane dvorišta, iza stubova gledano sa ulice: prvo krilo, pa stubovi */}
+      {leaf(shift, ground, dashed, tid)}
+      {post(-pLw, 0, ground, pL, `${tid}-post-l`)}
+      {post(W, W + pRw, ground, pR, `${tid}-post-r`)}
+      <line x1={leftM - 10} y1={ground} x2={width - rightM + 10} y2={ground} stroke={INK} strokeWidth={1.5} />
+      {/* podna šina po celom hodu */}
+      {!cant && <rect x={Math.min(X(-aa), X(openEnd))} y={ground - 3} width={Math.abs(X(openEnd) - X(-aa))} height={3} fill="#9ca3af" stroke={INK} strokeWidth={0.6} />}
     </>
   );
-  const trolley = (k: string, ground: number) => {
-    const t = v(k);
-    if (t === null) return null;
-    return <g key={k} data-testid={`sk-${k}`}><circle cx={X(W + t)} cy={ground - 4} r={5} fill="white" stroke={INK} strokeWidth={1.5} /><rect x={X(W + t) - 7} y={ground} width={14} height={4} fill={INK} /></g>;
-  };
   const obstacle = P !== null ? X(W + P) : null;
+  const guideX = v('guideX');
+  const row2top = ground2 - Hmax * s;
+  const total = ground2 + (showDims ? 128 : 44);
   return (
-    <svg viewBox={`0 0 ${width} ${ground2 + 110}`} xmlns="http://www.w3.org/2000/svg" width="100%" data-testid="gate-sketch" className="bg-white">
+    <svg viewBox={`0 0 ${width} ${total}`} xmlns="http://www.w3.org/2000/svg" width="100%" data-testid="gate-sketch" className="bg-white">
       <text x={20} y={16} fontSize={12} fontWeight={700} fill={INK}>Zatvoreno — {from}, otvaranje {right ? 'udesno' : 'ulevo'}</text>
-      {posts(row1, ground1)}
-      {leafShape(0, row1, ground1, false, 'sk-closed')}
-      {res.system === 'cantilever' ? ['t1', 't2'].map((k) => trolley(k, ground1)) : null}
-      {res.system === 'cantilever' && v('guideX') !== null && <rect data-testid="sk-guide" x={X(W + v('guideX')!) - 6} y={row1 - 14} width={12} height={10} fill={INK} />}
-      {obstacle !== null && <g data-testid="sk-obstacle"><line x1={obstacle} y1={row1 - 16} x2={obstacle} y2={ground2} stroke={MISS} strokeWidth={2} /><text x={obstacle + (right ? 4 : -4)} y={row1 - 18} fontSize={10} fill={MISS} textAnchor={right ? 'start' : 'end'}>prepreka</text></g>}
-      <DimX x0={-(a ?? 0)} x1={0} y={ground1 + 22} k="a" val={a} />
-      <DimX x0={0} x1={W} y={ground1 + 22} k="W" val={W} />
-      <DimX x0={W} x1={W + (b ?? 0)} y={ground1 + 22} k="b" val={b} />
-      {res.system === 'cantilever' && <DimX x0={W + (b ?? 0)} x1={W + (b ?? 0) + (T ?? 0)} y={ground1 + 22} k="T" val={T} />}
-      <DimX x0={-(a ?? 0)} x1={-(a ?? 0) + (L ?? 0)} y={ground1 + 48} k="L" val={L} />
-      {res.system === 'cantilever' && v('tD') !== null && v('t1') !== null && <DimX x0={W + v('t1')!} x1={W + v('t1')! + v('tD')!} y={ground1 + 74} k="tD" val={v('tD')} label="kolica" />}
-
-      <text x={20} y={row2 - 18} fontSize={12} fontWeight={700} fill={INK}>Otvoreno — hod {S === null ? '?' : fmt(S)}</text>
-      {posts(row2, ground2)}
-      {leafShape(S ?? W, row2, ground2, true, 'sk-open')}
-      {res.system === 'cantilever' ? ['t1', 't2'].map((k) => trolley(k, ground2)) : null}
-      <DimX x0={0} x1={S ?? 0} y={ground2 + 22} k="S" val={S} />
-      {P !== null && <DimX x0={W} x1={W + P} y={ground2 + 48} k="P" val={P} />}
-      <DimX x0={W} x1={W + (res.derived.Pmin ?? 0)} y={ground2 + 74} k="R" val={res.derived.Pmin ?? null} label="potrebno Pmin" />
+      {row(ground1, 0, false, 'sk-closed')}
+      {cant && guideX !== null && <rect data-testid="sk-guide" x={X(W + guideX) - 6} y={ground1 - (gB + H) * s - 12} width={12} height={10} fill={INK} />}
+      {obstacle !== null && <g data-testid="sk-obstacle"><line x1={obstacle} y1={top1 - 14} x2={obstacle} y2={ground2} stroke={MISS} strokeWidth={2} /><text x={obstacle + (right ? 4 : -4)} y={top1 - 18} fontSize={10} fill={MISS} textAnchor={right ? 'start' : 'end'}>prepreka</text></g>}
+      <text x={leftM} y={ground1 + 14} fontSize={9.5} fill="#6b7280">gotova kota podloge</text>
+      {showDims && (<>
+        {/* gore: prepust, otvor, prepust do repa i rep; iznad njih ukupni gabarit */}
+        <D x0={-aa} x1={0} y={top1 - 22} k="a" val={a} sub="prepust (a)" />
+        <D x0={0} x1={W} y={top1 - 22} k="W" val={W} bold sub="svetli otvor" text={`${fmt(W, '')} mm`} />
+        <D x0={W} x1={W + bb} y={top1 - 22} k="b" val={b} sub="prepust (b)" />
+        {cant && <D x0={W + bb} x1={W + bb + tt} y={top1 - 22} k="T" val={T} />}
+        <D x0={-aa} x1={W + bb + tt} y={top1 - 56} k="L" val={L} bold text={L === null ? '?' : `${fmt(L, '')} mm`} sub="pokretni gabarit (krilo + rep)" />
+        {/* levo: visina kapije */}
+        <DimPx k="H" vertical x={leftM - 36} y={ground1 - gB * s} len={hPx} bold text={`Kapija H: ${fmt(H, '')} mm`} onPick={onPick} />
+        {/* dole: osa–osa stubova, razmak kolica */}
+        <D x0={-pLw / 2} x1={W + pRw / 2} y={ground1 + 34} color={GREEN} bold text={`${fmt(W + (pLw + pRw) / 2, '')} mm`} sub="osa–osa stubova" />
+        {cant && v('tD') !== null && v('t1') !== null && <D x0={W + v('t1')!} x1={W + v('t1')! + v('tD')!} y={ground1 + 70} k="tD" val={v('tD')} sub="razmak kolica" />}
+        {cant && v('t1') === null && <text x={leftM} y={ground1 + 70} fontSize={11} fill={MISS}>Nedostaju kote kolica (osa kolica 1 i 2) — klik u listi mera</text>}
+      </>)}
+      <text x={20} y={ground1 + (showDims ? 92 : 36) + 12} fontSize={12} fontWeight={700} fill={INK}>Otvoreno — hod {S === null ? '?' : fmt(S, '')}</text>
+      {row(ground2, hop, true, 'sk-open')}
+      {showDims && (<>
+        <D x0={0} x1={hop} y={row2top - 12} k="S" val={S} sub="hod krila" />
+        {P !== null && <D x0={W} x1={W + P} y={ground2 + 34} k="P" val={P} />}
+        <D x0={W} x1={W + (res.derived.Pmin ?? 0)} y={ground2 + 78} k="R" val={res.derived.Pmin ?? null} sub="potrebno Pmin" />
+      </>)}
     </svg>
   );
 }

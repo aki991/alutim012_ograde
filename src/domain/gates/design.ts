@@ -186,7 +186,7 @@ export interface Confirmation { kind: ConfirmKind; hash: string; at: string; by:
 export interface GateDesign {
   /** samo klizne: samonoseća ili po podnoj šini */
   slide?: SlideSystem;
-  /** strana gledanja crteža */
+  /** nekorišćeno: crtež je uvek pogled sa ulice (vidi VIEW_LABEL); polje ostaje zbog starih podataka */
   viewFrom?: 'dvoriste' | 'ulica';
   dims: Record<string, DimValue>;
   /** kota koju računa svaka jednačina; null = sve kote zadaje radnik (odstupanje se prikazuje) */
@@ -215,6 +215,16 @@ export function systemOf(g: Pick<Gate, 'gateType'> & { design?: GateDesign }): G
   if (g.gateType === 'sliding') return g.design?.slide === 'rail' ? 'rail' : 'cantilever';
   return 'swing_single';
 }
+
+/** donji zazor krila (kapija podignuta od poda); klizna kapija ima visinu od tla, pa se ne dodaje */
+export function gateBottomGapMm(g: Gate): number {
+  if (g.gateType === 'sliding') return 0;
+  const v = g.design?.dims?.gB?.v;
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0;
+}
+
+/** koliko stub podrazumevano viri iznad vrha kapije (mm) */
+export const GATE_POST_EXTRA_MM = 50;
 
 export const SYSTEM_LABELS: Record<GateSystem, string> = { swing_double: 'Dvokrilna', swing_single: 'Jednokrilna / pešačka', cantilever: 'Samonoseća klizna', rail: 'Klizna po podnoj šini' };
 
@@ -247,7 +257,7 @@ export const equationsFor = (sys: GateSystem): Equation[] => EQUATIONS.filter((e
 export function emptyDesign(sys: GateSystem): GateDesign {
   return {
     slide: sys === 'rail' ? 'rail' : sys === 'cantilever' ? 'cantilever' : undefined,
-    viewFrom: 'dvoriste',
+    viewFrom: 'ulica',
     dims: {},
     solve: Object.fromEntries(EQUATIONS.map((e) => [e.id, e.defaultSolve])),
     hardware: [], profiles: [], extra: [], cuts: {}, confirmations: [],
@@ -562,3 +572,6 @@ export function missingHardware(g: Pick<Gate, 'automation'> & { design?: GateDes
 }
 
 export const unknownHwLabel = (role: HwRole): string => `${HW_ROLE_LABELS[role]} — nepoznata oznaka`;
+
+/** Pogled „spreda“ je uvek pogled sa ulice (kao 3D scena: +Z je ulica). Polje `viewFrom` u starim podacima se ne koristi. */
+export const VIEW_LABEL = 'gledano sa ulice';

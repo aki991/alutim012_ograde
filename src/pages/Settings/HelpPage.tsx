@@ -110,6 +110,12 @@ const TOPICS: Topic[] = [
       <>Prečka nacrtana između dva uspravna U profila se sama uklapa u njih i ne može da izađe iz kanala. <b>Raspored prečki</b> zadaje broj prečki, odstojanje od vrha i dna i razmak (sa luftom ili bez lufta).</>,
       <>Svi delovi staju u okvir modela (širina × visina): deo koji viri se vraća unutra, a deo duži od okvira povećava širinu ili visinu modela.</>,
       <>Prikaz <b>Skica</b> daje skicu sa kotama za majstora (lanci mera, mesta zavarivanja, tabela delova i presek prečke u U profilu), koja se preuzima kao PDF ili SVG.</>,
+      <><b>Dodaj ram</b> pita od kog je profila ram i sa kojih strana ide (<b>levo, desno, gore, dole</b>). Uglovi od 45° prave se samo tamo gde se dve strane ramom sastaju; slobodan kraj (npr. donji kraj uspravnih cevi kad nema donjeg rama) ostaje ravan, i tako se vidi u krojnoj listi („45° / 90°“). Ako ste ram već nacrtali običnim cevima, prvo ih obrišite, pa dodajte ram sa željenim stranama.</>,
+      <><b>Privlačenje</b> (štiklirano podrazumevano): ivice i krajevi dela koji crtate, pomerate ili lepite privlače se uz ivice susednih delova i tlo, pa cev „sedne“ tačno uz ram ili sused. Prikazuje se ljubičasta isprekidana linija uz koju je privučeno. Držite <b>Alt</b> da privremeno isključite privlačenje, ili ga odštikliranjem isključite.</>,
+      <><b>Slobodno crtanje</b> dozvoljava sve: delovi mogu da se preklapaju, uglovi i razmaci su proizvoljni, prečke se ne uklapaju same u U profile (npr. razdelne cevi preko letvica). Dugme <b>Normalno crtanje</b> vraća uobičajena pravila i otvara spisak upozorenja.</>,
+      <>Dugme <b>Upozorenja</b> pokazuje koliko upozorenja važi za crtež: preklapanja delova, cevi koje su skoro (ali ne tačno) vodoravne ili uspravne i nejednake razmake u nizu istih cevi. Klik na upozorenje bira delove na crtežu. Upozorenje koje ima smisla možete da <b>prihvatite</b> — tada se više ne prikazuje kao aktivno i ostaje na spisku <b>Prihvaćena upozorenja</b>, odakle može da se vrati. Prihvaćena upozorenja se čuvaju uz model.</>,
+      <>Zalazak jednog dela u drugi do <b>3 mm</b> smatra se dodirom ili zavarom (npr. U profil uz cev) i ne prijavljuje se. Veća preklapanja se prijavljuju, a pri običnom crtanju se novo preklapanje ne dozvoljava.</>,
+      <>Promena <b>širine</b> modela sa više polja razvlači polja između krutih delova (ram, U profili, razdelne cevi) podjednako: svako polje raste za isti iznos, a cevi i U profili zadržavaju svoju širinu.</>,
     ],
   },
   {

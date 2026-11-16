@@ -13,7 +13,7 @@ import { removeStair, setStairGroup } from '../domain/geometry/stairOps';
 import { DEFAULT_MODEL_ID, FENCE_MODELS, TERRACE_NO_GATES, isTerraceModel, projectModelId } from '../domain/models/catalog';
 import { effectiveModelId, registerCustomModels, setHiddenModels } from '../domain/models/customRegistry';
 import { presetTitle, slidingForModel, specFromPreset, type SlidingSpec } from '../domain/gates/slidingAssembly';
-import { defaultGateConfig, gateClearWidth, gateConfigFromGate, gateFieldsFromModel, GATE_TYPE_LABELS } from '../domain/gates/gateModels';
+import { defaultGateConfig, gateClearWidth, gateConfigFromGate, gateFieldsFromModel, GATE_TYPE_LABELS, postDimsOf, withModelPosts } from '../domain/gates/gateModels';
 import { postHalfSum } from '../domain/geometry/layout';
 import { builtinToCustom } from '../domain/models/fromBuiltin';
 import { cleanMaterialName } from '../domain/models/materialTitle';
@@ -586,7 +586,7 @@ export const useAppStore = create<AppState>((set, get) => {
       if (!m || !currentProject()) return false;
       get().mutate((p) => {
         const q = updateItem(p, itemId, gateFieldsFromModel(m) as Partial<Gate>);
-        return setOuterWidth(q, itemId, gateClearWidth(m) + 2 * postHalfSum(q, indexOfItem(q, itemId)));
+        return withModelPosts(setOuterWidth(q, itemId, gateClearWidth(m) + 2 * postHalfSum(q, indexOfItem(q, itemId))), itemId, m.gate);
       });
       return true;
     },
@@ -617,6 +617,7 @@ export const useAppStore = create<AppState>((set, get) => {
       const gate = p.items[0] as Gate;
       p = updateItem(p, gate.id, gateFieldsFromModel(m) as Partial<Gate>);
       p = setOuterWidth(p, gate.id, gateClearWidth(m) + 2 * postHalfSum(p, 0));
+      p = withModelPosts(p, gate.id, m.gate);
       set((s) => ({ projects: [p, ...s.projects], editor: { ...emptyEditor(), projectId: p.id, activeModelId: s.editor.activeModelId } }));
       rememberProject(p.id);
       return p.id;
@@ -630,6 +631,7 @@ export const useAppStore = create<AppState>((set, get) => {
       const gate = p.items[0] as Gate;
       p = updateItem(p, gate.id, gateFieldsFromModel(m) as Partial<Gate>);
       p = setOuterWidth(p, gate.id, gateClearWidth(m) + 2 * postHalfSum(p, 0));
+      p = withModelPosts(p, gate.id, m.gate);
       DRAFT_PREV.set(p.id, get().editor.projectId);
       set((s) => ({ projects: [p, ...s.projects], editor: { ...emptyEditor(), projectId: p.id, activeModelId: s.editor.activeModelId } }));
       return { projectId: p.id, itemId: gate.id };
@@ -721,7 +723,7 @@ export const useAppStore = create<AppState>((set, get) => {
       const proj = get().projects.find((x) => x.id === projectId);
       const index = proj ? proj.items.findIndex((i) => i.kind === 'gate') : -1;
       const g = proj?.items[index];
-      const cfg = proj && g && g.kind === 'gate' ? gateConfigFromGate(g, computeLayout(proj).items[index].clearWidth, version) : null;
+      const cfg = proj && g && g.kind === 'gate' ? gateConfigFromGate(g, computeLayout(proj).items[index].clearWidth, version, postDimsOf(proj.posts[index], proj.posts[index + 1])) : null;
       const prev = DRAFT_PREV.get(projectId) ?? null;
       DRAFT_PREV.delete(projectId);
       set((s) => ({ projects: s.projects.filter((x) => x.id !== projectId), editor: { ...emptyEditor(), projectId: prev && s.projects.some((x) => x.id === prev) ? prev : null, activeModelId: s.editor.activeModelId } }));

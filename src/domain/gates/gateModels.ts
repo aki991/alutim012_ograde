@@ -2,13 +2,17 @@ import { leafHeightOf } from './slidingLayout';
 import { emptyDesign, systemOf, type GateDesign } from './design';
 import { resolveSliding, slidingForModel, type SlidingSpec } from './slidingAssembly';
 import type { CustomModel } from '../models/custom';
-import type { AutomationType, Gate, GateType, HingeType, LockType, Mm, OpeningSide, SwingDirection } from '../models/types';
+import { updatePost } from '../geometry/operations';
+import type { AutomationType, Gate, GateType, HingeType, LockType, Mm, OpeningSide, Post, Project, SwingDirection } from '../models/types';
 
 /**
  * Model kapije je ručno nacrtan model (CustomModel, vrsta „Kapija“) kome se uz crtež čuvaju i podešavanja kapije iz „Mere kapije“:
  * tip, otvaranje, pogon i sve mere sa okovima. Čuva se na isti način kao modeli ograda (settings.customModels). Posao čuva svoje
  * vrednosti i broj verzije modela koju je primenio, pa kasnija prepravka modela ne menja stare poslove.
  */
+/** ručno zadate mere stuba uz kapiju; mera bez vrednosti je automatska */
+export interface GatePostDims { widthMm?: Mm; heightMm?: Mm }
+
 export interface GateConfig {
   gateType: GateType;
   /** raste pri svakoj prepravci podešavanja kapije */
@@ -28,6 +32,8 @@ export interface GateConfig {
   design: GateDesign;
   /** samo klizna kapija: klizni okov (točkići, šina, vođica, graničnici …) sa merama i položajima; krilo je crtež modela */
   sliding?: SlidingSpec;
+  /** stubovi uz kapiju (levi i desni, gledano sa ulice): samo ručno zadate mere */
+  posts?: [GatePostDims, GatePostDims];
 }
 
 export const GATE_TYPE_LABELS: Record<GateType, string> = { pedestrian: 'Pešačka kapija', single: 'Jednokrilna kapija', double: 'Dvokrilna kapija', sliding: 'Klizna kapija' };
@@ -41,7 +47,7 @@ export function defaultGateConfig(gateType: GateType = 'pedestrian'): GateConfig
 }
 
 /** podešavanja iz kapije u projektu (nov model ili prepravka: `version` je verzija koja se upisuje) */
-export function gateConfigFromGate(g: Gate, clearWidthMm: Mm, version: number): GateConfig {
+export function gateConfigFromGate(g: Gate, clearWidthMm: Mm, version: number, posts?: GateConfig['posts']): GateConfig {
   const design = clone(g.design ?? emptyDesign(systemOf(g)));
   design.confirmations = [];
   // veza sa modelom se postavlja pri primeni modela, ne čuva se u samom modelu
@@ -50,7 +56,28 @@ export function gateConfigFromGate(g: Gate, clearWidthMm: Mm, version: number): 
     gateType: g.gateType, version, clearWidthMm, heightMm: leafHeightOf(g), opening: g.opening, swing: g.swing, lock: g.lock, hinge: g.hinge,
     automation: g.automation, automationType: g.automationType, unequalLeaves: g.unequalLeaves, leftLeafMm: g.leftLeafMm, design,
     ...(g.sliding?.drawnLeaf ? { sliding: clone(g.sliding) } : {}),
+    ...(posts ? { posts: clone(posts) } : {}),
   };
+}
+
+/** ručno zadate mere dva stuba uz kapiju (za čuvanje uz model); bez ručnih mera nema ničega */
+export function postDimsOf(left?: Post, right?: Post): GateConfig['posts'] {
+  const one = (p?: Post): GatePostDims => ({ ...(p?.custom ? { widthMm: p.widthMm } : {}), ...(p?.heightCustom ? { heightMm: p.heightMm } : {}) });
+  const l = one(left); const r = one(right);
+  return Object.keys(l).length || Object.keys(r).length ? [l, r] : undefined;
+}
+
+/** mere stubova koje model čuva postavljaju se na stubove uz kapiju u projektu */
+export function withModelPosts(p: Project, itemId: string, cfg?: GateConfig): Project {
+  if (!cfg?.posts) return p;
+  const i = p.items.findIndex((x) => x.id === itemId);
+  if (i < 0) return p;
+  let q = p;
+  cfg.posts.forEach((d, k) => {
+    const post = q.posts[i + k];
+    if (post && (d.widthMm || d.heightMm)) q = updatePost(q, post.id, { ...(d.widthMm ? { widthMm: d.widthMm } : {}), ...(d.heightMm ? { heightMm: d.heightMm } : {}) });
+  });
+  return q;
 }
 
 /**
@@ -63,7 +90,8 @@ function slidingForProject(m: CustomModel, s: SlidingSpec): SlidingSpec {
   const W = gateClearWidth(m);
   const x = resolveSliding(s, W, m.heightMm + s.frameBottomY).at('guidePost');
   out.guideOverhang = Math.max(0, Math.round((W - x) * 10) / 10);
-  const { guidePost: _gp, ...manual } = out.manual;
+  // vođica je na stubu ograde i prati ga (guideOverhang), pa se ručni X vođice i stuba iz modela ne prenose u projekat
+  const { guidePost: _gp, upperGuide: _ug, ...manual } = out.manual;
   out.manual = manual;
   return out;
 }

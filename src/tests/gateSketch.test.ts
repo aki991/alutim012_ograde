@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createGate } from '../domain/models/factories';
-import { emptyDesign, hingePositions, resolveGate, setDim } from '../domain/gates/design';
+import { applyExample, emptyDesign, hingePositions, resolveGate, setDim } from '../domain/gates/design';
 import { GateSketchSvg } from '../components/gates/GateSketch';
 
 describe('skica kapije: visine stubova iz projekta', () => {
@@ -66,5 +66,44 @@ describe('skica kapije: visine stubova iz projekta', () => {
     }
     expect(lockY(900, true).dim).toBe(true);
     expect(lockY(900, false).dim).toBe(false);
+  });
+  it('klizna: 2D crtež ima letvice bez kota, prikaz sa kotama ima kote; rep i kolica se crtaju, kolica miruju pri otvaranju', () => {
+    let d = applyExample(emptyDesign('cantilever'), 'cantilever');
+    d = setDim(setDim(d, 't1', 400), 't2', 1300);
+    const g = { ...createGate('sliding'), heightMm: 1500, design: d };
+    const draw = (showDims: boolean) => renderToStaticMarkup(createElement(GateSketchSvg, { gate: g, res: resolveGate(g, 3000), showDims, postHs: [1700, 1700] }));
+    const plain = draw(false); const dims = draw(true);
+    expect(plain).not.toContain('Kapija H');
+    expect(dims).toContain('Kapija H: 1500');
+    expect(dims).toContain('pokretni gabarit');
+    expect(plain.match(/<rect[^>]*fill="#374151"/g)!.length).toBeGreaterThan(10); // letvice
+    expect(plain).toContain('>rep<');
+    const xs = [...dims.matchAll(/data-testid="sk-t1"><rect x="([0-9.]+)"/g)].map((m) => m[1]);
+    expect(xs).toHaveLength(2);
+    expect(xs[0]).toBe(xs[1]); // kolica su na temelju: ista u zatvorenom i otvorenom položaju
+  });
+  it('klizna ulevo: crtež je ogledalo i ostaje unutar platna', () => {
+    const g = { ...createGate('sliding'), heightMm: 1500, opening: 'left' as const, design: applyExample(emptyDesign('cantilever'), 'cantilever') };
+    const svg = renderToStaticMarkup(createElement(GateSketchSvg, { gate: g, res: resolveGate(g, 3000), width: 1000 }));
+    expect(svg).toContain('otvaranje ulevo');
+    const posts = [...svg.matchAll(/data-testid="sk-closed-post-[lr]" x="(-?[0-9.]+)" y="[0-9.]+" width="([0-9.]+)"/g)].map((m) => ({ x: Number(m[1]), r: Number(m[1]) + Number(m[2]) }));
+    expect(posts).toHaveLength(2);
+    for (const p of posts) { expect(p.x).toBeGreaterThan(0); expect(p.r).toBeLessThanOrEqual(1000); }
+    // levi stub (prijemna strana) je sada desno od desnog
+    expect(posts[0].x).toBeGreaterThan(posts[1].x);
+  });
+  it('tlocrt: pri uglu otvaranja 180° ceo otvoren položaj (luk i krilo van stubova) stane u crtež', () => {
+    for (const opening of ['right', 'left'] as const) {
+      const g = { ...createGate('single'), opening, design: setDim(setDim(setDim(emptyDesign('swing_single'), 'angle', 180), 'gH', 10), 'gZ', 10) };
+      const svg = renderToStaticMarkup(createElement(GateSketchSvg, { gate: g, res: resolveGate(g, 1000), width: 900, postHs: [1480, 1480] }));
+      const ox = Number(/<g transform="translate\(([0-9.-]+) 0\)">/.exec(svg)![1]);
+      const vbH = Number(/viewBox="0 0 900 ([0-9.]+)"/.exec(svg)![1]);
+      const ends = /data-testid="sk-plan-leaf-0"><line x1="([0-9.-]+)" y1="([0-9.-]+)" x2="([0-9.-]+)"[^>]*><\/line><path d="M ([0-9.-]+) ([0-9.-]+) A ([0-9.]+) /.exec(svg);
+      expect(ends).toBeTruthy();
+      const r = Number(ends![6]); const px = Number(ends![1]); const planY = Number(ends![2]);
+      // krajnje tačke luka (zatvoreno i potpuno otvoreno) i najdublja tačka luka su unutar crteža
+      for (const x of [px - r, px + r]) { expect(x + ox).toBeGreaterThanOrEqual(0); expect(x + ox).toBeLessThanOrEqual(900); }
+      expect(planY + r).toBeLessThanOrEqual(vbH);
+    }
   });
 });

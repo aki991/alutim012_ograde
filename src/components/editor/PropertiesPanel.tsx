@@ -13,7 +13,7 @@ import {
 import { MAX_FIELDS, STAIR_DEFAULT_RISE_MM, STAIR_MAX_DEG, STAIR_MIN_DEG, recommendedStairPosts, slopeOf, stairGroupAt } from '../../domain/geometry/stair';
 import { clearStair, makeStair, setStairGroup, stairOuterRunMm, type StairPatch } from '../../domain/geometry/stairOps';
 import { OWN_POSTS_GAP_MM } from '../../domain/models/factories';
-import { PLINTH_DEFAULT_MM, type FenceModelId, type FenceParams, type Gate, type LayoutItem, type Project } from '../../domain/models/types';
+import { PLINTH_DEFAULT_MM, type FenceModelId, type FenceParams, type Gate, type LayoutItem, type Post, type Project } from '../../domain/models/types';
 import { RL10_LABELS, RL10_LIMITS, isRl10Model, rl10Dims, type Rl10Dims } from '../../domain/models/rl10';
 import { TUBES_LABELS, TUBES_LIMITS, isTubesModel, tubesDims, type TubesDims } from '../../domain/models/tubes';
 import { CAP_LABELS, catalogPostSize, isTarabicaPost, maxArchMm, postCaps, TARABICA, TOP_CAPS, tarabicaClearWidth, tarabicaLayout } from '../../domain/models/tarabica';
@@ -156,7 +156,7 @@ function ProjectBasics({ project }: { project: Project }) {
         <ToggleField label="Podnožje ograda" testId="field-all-plinth" checked={layout.items.every((l) => l.item.kind !== 'fence' || l.plinthMm > 0)} onLabel="Sve ograde na podnožju" offLabel="Bez podnožja" onChange={(v) => mutate((p) => setAllPlinths(p, v))} />
       )}
       {project.items.some((i) => i.kind === 'gate') && (
-        <ToggleField label="Stubovi kapija" testId="field-all-gates-own-posts" checked={project.items.every((i) => i.kind !== 'gate' || Boolean(i.ownPosts))} onLabel="Sve kapije svoje stubove" offLabel="Zajednički stubovi" onChange={(v) => mutate((p) => setAllGatesOwnPosts(p, v))} />
+        <SegmentedField label="Stubovi kapija (sve)" testId="field-all-gates-own-posts" value={(() => { const gs = project.items.filter((i) => i.kind === 'gate'); return gs.every((i) => i.kind === 'gate' && i.ownPosts) ? 'own' : gs.every((i) => i.kind === 'gate' && !i.ownPosts) ? 'shared' : 'mixed'; })()} options={[{ value: 'shared', label: 'Zajednički' }, { value: 'own', label: 'Svoji' }, ...(project.items.some((i) => i.kind === 'gate' && i.ownPosts) && project.items.some((i) => i.kind === 'gate' && !i.ownPosts) ? [{ value: 'mixed', label: 'Mešano' }] : [])]} onChange={(v) => { if (v !== 'mixed') mutate((p) => setAllGatesOwnPosts(p, v === 'own')); }} />
       )}
       <button className="btn btn-sm btn-danger mt-2" disabled={project.items.length === 0} data-testid="btn-clear" onClick={() => setConfirmClear(true)}><Trash2 size={14} />Obriši sve elemente</button>
       {confirmClear && <ConfirmDialog title="Brisanje svih elemenata" danger confirmLabel="Obriši sve" message={`Biće obrisano svih ${project.items.length} elemenata. Radnju možete poništiti sa Ctrl+Z.`} onCancel={() => setConfirmClear(false)} onConfirm={() => { mutate((p) => ({ ...p, items: [], posts: [], updatedAt: new Date().toISOString() })); setConfirmClear(false); }} />}
@@ -186,6 +186,35 @@ function ArchField({ id, heightMm, value }: { id: string; heightMm: number; valu
   return (
     <NumberField label="Luk gornje ivice" testId="field-arch" value={Math.min(value, max)} range={{ min: 0, max }} onCommit={(v) => useAppStore.getState().patchItemParams(id, { archMm: v }, 'arch')}
       hint="Razlika visine između najviše (srednje) i najniže tarabice. 0 = ravna ivica. Kod dvokrilne kapije svako krilo je polovina luka." />
+  );
+}
+
+/** stubovi kapije (za sve vrste kapija): zajednički stub sa susedom, ili svoj stub levo, desno ili sa obe strane, i razmak do susednog stuba */
+function GateOwnPosts({ project, id, g }: { project: Project; id: string; g: Gate }) {
+  const st = useAppStore.getState();
+  const side: 'left' | 'right' | 'both' = g.ownPostsSide ?? 'both';
+  // stubovi koje kapija ima za sebe: levi (pre kapije) i/ili desni (posle nje)
+  const at = indexOfItem(project, id);
+  const own = g.ownPosts ? [(!g.ownPostsSide || g.ownPostsSide === 'left') ? project.posts[at] : undefined, (!g.ownPostsSide || g.ownPostsSide === 'right') ? project.posts[at + 1] : undefined].filter((x): x is Post => !!x) : [];
+  const first = own[0];
+  const patchOwn = (patch: Partial<Post>, key?: string) => st.mutate((pr) => own.reduce((q, x) => updatePost(q, x.id, patch), pr), key ?? null);
+  return (
+    <>
+      <SegmentedField label="Stubovi kapije" testId="field-gate-own-posts" value={g.ownPosts ? 'own' : 'shared'} options={[{ value: 'shared', label: 'Zajednički stub' }, { value: 'own', label: 'Svoji stubovi' }]} onChange={(v) => st.patchItem(id, { ownPosts: v === 'own', ownPostsSide: undefined })} />
+      {g.ownPosts && (
+        <>
+          <SegmentedField label="Svoj stub sa strane" testId="field-gate-own-posts-side" value={side} options={[{ value: 'left', label: 'Levo' }, { value: 'right', label: 'Desno' }, { value: 'both', label: 'Obe' }]}
+            onChange={(v) => st.patchItem(id, { ownPostsSide: v === 'both' ? undefined : v })} />
+          <NumberField label="Razmak stubova" testId="field-gate-post-gap" value={g.postGapMm ?? OWN_POSTS_GAP_MM} range={{ min: 0, max: 500 }} onCommit={(v) => st.patchItem(id, { postGapMm: v }, 'postgap')} hint="Razmak između stuba ograde i stuba kapije" />
+          {first && (
+            <>
+              <SelectField label="Tip stuba" testId="field-gate-post-type" value={first.type} options={(Object.entries(POST_LABELS) as [Post['type'], string][]).filter(([value]) => MANUAL_POST_TYPES.includes(value) || value === first.type).map(([value, label]) => ({ value, label }))} onChange={(v) => patchOwn({ type: v })} />
+              <NumberField label="Širina preseka stuba" testId="field-gate-post-width" value={first.widthMm} range={LIMITS.postWidth} onCommit={(v) => patchOwn({ widthMm: v }, 'gpw')} hint={own.length > 1 ? 'Važi za oba stuba kapije' : 'Stub kapije'} />
+            </>
+          )}
+        </>
+      )}
+    </>
   );
 }
 
@@ -364,7 +393,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
         {g.sliding.drawnLeaf && <ModelSelect value={g.infillModelId} onChange={(m) => st.setItemModel(id, m)} />}
         <SlidingPanel project={project} gate={g} />
         <ColorField stacked value={g.color} testId="field-color" onChange={(c) => st.setItemColor(id, c)} finish={g.finish} onFinishChange={(f) => st.setItemFinish(id, f)} />
-        <ToggleField label="Stubovi kapije" testId="field-gate-own-posts" checked={Boolean(g.ownPosts)} onLabel="Svoji stubovi" offLabel="Zajednički stub" onChange={(v) => st.patchItem(id, { ownPosts: v })} />
+        <GateOwnPosts project={project} id={id} g={g} />
       </>
     );
     else body = (
@@ -373,8 +402,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
         {common}
         <ModelSelect value={g.infillModelId} onChange={(m) => st.setItemModel(id, m)} />
         <ColorField stacked value={g.color} testId="field-color" onChange={(c) => st.setItemColor(id, c)} finish={g.finish} onFinishChange={(f) => st.setItemFinish(id, f)} />
-        <ToggleField label="Stubovi kapije" testId="field-gate-own-posts" checked={Boolean(g.ownPosts)} onLabel="Svoji stubovi" offLabel="Zajednički stub" onChange={(v) => st.patchItem(id, { ownPosts: v })} />
-        {g.ownPosts && <NumberField label="Razmak stubova" testId="field-gate-post-gap" value={g.postGapMm ?? OWN_POSTS_GAP_MM} range={{ min: 0, max: 500 }} onCommit={(v) => st.patchItem(id, { postGapMm: v }, 'postgap')} hint="Razmak između stuba ograde i stuba kapije" />}
+        <GateOwnPosts project={project} id={id} g={g} />
         <SegmentedField label={g.gateType === 'sliding' ? 'Smer klizanja' : 'Strana šarki'} testId="field-opening" value={g.opening} options={[{ value: 'left', label: 'Levo' }, { value: 'right', label: 'Desno' }]} onChange={(v) => st.patchItem(id, { opening: v })} />
         {swing && g.gateType !== 'double' && <></>}
         {swing && <SegmentedField label="Otvaranje" testId="field-swing" value={g.swing} options={[{ value: 'inward', label: 'Unutra' }, { value: 'outward', label: 'Spolja' }]} onChange={(v) => st.patchItem(id, { swing: v })} />}

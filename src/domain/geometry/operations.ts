@@ -202,7 +202,7 @@ export function setItemPlinthHeight(p: Project, itemId: string, mm: number): Pro
 
 /** Sve kapije dobijaju svoje stubove (ili zajednički stub sa susednim elementom). */
 export function setAllGatesOwnPosts(p: Project, own: boolean): Project {
-  const items = p.items.map((it) => (it.kind === 'gate' ? { ...it, ownPosts: own } : it));
+  const items = p.items.map((it) => (it.kind === 'gate' ? { ...it, ownPosts: own, ownPostsSide: undefined } : it));
   return touch(applyPostRoles({ ...p, items }));
 }
 

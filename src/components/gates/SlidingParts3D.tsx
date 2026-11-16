@@ -30,7 +30,7 @@ const roleHex = (role: Role, hex: string): { color: string; metal: boolean } =>
  */
 const NO_SKIP: string[] = [];
 
-/** delovi koji naležu na spoljnu (prednju) stranu krila: ručka i klizni zasun; pločica zasuna stoji u istoj ravni na stubu */
+/** delovi koji naležu na lice krila sa strane dvorišta (u ogledalu su „napred“): ručka i klizni zasun; pločica zasuna stoji u istoj ravni na stubu */
 const FRONT_MOUNTED = new Set(['handle', 'latch']);
 
 /**
@@ -47,7 +47,7 @@ function frontZ(key: string, leafHalf: number, depth: number): number | null {
 }
 const LATCH_DEPTH = DEPTH.latch;
 
-export function SlidingParts3D({ components, moving, mapX, hex, z = 0, skip = NO_SKIP, postFace, leafHalf = 25, guideHalf, guideOff = 0, postX }: {
+export function SlidingParts3D({ components, moving, mapX, hex, z: zLeaf = 0, skip = NO_SKIP, postFace, leafHalf = 25, guideHalf, guideOff: guideOffWorld = 0, postX }: {
   components: Component[]; moving: boolean; mapX: (x: number) => number; hex: string; z?: number; skip?: string[];
   /** z prednje strane stuba na koji se montira vođica (mm, u odnosu na sredinu krila; negativno = iza krila); bez vrednosti: odmah iza krila */
   postFace?: number;
@@ -56,16 +56,20 @@ export function SlidingParts3D({ components, moving, mapX, hex, z = 0, skip = NO
   /** polovina debljine gornjeg dela krila (gornja prečka) i njegovo pomeranje po Z od sredine krila: na njega leže valjci vođice; bez vrednosti kao krilo */
   guideHalf?: number;
   guideOff?: number;
-  /** lokalni X stuba na koji se montira vođica (od kraja krila na strani otvaranja): nosač vođice se proteže do stuba */
+  /** lokalni X stuba na koji se montira vođica: ako vođica ne leži na njemu, nosač je spaja sa stubom (mere vođice se ne menjaju) */
   postX?: [number, number];
 }) {
+  // Klizno krilo je sa strane dvorišta (iza stubova gledano sa ulice), pa je ceo okov ogledalo po Z oko ravni krila: ručka, zasun, letva i motor
+  // ispadaju na stranu dvorišta (−Z), a stub vođice i nosači su između krila i stubova (ka ulici, +Z). Unutra se računa kao da je „napred“ strana dvorišta.
+  const z = 0;
+  const guideOff = -guideOffWorld;
   const list = useMemo(() => components.filter((c) => c.moving === moving && !skip.includes(c.key)), [components, moving, skip]);
   const rollerD = components.find((c) => c.key === 'guideRollers')?.shapes.map((sh) => (sh.t === 'rect' ? sh.w : 0)).find((w) => w > 0) ?? 36;
   // vođica sa valjcima je na prednjoj strani stuba, a krilo prolazi između valjaka (zadnji valjak je između stuba i krila)
   const face = postFace ?? -(leafHalf + rollerD + 14);
   const gHalf = guideHalf ?? leafHalf;
   return (
-    <group>
+    <group position={[0, 0, zLeaf]} scale={[1, 1, -1]}>
       {list.map((c) => {
         const depth = DEPTH[c.key] ?? 40;
         const { color, metal } = roleHex(c.role, hex);
@@ -93,14 +97,26 @@ export function SlidingParts3D({ components, moving, mapX, hex, z = 0, skip = NO
 function GuideBracket({ c, material, mapX, z, face, leafHalf, off, rollerD, postX }: { c: Component; material: THREE.Material; mapX: (x: number) => number; z: number; face: number; leafHalf: number; off: number; rollerD: number; postX?: [number, number] }) {
   const r = c.shapes[0];
   if (!r || r.t !== 'rect') return null;
-  // nosač je naslonjen na stub: proteže se od vođice do stuba
-  const xs = [mapX(r.x), mapX(r.x + r.w), ...(postX ? [mapX(postX[0]), mapX(postX[1])] : [])];
-  const a = Math.min(...xs); const b = Math.max(...xs);
+  // nosač vođice ima uvek iste mere (širina vođice), bez obzira na stub na koji se montira
+  const a = Math.min(mapX(r.x), mapX(r.x + r.w)); const b = Math.max(mapX(r.x), mapX(r.x + r.w));
   const cx = (a + b) / 2; const gw = Math.abs(b - a);
   const zFront = off + leafHalf + rollerD + 8; // spoljna ivica prednjeg valjka (valjci leže na gornju prečku krila)
   const zBack = face;
+  // nosač do stuba: ako vođica ne leži na stubu, ploča na stubu i gornja prečka se produžavaju do sredine stuba (posebna traka, vođica ostaje ista)
+  let arm: [number, number] | null = null;
+  if (postX) {
+    const pa = Math.min(mapX(postX[0]), mapX(postX[1])); const pb = Math.max(mapX(postX[0]), mapX(postX[1]));
+    const pm = (pa + pb) / 2;
+    if (pa > b) arm = [b, pm]; else if (pb < a) arm = [pm, a];
+  }
   return (
     <group name="sliding-upperGuide">
+      {arm && (
+        <group name="sliding-upperGuide-arm">
+          <mesh geometry={boxGeometry} material={material} position={[(arm[0] + arm[1]) / 2, r.y + r.h / 2, z + zBack + 5]} scale={[Math.abs(arm[1] - arm[0]), r.h, 10]} castShadow />
+          <mesh geometry={boxGeometry} material={material} position={[(arm[0] + arm[1]) / 2, r.y + r.h - 4, z + (zBack + zFront) / 2]} scale={[Math.abs(arm[1] - arm[0]), 8, zFront - zBack]} castShadow />
+        </group>
+      )}
       <mesh geometry={boxGeometry} material={material} position={[cx, r.y + r.h / 2, z + zBack + 5]} scale={[gw, r.h, 10]} castShadow />
       <mesh geometry={boxGeometry} material={material} position={[cx, r.y + r.h - 4, z + (zBack + zFront) / 2]} scale={[gw, 8, zFront - zBack]} castShadow />
       <mesh geometry={boxGeometry} material={material} position={[cx, r.y + r.h / 2, z + zFront - 4]} scale={[gw, r.h, 8]} castShadow />

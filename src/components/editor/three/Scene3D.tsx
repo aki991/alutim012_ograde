@@ -593,7 +593,8 @@ export interface Scene3DProps {
 }
 
 const PRESETS: { id: CameraPreset | 'fit'; label: string }[] = [
-  { id: 'iso', label: 'Izometrija' }, { id: 'front', label: 'Spreda' }, { id: 'top', label: 'Odozgo' }, { id: 'side', label: 'Sa strane' }, { id: 'fit', label: 'Uklopi' },
+  // „Uklopi“ postavlja isti izometrijski kadar kao početni, pa posebno dugme za izometriju ne treba
+  { id: 'front', label: 'Spreda' }, { id: 'top', label: 'Odozgo' }, { id: 'side', label: 'Sa strane' }, { id: 'fit', label: 'Uklopi' },
 ];
 
 export default function Scene3D({ project, drag, onBeginDrag, registerTarget, targetKey, onSwitchTo2D }: Scene3DProps) {

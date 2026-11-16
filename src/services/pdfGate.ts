@@ -1,6 +1,6 @@
 import { createElement } from 'react';
 import { GateSketchSvg } from '../components/gates/GateSketch';
-import { DIM_BY_KEY, dimsFor, emptyDesign, fmt, HW_ROLE_LABELS, missingHardware, HW_STATUS_LABELS, ORIGIN_LABELS, resolveGate, STATUS_LABELS, SYSTEM_LABELS, systemOf } from '../domain/gates/design';
+import { DIM_BY_KEY, dimsFor, emptyDesign, fmt, HW_ROLE_LABELS, missingHardware, HW_STATUS_LABELS, ORIGIN_LABELS, resolveGate, STATUS_LABELS, SYSTEM_LABELS, systemOf, VIEW_LABEL } from '../domain/gates/design';
 import { computeLayout } from '../domain/geometry/layout';
 import { FENCE_MODELS } from '../domain/models/catalog';
 import type { AppSettings, Gate, Material, Project } from '../domain/models/types';
@@ -41,7 +41,7 @@ export async function buildGatePdfBlob(project: Project, itemId: string, _materi
     footer: (p: number, n: number) => ({ text: `${settings.companyName}  ·  ${project.name}  ·  ${label}  ·  ${p}/${n}`, fontSize: 8, color: MUTED, margin: [28, 12, 28, 0] }),
     content: [
       docHeader('MERE KAPIJE', `${project.name}  ·  ${label}  ·  ${SYSTEM_LABELS[sys]}  ·  ${fmtDate(new Date().toISOString())}`, settings.companyName, '', logos),
-      { text: `Ispuna: ${FENCE_MODELS[g.infillModelId]?.name ?? g.infillModelId} · ${g.automation ? 'motorizovana' : 'ručna'} · ${g.gateType === 'sliding' ? `otvaranje ${g.opening === 'left' ? 'ulevo' : 'udesno'}` : `šarke ${g.opening === 'left' ? 'levo' : 'desno'}`} · ${d.viewFrom === 'ulica' ? 'gledano sa ulice' : 'gledano iz dvorišta'}${d.template ? ` · šablon „${d.template.name}“ v${d.template.version}` : ''}`, color: MUTED, margin: [0, 0, 0, 6] },
+      { text: `Ispuna: ${FENCE_MODELS[g.infillModelId]?.name ?? g.infillModelId} · ${g.automation ? 'motorizovana' : 'ručna'} · ${g.gateType === 'sliding' ? `otvaranje ${g.opening === 'left' ? 'ulevo' : 'udesno'}` : `šarke ${g.opening === 'left' ? 'levo' : 'desno'}`} · ${VIEW_LABEL}${d.template ? ` · šablon „${d.template.name}“ v${d.template.version}` : ''}`, color: MUTED, margin: [0, 0, 0, 6] },
       { image: png, width: 539 },
       { text: 'Kote', bold: true, margin: [0, 8, 0, 3] },
       {

@@ -129,23 +129,24 @@ export function SlidingAssemblyArt({ gate, clearStart, clearEnd, clearWidth, flo
     else rows.push({ a: 0, b: res.at('carrierLength'), text: `C-profil ${fmt(res.at('carrierLength'))}`, key: 'carrier' });
     if (spec.clearOpening !== null && spec.clearOpening > 0) rows.push({ a: 0, b: spec.clearOpening, text: `Svetli otvor ${fmt(spec.clearOpening)}`, key: 'clear' });
     const fs = 12 * px;
-    const line = (a: number, b: number, y: number, text: string, key: string) => {
+    const line = (a: number, b: number, y: number, text: string, key: string, textBelow = false) => {
       const x1 = X(a); const x2 = X(b); const lo = Math.min(x1, x2); const hi = Math.max(x1, x2);
       return (
         <g key={key} data-testid={`sliding-dim-${key}`}>
           <line x1={lo} y1={y} x2={hi} y2={y} stroke="#586d80" strokeWidth={px} />
           <line x1={lo} y1={y - 6 * px} x2={lo} y2={y + 6 * px} stroke="#586d80" strokeWidth={px} />
           <line x1={hi} y1={y - 6 * px} x2={hi} y2={y + 6 * px} stroke="#586d80" strokeWidth={px} />
-          <text x={(lo + hi) / 2} y={y - 4 * px} textAnchor="middle" fontSize={fs} fontWeight={700} fill="#172a3d">{text}</text>
+          <text x={(lo + hi) / 2} y={textBelow ? y + 30 * px : y - 4 * px} textAnchor="middle" fontSize={fs} fontWeight={700} fill="#172a3d">{text}</text>
         </g>
       );
     };
     const y0 = floorY + 178 * px;
-    const above = Y(top) - 22 * px;
+    // rep: kota tik iznad vrha krila, a natpis ispod linije (iznad repa), da se ne preklapa sa kotom platna i njenim natpisom
+    const above = Y(top) - 12 * px;
     return (
       <g data-testid="sliding-dims">
         {/* širina rama se ne kotira ovde: ista je kao kota elementa u projektu (bila bi dvaput, jedna preko druge) */}
-        {cant && line(W, mvEnd, above, `Rep ${fmt(mvEnd - W)}`, 'tail')}
+        {cant && line(W, mvEnd, above, `Rep ${fmt(mvEnd - W)}`, 'tail', true)}
         {rows.map((r, i) => line(r.a, r.b, y0 + i * 30 * px, r.text, r.key))}
       </g>
     );

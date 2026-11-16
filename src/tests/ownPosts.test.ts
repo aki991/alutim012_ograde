@@ -63,15 +63,15 @@ describe('kapija sa svojim stubovima', () => {
     expect(p.items).toHaveLength(4);
   });
 
-  it('kapija bez svojih stubova se hvata za stub susedne kapije; uključivanje ne pravi veći stub', () => {
+  it('kapija sa svojim stubom uvek ima svoj stub, i uz kapiju koja ga nema; uključivanje ne pravi veći stub', () => {
     const items = [createGate('double', { infillModelId: 'picket_wide', heightMm: 1000 }), createGate('pedestrian', { infillModelId: 'picket_wide', heightMm: 1000 }), createFence({ modelId: 'picket_wide', plinthMm: 400, heightMm: 1000 })];
     let p = setAllGatesOwnPosts(createProject('G', items), true);
     for (const post of p.posts) p = updatePost(p, post.id, { color: 'RAL 9016' }); // ručno menjani stubovi (custom)
     expect(p.items.filter(isSpacer)).toHaveLength(2);
     const g2 = p.items.find((i) => i.kind === 'gate' && i.gateType === 'pedestrian')!;
-    // mala kapija isključuje svoje stubove: ostaje stub velike kapije (zajednički), a prema ogradi je jedan stub
+    // mala kapija isključuje svoje stubove: velika kapija i dalje ima svoj stub prema njoj (razmaknik), a prema ogradi je jedan stub
     p = updateItem(p, g2.id, { ownPosts: false });
-    expect(p.items.filter(isSpacer)).toHaveLength(0); // nema razmaka: mala kapija uzima stub velike kapije i stub ograde
+    expect(p.items.filter(isSpacer)).toHaveLength(1);
     expect(p.posts).toHaveLength(p.items.length + 1);
     // ponovo uključena: stub uz ogradu je običan stub ograde (100, aluminijumski), ne veći stub kapije
     p = updateItem(p, g2.id, { ownPosts: true });
@@ -118,5 +118,60 @@ describe('kapija sa svojim stubovima', () => {
     expect(p.items.every((i) => i.kind === 'fence' && i.plinthMm === 400)).toBe(true);
     p = setAllPlinths(p, false);
     expect(p.items.every((i) => i.kind === 'fence' && !i.plinthMm)).toBe(true);
+  });
+});
+
+describe('kapija sa svojim stubom samo sa jedne strane', () => {
+  const three = () => createProject('T', [createFence({ modelId: 'picket_wide', widthMm: 1000 }), createGate('pedestrian', { infillModelId: 'picket_wide' }), createFence({ modelId: 'picket_wide', widthMm: 1000 })]);
+  const gate = (p: ReturnType<typeof three>) => p.items.find((i) => i.kind === 'gate')!;
+  const spacers = (p: ReturnType<typeof three>) => p.items.map((it, i) => (isSpacer(it) ? i : -1)).filter((i) => i >= 0);
+
+  it('oba: razmaknik sa obe strane kapije; levo: samo levo; desno: samo desno; bez: nema razmaknika', () => {
+    let p = three();
+    expect(spacers(p)).toEqual([]);
+    p = updateItem(p, gate(p).id, { ownPosts: true });
+    expect(spacers(p)).toEqual([1, 3]); // ograda | razmaknik | kapija | razmaknik | ograda
+    expect(p.posts).toHaveLength(p.items.length + 1);
+    p = updateItem(p, gate(p).id, { ownPostsSide: 'left' });
+    expect(spacers(p)).toEqual([1]);
+    expect(p.items.map((i) => i.kind)).toEqual(['fence', 'opening', 'gate', 'fence']);
+    expect(p.posts).toHaveLength(5);
+    p = updateItem(p, gate(p).id, { ownPostsSide: 'right' });
+    expect(spacers(p)).toEqual([2]);
+    expect(p.items.map((i) => i.kind)).toEqual(['fence', 'gate', 'opening', 'fence']);
+    p = updateItem(p, gate(p).id, { ownPostsSide: undefined });
+    expect(spacers(p)).toEqual([1, 3]);
+    p = updateItem(p, gate(p).id, { ownPosts: false });
+    expect(spacers(p)).toEqual([]);
+    expect(p.posts).toHaveLength(4);
+  });
+
+  it('razmak stubova važi za stranu koja ima svoj stub; svi odjednom briše izbor strane', () => {
+    let p = three();
+    p = updateItem(p, gate(p).id, { ownPosts: true, ownPostsSide: 'right', postGapMm: 100 });
+    const sp = p.items.find(isSpacer)!;
+    expect(computeLayout(p).items[p.items.indexOf(sp)].clearWidth).toBe(100);
+    p = setAllGatesOwnPosts(p, true);
+    expect(gate(p).kind === 'gate' && gate(p).ownPostsSide).toBeFalsy();
+    expect(spacers(p)).toEqual([1, 3]);
+  });
+
+  it('kapija uz kapiju: svoj stub kapije se pravi pojedinačno, i kad susedna kapija nema svoje stubove', () => {
+    let p = createProject('G', [createGate('pedestrian', { infillModelId: 'picket_wide' }), createGate('single', { infillModelId: 'picket_wide' })]);
+    // prva kapija ima svoj stub samo levo (spoljna strana, nema suseda): nema razmaknika
+    p = updateItem(p, p.items[0].id, { ownPosts: true, ownPostsSide: 'left' });
+    expect(p.items.filter(isSpacer)).toHaveLength(0);
+    // svoj stub prema drugoj kapiji: razmaknik i dva stuba, iako druga kapija nema svoje stubove
+    p = updateItem(p, p.items[0].id, { ownPostsSide: 'right' });
+    expect(p.items.filter(isSpacer)).toHaveLength(1);
+    expect(p.posts).toHaveLength(p.items.length + 1);
+    // druga kapija sa svojim stubom prema prvoj: i dalje jedan razmaknik (po jedan stub svake kapije)
+    p = updateItem(p, p.items[2].id, { ownPosts: true, ownPostsSide: 'left' });
+    expect(p.items.filter(isSpacer)).toHaveLength(1);
+    // prva kapija isključuje: druga i dalje ima svoj stub
+    p = updateItem(p, p.items[0].id, { ownPosts: false });
+    expect(p.items.filter(isSpacer)).toHaveLength(1);
+    p = updateItem(p, p.items[2].id, { ownPosts: false });
+    expect(p.items.filter(isSpacer)).toHaveLength(0);
   });
 });

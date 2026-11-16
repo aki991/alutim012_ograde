@@ -141,18 +141,27 @@ export function applyGuides(model: CustomModel, materials: Material[]): CustomMo
 
 /**
  * Bočni U profili su uvek okrenuti ka unutra (kanal ka ispuni): levi pod 270°, desni pod 90° (za uspravan profil nacrtan
- * odozdo naviše). Strana se određuje po položaju u odnosu na sredinu modela. Nagnut U profil se ne dira.
+ * odozdo naviše). Strana se određuje po prečkama koje su u njega uklopljene (leva vođica prečke gleda udesno, desna ulevo), pa model
+ * sa više polja (svako ima svoje dve vođice) ostaje ispravan; vođica bez prečke ide po položaju u odnosu na sredinu modela.
+ * Nagnut U profil se ne dira.
  */
 export function orientGuides(model: CustomModel, materials: Material[]): CustomModel {
   const shapeOf = shapeLookup(materials);
   // sredina crteža (okvir svih delova): model nema unapred zadatu širinu
   const bounds = contentBounds(model, shapeOf);
   const cx = bounds ? (bounds.x0 + bounds.x1) / 2 : model.widthMm / 2;
+  // uloga vođice po prečkama: leva (1) ili desna (−1); ako je ista vođica i leva i desna, uloga je nejasna pa važi položaj
+  const role = new Map<string, 1 | -1 | 0>();
+  for (const q of model.parts) {
+    if (!q.guides) continue;
+    for (const [id, r] of [[q.guides[0], 1], [q.guides[1], -1]] as [string, 1 | -1][]) role.set(id, role.has(id) && role.get(id) !== r ? 0 : r);
+  }
   let changed = false;
   const parts = model.parts.map((p) => {
     const s = shapeOf(p);
     if (!s || !isGuideCandidate(p, s)) return p;
-    const dirX: 1 | -1 = p.x < cx ? 1 : -1;
+    const byBar = role.get(p.id);
+    const dirX: 1 | -1 = byBar ? byBar : p.x < cx ? 1 : -1;
     const rot = (norm(p.angleDeg) === 90) === (dirX === 1) ? 270 : 90;
     if (p.rot === rot) return p;
     changed = true;

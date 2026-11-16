@@ -5,6 +5,7 @@ import { resolveGate } from '../gates/design';
 /**
  * Konvencija 3D scene: 1 jedinica = 1000 mm. X duž trase (rastući redosled elemenata), Y visina, Z dubina.
  * +Z je „spolja" (ulica), −Z je „unutra" (dvorište). Pogled „spreda" je sa +Z ka −Z.
+ * Klizno krilo i njegov okov (ručka, zasun, letva, motor) su sa strane dvorišta (−Z), iza stubova gledano sa ulice.
  */
 export const SCENE_UNIT_MM = 1000;
 export const mmToScene = (mm: number): number => mm / SCENE_UNIT_MM;

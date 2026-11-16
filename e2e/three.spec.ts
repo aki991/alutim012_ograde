@@ -293,7 +293,7 @@ test.describe('3D prikaz', () => {
     await page.getByTestId('hero-new').click();
     await page.getByTestId('cat-fence-add').click();
     for (const t of ['pedestrian', 'sliding', 'double', 'single']) {
-      await page.getByTestId(`cat-gate-${t}-add`).click();
+      await page.getByTestId(t === 'sliding' ? 'cat-sliding-klizna_sina_rucna-add' : `cat-gate-${t}-add`).click();
     }
     await page.getByTestId('tab-split').click();
     await page.waitForFunction(() => Boolean(window.__aluTest));

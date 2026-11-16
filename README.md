@@ -86,7 +86,7 @@ ista selekcija, isti panel parametara, ista kalkulacija). Nema CDN-a, HDRI-ja ni
   sa indikatorom ubacivanja; ručke za širinu i visinu sa prikazom mere; Esc otkazuje; jedan drag/resize = jedna undo radnja).
   Dodavanje iz kataloga klikom ili prevlačenjem direktno na scenu; „Pomeri levo/desno", „Dupliraj", „Obriši" i numerička polja
   rade kao alternativa (posebno na telefonu).
-- **Kamera:** izometrija, spreda, odozgo, sa strane, uklopi; kamera se pamti po projektu pri prelasku između tabova i ne resetuje se
+- **Kamera:** spreda, odozgo, sa strane, uklopi (izometrijski kadar); kamera se pamti po projektu pri prelasku između tabova i ne resetuje se
   pri promeni boje/parametara. Pun ekran i promena veličine rade bez rastezanja.
 - **Izvoz:** „3D slika" daje PNG kadra bez UI kontrola. Ako WebGL nije dostupan ili se izgubi kontekst, prikazuje se poruka sa
   „Pokušaj ponovo" i „Nastavi u 2D" (podaci se ne gube).

@@ -11,7 +11,7 @@
 <text x="654" y="127" font-family="DejaVu Sans, sans-serif" font-size="14" fill="#172a3d" font-weight="400" text-anchor="start">Vođenje i prihvat</text>
 <rect x="919.00" y="116.00" width="19.00" height="11.00" rx="2" fill="#737e8a" stroke="none"/>
 <text x="947" y="127" font-family="DejaVu Sans, sans-serif" font-size="14" fill="#172a3d" font-weight="400" text-anchor="start">Fiksna podloga i stubovi</text>
-<text x="40" y="157" font-family="DejaVu Sans, sans-serif" font-size="14" fill="#172a3d" font-weight="400" text-anchor="start">Pogled iz dvorišta · zatvoreno krilo i isprekidana kontura otvorenog položaja</text>
+<text x="40" y="157" font-family="DejaVu Sans, sans-serif" font-size="14" fill="#172a3d" font-weight="400" text-anchor="start">Pogled sa ulice · zatvoreno krilo i isprekidana kontura otvorenog položaja</text>
 <g id="installation-fixed">
 <line x1="55.00" y1="400.00" x2="1190.00" y2="400.00" stroke="#737e8a" stroke-width="1.5" />
 <rect x="481.10" y="400.00" width="177.10" height="32.20" rx="0" fill="#e2e7ed" stroke="none"/>

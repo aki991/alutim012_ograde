@@ -141,6 +141,12 @@ export function closingPostOffset(spec: Pick<SlidingSpec, 'enabled' | 'drawnLeaf
 /** Koliko je osa stuba vođice pre kraja krila (mm); vidi SlidingSpec.guideOverhang. */
 export const guideOverhangOf = (spec: Pick<SlidingSpec, 'support' | 'guideOverhang'>): number => Math.max(0, spec.guideOverhang ?? (spec.support === 'cantilever' ? 35 : 60));
 
+/**
+ * Kapija nacrtanog modela u projektu: vođica je uvek na stubu ograde koji je nosi (osa stuba je guideOverhang pre kraja krila). Dužina krila u
+ * projektu zavisi od stubova (debljina stuba prihvatnika), pa bi vođica sa fiksnim X iz modela odstupala od stuba; zato prati stub.
+ */
+export const guideOnFencePost = (spec: Pick<SlidingSpec, 'drawnLeaf' | 'heightTotal' | 'guideOverhang'>): boolean => Boolean(spec.drawnLeaf && spec.heightTotal && spec.guideOverhang !== undefined);
+
 /** ručno zadata pozicija (samo ključ koji varijanta ima), inače null */
 function manualPos(spec: Pick<SlidingSpec, 'support' | 'actuation' | 'manual'>, k: PosKey): number | null {
   const v = spec.manual?.[k];
@@ -153,6 +159,7 @@ function manualPos(spec: Pick<SlidingSpec, 'support' | 'actuation' | 'manual'>, 
  */
 export function guideXOf(spec: SlidingSpec, W: number): number {
   const cant = spec.support === 'cantilever';
+  if (guideOnFencePost(spec)) return W - Math.max(0, spec.guideOverhang ?? 0);
   return manualPos(spec, 'upperGuide') ?? manualPos(spec, 'guidePost') ?? (spec.guideOverhang !== undefined ? W - Math.max(0, spec.guideOverhang) : W - (cant ? 35 : 60));
 }
 
@@ -319,7 +326,7 @@ export function resolveSliding(spec0: SlidingSpec, W: number, H: number): Slidin
   const pos = {} as Record<PosKey, ResolvedPos>;
   for (const k of Object.keys(auto) as PosKey[]) {
     const m = spec.manual[k];
-    const has = keys.includes(k) && typeof m === 'number' && Number.isFinite(m);
+    const has = keys.includes(k) && typeof m === 'number' && Number.isFinite(m) && !(guideOnFencePost(spec) && (k === 'upperGuide' || k === 'guidePost'));
     pos[k] = { value: has ? m! : auto[k], auto: auto[k], manual: has };
   }
   // vođica je na stubu vođice: prati ručno zadat stub (ili stub ograde u projektu); stub vođice prati vođicu dok mu X nije zadat ručno
@@ -433,7 +440,14 @@ export function resolveSliding(spec0: SlidingSpec, W: number, H: number): Slidin
   } else {
     const hy = D('handle.y');
     add({ key: 'handle', label: 'Ručka', moving: true, role: 'drive', detail: false, shapes: [{ t: 'rect', x: at('handle') - 10, y: hy, w: D('handle.w'), h: D('handle.h') }] });
-    add({ key: 'latch', label: 'Klizni zasun i pločica', moving: true, role: 'drive', detail: false, shapes: [{ t: 'rect', x: at('latch') - 15, y: hy + D('latch.rise'), w: D('latch.w'), h: D('latch.h') }] });
+    // zasun: kućište na krilu i klizač (zasunica) koji u zatvorenom položaju ulazi do sredine pločice na stubu, pa se zasun i pločica spajaju
+    const lL = at('latch') - 15; const lY = hy + D('latch.rise'); const lW = D('latch.w'); const lH = D('latch.h');
+    const latchShapes: Shape[] = [{ t: 'rect', x: lL, y: lY, w: lW, h: lH }];
+    if (on('latchReceiver')) {
+      const tip = at('latchReceiver') - 30 + D('lrec.w') / 2;
+      if (tip < lL - 0.5) { const bh = Math.min(16, lH / 2); latchShapes.push({ t: 'rect', x: tip, y: lY + (lH - bh) / 2, w: lL - tip, h: bh }); }
+    }
+    add({ key: 'latch', label: 'Klizni zasun i pločica', moving: true, role: 'drive', detail: false, shapes: latchShapes });
     add({ key: 'latchReceiver', label: 'Prihvatna pločica zasuna s nosačem', moving: false, role: 'drive', detail: false, shapes: [{ t: 'rect', x: at('latchReceiver') - 30, y: hy + D('lrec.rise'), w: D('lrec.w'), h: D('lrec.h') }] });
   }
 
@@ -472,6 +486,22 @@ export function resolveSliding(spec0: SlidingSpec, W: number, H: number): Slidin
     checks.push(bad.length
       ? { key: 'carrier', level: 'error', title: 'C-profil preko kolica', field: 'carrierLength', msg: `${bad.join('; ')}. Produžite rep/C-profil, smanjite hod ili pomerite kolica.`, basis: 'Oba fiksna kolica moraju biti unutar pokretnog C-profila na oba kraja hoda, uz rezervu (dužine kontaktnih zona zavise od kompleta).' }
       : { key: 'carrier', level: 'ok', title: 'C-profil preko kolica', field: 'carrierLength', msg: `C-profil pokriva oba kolica na oba kraja hoda${res ? `, uz rezervu ${fmt(res)}` : ''}.`, basis: 'Centri kolica, zatvoreno i otvoreno; kontaktne zone po kompletu nisu uključene.' });
+  }
+
+  // zasun i pločica zasuna: klizač zasuna mora da pogodi pločicu na stubu (po visini) i da je pločica ispred zasuna (ka stubu)
+  if (spec.actuation === 'manual' && on('latch') && on('latchReceiver')) {
+    const hy = D('handle.y');
+    const lY0 = hy + D('latch.rise'); const lY1 = lY0 + D('latch.h');
+    const pY0 = hy + D('lrec.rise'); const pY1 = pY0 + D('lrec.h');
+    const lLeft = at('latch') - 15; const pX0 = at('latchReceiver') - 30; const pRight = pX0 + D('lrec.w');
+    const mid = (lY0 + lY1) / 2;
+    const bad: string[] = [];
+    if (mid < pY0 || mid > pY1) bad.push(`klizač zasuna (visina ${fmt(mid)}) ne pogađa pločicu (visina ${fmt(pY0)} – ${fmt(pY1)})`);
+    if (pRight > lLeft + 0.5 && pX0 + D('lrec.w') / 2 >= lLeft) bad.push('pločica je iza početka zasuna: zasun nema kuda da uđe u nju');
+    const reach = Math.round(lLeft - (pX0 + D('lrec.w') / 2));
+    checks.push(bad.length
+      ? { key: 'latch', level: 'warn', title: 'Zasun i pločica zasuna', field: 'pos-latchReceiver', msg: `${bad.join('; ')}. Pomerite pločicu ili zasun (visina i X).`, basis: 'Zasun i pločica zasuna leže u istoj ravni: klizač mora da uđe u pločicu na stubu u zatvorenom položaju.' }
+      : { key: 'latch', level: 'ok', title: 'Zasun i pločica zasuna', field: 'pos-latchReceiver', msg: `Zasun ulazi u pločicu u zatvorenom položaju (klizač izlazi iz kućišta ${fmt(reach)} mm).`, basis: 'Visina klizača je unutar pločice; pločica je ispred kućišta zasuna (ka stubu).' });
   }
 
   if (spec.actuation === 'motor' && rack && on('rack') && on('motor')) {

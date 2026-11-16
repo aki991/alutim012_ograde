@@ -26,6 +26,8 @@ export interface SpecPart {
   note?: string;
   /** deo rama (rez 45°): širina profila u ravni spoja (mm): od nje zavisi koliko se štedi kad dva komada dele kosi rez */
   miterMm?: number;
+  /** deo rama sa jednim ugaonim krajem: koji su krajevi pod 45° (početak, kraj); bez vrednosti su oba */
+  miterEnds?: [boolean, boolean];
   /** uloga dela na crtežu (npr. „Ram — gornja i donja prečka“): naziv dela u krojnoj listi i radnom nalogu; bez vrednosti naziv je materijal */
   role?: string;
 }

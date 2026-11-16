@@ -1,4 +1,5 @@
 import { isSpacer, itemPlinthMm } from '../geometry/layout';
+import { GATE_POST_EXTRA_MM, gateBottomGapMm } from '../gates/design';
 import { uid } from '../../utils/id';
 import { DEFAULT_MODEL_ID, FENCE_MODELS, GATE_DEFAULT_WIDTH, postStyleFor } from './catalog';
 import {
@@ -136,15 +137,17 @@ export function createSpacer(widthMm: number = SPACER_DEFAULT_MM): Opening {
   return { kind: 'opening', id: uid('spacer'), widthMm, heightMm: 1, spacer: true };
 }
 
-const ownsPosts = (it: LayoutItem | undefined): boolean => it?.kind === 'gate' && Boolean(it.ownPosts);
+/** da li kapija ima svoj stub sa date strane (levo ili desno, gledano spreda) */
+const ownsSide = (it: LayoutItem | undefined, side: 'left' | 'right'): boolean => it?.kind === 'gate' && Boolean(it.ownPosts) && (!it.ownPostsSide || it.ownPostsSide === side);
 const isGate = (it: LayoutItem | undefined): boolean => it?.kind === 'gate';
 
 /**
- * Da li između dva elementa treba dva stuba. Kapija sa svojim stubovima ima svoj stub prema ogradi i prema kapiji koja takođe ima svoje;
- * kapija bez svojih stubova se „hvata" za stub susednog elementa (stub ograde ili stub susedne kapije), pa je tada jedan zajednički stub.
+ * Da li između dva elementa treba dva stuba. Kapija sa svojim stubom sa te strane uvek ima svoj stub, bez obzira na to šta je susedni
+ * element (ograda, kapija sa svojim stubom ili kapija koja ga nema); susedni element tada ima svoj stub. Dva elementa bez svojih stubova
+ * sa te strane dele jedan zajednički stub.
  */
 const needsTwoPosts = (a: LayoutItem | undefined, b: LayoutItem | undefined): boolean =>
-  (ownsPosts(a) && (!isGate(b) || ownsPosts(b))) || (ownsPosts(b) && (!isGate(a) || ownsPosts(a)));
+  ownsSide(a, 'right') || ownsSide(b, 'left');
 
 /**
  * Kapija sa svojim stubovima: između nje i susednog elementa su dva stuba (stub ograde i stub kapije). Dva stuba su razdvojena
@@ -166,8 +169,8 @@ export function syncSpacers(project: Project): Project {
       if (needed) { outItems.push(it); outPosts.push(posts[i + 1]); continue; }
       changed = true;
       // ostaje stub strane koja ima svoj stub (ograda ili kapija sa svojim stubovima); kapija bez svojih stubova uzima taj stub
-      const leftOk = !(isGate(prev) && !ownsPosts(prev));
-      const rightOk = !(isGate(next) && !ownsPosts(next));
+      const leftOk = !isGate(prev);
+      const rightOk = !isGate(next);
       if (!(leftOk || !rightOk)) outPosts[outPosts.length - 1] = posts[i + 1];
       continue;
     }
@@ -204,9 +207,13 @@ export function applyPostRoles(input: Project): Project {
     const round = post.custom || !style ? post.round : style.round || undefined;
     const adjacentPlinth = (idx: number) => itemPlinthMm(project.items[idx], project.posts[idx], project.posts[idx + 1]);
     // ugaoni spoj nema svoju visinu: stub prati susednu ogradu
-    const heightOf = (it: LayoutItem | undefined, idx: number) => (it && !isSpacer(it) && !(it.kind === 'opening' && it.bendDeg !== undefined) ? it.heightMm + adjacentPlinth(idx) : null);
+    // kapija podignuta od poda (donji zazor) ima vrh više za taj zazor
+    const heightOf = (it: LayoutItem | undefined, idx: number) => (it && !isSpacer(it) && !(it.kind === 'opening' && it.bendDeg !== undefined) ? it.heightMm + adjacentPlinth(idx) + (it.kind === 'gate' ? gateBottomGapMm(it) : 0) : null);
     const adjacent = [heightOf(left, i - 1), heightOf(right, i)].filter((x): x is number => x !== null);
-    const extra = type === 'concrete' || type === 'concrete_plinth' ? POST_EXTRA_CONCRETE_MM : (!post.custom && style?.extraRatio != null ? Math.round(style.extraRatio * Math.max(...adjacent, 0)) : (style?.extraMm ?? POST_EXTRA_MM));
+    const baseExtra = type === 'concrete' || type === 'concrete_plinth' ? POST_EXTRA_CONCRETE_MM : (!post.custom && style?.extraRatio != null ? Math.round(style.extraRatio * Math.max(...adjacent, 0)) : (style?.extraMm ?? POST_EXTRA_MM));
+    // stub uz kapiju nacrtanog modela je podrazumevano viši od kapije bar za 50 mm (nacrtani modeli ne traže prepust)
+    const gateOfCustomModel = nextToGate && source?.kind === 'gate' && FENCE_MODELS[source.infillModelId]?.style === 'custom';
+    const extra = gateOfCustomModel ? Math.max(baseExtra, GATE_POST_EXTRA_MM) : baseExtra;
     // visina stuba se meri od nivoa podnožja susednih ograda (kao visina polja), pa ne zavisi od visine podnožja; stvarna dužina stuba se računa u rasporedu
     const plinthsAround = [i - 1, i].filter((idx) => project.items[idx] && !isSpacer(project.items[idx])).map(adjacentPlinth);
     const level = plinthsAround.length ? Math.max(...plinthsAround) : 0;
@@ -217,7 +224,7 @@ export function applyPostRoles(input: Project): Project {
   const items = project.items.map((it, k) => {
     if (!isSpacer(it)) return it;
     // rastojanje osa dva stuba: njihova polovina širina i razmak koji zadaje kapija
-    const gate = [project.items[k - 1], project.items[k + 1]].find((x) => x?.kind === 'gate' && x.ownPosts);
+    const gate = [ownsSide(project.items[k - 1], 'right') ? project.items[k - 1] : undefined, ownsSide(project.items[k + 1], 'left') ? project.items[k + 1] : undefined].find((x) => x?.kind === 'gate');
     const gap = gate?.kind === 'gate' ? (gate.postGapMm ?? OWN_POSTS_GAP_MM) : OWN_POSTS_GAP_MM;
     const w = ((posts[k]?.widthMm ?? 0) + (posts[k + 1]?.widthMm ?? 0)) / 2 + gap;
     return w > gap && w !== it.widthMm ? { ...it, widthMm: w } : it;

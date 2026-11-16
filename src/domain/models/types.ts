@@ -99,6 +99,8 @@ export interface Gate {
   automationType: AutomationType;
   /** Kapija ima svoje stubove: između kapije i susednog elementa su dva stuba (stub ograde i stub kapije), a ne jedan zajednički */
   ownPosts?: boolean;
+  /** Kapija ima svoj stub samo sa jedne strane (levo ili desno, gledano spreda); bez vrednosti, sa obe strane. Važi kad je ownPosts uključeno. */
+  ownPostsSide?: 'left' | 'right';
   /** Razmak (mm) između stuba ograde i stuba kapije kad kapija ima svoje stubove; bez vrednosti važi podrazumevani */
   postGapMm?: Mm;
   /** Samo dvokrilne: ručno zadate širine krila */

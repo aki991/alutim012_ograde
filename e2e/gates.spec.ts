@@ -17,7 +17,13 @@ async function newProjectWithGate(page: Page, type: 'double' | 'sliding' | 'sing
   await page.goto('/');
   await page.getByTestId('hero-new').click();
   await expect(page).toHaveURL(/\/editor\/proj_/);
-  await page.getByTestId(`cat-gate-${type}-add`).click();
+  if (type === 'sliding') {
+    // osnovna klizna kapija (sa Mere kapije) se dodaje dugmetom „+“ na kraju niza; katalog nudi klizne kapije kao sklop
+    await page.getByTestId('cat-fence-add').click();
+    await page.getByTestId('add-end').click({ force: true });
+    await page.getByTestId('add-kind-sliding').click();
+    await page.getByTestId('add-apply').click();
+  } else await page.getByTestId(`cat-gate-${type}-add`).click();
   await page.locator('[data-hit="item"]').last().click();
   await page.getByTestId('btn-gate-design').click();
   await expect(page.getByTestId('gate-design')).toBeVisible();
@@ -277,12 +283,16 @@ test('modeli kapija: kartica ima Koristi model, Otvori crtež i Obriši; u crte�
   await page.getByTestId('designer-gate-measures').click();
   await expect(page.getByTestId('gate-design')).toBeVisible();
   await expect(val(page, 'gH')).toHaveValue('15');
+  // „Mere kapije“ su prikaz u istom prozoru (pored Skice), a ne prozor preko stranice
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByTestId('model-designer')).toBeVisible();
+  await expect(page.getByTestId('designer-gate-measures')).toHaveAttribute('aria-pressed', 'true');
   await setDim(page, 'gZ', '12');
-  await page.keyboard.press('Escape');
+  await page.getByTestId('designer-view-2d').click();
   await expect(page.getByTestId('gate-design')).toHaveCount(0);
   await page.getByTestId('designer-gate-measures').click();
   await expect(val(page, 'gZ')).toHaveValue('12');
-  await page.keyboard.press('Escape');
+  // odlazak sa strane dok su mere otvorene čuva izmene i uklanja privremen projekat
   await page.getByTestId('designer-back').click();
   await expect(page.getByTestId('gate-model-card')).toContainText('v2');
   // model je u katalogu editora
@@ -332,8 +342,51 @@ test('osnovne kapije: dugme Doradi otvara crtež kapije kao nov model vrste Kapi
   await expect(page.getByTestId('designer-name')).toHaveValue('Dvokrilna kapija');
   await page.getByTestId('designer-gate-measures').click();
   await expect(page.getByTestId('gate-design')).toBeVisible();
-  await page.keyboard.press('Escape');
+  await page.getByTestId('designer-view-3d').click();
+  await expect(page.getByTestId('gate-design')).toHaveCount(0);
   await page.getByTestId('designer-back').click();
   await expect(page.getByTestId('gate-model-name')).toHaveText('Dvokrilna kapija');
+  expect(errors).toEqual([]);
+});
+
+test('stubovi uz kapiju: tab Stubovi pored Sastavnice; stub je podrazumevano viši od kapije za 50 mm, visina i širina se menjaju i čuvaju uz model', async ({ page }) => {
+  const errors = trackErrors(page);
+  await page.goto('/modeli-kapija');
+  await page.getByTestId('rework-gate-double').click();
+  await page.getByTestId('designer-gate-measures').click();
+  await expect(page.getByTestId('gate-design')).toBeVisible();
+  // tab je odmah posle Sastavnice
+  const tabs = await page.getByRole('tab').allTextContents();
+  expect(tabs.slice(-2)).toEqual(['Sastavnica', 'Stubovi']);
+  await setDim(page, 'gB', '50');
+  await page.getByTestId('gd-tab-stubovi').click();
+  await expect(page.getByTestId('gd-posts')).toBeVisible();
+  // vrh kapije = visina + donji zazor; stub viri za 50 mm
+  await expect(page.getByTestId('gd-post-over-0')).toContainText('50 mm');
+  await expect(page.getByTestId('gd-post-over-1')).toContainText('50 mm');
+  await expect(page.getByTestId('gd-post-auto-0')).toHaveCount(0);
+  const h0 = Number((await page.getByTestId('gd-post-h-0').inputValue()).replace(/\D/g, ''));
+  // ručna visina i širina levog stuba
+  const f = page.getByTestId('gd-post-h-0');
+  await f.fill(String(h0 + 200)); await f.press('Enter');
+  const w = page.getByTestId('gd-post-w-0');
+  await w.fill('140'); await w.press('Enter');
+  await expect(page.getByTestId('gd-post-over-0')).toContainText('250 mm');
+  await expect(page.getByTestId('gd-post-auto-0')).toBeVisible();
+  await expect(page.getByTestId('gd-post-over-1')).toContainText('50 mm'); // desni ostaje automatski
+  // nedozvoljena visina se ne primenjuje
+  await f.fill('100'); await f.press('Enter');
+  await expect(page.getByTestId('gd-post-err')).toBeVisible();
+  await expect(page.getByTestId('gd-post-over-0')).toContainText('250 mm');
+  // izlaz iz mera čuva mere stubova uz model; ponovno otvaranje ih vraća
+  await page.getByTestId('designer-view-2d').click();
+  await page.getByTestId('designer-gate-measures').click();
+  await page.getByTestId('gd-tab-stubovi').click();
+  await expect(page.getByTestId('gd-post-h-0')).toHaveValue(String(h0 + 200));
+  await expect(page.getByTestId('gd-post-w-0')).toHaveValue('140');
+  await expect(page.getByTestId('gd-post-over-1')).toContainText('50 mm');
+  // vraćanje automatske visine
+  await page.getByTestId('gd-post-auto-0').click();
+  await expect(page.getByTestId('gd-post-over-0')).toContainText('50 mm');
   expect(errors).toEqual([]);
 });

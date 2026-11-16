@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { partAngle, partBounds, resolveParts, type CustomModel, type CustomPart, type ResolvedPart } from '../../domain/models/custom';
+import { miterEndsOf, partAngle, partBounds, resolveParts, type CustomModel, type CustomPart, type ResolvedPart } from '../../domain/models/custom';
 import { sectionEdgeLines, sectionFace, solidsBounds, type MatShape, type Solid } from '../../domain/models/materialShape';
 import type { Material } from '../../domain/models/types';
 
@@ -27,10 +27,12 @@ export function PartSvg({ part, shape, hex, selected = false, ghost = false }: {
   } else if (shape.type === 'linear') {
     const { face, u0 } = sectionFace(shape.section, partAngle(part));
     // deo rama: krajevi pod 45° (duža ivica je spoljna), da se ramovi spajaju na uglovima
-    const mit = part.cut45 && part.miter ? part.lengthMm > 2 * face : false;
     const L = part.lengthMm;
+    const [ma, mb] = miterEndsOf(part);
+    const oa = ma ? face : 0; const ob = mb ? face : 0;
+    const mit = !!part.miter && (oa > 0 || ob > 0) && L > oa + ob;
     const poly = mit
-      ? (part.miter === 'lo' ? [[0, u0], [L, u0], [L - face, u0 + face], [face, u0 + face]] : [[face, u0], [L - face, u0], [L, u0 + face], [0, u0 + face]]).map((q) => q.join(',')).join(' ')
+      ? (part.miter === 'lo' ? [[0, u0], [L, u0], [L - ob, u0 + face], [oa, u0 + face]] : [[oa, u0], [L - ob, u0], [L, u0 + face], [0, u0 + face]]).map((q) => q.join(',')).join(' ')
       : null;
     const clipId = `miter-${part.id}${ghost ? '-g' : ''}`;
     body = (

@@ -3,13 +3,14 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { extentBounds, partBounds, type CustomModel, type CustomPart } from '../../domain/models/custom';
 import { materialShape, sectionFace, type MatShape } from '../../domain/models/materialShape';
 import type { Material } from '../../domain/models/types';
+import { snapBox, snapPoint, snapRefs, type Box, type SnapRefs } from '../../domain/models/snapping';
 import { uid } from '../../utils/id';
 import { PartSvg, type ResolvedPart } from './PartsSvg';
 
 interface View { x: number; y: number; w: number }
 type Drag =
   | { mode: 'draw'; sx: number; sy: number }
-  | { mode: 'move'; sx: number; sy: number; origin: { id: string; x: number; y: number }[]; moved: boolean }
+  | { mode: 'move'; sx: number; sy: number; origin: { id: string; x: number; y: number }[]; moved: boolean; /** okvir izabranih delova i ivice ostalih (za privlačenje) */ box: Box | null; refs: SnapRefs }
   | { mode: 'box'; sx: number; sy: number; add: boolean; base: string[] }
   | { mode: 'pan'; cx: number; cy: number; view: View };
 
@@ -23,6 +24,8 @@ interface Props {
   /** samo vodoravno i uspravno */
   ortho: boolean;
   gridMm: number;
+  /** privlačenje: ivice dela koji se crta, pomera ili lepi privlače se uz ivice susednih delova (Alt privremeno isključuje) */
+  snapObjects?: boolean;
   onSelect: (ids: string[]) => void;
   onAdd: (part: CustomPart) => void;
   onMoveStart: () => void;
@@ -73,6 +76,36 @@ export function partFromDrag(materialId: string, shape: MatShape, sx: number, sy
   return { ...base, x: sx, y: sy, lengthMm: len, angleDeg: Math.round((Math.atan2(dy, dx) * 180) / Math.PI) };
 }
 
+/**
+ * Isto što i partFromDrag, uz privlačenje: krajevi profila (po osi profila) i ivica preseka (poprečno) idu uz ivice susednih delova,
+ * ugao ploče i komadni deo takođe. Vraća i linije uz koje je privučeno (za prikaz). Bez referenci (privlačenje isključeno) nema promene.
+ */
+export function partFromDragSnapped(materialId: string, shape: MatShape, sx: number, sy: number, ex: number, ey: number, ortho: boolean, id: string, refs: SnapRefs | null, thr: number): { part: CustomPart | null; gx: number[]; gy: number[] } {
+  if (!refs) return { part: partFromDrag(materialId, shape, sx, sy, ex, ey, ortho, id), gx: [], gy: [] };
+  const gx: number[] = []; const gy: number[] = [];
+  const note = (a: number | null, b: number | null) => { if (a !== null) gx.push(a); if (b !== null) gy.push(b); };
+  if (shape.type === 'piece') {
+    const part = partFromDrag(materialId, shape, ex, ey, ex, ey, ortho, id)!;
+    const s = snapBox(partBounds(part, shape), refs, thr);
+    note(s.gx, s.gy);
+    return { part: { ...part, x: part.x + s.dx, y: part.y + s.dy }, gx, gy };
+  }
+  const free = shape.type === 'sheet' || !ortho;
+  const horizontal = Math.abs(ex - sx) >= Math.abs(ey - sy);
+  const axes = free ? { x: true, y: true } : horizontal ? { x: true, y: false } : { x: false, y: true };
+  const a = snapPoint(sx, sy, refs, thr, axes); const b = snapPoint(ex, ey, refs, thr, axes);
+  note(a.gx, a.gy); note(b.gx, b.gy);
+  let part = partFromDrag(materialId, shape, a.x, a.y, b.x, b.y, ortho, id);
+  if (!part) return { part: null, gx, gy };
+  if (!free) {
+    // poprečna osa: ivica preseka sedne uz ivicu suseda
+    const s = snapBox(partBounds(part, shape), refs, thr, horizontal ? { x: false, y: true } : { x: true, y: false });
+    note(s.gx, s.gy);
+    part = { ...part, x: part.x + s.dx, y: part.y + s.dy };
+  }
+  return { part, gx, gy };
+}
+
 /** Ukupne kote crteža (širina ispod, visina levo) sa kosim crticama; slova prate zum. */
 function DimsLayer({ box, fs }: { box: { x0: number; y0: number; x1: number; y1: number }; fs: number }) {
   // klik na kotu otvara polje za izmenu te mere u traci iznad crteža
@@ -103,7 +136,7 @@ function DimsLayer({ box, fs }: { box: { x0: number; y0: number; x1: number; y1:
  * Ctrl + klik dodaje ili skida deo iz izbora, prevlačenje po praznom bira sve delove koje okvir dotakne; prevlačenje izabranog
  * dela pomera ceo izbor. Desni (ili srednji) taster pomera papir. Pokazivač je obična strelica.
  */
-export function Designer2D({ parts, active, selectedIds, ortho, gridMm, onSelect, onAdd, onMoveStart, onMove, placing, onPlace, showDims = true, viewShift, fitTick = 0, onMoveEnd, overlay, underlay, groundY = 0, extraBounds, onOverlayPick }: Props) {
+export function Designer2D({ parts, active, selectedIds, ortho, gridMm, snapObjects = false, onSelect, onAdd, onMoveStart, onMove, placing, onPlace, showDims = true, viewShift, fitTick = 0, onMoveEnd, overlay, underlay, groundY = 0, extraBounds, onOverlayPick }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ w: 800, h: 500 });
@@ -111,11 +144,18 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, onSelect
   const drag = useRef<Drag | null>(null);
   const [ghost, setGhost] = useState<CustomPart | null>(null);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
+  /** linije uz koje je deo privučen (mm, y nagore) */
+  const [guides, setGuides] = useState<{ gx: number[]; gy: number[] }>({ gx: [], gy: [] });
   /** okvir izbora u toku (mm, y nagore) */
   const [box, setBox] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const selected = useMemo(() => new Set(selectedIds), [selectedIds]);
   const activeShape = useMemo(() => (active ? materialShape(active) : null), [active]);
   const vh = (view.w * size.h) / size.w;
+  /** prag privlačenja: 10 piksela na ekranu */
+  const thr = (10 * view.w) / size.w;
+  const boundsOf = (r: ResolvedPart): Box => partBounds(r.part, r.shape);
+  /** ivice delova (osim izuzetih) i tlo */
+  const refsFor = (exclude?: Set<string>): SnapRefs => snapRefs(parts.filter((r) => !exclude?.has(r.part.id)).map(boundsOf), -groundY);
   /** okvir crteža (svi delovi): odatle su ukupne mere */
   // kote idu od tla: kod klizne kapije je krilo podignuto od tla, pa visina obuhvata i taj razmak (ukupna visina od dna ograde)
   const dimsBox = useMemo(() => { const b = extentBounds(parts); return b && groundY > 0 ? { ...b, y0: Math.min(b.y0, -groundY) } : b; }, [parts, groundY]);
@@ -124,14 +164,20 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, onSelect
     if (!placing?.length || !cursor) return null;
     let x0 = Infinity; let y0 = Infinity; let x1 = -Infinity; let y1 = -Infinity;
     for (const r of placing) { const b = partBounds(r.part, r.shape); x0 = Math.min(x0, b.x0); y0 = Math.min(y0, b.y0); x1 = Math.max(x1, b.x1); y1 = Math.max(y1, b.y1); }
-    return { dx: snap(cursor.x - (x0 + x1) / 2, gridMm), dy: snap(cursor.y - (y0 + y1) / 2, gridMm) };
-  }, [placing, cursor, gridMm]);
+    const dx = snap(cursor.x - (x0 + x1) / 2, gridMm); const dy = snap(cursor.y - (y0 + y1) / 2, gridMm);
+    if (!snapObjects) return { dx, dy };
+    const s = snapBox({ x0: x0 + dx, y0: y0 + dy, x1: x1 + dx, y1: y1 + dy }, snapRefs(parts.map(boundsOf), -groundY), thr);
+    return { dx: dx + s.dx, dy: dy + s.dy };
+  }, [placing, cursor, gridMm, snapObjects, parts, thr, groundY]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const placeAt = (c: { x: number; y: number }): { dx: number; dy: number } | null => {
     if (!placing?.length) return null;
     let x0 = Infinity; let y0 = Infinity; let x1 = -Infinity; let y1 = -Infinity;
     for (const r of placing) { const b = partBounds(r.part, r.shape); x0 = Math.min(x0, b.x0); y0 = Math.min(y0, b.y0); x1 = Math.max(x1, b.x1); y1 = Math.max(y1, b.y1); }
-    return { dx: snap(c.x - (x0 + x1) / 2, gridMm), dy: snap(c.y - (y0 + y1) / 2, gridMm) };
+    const dx = snap(c.x - (x0 + x1) / 2, gridMm); const dy = snap(c.y - (y0 + y1) / 2, gridMm);
+    if (!snapObjects) return { dx, dy };
+    const s = snapBox({ x0: x0 + dx, y0: y0 + dy, x1: x1 + dx, y1: y1 + dy }, refsFor(), thr);
+    return { dx: dx + s.dx, dy: dy + s.dy };
   };
 
   const fit = useCallback(() => {
@@ -210,7 +256,10 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, onSelect
       const ids = selected.has(hit.part.id) ? selectedIds : [hit.part.id];
       if (!selected.has(hit.part.id)) onSelect(ids);
       const origin = ids.map((x) => parts.find((r) => r.part.id === x)?.part).filter((q): q is CustomPart => !!q).map((q) => ({ id: q.id, x: q.x, y: q.y }));
-      drag.current = { mode: 'move', sx: p.x, sy: p.y, origin, moved: false };
+      const moving = new Set(ids);
+      const mb = parts.filter((r) => moving.has(r.part.id)).map(boundsOf);
+      const box = mb.length ? { x0: Math.min(...mb.map((b) => b.x0)), y0: Math.min(...mb.map((b) => b.y0)), x1: Math.max(...mb.map((b) => b.x1)), y1: Math.max(...mb.map((b) => b.y1)) } : null;
+      drag.current = { mode: 'move', sx: p.x, sy: p.y, origin, moved: false, box, refs: refsFor(moving) };
     } else {
       drag.current = { mode: 'box', sx: p.x, sy: p.y, add, base: selectedIds };
     }
@@ -220,23 +269,31 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, onSelect
     const sp = { x: snap(p.x, gridMm), y: snap(p.y, gridMm) };
     setCursor(sp);
     const d = drag.current;
-    if (!d) { if (active && activeShape?.type === 'piece') setGhost(partFromDrag(active.id, activeShape, sp.x, sp.y, sp.x, sp.y, ortho, 'ghost')); return; }
+    const refs = snapObjects && !e.altKey ? refsFor() : null;
+    if (!d) { if (active && activeShape?.type === 'piece') { const r = partFromDragSnapped(active.id, activeShape, sp.x, sp.y, sp.x, sp.y, ortho, 'ghost', refs, thr); setGhost(r.part); setGuides({ gx: r.gx, gy: r.gy }); } return; }
     if (d.mode === 'pan') {
       const r = e.currentTarget.getBoundingClientRect();
       setView({ ...d.view, x: d.view.x - ((e.clientX - d.cx) / r.width) * d.view.w, y: d.view.y - ((e.clientY - d.cy) / r.height) * ((d.view.w * r.height) / r.width) });
     } else if (d.mode === 'move') {
-      const dx = snap(p.x - d.sx, gridMm); const dy = snap(p.y - d.sy, gridMm);
+      let dx = snap(p.x - d.sx, gridMm); let dy = snap(p.y - d.sy, gridMm);
+      if (snapObjects && !e.altKey && d.box) {
+        const s = snapBox({ x0: d.box.x0 + dx, y0: d.box.y0 + dy, x1: d.box.x1 + dx, y1: d.box.y1 + dy }, d.refs, thr);
+        dx += s.dx; dy += s.dy;
+        setGuides({ gx: s.gx !== null ? [s.gx] : [], gy: s.gy !== null ? [s.gy] : [] });
+      } else setGuides({ gx: [], gy: [] });
       if (!d.moved && (dx !== 0 || dy !== 0)) { d.moved = true; onMoveStart(); }
       if (d.moved) onMove(d.origin.map((o) => ({ id: o.id, x: o.x + dx, y: o.y + dy })));
     } else if (d.mode === 'box') {
       setBox({ x0: Math.min(d.sx, p.x), y0: Math.min(d.sy, p.y), x1: Math.max(d.sx, p.x), y1: Math.max(d.sy, p.y) });
     } else if (active && activeShape) {
-      setGhost(partFromDrag(active.id, activeShape, d.sx, d.sy, sp.x, sp.y, ortho, 'ghost'));
+      const r = partFromDragSnapped(active.id, activeShape, d.sx, d.sy, sp.x, sp.y, ortho, 'ghost', refs, thr);
+      setGhost(r.part); setGuides({ gx: r.gx, gy: r.gy });
     }
   };
   const onPointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
     const d = drag.current;
     drag.current = null;
+    setGuides({ gx: [], gy: [] });
     if (d?.mode === 'move' && d.moved) onMoveEnd?.();
     if (d?.mode === 'box') {
       const b = box;
@@ -250,7 +307,7 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, onSelect
     }
     if (d?.mode === 'draw' && active && activeShape) {
       const p = toWorld(e.clientX, e.clientY);
-      const part = partFromDrag(active.id, activeShape, d.sx, d.sy, snap(p.x, gridMm), snap(p.y, gridMm), ortho, uid('part'));
+      const part = partFromDragSnapped(active.id, activeShape, d.sx, d.sy, snap(p.x, gridMm), snap(p.y, gridMm), ortho, uid('part'), snapObjects && !e.altKey ? refsFor() : null, thr).part;
       if (part) onAdd(part);
       setGhost(null);
     }
@@ -272,7 +329,7 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, onSelect
   return (
     <div ref={wrapRef} className="relative h-full w-full bg-[#eef2f6] overflow-hidden select-none" style={{ touchAction: 'none' }} data-testid="designer-2d">
       <svg ref={svgRef} className="absolute inset-0 w-full h-full" viewBox={`${view.x} ${view.y} ${view.w} ${vh}`} style={{ cursor: active || placing ? 'crosshair' : 'default' }}
-        onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={() => { setCursor(null); if (!drag.current) setGhost(null); }} onPointerCancel={() => { drag.current = null; setBox(null); }} onContextMenu={(e) => e.preventDefault()}>
+        onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={() => { setCursor(null); setGuides({ gx: [], gy: [] }); if (!drag.current) setGhost(null); }} onPointerCancel={() => { drag.current = null; setBox(null); }} onContextMenu={(e) => e.preventDefault()}>
         {lines}
         <line x1={view.x} y1={groundY} x2={view.x + view.w} y2={groundY} stroke="#64748b" strokeWidth={1.5} vectorEffect="non-scaling-stroke" data-testid="designer-ground" />
         {showDims && dimsBox && <DimsLayer box={dimsBox} fs={fs} />}
@@ -281,6 +338,8 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, onSelect
           {parts.map((r) => <PartSvg key={r.part.id} part={r.part} shape={r.shape} hex={r.hex} selected={selected.has(r.part.id)} />)}
           {box && <rect data-testid="designer-select-box" x={box.x0} y={box.y0} width={box.x1 - box.x0} height={box.y1 - box.y0} fill="#2563eb" fillOpacity={0.08} stroke="#2563eb" strokeWidth={1} strokeDasharray="5 4" vectorEffect="non-scaling-stroke" pointerEvents="none" />}
           {ghost && activeShape && <PartSvg part={ghost} shape={activeShape} hex="#d71920" ghost />}
+          {guides.gx.map((x) => <line key={`gx${x}`} data-testid="designer-snap-guide" x1={x} x2={x} y1={-(view.y + vh)} y2={-view.y} stroke="#d946ef" strokeWidth={1} strokeDasharray="5 4" vectorEffect="non-scaling-stroke" pointerEvents="none" />)}
+          {guides.gy.map((y) => <line key={`gy${y}`} data-testid="designer-snap-guide" x1={view.x} x2={view.x + view.w} y1={y} y2={y} stroke="#d946ef" strokeWidth={1} strokeDasharray="5 4" vectorEffect="non-scaling-stroke" pointerEvents="none" />)}
           {placing && placeOffset && <g transform={`translate(${placeOffset.dx} ${placeOffset.dy})`} data-testid="designer-paste-ghost" pointerEvents="none">{placing.map((r) => <PartSvg key={r.part.id} part={r.part} shape={r.shape} hex="#d71920" ghost />)}</g>}
         </g>
         {overlay && <g data-testid="designer-overlay">{overlay(view.w / size.w)}</g>}

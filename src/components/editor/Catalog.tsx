@@ -1,12 +1,12 @@
 import { allFenceModels } from '../../domain/models/customRegistry';
-import { ChevronDown, ChevronUp, Plus } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { Plus } from 'lucide-react';
+import { useMemo } from 'react';
 import { DEFAULT_MODEL_ID, FENCE_MODELS, GATE_LABELS, POST_LABELS, isLightColor, isTerraceModel, projectModelId } from '../../domain/models/catalog';
 import { createFence, createGate, createOpening, createProject } from '../../domain/models/factories';
 import { applyPostType, setOuterWidth } from '../../domain/geometry/operations';
 import { postHalfSum } from '../../domain/geometry/layout';
 import { gateClearWidth, gateFieldsFromModel, GATE_TYPE_LABELS } from '../../domain/gates/gateModels';
-import { presetTitle, SLIDING_PRESETS, specFromPreset, type SlidingPresetId } from '../../domain/gates/slidingAssembly';
+import { presetTitle, specFromPreset, type SlidingPresetId } from '../../domain/gates/slidingAssembly';
 import type { CustomModel } from '../../domain/models/custom';
 import type { FenceModelId, Gate, GateType, PostType, Project, SlidingTemplate } from '../../domain/models/types';
 import type { DragSource } from '../../hooks/useDragController';
@@ -34,8 +34,10 @@ function useMini(build: () => Project, key: string): Project {
   return useMemo(build, [key]);
 }
 
-function CatalogCard({ title, subtitle, thumb, onAdd, onDragStart, testId, addLabel = 'Dodaj' }: {
-  title: string; subtitle: string; thumb: React.ReactNode; onAdd: () => void; onDragStart?: (e: React.PointerEvent) => void; testId: string; addLabel?: string;
+function CatalogCard({ title, subtitle, thumb, onAdd, onDragStart, testId, addLabel = 'Dodaj', choices }: {
+  title: string; subtitle: string; thumb: React.ReactNode; onAdd?: () => void; onDragStart?: (e: React.PointerEvent) => void; testId: string; addLabel?: string;
+  /** izbor tipa: umesto jednog dugmeta „Dodaj“ nekoliko dugmadi (npr. ručna / motorna), svako dodaje svoj tip */
+  choices?: { label: string; onAdd: () => void; testId: string }[];
 }) {
   return (
     <div
@@ -47,16 +49,18 @@ function CatalogCard({ title, subtitle, thumb, onAdd, onDragStart, testId, addLa
       <div className="mt-2 text-[13px] font-semibold leading-tight">{title}</div>
       <div className="text-[11.5px] text-muted leading-snug min-h-[28px]">{subtitle}</div>
       <div className="flex items-center gap-1.5 mt-auto pt-1.5">
-        <button className="btn btn-sm btn-primary w-full !py-1.5" onClick={onAdd} data-testid={`${testId}-add`}><Plus size={14} />{addLabel}</button>
+        {choices
+          ? choices.map((c) => <button key={c.testId} className="btn btn-sm btn-primary flex-1 !py-1.5 !px-1.5" onClick={c.onAdd} data-testid={c.testId} title={`${title}: ${c.label}`}><Plus size={14} />{c.label}</button>)
+          : <button className="btn btn-sm btn-primary w-full !py-1.5" onClick={onAdd} data-testid={`${testId}-add`}><Plus size={14} />{addLabel}</button>}
       </div>
     </div>
   );
 }
 
+/** stubovi koji se nude u katalogu; betonski stub sa podnožjem se bira u podešavanjima stuba (tip) */
 const POST_TYPES: { type: PostType; subtitle: string }[] = [
   { type: 'aluminium', subtitle: 'Standardni stub uz ogradu' },
   { type: 'concrete', subtitle: 'Betonski stub' },
-  { type: 'concrete_plinth', subtitle: 'Betonski stub sa podnožjem ispod ograde' },
 ];
 
 function CornerThumb({ grey = false }: { grey?: boolean }) {
@@ -122,16 +126,23 @@ export function SlidingThumb({ preset, template }: { preset?: SlidingPresetId; t
   return <MiniThumb project={mini} />;
 }
 
-const GATE_CARDS: { id: string; type: GateType; concrete?: boolean; title: string; subtitle: string }[] = [
+/** kapije sa krilima, redom kako se nude u katalogu (klizne su posebne kartice sa izborom tipa) */
+const GATE_CARDS: { id: string; type: GateType; title: string; subtitle: string }[] = [
   { id: 'pedestrian', type: 'pedestrian', title: GATE_LABELS.pedestrian, subtitle: 'Za prolaz ljudi' },
-  { id: 'sliding', type: 'sliding', title: GATE_LABELS.sliding, subtitle: 'Otvara se klizanjem u stranu' },
-  { id: 'double', type: 'double', title: GATE_LABELS.double, subtitle: 'Dva krila' },
   { id: 'single', type: 'single', title: GATE_LABELS.single, subtitle: 'Jedno krilo' },
+  { id: 'double', type: 'double', title: GATE_LABELS.double, subtitle: 'Dva krila' },
+];
+
+/** klizne kapije: dve kartice, svaka sa izborom ručna / motorna */
+const SLIDING_CARDS: { id: string; title: string; subtitle: string; thumb: SlidingPresetId; manual: SlidingPresetId; motor: SlidingPresetId }[] = [
+  { id: 'sliding', title: 'Klizna kapija', subtitle: 'Klizi po šini u podu', thumb: 'klizna_sina_rucna', manual: 'klizna_sina_rucna', motor: 'klizna_sina_motorna' },
+  { id: 'sliding-self', title: 'Samostojeća klizna kapija', subtitle: 'Samonoseća, kolica i rep, bez šine', thumb: 'samonoseca_rucna', manual: 'samonoseca_rucna', motor: 'samonoseca_motorna' },
 ];
 
 /**
- * Katalog elemenata izabranog modela: ograda, kapije, kapija sa betonskim stubom i prazan otvor — sve odjednom otvoreno.
- * Model se bira jednom (menja se na svim elementima projekta), pa nema ni kartica za svaki model ni kategorija.
+ * Katalog elemenata izabranog modela. Prvi red: platno, pešačka, jednokrilna, dvokrilna, klizna i samostojeća klizna kapija (klizne sa izborom
+ * ručna / motorna). Drugi red: prazan prostor, aluminijumski i betonski stub (podnožje stuba se zadaje u podešavanjima stuba). Posebni modeli i šabloni
+ * kapija (ako ih ima) su u trećem redu. Model se bira jednom (menja se na svim elementima projekta).
  */
 export function Catalog({ onBeginDrag }: { onBeginDrag: (source: DragSource, e: { clientX: number; clientY: number }) => void }) {
   const storeModel = useAppStore((s) => s.editor.activeModelId);
@@ -139,36 +150,23 @@ export function Catalog({ onBeginDrag }: { onBeginDrag: (source: DragSource, e: 
   const model = (project && projectModelId(project.items)) ?? storeModel; // ograda koju projekat već ima
   const { addElement, mutate } = useAppStore.getState();
   const selection = useAppStore((s) => s.editor.selection);
-  const [showAll, setShowAll] = useState(false);
   const customModels = useAppStore((s) => s.settings.customModels);
   const gateModels = customModels?.filter((m) => m.kind === 'gate' && !m.replaces);
   const slidingTemplates = useAppStore((s) => s.settings.slidingTemplates);
   const hidden = useAppStore((s) => s.settings.hiddenModels);
   const def = FENCE_MODELS[model];
   const terrace = isTerraceModel(model); // ograda za terasu: bez kapija i bez kataloga stubova
-  // tarabica: svi stubovi i podnožje su uvek na raspolaganju (betonski stub sa podnožjem, samo podnožje)
-  const postsAlways = !terrace && def.style === 'tarabica';
 
   const startDrag = (spec: NewElementSpec, label: string) => (e: React.PointerEvent) => onBeginDrag({ kind: 'new', spec, label }, e);
-  const postsBlock = !terrace && (
-    <div data-testid="catalog-posts">
-      <h3 className="font-semibold text-[14px] mt-4 mb-2">Stubovi</h3>
-      <div className="flex flex-wrap gap-3">
-        <CatalogCard testId="cat-gate-concrete" title="Kapija sa betonskim stubom" subtitle="Jednokrilna kapija između betonskih stubova" thumb={<ElementThumb kind="concrete" model={model} />}
-          onAdd={() => addElement({ kind: 'gate', gateType: 'single', modelId: model, concrete: true })} onDragStart={startDrag({ kind: 'gate', gateType: 'single', modelId: model, concrete: true }, 'Kapija sa betonskim stubom')} />
-        {POST_TYPES.map((t) => (
-          <PostCard key={t.type} type={t.type} subtitle={t.subtitle} model={model} hasSelection={selection?.type === 'post'}
-            onApply={() => mutate((p) => applyPostType(p, t.type, selection?.type === 'post' ? selection.id : undefined))} />
-        ))}
-      </div>
-    </div>
-  );
 
   const changeModel = (m: FenceModelId) => {
     const st = useAppStore.getState();
     if (project && project.items.length > 0) st.setItemModel('', m); // isti model na celoj ogradi
     else st.setActiveModel(m);
   };
+  const applyPost = (type: PostType) => mutate((p) => applyPostType(p, type, selection?.type === 'post' ? selection.id : undefined));
+  const visiblePreset = (id: SlidingPresetId) => !hidden?.includes(`gate:slide:${id}`);
+  const hasOwnRow = !terrace && ((gateModels?.length ?? 0) > 0 || (slidingTemplates?.length ?? 0) > 0);
 
   return (
     <section className="card p-3" data-testid="catalog" aria-label="Katalog elemenata">
@@ -179,49 +177,56 @@ export function Catalog({ onBeginDrag }: { onBeginDrag: (source: DragSource, e: 
             {allFenceModels(model).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
         </label>
-        <button className="btn btn-sm ml-auto" aria-expanded={showAll} data-testid="catalog-show-all" onClick={() => setShowAll((v) => !v)}>
-          {showAll ? <><ChevronUp size={15} />Prikaži najčešće</> : <><ChevronDown size={15} />Prikaži sve</>}
-        </button>
       </div>
-      <div className="flex flex-wrap gap-3" data-testid="catalog-items">
-        <CatalogCard testId="cat-fence" title="Platno" subtitle={def.name} thumb={<ElementThumb kind="fence" model={model} />} onAdd={() => addElement({ kind: 'fence', modelId: model })} onDragStart={startDrag({ kind: 'fence', modelId: model }, `Platno — ${def.name}`)} />
-        {!terrace && GATE_CARDS.filter((g) => g.concrete || !hidden?.includes(`gate:${g.type}`)).map((g) => {
-          const spec: NewElementSpec = { kind: 'gate', gateType: g.type, modelId: model, concrete: g.concrete };
-          return (
-            <CatalogCard
-              key={g.id} testId={`cat-gate-${g.id}`} title={g.title} subtitle={g.subtitle}
-              thumb={<ElementThumb kind={g.concrete ? 'concrete' : g.type} model={model} />}
-              onAdd={() => addElement(spec)} onDragStart={startDrag(spec, g.title)}
-            />
-          );
-        })}
-        {/* klizne kapije kao sklop: četiri polazne varijante i korisnički šabloni */}
-        {!terrace && SLIDING_PRESETS.filter((p) => !hidden?.includes(`gate:slide:${p.id}`)).map((p) => (
-          <CatalogCard key={p.id} testId={`cat-sliding-${p.id}`} title={presetTitle(p.id)} subtitle={`Klizna kapija · ${p.name}`} thumb={<SlidingThumb preset={p.id} />}
-            onAdd={() => useAppStore.getState().addSlidingGate({ preset: p.id })} />
-        ))}
-        {!terrace && slidingTemplates?.map((t) => (
-          <CatalogCard key={t.id} testId={`cat-slidingtpl-${t.id}`} title={t.name} subtitle={`Moj šablon · ${presetTitle(t.spec.presetId) === 'Klizna kapija' ? 'klizna kapija' : presetTitle(t.spec.presetId)}`} thumb={<SlidingThumb template={t} />}
-            onAdd={() => useAppStore.getState().addSlidingGate({ template: t.id })} />
-        ))}
-        {!terrace && gateModels?.map((m) => (
-          <CatalogCard key={m.id} testId={`cat-gatemodel-${m.id}`} title={m.name} subtitle={`Model kapije · ${GATE_TYPE_LABELS[m.gate?.gateType ?? 'pedestrian']}`} thumb={<GateModelThumb model={m} />}
-            onAdd={() => useAppStore.getState().addGateFromModel(m.id)} />
-        ))}
-        {terrace && (
-          <CatalogCard testId="cat-stair" title="Stepenište" subtitle="Ograda koja prati stepenice" thumb={<ElementThumb kind="stair" model={model} />}
-            onAdd={() => addElement({ kind: 'fence', modelId: model, stair: true })} onDragStart={startDrag({ kind: 'fence', modelId: model, stair: true }, 'Stepenište')} />
+      <div className="space-y-3" data-testid="catalog-items">
+        {/* prvi red: platno i kapije */}
+        <div className="flex flex-wrap gap-3" data-testid="catalog-row-elements">
+          <CatalogCard testId="cat-fence" title="Platno" subtitle={def.name} thumb={<ElementThumb kind="fence" model={model} />} onAdd={() => addElement({ kind: 'fence', modelId: model })} onDragStart={startDrag({ kind: 'fence', modelId: model }, `Platno — ${def.name}`)} />
+          {terrace && (
+            <CatalogCard testId="cat-stair" title="Stepenište" subtitle="Ograda koja prati stepenice" thumb={<ElementThumb kind="stair" model={model} />}
+              onAdd={() => addElement({ kind: 'fence', modelId: model, stair: true })} onDragStart={startDrag({ kind: 'fence', modelId: model, stair: true }, 'Stepenište')} />
+          )}
+          {!terrace && GATE_CARDS.filter((g) => !hidden?.includes(`gate:${g.type}`)).map((g) => {
+            const spec: NewElementSpec = { kind: 'gate', gateType: g.type, modelId: model };
+            return (
+              <CatalogCard key={g.id} testId={`cat-gate-${g.id}`} title={g.title} subtitle={g.subtitle} thumb={<ElementThumb kind={g.type} model={model} />}
+                onAdd={() => addElement(spec)} onDragStart={startDrag(spec, g.title)} />
+            );
+          })}
+          {!terrace && SLIDING_CARDS.filter((c) => visiblePreset(c.manual) || visiblePreset(c.motor)).map((c) => (
+            <CatalogCard key={c.id} testId={`cat-gate-${c.id}`} title={c.title} subtitle={c.subtitle} thumb={<SlidingThumb preset={c.thumb} />}
+              choices={[
+                ...(visiblePreset(c.manual) ? [{ label: 'Ručna', testId: `cat-sliding-${c.manual}-add`, onAdd: () => useAppStore.getState().addSlidingGate({ preset: c.manual }) }] : []),
+                ...(visiblePreset(c.motor) ? [{ label: 'Motorna', testId: `cat-sliding-${c.motor}-add`, onAdd: () => useAppStore.getState().addSlidingGate({ preset: c.motor }) }] : []),
+              ]} />
+          ))}
+        </div>
+        {/* drugi red: prazan prostor i stubovi */}
+        <div className="flex flex-wrap gap-3" data-testid="catalog-row-posts">
+          <CatalogCard testId="cat-opening" title="Prazan prostor" subtitle="Slobodan prostor bez ispune" thumb={<ElementThumb kind="opening" model={model} />} onAdd={() => addElement({ kind: 'opening' })} onDragStart={startDrag({ kind: 'opening' }, 'Prazan prostor')} />
+          {!terrace && POST_TYPES.map((t) => (
+            <PostCard key={t.type} type={t.type} subtitle={t.subtitle} model={model} hasSelection={selection?.type === 'post'} onApply={() => applyPost(t.type)} />
+          ))}
+        </div>
+        {/* treći red (samo ako postoje): modeli kapija i šabloni klizne kapije iz podešavanja */}
+        {hasOwnRow && (
+          <div data-testid="catalog-row-custom">
+            <h3 className="font-semibold text-[13px] mb-2 text-muted">Moji modeli i šabloni kapija</h3>
+            <div className="flex flex-wrap gap-3">
+              {slidingTemplates?.map((t) => (
+                <CatalogCard key={t.id} testId={`cat-slidingtpl-${t.id}`} title={t.name} subtitle={`Moj šablon · ${presetTitle(t.spec.presetId) === 'Klizna kapija' ? 'klizna kapija' : presetTitle(t.spec.presetId)}`} thumb={<SlidingThumb template={t} />}
+                  onAdd={() => useAppStore.getState().addSlidingGate({ template: t.id })} />
+              ))}
+              {gateModels?.map((m) => (
+                <CatalogCard key={m.id} testId={`cat-gatemodel-${m.id}`} title={m.name} subtitle={`Model kapije · ${GATE_TYPE_LABELS[m.gate?.gateType ?? 'pedestrian']}`} thumb={<GateModelThumb model={m} />}
+                  onAdd={() => useAppStore.getState().addGateFromModel(m.id)} />
+              ))}
+            </div>
+          </div>
         )}
-        <CatalogCard testId="cat-opening" title="Prazan otvor" subtitle="Slobodan prostor bez ispune" thumb={<ElementThumb kind="opening" model={model} />} onAdd={() => addElement({ kind: 'opening' })} onDragStart={startDrag({ kind: 'opening' }, 'Prazan otvor')} />
       </div>
       {terrace && <p className="text-[12.5px] text-muted mt-3" data-testid="catalog-terrace-note">Ograda za terasu nema kapije ni zasebne stubove: stubovi su deo ograde.</p>}
-      {postsAlways && postsBlock}
       {/* ugaoni spoj se ne nudi: ugao se pravi na stubu ograde (ugao skretanja stuba) */}
-      {showAll && !postsAlways && (
-        <div data-testid="catalog-all">
-          {postsBlock}
-        </div>
-      )}
     </section>
   );
 }

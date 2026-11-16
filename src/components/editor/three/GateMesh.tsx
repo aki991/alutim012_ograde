@@ -1,3 +1,4 @@
+import { guideOverhangOf } from '../../../domain/gates/slidingAssembly';
 import { isTubesModel } from '../../../domain/models/tubes';
 import { useFrame } from '@react-three/fiber';
 import { Suspense, useLayoutEffect, useMemo, useRef } from 'react';
@@ -8,7 +9,6 @@ import { gateLeafPoses, mmToScene as s, slidingSpaceStatus } from '../../../doma
 import type { Gate } from '../../../domain/models/types';
 import { colorHex } from '../../../domain/models/catalog';
 import { dimOf } from '../../../domain/gates/slidingParts';
-import { guideOverhangOf } from '../../../domain/gates/slidingAssembly';
 import { leafHeightOf, placeSliding } from '../../../domain/gates/slidingLayout';
 import { SlidingParts3D } from '../../gates/SlidingParts3D';
 import { useViewStore } from '../../../store/useViewStore';
@@ -22,7 +22,7 @@ import { boxGeometry, darkMaterial, steelMaterial } from './materials';
 /** delovi krila koji dolaze iz modela (ne iz sklopa): u 3D se ne crtaju iz sklopa */
 const LEAF_COMPONENTS = ['frame', 'channels', 'infill'];
 
-const SLIDE_Z_MIN = 0.075; // klizno krilo ide ispred ograde (spolja), da ne prolazi kroz susedne elemente
+const SLIDE_Z_MIN = 0.075; // klizno krilo ide iza ograde (sa strane dvorišta, −Z), da ne prolazi kroz susedne elemente
 const ease = (o: number) => o * o * (3 - 2 * o);
 
 /** Ravan isečak koji prikazuje zahvat krila (pomoćni prikaz, može se isključiti). */
@@ -48,7 +48,7 @@ function SwingZone({ pivotX, ext, width, angle, color }: { pivotX: number; ext: 
   );
 }
 
-export function GateMesh({ gate, li, showZones, postWidthMm = 0 }: { gate: Gate; li: LaidOutItem; showZones: boolean; /** najveća širina stuba u projektu (mm): klizno krilo prolazi ispred stubova */ postWidthMm?: number }) {
+export function GateMesh({ gate, li, showZones, postWidthMm = 0 }: { gate: Gate; li: LaidOutItem; showZones: boolean; /** najveća širina stuba u projektu (mm): klizno krilo prolazi iza stubova (strana dvorišta) */ postWidthMm?: number }) {
   const height = s(gate.heightMm);
   const sliding = gate.gateType === 'sliding';
   // klizna kapija kao sklop: krilo je model (podignut od tla za odstojanje donje ivice rama), okov dolazi iz sklopa
@@ -69,10 +69,13 @@ export function GateMesh({ gate, li, showZones, postWidthMm = 0 }: { gate: Gate;
   const LEAF_HALF = leafZ ? Math.max(15, leafZ.depth / 2) : 25;
   const guideProps = leafZ ? { guideHalf: leafZ.guideHalf, guideOff: leafZ.guideOff } : {};
   const rollerMm = gate.sliding ? dimOf(gate.sliding, 'guide.rollerD') ?? 36 : 0;
-  const slideZ = sl ? Math.max(SLIDE_Z_MIN, (postWidthMm / 2 + rollerMm + 14 + LEAF_HALF) / 1000) : SLIDE_Z_MIN;
-  const postFaceMm = postWidthMm / 2 - slideZ * 1000;
+  // krilo klizi sa strane dvorišta (−Z), iza stubova gledano sa ulice: slideZ je negativan, slideMag je rastojanje od ose stubova do sredine krila
+  const slideMag = sl ? Math.max(SLIDE_Z_MIN, (postWidthMm / 2 + rollerMm + 14 + LEAF_HALF) / 1000) : SLIDE_Z_MIN;
+  const slideZ = -slideMag;
+  const postFaceMm = postWidthMm / 2 - slideMag * 1000;
   // stub na kraju krila (na strani otvaranja) nosi vođicu: lokalni X od kraja krila
   // (osa stuba je guideOverhang pre kraja krila: krilo na strani vođice prelazi preko stuba)
+  // vođica ima uvek svoje mere; ako ne leži na stubu, spaja se sa njim posebnim nosačem (širina vođice se ne menja)
   const postC = sl && gate.sliding ? sl.res.W - guideOverhangOf(gate.sliding) : 0;
   const postX: [number, number] | undefined = sl ? [postC - postWidthMm / 2, postC + postWidthMm / 2] : undefined;
   // visina brave iz mera kapije (od donje ivice krila do ose brave); bez mere ostaje podrazumevana
@@ -172,7 +175,7 @@ export function GateMesh({ gate, li, showZones, postWidthMm = 0 }: { gate: Gate;
       {sliding && !gate.sliding && (
         <group>
           <mesh geometry={boxGeometry} material={darkMaterial} scale={[s(li.clearWidth * 2), 0.03, 0.05]} position={[s(dir === 1 ? li.clearStart + li.clearWidth : li.clearEnd - li.clearWidth), 0.015, slideZ]} receiveShadow />
-          {gate.automation && <mesh geometry={boxGeometry} material={darkMaterial} scale={[0.36, 0.42, 0.26]} position={[s(dir === 1 ? li.clearStart + 180 : li.clearEnd - 180), 0.21, slideZ + 0.2]} castShadow />}
+          {gate.automation && <mesh geometry={boxGeometry} material={darkMaterial} scale={[0.36, 0.42, 0.26]} position={[s(dir === 1 ? li.clearStart + 180 : li.clearEnd - 180), 0.21, slideZ - 0.2]} castShadow />}
         </group>
       )}
       {!sliding && gate.automation && (

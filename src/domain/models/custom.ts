@@ -35,6 +35,8 @@ export interface CustomPart {
   cut45?: boolean;
   /** deo rama sa uglom 45° na krajevima: koja je ivica spoljna (duža): „lo“ = niža strana preseka u lokalnoj osi, „hi“ = viša; bez vrednosti krajevi se crtaju ravno */
   miter?: 'lo' | 'hi';
+  /** deo rama: koji su krajevi pod 45° (početak, kraj ose); bez vrednosti su oba. Slobodan kraj rama (bez susedne strane) je ravan. */
+  miterEnds?: [boolean, boolean];
   /** pomeraj po dubini (mm, + ka posmatraču) */
   z: number;
   /** sopstvena boja dela (RAL ključ ili #hex), npr. crn ram a sive prečke; bez vrednosti deo je u boji modela */
@@ -57,7 +59,12 @@ export interface CustomModel {
   gate?: import('../gates/gateModels').GateConfig;
   /** model zamenjuje model iz kataloga („sačuvaj na istom tipu“): u izboru modela stoji umesto njega, a projekti ga koriste */
   replaces?: string;
+  /** upozorenja iz provere crteža koja je radnik prihvatio (ključevi); ne prikazuju se kao aktivna */
+  acceptedWarnings?: string[];
 }
+
+/** koji krajevi dela rama su pod 45° (početak i kraj ose); deo koji nije deo rama nema ugaone krajeve */
+export const miterEndsOf = (p: Pick<CustomPart, 'cut45' | 'miter' | 'miterEnds'>): [boolean, boolean] => (p.cut45 && p.miter ? p.miterEnds ?? [true, true] : [false, false]);
 
 export const CUSTOM_KIND_LABELS = { fence: 'Ograda', gate: 'Kapija' } as const;
 

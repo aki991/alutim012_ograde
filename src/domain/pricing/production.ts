@@ -88,10 +88,16 @@ export function buildCutList(project: Project, specs?: ModelSpecs, materials?: M
       const qty = Math.round(ev.qty);
       if (qty <= 0 || len <= 0) continue;
       const profile = materials ? materialName(materials, project.partMaterials?.[ev.part.materialId] ?? ev.part.materialId) : ev.part.name;
-      const miter = ev.part.group === 'Ramovi' || undefined;
+      // deo rama sa jednim ugaonim krajem (ram nije oko cele ograde): 45° samo na tom kraju, drugi je ravan
+      const mEnds = ev.part.miterEnds;
+      const partial = ev.part.group === 'Ramovi' && !!mEnds && !(mEnds[0] && mEnds[1]);
+      const miter = (ev.part.group === 'Ramovi' && !partial) || undefined;
       // deo nacrtanog modela nosi naziv svoje uloge (npr. „Ram — gornja i donja prečka“), da se zna koji je koji deo
       const partName = ev.part.role ?? ev.part.name;
-      const faceMm = miter ? ev.part.miterMm : undefined;
+      const faceMm = miter || (partial && (mEnds![0] || mEnds![1])) ? ev.part.miterMm : undefined;
+      const cutEnds: Pick<CutRow, 'ends' | 'endShape'> | null = partial && (mEnds![0] || mEnds![1])
+        ? { ends: [[mEnds![0] ? 45 : 90], [mEnds![1] ? 45 : 90]], endShape: [mEnds![0] ? [[0, 0], [1, 1]] : [[0, 0], [0, 1]], mEnds![1] ? [[0, 0], [1, 1]] : [[0, 0], [0, 1]]] }
+        : null;
       // tarabice sa lukom: svaka grupa iste dužine je poseban red krojne liste
       if (slats && ev.part.lengthMm === 'MAINLEN-CAPH') {
         const byLen = new Map<number, number>();
@@ -105,7 +111,7 @@ export function buildCutList(project: Project, specs?: ModelSpecs, materials?: M
       const key = `${partName}|${len}`;
       const cur = group.get(key);
       if (cur) cur.qty += qty;
-      else group.set(key, { element: name, index: li.index, part: partName, profile, lengthMm: len, qty, miter, ...(faceMm ? { faceMm } : {}), note: [ev.part.note, miter && !/45/.test(ev.part.note ?? '') ? 'rez 45° na oba kraja' : '', stairNote].filter(Boolean).join(' · ') || undefined });
+      else group.set(key, { element: name, index: li.index, part: partName, profile, lengthMm: len, qty, miter, ...(cutEnds ?? {}), ...(faceMm ? { faceMm } : {}), note: [ev.part.note, miter && !/45/.test(ev.part.note ?? '') ? 'rez 45° na oba kraja' : '', stairNote].filter(Boolean).join(' · ') || undefined });
     }
     rows.push(...group.values());
   }

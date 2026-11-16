@@ -1,5 +1,5 @@
 import { FENCE_MODEL_LIST, FENCE_MODELS, type FenceModelDef } from './catalog';
-import { partBounds, resolveParts, type CustomModel, type CustomPart, type ResolvedPart } from './custom';
+import { miterEndsOf, partBounds, resolveParts, type CustomModel, type CustomPart, type ResolvedPart } from './custom';
 import { applyGuides, guidesOf, scaleWithGuides } from './guides';
 import { isFramePart, resizeWithFrame } from './frame';
 import { materialShape, sectionFace, type MatShape } from './materialShape';
@@ -120,7 +120,7 @@ function specKey(m: CustomModel, p: CustomPart, guideIds: Set<string>) {
   const mat = MATERIALS.find((x) => x.id === p.materialId);
   const shape = mat ? materialShape(mat) : null;
   const role = roleOf(m, p, shape, guideIds);
-  let key: string; let lengthMm: string | undefined; let group: SpecPart['group'] = 'Profili ispune'; let miterMm: number | undefined;
+  let key: string; let lengthMm: string | undefined; let group: SpecPart['group'] = 'Profili ispune'; let miterMm: number | undefined; let miterEnds: [boolean, boolean] | undefined;
   if (shape?.type === 'piece') { key = `${p.materialId}|kom`; group = 'Nosači i spojnice'; }
   else if (shape?.type === 'sheet' || p.heightMm) key = `${p.materialId}|m2`;
   else {
@@ -131,10 +131,12 @@ function specKey(m: CustomModel, p: CustomPart, guideIds: Set<string>) {
       : Math.abs(Math.cos(a)) >= Math.abs(Math.sin(a)) ? `${r1(p.lengthMm)}*W/${m.widthMm}` : `${r1(p.lengthMm)}*H/${m.heightMm}`;
     // deo rama: širina profila u ravni spoja (okretanje preseka) određuje koliko komadi mogu da dele kosi rez
     miterMm = p.cut45 && shape?.type === 'linear' ? sectionFace(shape.section, p.rot).face : undefined;
-    key = `${p.materialId}|${lengthMm}|${p.tiltDeg ?? 0}|${p.cut45 ? 45 : 0}|${miterMm ?? ''}|${role.kind}`;
+    const me = miterEndsOf(p);
+    miterEnds = p.cut45 && p.miter && !(me[0] && me[1]) ? me : undefined;
+    key = `${p.materialId}|${lengthMm}|${p.tiltDeg ?? 0}|${p.cut45 ? 45 : 0}|${miterMm ?? ''}|${role.kind}${miterEnds ? `|${+miterEnds[0]}${+miterEnds[1]}` : ''}`;
     if (p.cut45) group = 'Ramovi';
   }
-  return { key, lengthMm, group, miterMm, mat, role };
+  return { key, lengthMm, group, miterMm, miterEnds, mat, role };
 }
 
 /** Naziv uloge svakog dela crteža (ID dela → npr. „Ram — gornja i donja prečka“), isti kao u krojnoj listi i radnom nalogu. */
@@ -155,11 +157,11 @@ export function customSpec(m: CustomModel): SpecPart[] {
   const roles = customPartRoles(m);
   const guideIds = new Set(m.parts.flatMap((p) => p.guides ?? []));
   for (const p of m.parts) {
-    const { key, lengthMm, group, miterMm, mat } = specKey(m, p, guideIds);
+    const { key, lengthMm, group, miterMm, miterEnds, mat } = specKey(m, p, guideIds);
     const name = mat?.name ?? 'Deo sa crteža (materijal obrisan)';
     const role = lengthMm ? roles.get(p.id) : undefined;
-    const tilt = p.cut45 && !p.heightMm ? 'ram: rez 45° na oba kraja; dužina je spoljna mera' : p.tiltDeg ? `koso: nagib ${String(Math.round(Math.abs(p.tiltDeg) * 100) / 100).replace('.', ',')}° od ravni ograde` : '';
-    const row = rows.get(key) ?? { id: `cs_${rows.size}`, name, materialId: p.materialId, group, qty: '0', lengthMm, enabled: true, n: 0, area: 0, ...(miterMm ? { miterMm } : {}), ...(role ? { role } : {}), ...(tilt ? { note: tilt } : {}) };
+    const tilt = p.cut45 && !p.heightMm ? (miterEnds ? `ram: rez 45° samo na ${miterEnds[0] && miterEnds[1] ? 'oba kraja' : miterEnds[0] || miterEnds[1] ? 'jednom kraju (ugao rama), drugi je ravan' : 'ugaonim krajevima — nema ih, ravni rezovi'}; dužina je spoljna mera` : 'ram: rez 45° na oba kraja; dužina je spoljna mera') : p.tiltDeg ? `koso: nagib ${String(Math.round(Math.abs(p.tiltDeg) * 100) / 100).replace('.', ',')}° od ravni ograde` : '';
+    const row = rows.get(key) ?? { id: `cs_${rows.size}`, name, materialId: p.materialId, group, qty: '0', lengthMm, enabled: true, n: 0, area: 0, ...(miterMm ? { miterMm } : {}), ...(miterEnds ? { miterEnds } : {}), ...(role ? { role } : {}), ...(tilt ? { note: tilt } : {}) };
     row.n += 1; row.area += (p.lengthMm * (p.heightMm ?? 0)) / 1e6;
     rows.set(key, row);
   }

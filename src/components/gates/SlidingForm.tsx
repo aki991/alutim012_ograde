@@ -124,7 +124,7 @@ export function SlidingForm({ spec, W, H, opening, onSpec, onWidth, onHeight, on
       <div className="grid gap-1 text-[13px]"><span>Pogon</span>
         <Seg<SlidingActuation> testId="sl-actuation" value={spec.actuation} options={[['manual', 'Ručna'], ['motor', 'Motorna']]} onChange={(v) => onSpec({ actuation: v })} />
       </div>
-      <div className="grid gap-1 text-[13px]"><span>Smer otvaranja (gledano iz dvorišta)</span>
+      <div className="grid gap-1 text-[13px]"><span>Smer otvaranja (gledano sa ulice)</span>
         <Seg<'left' | 'right'> testId="sl-opening" value={opening} options={[['left', 'Ulevo'], ['right', 'Udesno']]} onChange={onOpening} />
       </div>
 

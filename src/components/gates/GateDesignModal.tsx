@@ -4,10 +4,14 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { NumInput } from '../forms/NumInput';
 import {
   applyExample, DIM_BY_KEY, dimsFor, emptyDesign, equationsFor, fmt, GROUP_LABELS, HW_ROLE_LABELS,
-  mirrorDesign, missingHardware, ORIGIN_LABELS, requiredHardware, resolveGate, setDim, setSolve, SYSTEM_LABELS, systemOf,
+  gateBottomGapMm, GATE_POST_EXTRA_MM, mirrorDesign, missingHardware, ORIGIN_LABELS, requiredHardware, resolveGate, setDim, setSolve, SYSTEM_LABELS, systemOf,
   type DimGroup, type ExtraDim, type GateDesign, type GateHardware, type HwRole,
 } from '../../domain/gates/design';
 import { computeLayout, postHalfSum } from '../../domain/geometry/layout';
+import { resetPostHeights } from '../../domain/geometry/operations';
+import { applyPostRoles } from '../../domain/models/factories';
+import { LIMITS } from '../../domain/validation/limits';
+import { postDimsOf } from '../../domain/gates/gateModels';
 import { evaluateSpec, specFor, specVars } from '../../domain/models/spec';
 import { gateLeafPoses, gateSpecWidth } from '../../domain/geometry/gates';
 import { gateBomLines } from '../../domain/pricing/calc';
@@ -19,9 +23,9 @@ import { SaveGateModelDialog } from './SaveGateModelDialog';
 import { Modal } from '../ui/Modal';
 import { GateSketch } from './GateSketch';
 
-type Tab = 'mere' | 'delovi' | 'izrada';
+type Tab = 'mere' | 'delovi' | 'izrada' | 'stubovi';
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'mere', label: 'Mere' }, { id: 'delovi', label: 'Okovi' }, { id: 'izrada', label: 'Sastavnica' },
+  { id: 'mere', label: 'Mere' }, { id: 'delovi', label: 'Okovi' }, { id: 'izrada', label: 'Sastavnica' }, { id: 'stubovi', label: 'Stubovi' },
 ];
 
 
@@ -36,7 +40,8 @@ function IssueRow({ level, msg }: { level: string; msg: string }) {
   return <div className={`flex gap-1.5 items-start text-[12.5px] ${tone}`} data-testid={`gd-issue-${level}`}><Icon size={14} className="mt-0.5 shrink-0" /><span>{msg}</span></div>;
 }
 
-export function GateDesignModal({ projectId, itemId, onClose, embedded }: { projectId: string; itemId: string; onClose: () => void; /** otvoreno iz crtanja modela kapije: nema „Sačuvaj kao model“ */ embedded?: boolean }) {
+export function GateDesignModal({ projectId, itemId, onClose, embedded, inline }: { projectId: string; itemId: string; onClose: () => void; /** otvoreno iz crtanja modela kapije: nema „Sačuvaj kao model“ */ embedded?: boolean;
+  /** isti sadržaj bez prozora: popunjava prostor ispod trake alata (prikaz „Mere kapije“ u crtanju modela) */ inline?: boolean }) {
   const project = useAppStore((s) => s.projects.find((p) => p.id === projectId));
   const materials = useAppStore((s) => s.materials);
   const settings = useAppStore((s) => s.settings);
@@ -55,7 +60,7 @@ export function GateDesignModal({ projectId, itemId, onClose, embedded }: { proj
   const res = resolveGate(g, li.clearWidth);
   const st = useAppStore.getState();
   const update = (fn: (d: GateDesign) => GateDesign, key?: string) =>
-    st.mutate((p) => ({ ...p, updatedAt: new Date().toISOString(), items: p.items.map((it) => (it.id === itemId && it.kind === 'gate' ? { ...it, design: fn(it.design ?? emptyDesign(systemOf(it))) } : it)) }), key ?? null);
+    st.mutate((p) => applyPostRoles({ ...p, updatedAt: new Date().toISOString(), items: p.items.map((it) => (it.id === itemId && it.kind === 'gate' ? { ...it, design: fn(it.design ?? emptyDesign(systemOf(it))) } : it)) }), key ?? null);
   const patchGate = (patch: Partial<Gate>) => st.patchItem(itemId, patch);
   const pick = (key: string) => {
     setTab('mere');
@@ -65,12 +70,13 @@ export function GateDesignModal({ projectId, itemId, onClose, embedded }: { proj
   const warns = res.issues.filter((i) => i.level === 'warn').length;
   const label = itemLabel(project.items, index);
 
-  return (
-    <Modal title={`Mere kapije — ${design.template?.name ?? label} (${SYSTEM_LABELS[sys]})`} onClose={onClose} fullscreen
-      headerActions={<>{!embedded && <button className="btn btn-sm" data-testid="gd-save-model" onClick={() => setSaveOpen(true)}>Sačuvaj kao model</button>}<button className="btn btn-sm" data-testid="gd-pdf" onClick={async () => { const { downloadGatePdf } = await import('../../services/pdfGate'); await downloadGatePdf(project, itemId, materials, settings); }}><FileDown size={14} />PDF mera kapije</button></>}>
+  const title = `Mere kapije — ${design.template?.name ?? label} (${SYSTEM_LABELS[sys]})`;
+  const headerActions = <>{!embedded && <button className="btn btn-sm" data-testid="gd-save-model" onClick={() => setSaveOpen(true)}>Sačuvaj kao model</button>}<button className="btn btn-sm" data-testid="gd-pdf" onClick={async () => { const { downloadGatePdf } = await import('../../services/pdfGate'); await downloadGatePdf(project, itemId, materials, settings); }}><FileDown size={14} />PDF mera kapije</button></>;
+  const body = (
+    <>
       <div className={`grid lg:grid-cols-[minmax(0,1fr)_400px] gap-4`} data-testid="gate-design">
         {/* skica i provere ostaju na ekranu dok se lista kota skroluje */}
-        <div className="min-w-0 lg:sticky lg:top-0 lg:self-start lg:max-h-[calc(100dvh-110px)] lg:overflow-auto scroll-thin" data-testid="gd-left">
+        <div className={`min-w-0 lg:sticky lg:top-0 lg:self-start ${inline ? 'lg:max-h-[calc(100dvh-230px)]' : 'lg:max-h-[calc(100dvh-110px)]'} lg:overflow-auto scroll-thin`} data-testid="gd-left">
           <div className="mb-1 flex items-center gap-1 text-[12.5px]" data-testid="gd-view-toggle">
             <span className="text-muted">Prikaz:</span>
             <button className={`btn btn-sm ${!showDims ? 'btn-primary' : ''}`} data-testid="gd-view-2d" onClick={() => setShowDims(false)}>2D crtež</button>
@@ -92,11 +98,62 @@ export function GateDesignModal({ projectId, itemId, onClose, embedded }: { proj
           {tab === 'mere' && <DimsTab project={project} index={index} g={g} design={design} res={res} update={update} patchGate={patchGate} clearWidth={li.clearWidth} />}
           {tab === 'delovi' && <PartsTab g={g} design={design} update={update} materials={materials} sys={sys} />}
           {tab === 'izrada' && <ProductionTab project={project} index={index} g={g} materials={materials} clearStart={li.clearStart} clearEnd={li.clearEnd} />}
+          {tab === 'stubovi' && <PostsTab project={project} index={index} g={g} />}
         </div>
       </div>
       {savedMsg && <p className="text-[12.5px] text-emerald-700 mt-2" data-testid="gd-model-msg">{savedMsg}</p>}
-      {saveOpen && <SaveGateModelDialog gate={g} clearWidthMm={li.clearWidth} defaultName={label} onClose={() => setSaveOpen(false)} onSaved={(id, nm, ver) => { update((d) => ({ ...d, template: { id, name: nm, version: ver } })); setSaveOpen(false); setSavedMsg(`Model „${nm}“ sačuvan (v${ver}).`); }} />}
-    </Modal>
+      {saveOpen && <SaveGateModelDialog gate={g} clearWidthMm={li.clearWidth} defaultName={label} posts={postDimsOf(project.posts[index], project.posts[index + 1])} onClose={() => setSaveOpen(false)} onSaved={(id, nm, ver) => { update((d) => ({ ...d, template: { id, name: nm, version: ver } })); setSaveOpen(false); setSavedMsg(`Model „${nm}“ sačuvan (v${ver}).`); }} />}
+    </>
+  );
+  if (inline) {
+    return (
+      <div className="h-full min-h-0 flex flex-col bg-white" data-testid="gate-design-inline">
+        <div className="flex items-center justify-between gap-2 px-5 pt-3 pb-2 shrink-0 border-b border-line">
+          <h2 className="text-lg font-bold">{title}</h2>
+          <div className="flex items-center gap-2">{headerActions}</div>
+        </div>
+        <div className="px-5 py-4 flex-1 min-h-0 overflow-auto scroll-thin">{body}</div>
+      </div>
+    );
+  }
+  return <Modal title={title} onClose={onClose} fullscreen headerActions={headerActions}>{body}</Modal>;
+}
+
+/* ---------- Stubovi ---------- */
+/** mere stubova uz kapiju (levi i desni, gledano sa ulice): širina preseka i visina; visina je podrazumevano vrh kapije + 50 mm */
+function PostsTab({ project, index, g }: { project: Project; index: number; g: Gate }) {
+  const st = useAppStore.getState();
+  const gap = gateBottomGapMm(g);
+  const gateTop = g.heightMm + gap;
+  const [err, setErr] = useState<string | null>(null);
+  const posts = [project.posts[index], project.posts[index + 1]];
+  return (
+    <div className="space-y-3" data-testid="gd-posts">
+      <p className="text-[12.5px] text-muted">
+        Stubovi uz kapiju. Visina stuba je podrazumevano za {GATE_POST_EXTRA_MM} mm veća od vrha kapije (visina kapije{gap > 0 ? ` + donji zazor ${fmt(gap, '')}` : ''} = {fmt(gateTop, '')} mm od poda); kad se zada ručno, ostaje kakva je zadata.
+        Stub koji deli kapija sa susednom ogradom menja se i za tu ogradu.
+      </p>
+      {err && <p className="text-[12.5px] text-[#b42318]" role="alert" data-testid="gd-post-err">{err}</p>}
+      {posts.map((p, k) => p ? (
+        <div key={p.id} className="card p-3" data-testid={`gd-post-${k}`}>
+          <div className="font-semibold text-[13px] mb-2">{k === 0 ? 'Levi stub' : 'Desni stub'} <span className="font-normal text-muted">(gledano sa ulice)</span></div>
+          <div className="grid grid-cols-[minmax(0,1fr)_110px_auto] items-center gap-x-3 gap-y-2 text-[13px]">
+            <label htmlFor={`gd-post-w-${k}`}>Širina preseka<div className="text-[11.5px] text-muted">{p.custom ? 'ručno zadata' : 'automatska'}</div></label>
+            <NumInput value={p.widthMm} testId={`gd-post-w-${k}`} ariaLabel={`${k === 0 ? 'Levi' : 'Desni'} stub — širina preseka`}
+              onCommit={(v) => { if (v === null) return; if (v < LIMITS.postWidth.min || v > LIMITS.postWidth.max) { setErr(`Širina stuba mora biti od ${LIMITS.postWidth.min} do ${LIMITS.postWidth.max} mm.`); return; } setErr(null); st.patchPost(p.id, { widthMm: v }, 'gd-pw'); }} />
+            <span className="text-muted text-[12px]">mm</span>
+            <label htmlFor={`gd-post-h-${k}`}>Visina stuba<div className="text-[11.5px] text-muted">{p.heightCustom ? 'ručno zadata' : `automatska: vrh kapije + ${GATE_POST_EXTRA_MM}`}</div></label>
+            <NumInput value={p.heightMm} testId={`gd-post-h-${k}`} ariaLabel={`${k === 0 ? 'Levi' : 'Desni'} stub — visina`}
+              onCommit={(v) => { if (v === null) return; if (v < LIMITS.postHeight.min || v > LIMITS.postHeight.max) { setErr(`Visina stuba mora biti od ${LIMITS.postHeight.min} do ${LIMITS.postHeight.max} mm.`); return; } setErr(null); st.patchPost(p.id, { heightMm: v }, 'gd-ph'); }} />
+            <span className="text-muted text-[12px]">mm</span>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-[12.5px]">
+            <span className="text-muted" data-testid={`gd-post-over-${k}`}>Stub viri iznad vrha kapije: <b className="text-ink">{fmt(p.heightMm - gateTop, '')} mm</b></span>
+            {p.heightCustom && <button className="btn btn-sm" data-testid={`gd-post-auto-${k}`} onClick={() => { setErr(null); st.mutate((pr) => resetPostHeights(pr, [p.id])); }}>Vrati automatsku visinu</button>}
+          </div>
+        </div>
+      ) : null)}
+    </div>
   );
 }
 
@@ -124,15 +181,11 @@ function DimsTab({ project, index, g, design, res, update, patchGate, clearWidth
         )}
         <label className="flex flex-col gap-1">{g.gateType === 'sliding' ? 'Smer otvaranja' : 'Strana šarki'}
           <select className="input !py-1" data-testid="gd-opening" value={g.opening} onChange={(e) => patchGate({ opening: e.target.value as Gate['opening'] })}>
-            <option value="right">{g.gateType === 'sliding' ? 'Udesno (gledano iz dvorišta)' : 'Desno'}</option><option value="left">{g.gateType === 'sliding' ? 'Ulevo' : 'Levo'}</option>
+            <option value="right">{g.gateType === 'sliding' ? 'Udesno (gledano sa ulice)' : 'Desno'}</option><option value="left">{g.gateType === 'sliding' ? 'Ulevo' : 'Levo'}</option>
           </select></label>
         <label className="flex flex-col gap-1">Pogon
           <select className="input !py-1" data-testid="gd-drive" value={g.automation ? 'motor' : 'manual'} onChange={(e) => patchGate({ automation: e.target.value === 'motor' })}>
             <option value="manual">Ručna</option><option value="motor">Motorizovana</option>
-          </select></label>
-        <label className="flex flex-col gap-1">Strana gledanja
-          <select className="input !py-1" value={design.viewFrom ?? 'dvoriste'} onChange={(e) => update((d) => ({ ...d, viewFrom: e.target.value as GateDesign['viewFrom'] }))}>
-            <option value="dvoriste">Iz dvorišta</option><option value="ulica">Sa ulice</option>
           </select></label>
         {sys === 'swing_double' && (
           <label className="flex flex-col gap-1">Aktivno krilo
