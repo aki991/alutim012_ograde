@@ -655,9 +655,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
             {model.replaces
               ? <span className="flex-1 min-w-[240px]">Dorada modela <b>{baseName}</b>: ovaj crtež je sada taj model iz kataloga (isti tip). Projekti sa ovim modelom koriste dorađen crtež.</span>
               : <span className="flex-1 min-w-[240px]">Dorada modela <b>{baseName}</b>: izmene se čuvaju kao <b>nov tip</b> „{model.name}“, a original ostaje. Ako želite da ovo bude isti model, sačuvajte na istom tipu.</span>}
-            {model.replaces
-              ? <button className="btn btn-sm" data-testid="rework-restore" onClick={() => setTypeAction('restore')}>Vrati originalni model</button>
-              : <button className="btn btn-sm btn-primary" data-testid="rework-replace" onClick={() => setTypeAction('replace')}>Sačuvaj na istom tipu</button>}
+            {!model.replaces && <button className="btn btn-sm btn-primary" data-testid="rework-replace" onClick={() => setTypeAction('replace')}>Sačuvaj na istom tipu</button>}
             {typeAction && (
               <ConfirmDialog title={typeAction === 'replace' ? 'Sačuvaj na istom tipu' : 'Vrati originalni model'} confirmLabel={typeAction === 'replace' ? 'Sačuvaj na istom tipu' : 'Vrati original'}
                 message={typeAction === 'replace'

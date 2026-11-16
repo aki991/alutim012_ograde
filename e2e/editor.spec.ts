@@ -1540,16 +1540,10 @@ test('dorada modela iz kataloga: crtež od delova, nov tip ili isti tip (projekt
   await expect(page.getByTestId('field-model').locator('option:checked')).toHaveText('Antracit — horizontalne žaluzine');
   const custom = await page.getByTestId('field-model').inputValue();
   expect(custom).toMatch(/^cm/);
-  // vraćanje originala: projekat ponovo koristi model iz kataloga, a dorada ostaje kao poseban model
+  // vraćanja originala nema: dorađen model ostaje zamena originala
   await page.getByRole('link', { name: 'Modeli ograda' }).click();
-  await page.getByTestId('restore-model-louver_dark').click();
-  await page.getByRole('dialog').getByRole('button', { name: 'Vrati original' }).click();
-  await expect(page.getByTestId('model-card-louver_dark')).not.toHaveAttribute('data-replaced', 'true');
-  await expect(page.getByTestId('custom-model-card')).toHaveCount(2); // dorada ostaje kao poseban model
-  await page.getByRole('link', { name: 'Projekti' }).click(); // u aplikaciji (bez ponovnog učitavanja, koje bi preteklo automatsko čuvanje)
-  await page.getByText('Ograda oko dvorišta').click();
-  await page.locator('[data-hit="item"]').first().click();
-  await expect(page.getByTestId('field-model')).toHaveValue('louver_dark');
+  await expect(page.getByTestId('model-card-louver_dark')).toHaveAttribute('data-replaced', 'true');
+  await expect(page.getByTestId('restore-model-louver_dark')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 

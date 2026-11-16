@@ -21,7 +21,6 @@ export default function ModelsPage({ terrace = false }: { terrace?: boolean }) {
   const [choice, setChoice] = useState<FenceModelId | null>(null);
   const [specFor, setSpecFor] = useState<FenceModelId | null>(null);
   const [del, setDel] = useState<CustomModel | null>(null);
-  const [restore, setRestore] = useState<CustomModel | null>(null);
   const [delBuiltin, setDelBuiltin] = useState<FenceModelId | null>(null);
   const hiddenModels = useAppStore((s) => s.settings.hiddenModels);
   const list = terrace ? TERRACE_MODEL_LIST : YARD_MODEL_LIST;
@@ -103,7 +102,6 @@ export default function ModelsPage({ terrace = false }: { terrace?: boolean }) {
                     <button className="btn btn-danger shrink-0" data-testid={`delete-model-${m.id}`} aria-label={`Obriši model ${m.name}`} title="Obriši model" onClick={() => setDelBuiltin(m.id)}><Trash2 size={16} /></button>
                   </div>
                   <button className="btn btn-primary" data-testid={`use-model-${m.id}`} onClick={() => useModel(rep.id as FenceModelId)}>Koristi model</button>
-                  <button className="btn" data-testid={`restore-model-${m.id}`} onClick={() => setRestore(rep)}><RotateCcw size={16} />Vrati original</button>
                 </div>
               </div>
             </article>
@@ -142,11 +140,6 @@ export default function ModelsPage({ terrace = false }: { terrace?: boolean }) {
         })}
       </div>
       {del && <ConfirmDialog title="Brisanje modela" danger confirmLabel="Obriši" message={usedBy(del.id).length ? <>Model <b>{del.name}</b> koriste projekti: <b>{usedBy(del.id).join(', ')}</b>. Ako ga obrišete, ti projekti prelaze na podrazumevani model iz kataloga. Crtež se ne može vratiti.</> : <>Obrisati nacrtani model <b>{del.name}</b>? Crtež se ne može vratiti.</>} onCancel={() => setDel(null)} onConfirm={() => { useAppStore.getState().removeCustomModel(del.id); setDel(null); }} />}
-      {restore && restore.replaces && (
-        <ConfirmDialog title="Vrati originalni model" confirmLabel="Vrati original"
-          message={<>Model <b>{FENCE_MODELS[restore.replaces as FenceModelId]?.name}</b> se vraća na original iz kataloga, a projekti koji ga koriste ponovo dobijaju originalni crtež. Dorađen crtež ostaje sačuvan kao poseban model u „Moji modeli“.</>}
-          onCancel={() => setRestore(null)} onConfirm={() => { useAppStore.getState().restoreBuiltin(restore.id); setRestore(null); }} />
-      )}
       {delBuiltin && (
         <ConfirmDialog title="Brisanje modela" danger confirmLabel="Obriši"
           message={<>{usedBy(delBuiltin).length ? <>Model <b>{FENCE_MODELS[delBuiltin].name}</b> koriste projekti: <b>{usedBy(delBuiltin).join(', ')}</b>; oni ostaju isti. </> : <>Model <b>{FENCE_MODELS[delBuiltin].name}</b> se uklanja iz kataloga. </>}Obrisane modele možete vratiti dugmetom „Vrati obrisane modele“.</>}
