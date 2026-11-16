@@ -1,5 +1,6 @@
 import { MoreHorizontal } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { MODEL_IMAGES } from '../../assets/models';
 import { PHOTOS } from '../../assets/photos';
 import { FENCE_MODELS } from '../../domain/models/catalog';
@@ -73,24 +74,44 @@ export interface MenuAction { label: string; onClick: () => void; danger?: boole
 
 export function ActionsMenu({ actions, label = 'Akcije' }: { actions: MenuAction[]; label?: string }) {
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  // meni se crta preko cele stranice (portal, fixed), pa ga tabela sa skrolom ne seče
+  useLayoutEffect(() => {
+    if (!open || !btnRef.current) return;
+    const r = btnRef.current.getBoundingClientRect();
+    const h = menuRef.current?.offsetHeight ?? actions.length * 40 + 12;
+    const below = window.innerHeight - r.bottom - 8;
+    const top = below >= h ? r.bottom + 4 : Math.max(8, r.top - h - 4);
+    setPos({ top, left: Math.max(8, r.right - 176) });
+  }, [open, actions.length]);
   useEffect(() => {
     if (!open) return;
-    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
+    const down = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (ref.current?.contains(t) || menuRef.current?.contains(t)) return;
+      setOpen(false);
+    };
+    const close = () => setOpen(false);
+    document.addEventListener('mousedown', down);
+    window.addEventListener('resize', close);
+    window.addEventListener('scroll', close, true);
+    return () => { document.removeEventListener('mousedown', down); window.removeEventListener('resize', close); window.removeEventListener('scroll', close, true); };
   }, [open]);
   return (
     <div className="relative inline-block" ref={ref}>
-      <button className="btn btn-icon !border-transparent" aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}><MoreHorizontal size={18} /></button>
-      {open && (
-        <div role="menu" className="absolute right-0 mt-1 w-44 card p-1.5 z-40">
+      <button ref={btnRef} className="btn btn-icon !border-transparent" aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={() => { setPos(null); setOpen((o) => !o); }}><MoreHorizontal size={18} /></button>
+      {open && createPortal(
+        <div ref={menuRef} role="menu" className="fixed w-44 card p-1.5 z-[100]" style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999 }}>
           {actions.map((a) => (
             <button key={a.label} role="menuitem" className={`w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-slate-50 ${a.danger ? 'text-[#b42318]' : ''}`} onClick={() => { setOpen(false); a.onClick(); }}>
               {a.label}
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
