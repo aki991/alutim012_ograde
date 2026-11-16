@@ -37,7 +37,22 @@ function extruded(key: string, section: Section, rot: number, lengthMm: number):
   return g;
 }
 
+/** kupola čepa: polu-elipsa izvučena po dubini (sredina po z) */
+function DomeMesh({ s, material }: { s: Extract<Solid, { prim: 'dome' }>; material: THREE.Material }) {
+  const geometry = useMemo(() => {
+    const shape = new THREE.Shape();
+    shape.moveTo(s.w / 2, 0);
+    shape.absellipse(0, 0, s.w / 2, s.h, 0, Math.PI, false, 0);
+    shape.closePath();
+    const g = new THREE.ExtrudeGeometry(shape, { depth: s.d, bevelEnabled: false, curveSegments: 24 });
+    g.translate(0, 0, -s.d / 2);
+    return g;
+  }, [s.w, s.h, s.d]);
+  return <mesh geometry={geometry} material={material} position={s.pos} castShadow />;
+}
+
 function SolidMesh({ s, material }: { s: Solid; material: THREE.Material }) {
+  if (s.prim === 'dome') return <DomeMesh s={s} material={material} />;
   if (s.prim === 'box') return <mesh geometry={boxGeometry} material={material} position={s.pos} scale={s.size} castShadow />;
   if (s.prim === 'pyr') return <mesh geometry={pyrGeometry} material={material} position={[s.pos[0], s.pos[1] + s.h / 2, s.pos[2]]} scale={[s.base[0], s.h, s.base[1]]} castShadow />;
   return <mesh geometry={cylGeometry} material={material} position={s.pos} scale={[s.r, s.len, s.r]} rotation={s.axis === 'x' ? [0, 0, Math.PI / 2] : s.axis === 'z' ? [Math.PI / 2, 0, 0] : [0, 0, 0]} castShadow />;

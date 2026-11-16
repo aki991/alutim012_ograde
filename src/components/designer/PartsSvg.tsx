@@ -11,6 +11,7 @@ function SolidFront({ s, fill, sw }: { s: Solid; fill: string; sw: number }) {
   const common = { fill, stroke: EDGE, strokeOpacity: 0.6, strokeWidth: sw, vectorEffect: 'non-scaling-stroke' as const };
   if (s.prim === 'box') return <rect x={s.pos[0] - s.size[0] / 2} y={s.pos[1] - s.size[1] / 2} width={s.size[0]} height={s.size[1]} {...common} />;
   if (s.prim === 'pyr') return <polygon points={`${s.pos[0] - s.base[0] / 2},${s.pos[1]} ${s.pos[0] + s.base[0] / 2},${s.pos[1]} ${s.pos[0]},${s.pos[1] + s.h}`} {...common} />;
+  if (s.prim === 'dome') return <path d={`M ${s.pos[0] - s.w / 2} ${s.pos[1]} A ${s.w / 2} ${s.h} 0 0 0 ${s.pos[0] + s.w / 2} ${s.pos[1]} Z`} {...common} />;
   if (s.axis === 'z') return <circle cx={s.pos[0]} cy={s.pos[1]} r={s.r} {...common} />;
   const w = s.axis === 'x' ? s.len : 2 * s.r; const h = s.axis === 'y' ? s.len : 2 * s.r;
   return <rect x={s.pos[0] - w / 2} y={s.pos[1] - h / 2} width={w} height={h} rx={Math.min(w, h) / 6} {...common} />;

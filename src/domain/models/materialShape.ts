@@ -88,7 +88,9 @@ export type Solid =
   | { prim: 'box'; size: [number, number, number]; pos: [number, number, number] }
   | { prim: 'cyl'; r: number; len: number; axis: 'x' | 'y' | 'z'; pos: [number, number, number] }
   /** piramida: pos je sredina osnove, vrh je nagore */
-  | { prim: 'pyr'; base: [number, number]; h: number; pos: [number, number, number] };
+  | { prim: 'pyr'; base: [number, number]; h: number; pos: [number, number, number] }
+  /** kupola: polu-elipsa širine w i visine h izvučena po dubini d; pos je sredina osnove, vrh je nagore */
+  | { prim: 'dome'; w: number; h: number; d: number; pos: [number, number, number] };
 
 export type MatShape =
   /** u: mere U profila (A širina, B visina, C zid) — profil može da bude bočna vođica u koju ulaze prečke */
@@ -162,7 +164,7 @@ const box = (w: number, h: number, d: number, x: number, y: number, z = 0): Soli
 const cyl = (r: number, len: number, axis: 'x' | 'y' | 'z', x: number, y: number, z = 0): Solid => ({ prim: 'cyl', r, len, axis, pos: [x, y, z] });
 
 type PieceKind = 'cap_flat' | 'cap_pyramid' | 'rosette' | 'foot' | 'side_foot' | 'plug' | 'hinge' | 'lock' | 'wheel' | 'motor' | 'bracket' | 'ring' | 'screw' | 'box'
-  | 'flange_round' | 'holder' | 'end_cap' | 'connector';
+  | 'flange_round' | 'holder' | 'end_cap' | 'connector' | 'picket_cap';
 
 /**
  * Mere okova ograde za terasu (mm), „Mere ograde“: zavise od materijala koji radionica koristi, pa se podešavaju po modelu.
@@ -231,6 +233,8 @@ export function pieceSolids(kind: PieceKind, w: number, d: number, dims: HwDims 
         box(dims.connectorPlateLen, t, Math.max(10, d * 0.8), 0, dims.connectorH - t / 2),
       ];
     }
+    // čep tarabice (pun): okovratnik 6 mm, po 2 mm širi od cevi, i kupola visine 0,425 × širina; w × d je presek tarabice (80 × 20)
+    case 'picket_cap': return [box(w + 4, 6, d + 4, 0, 3), { prim: 'dome', w, h: Math.round(w * 0.425 * 10) / 10, d, pos: [0, 6, 0] }];
     case 'cap_flat': return [box(w + 4, 5, d + 4, 0, 2.5)];
     case 'cap_pyramid': return [box(w + 4, 4, d + 4, 0, 2), { prim: 'pyr', base: [w + 2, d + 2], h: Math.max(12, w * 0.28), pos: [0, 4, 0] }];
     case 'rosette': return [box(w + 44, 4, d + 44, 0, 2), box(w + 14, 16, d + 14, 0, 12)];
@@ -254,6 +258,7 @@ export function solidsZMin(solids: Solid[]): number {
   for (const s of solids) {
     if (s.prim === 'box') z = Math.min(z, s.pos[2] - s.size[2] / 2);
     else if (s.prim === 'pyr') z = Math.min(z, s.pos[2] - s.base[1] / 2);
+    else if (s.prim === 'dome') z = Math.min(z, s.pos[2] - s.d / 2);
     else z = Math.min(z, s.pos[2] - (s.axis === 'z' ? s.len / 2 : s.r));
   }
   return Number.isFinite(z) ? z : 0;
@@ -266,6 +271,7 @@ export function solidsBounds(solids: Solid[]): { x0: number; y0: number; x1: num
     let hw: number; let b: number; let t: number;
     if (s.prim === 'box') { hw = s.size[0] / 2; b = s.pos[1] - s.size[1] / 2; t = s.pos[1] + s.size[1] / 2; }
     else if (s.prim === 'pyr') { hw = s.base[0] / 2; b = s.pos[1]; t = s.pos[1] + s.h; }
+    else if (s.prim === 'dome') { hw = s.w / 2; b = s.pos[1]; t = s.pos[1] + s.h; }
     else { hw = s.axis === 'x' ? s.len / 2 : s.r; b = s.pos[1] - (s.axis === 'y' ? s.len / 2 : s.r); t = s.pos[1] + (s.axis === 'y' ? s.len / 2 : s.r); }
     x0 = Math.min(x0, s.pos[0] - hw); x1 = Math.max(x1, s.pos[0] + hw); y0 = Math.min(y0, b); y1 = Math.max(y1, t);
   }
@@ -399,6 +405,7 @@ function resolveShape(m: ShapeInput, hwd?: HwDims): Resolved {
   if (has(/obujmic/)) return plain(piece('stope', 'side_foot', w, d));
   if (has(/spigot/)) return plain(piece('stope', 'foot', Math.min(w, 60), Math.min(d, 60)));
   if (has(/stezaljk|granicnik|spider|kugl|topuz/)) return plain(piece('okov', 'bracket', Math.min(w, 60), Math.min(d, 60)));
+  if (has(/\bcep\w*\s+tarabic/)) return plain(piece('cepovi', 'picket_cap', w, d));
   if (has(/\bkap[aeu]\b/)) return plain(piece('kape', has(/pismo|piramid|siljat/) ? 'cap_pyramid' : 'cap_flat', w, d));
   if (has(/rozetn/)) return plain(piece('rozetne', 'rosette', w, d));
   if (has(/\bstop[aeu]\b/)) return plain(piece('stope', has(/bocn/) ? 'side_foot' : 'foot', w, d));
