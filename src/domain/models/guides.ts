@@ -300,11 +300,17 @@ export function barGroup(model: CustomModel, bar: CustomPart, materials: Materia
   if (!g || !shape || shape.type !== 'linear') return null;
   const sec = shape.section;
   const e = sectionFace(sec, partAngle(bar));
-  const top = (p: CustomPart) => p.y + sectionFace(sec, partAngle(p)).u1;
-  const bars = model.parts
-    .filter((p) => p.guides && p.guides[0] === bar.guides![0] && p.guides[1] === bar.guides![1] && p.materialId === bar.materialId)
-    .sort((a, b) => top(b) - top(a));
-  return { bars, h: e.face, u0: e.u0, u1: e.u1, yTop: Math.min(g[0].y1, g[1].y1), yBot: Math.max(g[0].y0, g[1].y0), gapMin: minGap(sec, partAngle(bar), e.face) };
+  const shapeOf = shapeLookup(materials);
+  const linear = (p: CustomPart) => { const s = shapeOf(p); return s && s.type === 'linear' ? s : null; };
+  // prečke različite debljine (drugi materijal) u istim vođicama čine jednu grupu: razmak se zadaje za sve zajedno
+  const members = model.parts.filter((p) => p.guides && p.guides[0] === bar.guides![0] && p.guides[1] === bar.guides![1] && linear(p));
+  const face = (p: CustomPart) => sectionFace(linear(p)!.section, partAngle(p));
+  const bars = members.sort((a, b) => (b.y + face(b).u1) - (a.y + face(a).u1));
+  const faces = bars.map(face);
+  const hs = faces.map((x) => x.face);
+  const mixed = hs.some((x) => Math.abs(x - hs[0]) > 1e-6) || bars.some((b) => b.materialId !== bar.materialId);
+  const gapMin = mixed ? Math.max(...bars.map((b, i) => minGap(linear(b)!.section, partAngle(b), faces[i].face))) : minGap(sec, partAngle(bar), e.face);
+  return { bars, h: e.face, u0: e.u0, u1: e.u1, yTop: Math.min(g[0].y1, g[1].y1), yBot: Math.max(g[0].y0, g[1].y0), gapMin, ...(mixed ? { hs, u1s: faces.map((x) => x.u1) } : {}) };
 }
 
 /**
@@ -317,7 +323,11 @@ function freeBarGroup(model: CustomModel, bar: CustomPart, shape: MatShape | nul
   const e = sectionFace(sec, partAngle(bar));
   const shapeOf = shapeLookup(materials);
   const top = (p: CustomPart) => p.y + sectionFace(sec, partAngle(p)).u1;
-  const geom = (p: CustomPart) => !p.guides && norm(p.angleDeg) === norm(bar.angleDeg) && Math.abs(partAngle(p) - partAngle(bar)) < 1e-6 && Math.abs(p.x - bar.x) < 1 && Math.abs(p.lengthMm - bar.lengthMm) < 1;
+  const span = (p: CustomPart): [number, number] => [Math.min(p.x, p.x + p.lengthMm), Math.max(p.x, p.x + p.lengthMm)];
+  /** prečke istog materijala moraju imati isti početak i dužinu; drugog materijala (druga debljina) dovoljno je da leže u istom polju */
+  const overlaps = (p: CustomPart): boolean => { const [a0, a1] = span(p); const [b0, b1] = span(bar); return Math.min(a1, b1) - Math.max(a0, b0) >= 0.7 * Math.min(a1 - a0, b1 - b0); };
+  const geom = (p: CustomPart) => !p.guides && norm(p.angleDeg) === norm(bar.angleDeg) && Math.abs(partAngle(p) - partAngle(bar)) < 1e-6
+    && (p.materialId === bar.materialId ? Math.abs(p.x - bar.x) < 1 && Math.abs(p.lengthMm - bar.lengthMm) < 1 : overlaps(p));
   // prečke druge debljine (drugi materijal) koje stoje između ramova ulaze u istu grupu: razmak se zadaje za sve prečke zajedno
   const inner = (p: CustomPart): boolean => {
     const s = shapeOf(p);
@@ -356,7 +366,7 @@ export interface BarLayoutValues { count: number; top: number; bottom: number; g
 export type LayoutAuto = 'gap' | 'bottom' | 'top';
 
 /** Trenutni raspored grupe prečki: broj, odstojanje prve od vrha, poslednje od dna i prosečan razmak (bez vrednosti za jednu prečku). */
-export function barLayoutInfo(model: CustomModel, bar: CustomPart, materials: Material[]): (Omit<BarLayoutValues, 'gap'> & { H: number; h: number; gap: number | null; gapMin: number; lufta: Lufta; free: boolean }) | null {
+export function barLayoutInfo(model: CustomModel, bar: CustomPart, materials: Material[]): (Omit<BarLayoutValues, 'gap'> & { H: number; h: number; gap: number | null; gapMin: number; lufta: Lufta; free: boolean; mixed: boolean }) | null {
   const grp = barGroup(model, bar, materials);
   if (!grp) return null;
   const shapeOf = shapeLookup(materials);
@@ -367,7 +377,7 @@ export function barLayoutInfo(model: CustomModel, bar: CustomPart, materials: Ma
   const gap = n >= 2 ? r2((first.t - last.b - sumH) / (n - 1)) : null;
   return {
     H: r2(grp.yTop - grp.yBot), h: r2(sumH / n), gapMin: grp.gapMin, count: n, top: r2(grp.yTop - first.t), bottom: r2(last.b - grp.yBot), gap,
-    lufta: bar.lufta ?? (gap !== null && gap < 0 ? 'bez' : 'sa'), free: Boolean(grp.free),
+    lufta: bar.lufta ?? (gap !== null && gap < 0 ? 'bez' : 'sa'), free: Boolean(grp.free), mixed: Boolean(grp.hs),
   };
 }
 
@@ -474,7 +484,7 @@ export function layoutBars(model: CustomModel, barId: string, materials: Materia
     acc += hb;
     // prečka drugog materijala zadržava svoju okrenutost i dubinu
     const own = b.materialId === sel.materialId;
-    placed.set(b.id, { ...b, x: sel.x, lengthMm: sel.lengthMm, rot: own ? sel.rot : b.rot, tiltDeg: sel.tiltDeg, z: own ? sel.z : b.z, lufta, y: Math.round(y * 1000) / 1000 });
+    placed.set(b.id, { ...b, x: own ? sel.x : b.x, lengthMm: own ? sel.lengthMm : b.lengthMm, rot: own ? sel.rot : b.rot, tiltDeg: sel.tiltDeg, z: own ? sel.z : b.z, lufta, y: Math.round(y * 1000) / 1000 });
   });
   const removed = new Set(grp.bars.filter((b) => !placed.has(b.id)).map((b) => b.id));
   const parts = [...model.parts.filter((x) => !removed.has(x.id)).map((x) => placed.get(x.id) ?? x), ...slots.filter((b) => !model.parts.some((x) => x.id === b.id)).map((b) => placed.get(b.id)!)];

@@ -266,3 +266,21 @@ describe('razmak između prečki različite debljine (slobodan crtež)', () => {
     expect('error' in r).toBe(true);
   });
 });
+
+describe('razmak prečki različite debljine u U vođicama', () => {
+  const KV30 = mat('m_kv30', 'KV000099', 'Kvadratna cev 30×20×1,5 mm, sirovo');
+  const M2 = [U60, KV80, KV30];
+  it('tanja i deblja prečka u istim vođicama su jedna grupa sa jednim razmakom', () => {
+    let m = start();
+    m = { ...m, parts: [...m.parts, part('t', KV30.id, 0, 700, 1000, 0)] };
+    const a = attachToGuides(m, 't', M2);
+    if ('error' in a) throw new Error(a.error);
+    m = a.model;
+    const info = barLayoutInfo(m, bar(m), M2)!;
+    expect(info.count).toBe(2);
+    expect(info.mixed).toBe(true);
+    const r = layoutBars(m, 'b', M2, { count: 2, top: 100, bottom: 100, gap: 30, auto: 'bottom', lufta: 'sa' });
+    if ('error' in r) throw new Error(r.error);
+    expect(barLayoutInfo(r.model, r.model.parts.find((p) => p.id === 'b')!, M2)!.gap).toBe(30);
+  });
+});

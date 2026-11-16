@@ -110,7 +110,7 @@ function BarLayoutBox({ model, bar, materials, onApply, onError }: { model: Cust
   return (
     <div className="mt-2 rounded-lg border border-line p-2" data-testid="bar-layout">
       <div className="text-[12.5px] font-semibold mb-1 flex items-center gap-1.5"><Rows3 size={14} />Raspored prečki</div>
-      <p className="text-[11.5px] text-muted mb-1">{info.free ? 'Prostor za prečke (visina modela između ramova)' : 'Visina bočnih strana'} <b data-testid="layout-height">{String(info.H).replace('.', ',')} mm</b>, visina prečke <b>{String(info.h).replace('.', ',')} mm</b>. Prečke se rasporede same.</p>
+      <p className="text-[11.5px] text-muted mb-1">{info.free ? 'Prostor za prečke (visina modela između ramova)' : 'Visina bočnih strana'} <b data-testid="layout-height">{String(info.H).replace('.', ',')} mm</b>, {info.mixed ? <>prečke različitih debljina (<b>{info.count} kom</b>): razmak važi između svih susednih prečki, tanjih i debljih.</> : <>visina prečke <b>{String(info.h).replace('.', ',')} mm</b>.</>} Prečke se rasporede same.</p>
       <div className="flex items-center justify-between gap-2 py-1 text-[13px]">
         <span className="text-slate-600">Tip ograde</span>
         <span className="inline-flex rounded-lg border border-line overflow-hidden" role="group" aria-label="Tip ograde">
