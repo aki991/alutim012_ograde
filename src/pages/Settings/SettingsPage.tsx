@@ -77,6 +77,7 @@ export default function SettingsPage() {
           <ToggleField label="Štednja materijala" checked={cutOptions(settings).saveMaterial === true} onLabel="Uključena" offLabel="Isključena" testId="set-savematerial" onChange={(v) => update({ cutting: { ...cutOptions(settings), saveMaterial: v } })} />
           <p className="text-[12px] text-muted -mt-1 mb-2">Kad je uključena, komadi sa istim kosim uglom (npr. ram pod 45°) se raspoređuju tako da dele rez: jedan rez za dva komada, pa se manje materijala baca. Kad je isključena, svaki komad ima svoje rezove.</p>
           <NumberField label="Dužina nabavne šipke" testId="set-stock" value={cutOptions(settings).stockMm} range={{ min: 500, max: 20000 }} onCommit={(v) => update({ cutting: { ...cutOptions(settings), stockMm: v } })} hint="Dužina cele šipke kako stiže od dobavljača (najčešće 6000 mm)." />
+          <NumberField label="Najkraći ostatak za magacin" testId="set-minkeep" value={cutOptions(settings).minKeepMm ?? 500} range={{ min: 0, max: 20000 }} allowZero onCommit={(v) => update({ cutting: { ...cutOptions(settings), minKeepMm: v } })} hint="Kad projekat pređe u „U izradi“, ostaci cevi iz krojne liste ove dužine ili duži (mm) idu u magacin, npr. 500 ili 300. Kraći komadi su otpad." />
         </section>
         <section className="card p-5">
           <h2 className="font-bold mb-2">Napredne opcije</h2>

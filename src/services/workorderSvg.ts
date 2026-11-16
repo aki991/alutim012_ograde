@@ -5,7 +5,7 @@ import { itemLabel } from '../utils/labels';
 import { localToWorld } from '../domain/gates/slidingAssembly';
 import { slidingDrawnItems, type Drawn } from './slidingWorkSvg';
 import { leafHeightOf } from '../domain/gates/slidingLayout';
-import { partAngle } from '../domain/models/custom';
+import { linearLocalPoly, partAngle, sheetPoly } from '../domain/models/custom';
 import { customPartsFor, isCustomModel } from '../domain/models/customRegistry';
 import { sectionFace } from '../domain/models/materialShape';
 
@@ -157,12 +157,12 @@ export function schemaSvg(project: Project, keyOfItem: (index: number) => string
         if (r.shape.type === 'piece') continue;
         const P = (lx: number, ly: number): string => `${(ix + lx * s).toFixed(1)},${(yb - ly * s).toFixed(1)}`;
         let pts: string;
-        if (r.shape.type === 'sheet' || p.heightMm) pts = [P(p.x, p.y), P(p.x + p.lengthMm, p.y), P(p.x + p.lengthMm, p.y + (p.heightMm ?? 0)), P(p.x, p.y + (p.heightMm ?? 0))].join(' ');
+        if (r.shape.type === 'sheet' || p.heightMm) pts = sheetPoly(p).map(([x, y]) => P(x, y)).join(' ');
         else {
           const { u0, u1 } = sectionFace(r.shape.section, partAngle(p));
           const a = (p.angleDeg * Math.PI) / 180; const c = Math.cos(a); const sn = Math.sin(a);
           const at = (lx: number, ly: number) => P(p.x + lx * c - ly * sn, p.y + lx * sn + ly * c);
-          pts = [at(0, u0), at(p.lengthMm, u0), at(p.lengthMm, u1), at(0, u1)].join(' ');
+          pts = linearLocalPoly(p, u0, u1).map(([lx, ly]) => at(lx, ly)).join(' ');
         }
         out.push(`<polygon points="${pts}" fill="${color}" fill-opacity="0.55" stroke="${color}" stroke-width="0.6" stroke-linejoin="round"/>`);
       }

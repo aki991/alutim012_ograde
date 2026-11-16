@@ -337,7 +337,12 @@ export interface DrawnSection {
   pts: [number, number][];
   wall: number;
   closed: boolean;
+  /** presek snimljen sa slike: gotovi poligoni (mm, y nagore) umesto linije zida; `pts` je tada prazno, a `wall` okvirna debljina */
+  polys?: DrawnPolygon[];
 }
+
+/** Poligon preseka: spoljna ivica i otvori (mm). */
+export interface DrawnPolygon { outline: [number, number][]; holes: [number, number][][] }
 
 /** Stavka magacina: komadi jednog materijala iste dužine. */
 export interface StockItem {
@@ -381,9 +386,15 @@ export interface AppSettings {
   /** podaci firme za zaglavlja dokumenata (krojna lista); prazna polja se ne prikazuju */
   companyInfo?: { address?: string; phone?: string; email?: string; pib?: string };
   /** nabavna dužina šipke i širina reza testere za krojnu listu (mm); bez vrednosti važi 6000 / 3 */
-  cutting?: { stockMm: number; kerfMm: number; /** štednja materijala: kosi rezovi se dele (jedan rez za dva komada) */ saveMaterial?: boolean };
+  cutting?: {
+    stockMm: number; kerfMm: number; /** štednja materijala: kosi rezovi se dele (jedan rez za dva komada) */ saveMaterial?: boolean;
+    /** najkraći ostatak cevi (mm) koji se posle sečenja čuva u magacinu; kraći je otpad. Bez vrednosti važi 500 */
+    minKeepMm?: number;
+  };
   /** magacin: materijal na stanju (cele šipke i ostaci) */
   stock?: StockItem[];
+  /** projekti čiji je materijal iz krojne liste već proknjižen u magacin (pri prelasku u „U izradi“), da se ne knjiži dvaput */
+  stockBooked?: string[];
   currency: string;
   currencyRateToEur: number;
   userName: string;

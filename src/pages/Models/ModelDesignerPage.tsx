@@ -2,6 +2,7 @@ import { settleModel as settle } from '../../domain/models/settle';
 import { fillHardware, removeParts } from '../../domain/models/terraceHardware';
 import { checkDrawing } from '../../domain/models/drawingCheck';
 import { hingesAlongEdge, isHingeMaterial, restOnSurface } from '../../domain/models/surface';
+import { layerPart } from '../../domain/models/overlap';
 import { ALL_FRAME_SIDES, frameIds, isFramePart, modelWithFrame, modelWithoutFrame, modelWithRotatedFrame, resizeWithFrame } from '../../domain/models/frame';
 import { GateDesignModal } from '../../components/gates/GateDesignModal';
 import { SlidingAssemblyArt } from '../../components/gates/SlidingAssemblyArt';
@@ -16,6 +17,8 @@ import { lazy, Suspense, useCallback, useDeferredValue, useEffect, useMemo, useR
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Designer2D } from '../../components/designer/Designer2D';
 import { GuideSection } from '../../components/designer/GuideSection';
+import { SideSection } from '../../components/designer/SideSection';
+import { SlopeModal } from '../../components/designer/SlopeModal';
 import { FEATURES, visibleMaterials } from '../../config/features';
 import { HardwarePanel } from '../../components/designer/HardwarePanel';
 import { TerraceMeasuresModal } from '../../components/designer/TerraceMeasuresModal';
@@ -26,6 +29,7 @@ import { resolveParts, ShapeIcon } from '../../components/designer/PartsSvg';
 import { colorHex, FENCE_MODELS, normalizeColorKey } from '../../domain/models/catalog';
 import { ColorChartModal, normalizeFavorites } from '../../components/forms/ColorChartModal';
 import { CUSTOM_KIND_LABELS, customBom, newCustomModel, newTerraceModel, repeatPart, setPartsColor, type CustomModel, type CustomPart } from '../../domain/models/custom';
+import { groupHasCaps, layoutVBars, setGroupCaps, vBarGroup, vLayoutInfo } from '../../domain/models/vbars';
 import { attachToGuides, barGroup, barLayoutInfo, gapRange, guideReport, layoutBars, type LayoutAuto } from '../../domain/models/guides';
 import type { Lufta } from '../../domain/models/custom';
 import { checkNewOverlap } from '../../domain/models/overlap';
@@ -88,14 +92,18 @@ const AUTO_LABELS: Record<LayoutAuto, string> = { gap: 'razmak između prečki',
 function BarLayoutBox({ model, bar, materials, onApply, onError }: { model: CustomModel; bar: CustomPart; materials: Material[]; onApply: (m: CustomModel) => void; onError: (msg: string) => void }) {
   const [auto, setAuto] = useState<LayoutAuto>('gap');
   const [gap1, setGap1] = useState(20);
-  const info = barLayoutInfo(model, bar, materials);
+  // uspravne letvice (tarabice): isti raspored po širini polja, bez lufta i nagiba, sa čepovima na vrhu
+  const vert = !barGroup(model, bar, materials) && !!vBarGroup(model, bar, materials);
+  const info = vert ? vLayoutInfo(model, bar, materials) : barLayoutInfo(model, bar, materials);
   if (!info) return null;
   const single = info.count === 1;
   const eff: LayoutAuto = single && auto === 'gap' ? 'bottom' : auto;
   const cur = { count: info.count, top: info.top, bottom: info.bottom, gap: info.gap ?? gap1 };
   const lufta = info.lufta;
   const run = (patch: Partial<typeof cur>, extra: { lufta?: Lufta; auto?: LayoutAuto; countChange?: boolean } = {}) => {
-    const r = layoutBars(model, bar.id, materials, { ...cur, ...patch, auto: extra.auto ?? auto, lufta: extra.lufta ?? lufta, countChange: extra.countChange });
+    const r = vert
+      ? layoutVBars(model, bar.id, materials, { ...cur, ...patch, auto: extra.auto ?? auto, countChange: extra.countChange })
+      : layoutBars(model, bar.id, materials, { ...cur, ...patch, auto: extra.auto ?? auto, lufta: extra.lufta ?? lufta, countChange: extra.countChange });
     if ('error' in r) onError(r.error); else onApply(r.model);
   };
   /** promena tipa: razmak se dovodi u opseg novog tipa (bez lufta: najviše 0, sa luftom: najmanje 0), a odstojanje od dna se preračuna */
@@ -109,8 +117,9 @@ function BarLayoutBox({ model, bar, materials, onApply, onError }: { model: Cust
   const fmtR = (n: number) => String(n).replace('.', ',');
   return (
     <div className="mt-2 rounded-lg border border-line p-2" data-testid="bar-layout">
-      <div className="text-[12.5px] font-semibold mb-1 flex items-center gap-1.5"><Rows3 size={14} />Raspored prečki</div>
-      <p className="text-[11.5px] text-muted mb-1">{info.free ? 'Prostor za prečke (visina modela između ramova)' : 'Visina bočnih strana'} <b data-testid="layout-height">{String(info.H).replace('.', ',')} mm</b>, {info.mixed ? <>prečke različitih debljina (<b>{info.count} kom</b>): razmak važi između svih susednih prečki, tanjih i debljih.</> : <>visina prečke <b>{String(info.h).replace('.', ',')} mm</b>.</>} Prečke se rasporede same.</p>
+      <div className="text-[12.5px] font-semibold mb-1 flex items-center gap-1.5"><Rows3 size={14} />{vert ? 'Raspored letvica' : 'Raspored prečki'}</div>
+      <p className="text-[11.5px] text-muted mb-1">{vert ? 'Prostor za letvice (širina polja)' : info.free ? 'Prostor za prečke (visina modela između ramova)' : 'Visina bočnih strana'} <b data-testid="layout-height">{String(info.H).replace('.', ',')} mm</b>, {info.mixed ? <>{vert ? 'letvice' : 'prečke'} različitih {vert ? 'širina' : 'debljina'} (<b>{info.count} kom</b>): razmak važi između svih susednih, užih i širih.</> : <>{vert ? 'širina letvice' : 'visina prečke'} <b>{String(info.h).replace('.', ',')} mm</b>.</>} {vert ? 'Letvice' : 'Prečke'} se rasporede same.</p>
+      {!vert && <>
       <div className="flex items-center justify-between gap-2 py-1 text-[13px]">
         <span className="text-slate-600">Tip ograde</span>
         <span className="inline-flex rounded-lg border border-line overflow-hidden" role="group" aria-label="Tip ograde">
@@ -122,14 +131,15 @@ function BarLayoutBox({ model, bar, materials, onApply, onError }: { model: Cust
       <p className="text-[11.5px] text-muted mb-1" data-testid="layout-lufta-help">{lufta === 'bez'
         ? 'Bez lufta: između prečki nema procepa, razmak ide od 0 u minus (prečke se uvlače jedna u drugu).'
         : 'Sa luftom: između prečki se vidi procep, razmak ide od 0 do najvećeg koji staje.'}</p>
-      <Num label="Broj prečki" unit="kom" value={info.count} min={1} max={200} testId="layout-count" onSame={() => onError('')} onChange={(v) => run({ count: Math.round(v) }, { countChange: true })} />
-      <Num label="Od vrha" value={info.top} min={0} testId="layout-top" readOnly={eff === 'top'} onChange={(v) => run({ top: v })} />
-      <Num label="Od dna" value={info.bottom} min={0} testId="layout-bottom" readOnly={eff === 'bottom'} onChange={(v) => run({ bottom: v })} />
+      </>}
+      <Num label={vert ? 'Broj letvica' : 'Broj prečki'} unit="kom" value={info.count} min={1} max={200} testId="layout-count" onSame={() => onError('')} onChange={(v) => run({ count: Math.round(v) }, { countChange: true })} />
+      <Num label={vert ? 'Od leve ivice' : 'Od vrha'} value={info.top} min={0} testId="layout-top" readOnly={eff === 'top'} onChange={(v) => run({ top: v })} />
+      <Num label={vert ? 'Od desne ivice' : 'Od dna'} value={info.bottom} min={0} testId="layout-bottom" readOnly={eff === 'bottom'} onChange={(v) => run({ bottom: v })} />
       <Num label="Razmak između" value={info.gap ?? 0} min={-1000} testId="layout-gap" readOnly={eff === 'gap' || single} onChange={(v) => { setGap1(v); run({ gap: v }); }} />
       <label className="flex items-center justify-between gap-2 py-1 text-[12.5px]">
         <span className="text-slate-600">Sama se računa</span>
         <select className="input !w-auto !py-1" data-testid="layout-auto" value={eff} onChange={(e) => setAuto(e.target.value as LayoutAuto)}>
-          {(Object.keys(AUTO_LABELS) as LayoutAuto[]).filter((k) => !(single && k === 'gap')).map((k) => <option key={k} value={k}>{AUTO_LABELS[k]}</option>)}
+          {(Object.keys(AUTO_LABELS) as LayoutAuto[]).filter((k) => !(single && k === 'gap')).map((k) => <option key={k} value={k}>{vert ? ({ gap: 'razmak između letvica', bottom: 'odstojanje od desne ivice', top: 'odstojanje od leve ivice' } as Record<LayoutAuto, string>)[k] : AUTO_LABELS[k]}</option>)}
         </select>
       </label>
       <p className="text-[11.5px] text-muted mb-1" data-testid="layout-gap-min">
@@ -137,6 +147,13 @@ function BarLayoutBox({ model, bar, materials, onApply, onError }: { model: Cust
           : eff === 'gap' ? <>Razmak se računa: <b>{fmtR(range.min)} mm</b>.{lufta === 'bez' && info.gapMin < 0 ? <> Najmanji mogući je <b>{fmtR(info.gapMin)} mm</b>.</> : null}</>
             : <>Dozvoljen razmak: od <b>{fmtR(range.min)}</b> do <b>{fmtR(range.max)} mm</b>{lufta === 'bez' && info.gapMin >= 0 ? ' (prečke bez nagiba ne mogu da se uvuku, pa je razmak 0)' : ''}.</>}
       </p>
+      {vert && (
+        <label className="flex items-center gap-2 py-1.5 text-[13px] cursor-pointer" data-testid="layout-caps-row">
+          <input type="checkbox" data-testid="layout-caps" checked={groupHasCaps(model, bar, materials)}
+            onChange={(e) => { const r = setGroupCaps(model, bar, materials, e.target.checked); if ('error' in r) onError(r.error); else onApply(r.model); }} />
+          <span>Čep na vrhu svake letvice</span>
+        </label>
+      )}
       <p className="text-[11.5px] text-muted">Izmena broja prečki dodaje kopije izabrane prečke ili skida prečke pri dnu. Ako prečke ne staju u {info.free ? 'raspoloživu visinu' : 'visinu bočnih strana'}, izmena se ne primenjuje i obaveštenje navodi razlog.</p>
     </div>
   );
@@ -274,6 +291,19 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
   const [model, setModel] = useState<CustomModel>(() => useAppStore.getState().settings.customModels?.find((m) => m.id === id)
     ?? (terrace || locState?.kind === 'terrace' ? newTerraceModel(id)
       : locState?.kind === 'gate' ? { ...newCustomModel(id), kind: 'gate', name: 'Nova kapija', widthMm: 1000, heightMm: 1500, gate: defaultGateConfig() } : newCustomModel(id)));
+  /** model kakav je bio kad je otvoren: „Sačuvaj kao nov model“ ga vraća na to stanje, a izmene idu u nov model */
+  const openedRef = useRef<CustomModel | null>(useAppStore.getState().settings.customModels?.find((m) => m.id === id) ?? null);
+  const navigateTo = useNavigate();
+  const saveAsNew = () => {
+    const cur = modelRef.current;
+    const newId = uid('cm');
+    const { replaces: _r, ...rest } = cur;
+    const copy: CustomModel = { ...rest, id: newId, name: `${cur.name.replace(/ — dorada$/, '')} — nov`, updatedAt: new Date().toISOString() };
+    const st = useAppStore.getState();
+    const list = (st.settings.customModels ?? []).map((m) => (m.id === cur.id && openedRef.current ? openedRef.current : m));
+    st.updateSettings({ customModels: [...list, copy] });
+    navigateTo(`${cur.kind === 'terrace' ? '/modeli-terasa/crtanje' : '/modeli/crtanje'}/${newId}`, { replace: true });
+  };
   /** ograda za terasu: paleta nudi samo materijale za terase (dvorišne ograde i kapije ih ne nude) */
   const isTerrace = model.kind === 'terrace';
   const [showAllMaterials, setShowAllMaterials] = useState(false);
@@ -291,6 +321,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
   const draftRef = useRef<{ projectId: string; itemId: string } | null>(null);
   /** pitanje „od kog elementa je ram“ pre dodavanja rama oko platna */
   const [frameAsk, setFrameAsk] = useState(false);
+  const [slopeAsk, setSlopeAsk] = useState(false);
   /** strane rama koje se prave (45° samo na uglovima gde se dve strane sastaju) */
   const [frameSides, setFrameSides] = useState(ALL_FRAME_SIDES);
   /** dodavanje šarki: strana i broj, pa izbor šarke */
@@ -311,6 +342,10 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
   const [snapObjects, setSnapObjects] = useState(true);
   /** slobodno crtanje: dozvoljeno je sve (preklapanja, nagnute cevi, nejednaki razmaci); pri povratku se nabraja šta nije u redu */
   const [free, setFree] = useState(false);
+  /** novi deo koji pokriva postojeće: odbija se (pored), ili se stavlja iza / ispred njih po dubini */
+  const [layer, setLayer] = useState<'off' | 'behind' | 'front'>('off');
+  const layerRef = useRef<'off' | 'behind' | 'front'>('off');
+  layerRef.current = layer;
   const freeRef = useRef(false);
   freeRef.current = free;
   const [checkOpen, setCheckOpen] = useState(false);
@@ -459,7 +494,8 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
     const copies = placing.map((p): CustomPart => {
       const g = p.guides && ids.has(p.guides[0]) && ids.has(p.guides[1]) ? ([ids.get(p.guides[0])!, ids.get(p.guides[1])!] as [string, string]) : undefined;
       const moved = { ...p, id: ids.get(p.id)!, x: p.x + dx, y: p.y + dy, guides: g };
-      return freeRef.current ? moved : restOnSurface(modelRef.current, moved, materialsRef.current);
+      const rested = freeRef.current ? moved : restOnSurface(modelRef.current, moved, materialsRef.current);
+      return layerRef.current === 'off' ? rested : layerPart(modelRef.current, rested, layerRef.current, materialsRef.current);
     });
     if (change((m) => ({ ...m, parts: [...m.parts, ...copies] }))) { setSelectedIds(copies.map((c) => c.id)); setPlacing(null); }
   };
@@ -582,6 +618,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
           <MaterialPicker materials={materials.filter(isHingeMaterial)} placeholder="— izaberite šarku —" testId="hinge-material" ariaLabel="Šarka" onPick={addHinges} />
         </Modal>
       )}
+      {slopeAsk && <SlopeModal model={model} materials={materials} onClose={() => setSlopeAsk(false)} onApply={(m) => { if (change(() => m)) { setSlopeAsk(false); setFitTick((t) => t + 1); } }} />}
       {frameAsk && (
         <Modal title="Dodaj ram" onClose={() => setFrameAsk(false)}>
           <p className="text-sm text-muted mb-3">Od kog elementa je ram? Ram se crta oko platna, uglovi se seku pod 45°, a model se uvećava za širinu profila sa svake strane koja je izabrana. Ugao od 45° je samo tamo gde se dve strane sastaju; slobodan kraj je ravan.</p>
@@ -597,6 +634,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
       <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-line bg-white">
         <Link to={model.kind === 'gate' ? '/modeli-kapija' : isTerrace ? '/modeli-terasa' : '/modeli'} className="btn btn-sm" data-testid="designer-back"><ArrowLeft size={15} />{model.kind === 'gate' ? 'Modeli kapija' : isTerrace ? 'Modeli ograda za terase' : 'Modeli'}</Link>
         <input className="input !w-56 !py-1.5 font-semibold" aria-label="Naziv modela" data-testid="designer-name" value={model.name} onChange={(e) => change((m) => ({ ...m, name: e.target.value }), false)} />
+        {model.parts.length > 0 && <button className="btn btn-sm" data-testid="designer-save-new" title="Izmene se čuvaju kao nov model, a model u koji ste ušli ostaje kakav je bio kad ste ga otvorili" onClick={saveAsNew}><Copy size={14} />Sačuvaj kao nov model</button>}
         {/* ograda za terasu ostaje ograda za terasu (posebna stranica i materijali); ograda i kapija se mogu menjati jedna u drugu */}
         {isTerrace && <span className="pill !text-[12.5px] bg-[#eff8ff] text-[#175cd3]" data-testid="designer-kind-terrace">Ograda za terasu</span>}
         {/* u prikazu „Mere kapije“ alati crtanja se sklanjaju: mere se menjaju samo u tom prikazu, pa crtež i podešavanja ne mogu da se razilaze */}
@@ -622,11 +660,17 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
         {isTerrace && <button className="btn btn-sm" data-testid="designer-terrace-measures" title="Mere okova: visina veze stub–rukohvat, podizanje stuba zbog flanše, visina kape, rastojanje prečke od stuba, zavrtnji" onClick={() => setMeasuresOpen(true)}>Mere ograde</button>}
         {isTerrace && measuresOpen && <TerraceMeasuresModal model={model} onChange={(fn) => change(fn)} onClose={() => setMeasuresOpen(false)} />}
         {isTerrace && <button className="btn btn-sm btn-primary" data-testid="designer-fill-hw" title="Svakom stubu, rukohvatu i prečki dodaje odgovarajući okov (flanše, veze, prstenove, kapice) na pravo mesto; šta ne treba, odkvačite uz izabran deo" onClick={() => { const before = modelRef.current; const next = fillHardware(before, materialsRef.current); if (next === before) setNotice('Nema šta da se doda: svi delovi već imaju okov ili u cenovniku nema odgovarajućeg okova. Crtajte stubove, rukohvat i prečke, pa kliknite ovo dugme.'); else change(() => next); }}>Dopuni okov</button>}
+        {!isTerrace && <button className="btn btn-sm" data-testid="designer-add-slope" title="Ograda ili kapija na kosom terenu: ispod ispune se dodaju kosi donji profil i ploča (lim) koja popunjava pad" onClick={() => setSlopeAsk(true)}>Dodaj pad</button>}
         {!isTerrace && <button className="btn btn-sm" data-testid="designer-add-frame" title="Dodaje ram oko platna (uglovi pod 45°)" onClick={() => setFrameAsk(true)}>Dodaj ram</button>}
         {model.parts.some(isFramePart) && <button className="btn btn-sm" data-testid="designer-remove-frame" title="Briše dodat ram; mere modela se vraćaju na mere platna" onClick={removeFrame}><Trash2 size={14} />Obriši ram</button>}
         </>}
         <div className="flex-1" />
         {view !== 'mere' && <>
+        <label className="flex items-center gap-1.5 text-[13px]" title="Šta se dešava kad nov deo pokrije postojeći u pogledu spreda: odbija se (crta se pored) ili se stavlja iza / ispred njih po dubini. Tako se crtaju slojevi: letvice ispred, prečke iza njih, cevi iza prečki.">Novi deo preko drugog
+          <select className="input !w-auto !py-1" data-testid="designer-layer" value={layer} onChange={(e) => setLayer(e.target.value as 'off' | 'behind' | 'front')}>
+            <option value="off">ne dozvoli</option><option value="behind">iza postojećih</option><option value="front">ispred postojećih</option>
+          </select>
+        </label>
         <button type="button" className={`btn btn-sm ${free ? 'btn-primary' : ''}`} data-testid="designer-free" aria-pressed={free} title="Slobodno crtanje: dozvoljeno je sve (preklapanje delova, proizvoljni uglovi, nejednaki razmaci). Pri povratku na normalno crtanje prikazuje se šta nije u redu."
           onClick={() => { if (free) { setFree(false); setCheckOpen(true); } else { setFree(true); setCheckOpen(false); } }}>{free ? 'Normalno crtanje' : 'Slobodno crtanje'}</button>
         {!free && <button type="button" className={`btn btn-sm ${activeProblems?.length ? '!border-[#fda29b] !text-[#b42318]' : ''}`} data-testid="designer-check" aria-pressed={checkOpen} title="Upozorenja za crtež: preklapanja, krive cevi i nejednaki razmaci. Upozorenje koje ima smisla možete da prihvatite." onClick={() => setCheckOpen((o) => !o)}><AlertTriangle size={14} />Upozorenja ({activeProblems?.length ?? 0})</button>}
@@ -745,7 +789,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
               groundY={slSpec ? slSpec.frameBottomY : 0} extraBounds={slBounds} onOverlayPick={(c, member) => { const k = compPart(c); if (k) { setHwSel(k); setSelectedIds([]); useAppStore.getState().setTailSel(model.id, k === 'tail' ? member ?? null : null); } }}
               underlay={slGate ? (px) => <SlidingAssemblyArt gate={slGate} clearStart={0} clearEnd={model.widthMm} clearWidth={model.widthMm} floorY={slSpec!.frameBottomY} px={px} hex={colorHex(model.color)} noLeaf layer="back" testPct={0} onPartClick={() => undefined} highlight={hwSelValid ? partDef(hwSelValid)?.comps : undefined} /> : undefined}
               overlay={slGate ? (px) => <SlidingAssemblyArt gate={slGate} clearStart={0} clearEnd={model.widthMm} clearWidth={model.widthMm} floorY={slSpec!.frameBottomY} px={px} hex={colorHex(model.color)} noLeaf layer="front" testPct={0} onPartClick={() => undefined} highlight={hwSelValid ? partDef(hwSelValid)?.comps : undefined} /> : undefined}
-              onAdd={(p0) => { const p = free ? p0 : restOnSurface(modelRef.current, p0, materialsRef.current); const next = { ...modelRef.current, parts: [...modelRef.current.parts, p] }; const fitted = !free && p.angleDeg === 0 ? attach(next, p.id, true) : null; if (change(() => fitted ?? next)) setSelectedId(p.id); }}
+              onAdd={(p0) => { const p1 = free ? p0 : restOnSurface(modelRef.current, p0, materialsRef.current); const p = layerRef.current === 'off' ? p1 : layerPart(modelRef.current, p1, layerRef.current, materialsRef.current); const next = { ...modelRef.current, parts: [...modelRef.current.parts, p] }; const fitted = !free && p.angleDeg === 0 ? attach(next, p.id, true) : null; if (change(() => fitted ?? next)) setSelectedId(p.id); }}
               onMoveStart={record}
               onMove={(moves) => { const at = new Map(moves.map((v) => [v.id, v])); change((m) => ({ ...m, parts: m.parts.map((p) => { const v = at.get(p.id); return v ? { ...p, x: v.x, y: v.y } : p; }) }), false, false); }} />
           )}
@@ -829,11 +873,11 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
                 {/* izabrana je cela grupa prečki (isti materijal, jedna iznad druge), možda uz druge delove: raspored prečki važi za grupu */}
                 {(() => {
                   for (const r of multi) {
-                    const grp = barGroup(model, r.part, materials);
+                    const grp = barGroup(model, r.part, materials) ?? vBarGroup(model, r.part, materials);
                     if (!grp || grp.bars.length < 2 || !grp.bars.every((b) => ids.includes(b.id))) continue;
                     const lead = r.part; const old = new Set(grp.bars.map((b) => b.id));
                     return <BarLayoutBox key={`grp-${grp.bars.length}-${lead.id}`} model={model} bar={lead} materials={materials} onError={setNotice}
-                      onApply={(m) => { if (change(() => m)) { const g = barGroup(m, lead, materials); if (g) setSelectedIds([...ids.filter((x) => !old.has(x)), ...g.bars.map((b) => b.id)]); } }} />;
+                      onApply={(m) => { if (change(() => m)) { const g = barGroup(m, lead, materials) ?? vBarGroup(m, lead, materials); if (g) setSelectedIds([...ids.filter((x) => !old.has(x)), ...g.bars.map((b) => b.id)]); } }} />;
                   }
                   return null;
                 })()}
@@ -873,6 +917,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
               <Num label="Y (od tla)" value={sel.part.y} testId="part-y" onChange={(v) => patchPart(sel.part.id, { y: v })} />
               {sel.shape.type !== 'piece' &&<Num label={sel.shape.type === 'sheet' ? 'Širina' : 'Dužina'} value={sel.part.lengthMm} min={1} testId="part-length" onChange={(v) => patchPart(sel.part.id, { lengthMm: v })} />}
               {sel.shape.type === 'sheet' && <Num label="Visina" value={sel.part.heightMm ?? 0} min={1} testId="part-height" onChange={(v) => patchPart(sel.part.id, { heightMm: v })} />}
+              {sel.shape.type === 'sheet' && <Num label="Kosa donja ivica (desno više +, niže −)" value={sel.part.bottomSlopeMm ?? 0} min={-5000} max={5000} testId="part-bottom-slope" onChange={(v) => patchPart(sel.part.id, { bottomSlopeMm: v || undefined })} />}
               {sel.shape.type !== 'sheet' && <Num label="Ugao" unit="°" value={sel.part.angleDeg} min={-360} max={360} testId="part-angle" onChange={(v) => patchPart(sel.part.id, { angleDeg: v })} />}
               </>}
               {sel.shape.type === 'linear' && isSymmetricRect(sel.shape.section) && (() => {
@@ -900,6 +945,17 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
                 </label>
               )}
               {!sel.part.hw && <Num label="Dubina (ka napred)" value={sel.part.z} min={-2000} max={2000} testId="part-z" onChange={(v) => patchPart(sel.part.id, { z: v })} />}
+              {!sel.part.hw && sel.shape.type === 'linear' && (
+                <div className="flex gap-2 py-1" data-testid="part-layer-buttons">
+                  {(['behind', 'front'] as const).map((mode) => (
+                    <button key={mode} className="btn btn-sm flex-1" data-testid={`part-layer-${mode}`} title={mode === 'behind' ? 'Postavlja deo iza svih delova koje u pogledu spreda pokriva' : 'Postavlja deo ispred svih delova koje u pogledu spreda pokriva'}
+                      onClick={() => { const cur = modelRef.current.parts.find((x) => x.id === sel.part.id); if (!cur) return; const moved = layerPart(modelRef.current, cur, mode, materialsRef.current); if (moved.z === cur.z) { setNotice('Deo ne pokriva nijedan drugi deo, pa nema šta da se slaže.'); return; } patchPart(cur.id, { z: moved.z }); }}>
+                      {mode === 'behind' ? 'Iza ostalih' : 'Ispred ostalih'}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {!report && sel.shape.type === 'linear' && !sel.part.hw && sel.part.angleDeg % 180 === 0 && <SideSection model={model} bar={sel.part} materials={materials} />}
               {report && (
                 <div className="mt-2 rounded-lg border border-primary/40 bg-primary-50/40 p-2" data-testid="guide-box">
                   <div className="text-[12.5px] font-semibold mb-1.5 flex items-center gap-1.5"><Link2 size={14} />Prečka u bočnim U profilima</div>
@@ -918,10 +974,10 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
                   <p className="text-[11.5px] text-muted mt-1.5">Prečka ne može da izađe van U profila: dužina, položaj, dubina i nagib se ograničavaju na kanal.</p>
                 </div>
               )}
-              {barGroup(model, sel.part, materials) && <BarLayoutBox key={sel.part.id} model={model} bar={sel.part} materials={materials} onApply={(m) => change(() => m)} onError={setNotice} />}
-              {sel.shape.type === 'linear' && !report && sel.part.angleDeg % 180 === 0 && (
+              {(barGroup(model, sel.part, materials) || vBarGroup(model, sel.part, materials)) && <BarLayoutBox key={sel.part.id} model={model} bar={sel.part} materials={materials} onApply={(m) => change(() => m)} onError={setNotice} />}
+              {sel.shape.type === 'linear' && !report && sel.part.angleDeg % 90 === 0 && (
                 <div className="mt-2">
-                  <button className="btn btn-sm w-full" data-testid="guide-attach" onClick={() => { const fitted = attach(modelRef.current, sel.part.id, false); if (fitted) change(() => fitted); }}><Link2 size={14} />Uklopi u bočne U profile</button>
+                  <button className="btn btn-sm w-full" data-testid="guide-attach" onClick={() => { const fitted = attach(modelRef.current, sel.part.id, false); if (fitted) change(() => fitted); }}><Link2 size={14} />{sel.part.angleDeg % 180 === 0 ? 'Uklopi u bočne U profile' : 'Uklopi u U profile (gore i dole)'}</button>
                 </div>
               )}
               <div className="mt-2 rounded-lg border border-line p-2">

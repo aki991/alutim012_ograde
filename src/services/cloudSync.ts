@@ -225,7 +225,7 @@ async function pull(): Promise<void> {
 
   // nov uređaj uključen u postojeću bazu: jednokratne popravke materijala je već odradio neki drugi uređaj
   if (firstEver && remoteHadRows) {
-    try { for (const k of ['alutim.modelMaterialsV1', 'alutim.materialNamesV2', 'alutim.carriagesV1', 'alutim.terraceMaterialsV2']) localStorage.setItem(k, '1'); } catch { /* bez localStorage-a */ }
+    try { for (const k of ['alutim.modelMaterialsV1', 'alutim.materialNamesV2', 'alutim.carriagesV1', 'alutim.railProfileV1', 'alutim.slopePlateV1', 'alutim.terraceMaterialsV2']) localStorage.setItem(k, '1'); } catch { /* bez localStorage-a */ }
   }
 }
 

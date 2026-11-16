@@ -3,8 +3,8 @@ import { Canvas } from '@react-three/fiber';
 import { useMemo } from 'react';
 import * as THREE from 'three';
 import type { CustomModel, CustomPart } from '../../domain/models/custom';
-import { partAngle, zExtent, zExtentTop } from '../../domain/models/custom';
-import { materialKey, rotateDeg, type MatShape, type Section, type Solid } from '../../domain/models/materialShape';
+import { hasAngledEnds, linearLocalPoly, partAngle, sheetPoly, zExtent, zExtentTop } from '../../domain/models/custom';
+import { materialKey, rotateDeg, sectionFace, type MatShape, type Section, type Solid } from '../../domain/models/materialShape';
 import { bodyMaterial, boxGeometry, glassMaterial } from '../editor/three/materials';
 import type { ResolvedPart } from './PartsSvg';
 import { SlidingParts3D } from '../gates/SlidingParts3D';
@@ -51,6 +51,30 @@ function DomeMesh({ s, material }: { s: Extract<Solid, { prim: 'dome' }>; materi
   return <mesh geometry={geometry} material={material} position={s.pos} castShadow />;
 }
 
+/** kos profil sa uspravno sečenim krajevima: obris spreda (paralelogram) izvučen po dubini preseka */
+function PlumbBar({ part, section, material }: { part: CustomPart; section: Section; material: THREE.Material }) {
+  const geometry = useMemo(() => {
+    const e = sectionFace(section, partAngle(part));
+    const a = (part.angleDeg * Math.PI) / 180; const c = Math.cos(a); const s = Math.sin(a);
+    const pts = linearLocalPoly(part, e.u0, e.u1).map(([lx, ly]) => new THREE.Vector2(part.x + lx * c - ly * s, part.y + lx * s + ly * c));
+    const g = new THREE.ExtrudeGeometry(new THREE.Shape(pts), { depth: e.v1 - e.v0, bevelEnabled: false });
+    g.translate(0, 0, part.z + e.v0);
+    return g;
+  }, [part, section]);
+  return <mesh geometry={geometry} material={material} castShadow />;
+}
+
+/** ploča sa kosom donjom ivicom (pad terena): trapez izvučen po debljini */
+function SlopedSheet({ part, thick, material }: { part: CustomPart; thick: number; material: THREE.Material }) {
+  const geometry = useMemo(() => {
+    const pts = sheetPoly(part);
+    const g = new THREE.ExtrudeGeometry(new THREE.Shape(pts.map(([x, y]) => new THREE.Vector2(x, y))), { depth: thick, bevelEnabled: false });
+    g.translate(0, 0, part.z - thick / 2);
+    return g;
+  }, [part, thick]);
+  return <mesh geometry={geometry} material={material} castShadow />;
+}
+
 function SolidMesh({ s, material }: { s: Solid; material: THREE.Material }) {
   if (s.prim === 'dome') return <DomeMesh s={s} material={material} />;
   if (s.prim === 'box') return <mesh geometry={boxGeometry} material={material} position={s.pos} scale={s.size} castShadow />;
@@ -69,8 +93,10 @@ export function PartMesh({ part, shape, hex, materialKey, selected }: { part: Cu
   }, [part.angleDeg, part.x, part.y, part.z]);
   if (shape.type === 'sheet') {
     const h = part.heightMm ?? 0;
+    if (part.bottomSlopeMm) return <SlopedSheet part={part} thick={shape.thick} material={shape.glass && !selected ? glassMaterial : material} />;
     return <mesh geometry={boxGeometry} material={shape.glass && !selected ? glassMaterial : material} position={[part.x + part.lengthMm / 2, part.y + h / 2, part.z]} scale={[part.lengthMm, h, shape.thick]} />;
   }
+  if (shape.type === 'linear' && hasAngledEnds(part)) return <PlumbBar part={part} section={shape.section} material={material} />;
   if (shape.type === 'linear') {
     return <mesh geometry={extruded(materialKey, shape.section, partAngle(part), part.lengthMm)} material={material} matrix={matrix} matrixAutoUpdate={false} castShadow />;
   }

@@ -67,7 +67,8 @@ function offsetLine(pts: P[], d: number, closed: boolean): P[] {
 }
 
 /** Poligoni preseka (pre centriranja); prazno kad linija nema bar dve tačke (zatvorena tri) ili zid nije pozitivan. */
-export function drawnPolys(d: Pick<DrawnSection, 'pts' | 'wall' | 'closed'>): DrawnPoly[] {
+export function drawnPolys(d: Pick<DrawnSection, 'pts' | 'wall' | 'closed'> & { polys?: DrawnSection['polys'] }): DrawnPoly[] {
+  if (d.polys?.length) return d.polys.filter((p) => p.outline.length >= 3);
   const pts = cleanPts(d.pts, d.closed);
   const t = d.wall;
   if (!(t > 0) || pts.length < (d.closed ? 3 : 2)) return [];

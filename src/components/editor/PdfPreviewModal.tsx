@@ -18,17 +18,21 @@ function canEmbedPdf(): boolean {
 }
 
 /** Pregled ponude pre čuvanja: PDF se prvo prikaže, a tek „Sačuvaj PDF" ga preuzima. */
-export function PdfPreviewModal({ project, customer, materials, settings, onClose, kind = 'quote', askOffcuts = false }: {
+export function PdfPreviewModal({ project, customer, materials, settings, onClose, kind = 'quote', askOffcuts = false, itemId }: {
   project: Project; customer: Customer | null; materials: Material[]; settings: AppSettings; onClose: () => void;
-  /** vrsta dokumenta: ponuda (podrazumevano) ili krojna lista */
-  kind?: 'quote' | 'cutlist' | 'workorder' | 'sketch';
+  /** vrsta dokumenta: ponuda (podrazumevano), krojna lista, radni nalog, skica ili mere kapije */
+  kind?: 'quote' | 'cutlist' | 'workorder' | 'sketch' | 'gate';
   /** krojna lista: pre PDF-a se prvo pita ima li ostataka materijala (unos ručno ili iz magacina) */
   askOffcuts?: boolean;
+  /** mere kapije: ID kapije u projektu */
+  itemId?: string;
 }) {
   const cutlist = kind === 'cutlist';
   const workorder = kind === 'workorder';
   const sketch = kind === 'sketch';
-  const docName = sketch ? 'skice' : workorder ? 'radnog naloga' : cutlist ? 'krojne liste' : 'ponude';
+  const gate = kind === 'gate';
+  const docName = gate ? 'mera kapije' : sketch ? 'skice' : workorder ? 'radnog naloga' : cutlist ? 'krojne liste' : 'ponude';
+  const docTitle = gate ? 'Pregled mera kapije' : sketch ? 'Pregled skice' : workorder ? 'Pregled radnog naloga' : cutlist ? 'Pregled krojne liste' : 'Pregled ponude';
   const [blob, setBlob] = useState<Blob | null>(null);
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +54,7 @@ export function PdfPreviewModal({ project, customer, materials, settings, onClos
     setBlob(null); setUrl(null); setError(null);
     let alive = true;
     let objectUrl: string | null = null;
-    (sketch ? import('../../services/pdfSketch').then((m) => m.buildProjectSketchPdfBlob(project, customer, materials, settings, scope)) : workorder ? import('../../services/pdfWorkorder').then((m) => m.buildWorkorderPdfBlob(project, customer, materials, settings, scope)) : cutlist ? import('../../services/pdfCutlist').then((m) => m.buildCutlistPdfBlob(project, customer, materials, settings, undefined, scope)) : buildQuotePdfBlob(project, customer, materials, settings))
+    (gate ? import('../../services/pdfGate').then((m) => m.buildGatePdfBlob(project, itemId ?? '', materials, settings)) : sketch ? import('../../services/pdfSketch').then((m) => m.buildProjectSketchPdfBlob(project, customer, materials, settings, scope)) : workorder ? import('../../services/pdfWorkorder').then((m) => m.buildWorkorderPdfBlob(project, customer, materials, settings, scope)) : cutlist ? import('../../services/pdfCutlist').then((m) => m.buildCutlistPdfBlob(project, customer, materials, settings, undefined, scope)) : buildQuotePdfBlob(project, customer, materials, settings))
       .then((b) => {
         if (!alive) return;
         objectUrl = URL.createObjectURL(b);
@@ -63,11 +67,11 @@ export function PdfPreviewModal({ project, customer, materials, settings, onClos
   }, [ready, scope]);
 
   const suffix = scope === 'gates' ? '-kapije' : scope === 'fence' ? '-ograda' : '';
-  const save = () => { if (blob) downloadBlob(blob, sketch ? `skica${suffix}_${safeFilename(project.name)}.pdf` : workorder ? `radni-nalog${suffix}_${safeFilename(project.name)}.pdf` : cutlist ? `krojna-lista${suffix}_${safeFilename(project.name)}.pdf` : `ponuda_${safeFilename(project.quoteNo || project.name)}.pdf`); };
+  const save = () => { if (blob) downloadBlob(blob, gate ? `mere_kapije_${safeFilename(project.name)}.pdf` : sketch ? `skica${suffix}_${safeFilename(project.name)}.pdf` : workorder ? `radni-nalog${suffix}_${safeFilename(project.name)}.pdf` : cutlist ? `krojna-lista${suffix}_${safeFilename(project.name)}.pdf` : `ponuda_${safeFilename(project.quoteNo || project.name)}.pdf`); };
 
   return (
     <Modal
-      title={sketch ? 'Pregled skice' : workorder ? 'Pregled radnog naloga' : cutlist ? 'Pregled krojne liste' : `Pregled ponude${project.quoteNo ? ` ${project.quoteNo}` : ''}`}
+      title={kind === 'quote' ? `Pregled ponude${project.quoteNo ? ` ${project.quoteNo}` : ''}` : docTitle}
       width={900}
       fullscreen={full}
       onClose={onClose}
@@ -110,7 +114,7 @@ export function PdfPreviewModal({ project, customer, materials, settings, onClos
             </div>
           </div>
         ) : url ? (
-          <iframe title={sketch ? 'Pregled skice' : workorder ? 'Pregled radnog naloga' : cutlist ? 'Pregled krojne liste' : 'Pregled ponude'} src={url} className="w-full h-full border-0" data-testid="pdf-frame" />
+          <iframe title={docTitle} src={url} className="w-full h-full border-0" data-testid="pdf-frame" />
         ) : (
           <div className="h-full grid place-items-center text-sm text-muted"><span className="inline-flex items-center gap-2"><Loader2 size={16} className="animate-spin" />Priprema {docName}…</span></div>
         )}

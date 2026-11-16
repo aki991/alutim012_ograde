@@ -1,4 +1,4 @@
-import { ChevronDown, Download, PenTool, Ruler, FileSpreadsheet, FileText, Plus, Search, Trash2, Upload } from 'lucide-react';
+import { ChevronDown, Copy, Download, ImageUp, PenTool, Ruler, FileSpreadsheet, FileText, Plus, Search, Trash2, Upload } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { NumberField, PriceInput, SelectField, TextField } from '../../components/forms/Fields';
 import { NumInput } from '../../components/forms/NumInput';
@@ -11,7 +11,8 @@ import { compareMaterials, cProfileSpec, isTerraceMaterial, materialDimFields, m
 import { profileGeometry, profileSpecFor, type DimField } from '../../domain/models/profileDrawings';
 import { MaterialsImportModal } from '../../components/models/MaterialsImportModal';
 import { DrawSectionModal } from '../../components/models/DrawSectionModal';
-import { drawnName } from '../../domain/models/drawnSection';
+import { TraceSectionModal } from '../../components/models/TraceSectionModal';
+import { drawnName, drawnSize } from '../../domain/models/drawnSection';
 import { materialsToRows, parseCsv } from '../../domain/pricing/materialsIo';
 import { loadPdfJs, readPdfTable } from '../../services/pdfTable';
 import { readXlsx } from '../../services/xlsx';
@@ -47,6 +48,7 @@ export default function MaterialsPage() {
   const [exporting, setExporting] = useState(false);
   /** prozor za crtanje preseka: „new“ = nov materijal od nacrtanog preseka, „form“ = presek materijala koji se menja */
   const [drawFor, setDrawFor] = useState<'new' | 'form' | null>(null);
+  const [traceFor, setTraceFor] = useState<'new' | 'form' | null>(null);
   const exportRef = useRef<HTMLDivElement>(null);
   // meni za izvoz se zatvara klikom van njega
   useEffect(() => {
@@ -84,6 +86,14 @@ export default function MaterialsPage() {
     return materials.filter((m) => (cat === 'all' || m.category === cat) && (use === 'all' || (use === 'terrace') === isTerraceMaterial(m)) && matchesSearch(`${m.name} ${m.sku}`, q)).sort(compareMaterials);
   }, [materials, q, cat, use]);
 
+  /** kopija materijala: nov ID, jedinstvena šifra i naziv „(kopija)“; mere, presek i cena se prepisuju, pa se menja samo ono što treba */
+  const copyMaterial = (m: Material) => {
+    const skus = new Set(allMaterials.map((x) => x.sku.toLowerCase()));
+    let sku = `${m.sku}-K`; for (let n = 2; skus.has(sku.toLowerCase()); n++) sku = `${m.sku}-K${n}`;
+    const clone = JSON.parse(JSON.stringify(m)) as Material;
+    setIsNew(true);
+    setForm({ ...clone, id: uid('mat'), sku, name: `${m.name} (kopija)`, demo: false });
+  };
   const openNew = () => { setIsNew(true); setForm({ id: uid('mat'), sku: '', name: '', category: 'ostalo', unit: 'kom', unitPrice: 0, wastePercent: 0, demo: false }); };
   const valid = form && form.name.trim().length > 0 && form.sku.trim().length > 0 && form.unitPrice >= 0;
   /** mere preseka izabranog materijala koje se mogu menjati; izmena A, B i zida menja i mere u nazivu (npr. 60×60×2 → 60×60×1,5) */
@@ -118,6 +128,7 @@ export default function MaterialsPage() {
             )}
           </div>
           <button className="btn" data-testid="btn-draw-element" title="Nacrtajte presek profila (U, C, L, cev …); nacrtan presek dobija 2D i 3D prikaz" onClick={() => setDrawFor('new')}><PenTool size={17} />Nacrtaj element</button>
+          <button className="btn" data-testid="btn-trace-element" title="Izaberite sliku preseka profila; aplikacija pravi 2D i 3D prikaz od nje" onClick={() => setTraceFor('new')}><ImageUp size={17} />Presek iz slike</button>
           <button className="btn btn-primary" data-testid="btn-add-material" onClick={openNew}><Plus size={17} />Dodaj materijal</button>
         </div>} />
       {ioError && <p className="text-sm text-[#b42318] mb-2" role="alert">{ioError}</p>}
@@ -151,7 +162,7 @@ export default function MaterialsPage() {
                   <td className="td"><select aria-label={`Jedinica: ${m.name}`} className="input !w-20 !py-1" value={m.unit} onChange={(e) => upsertMaterial({ ...m, unit: e.target.value as MaterialUnit })}>{UNITS.map((u) => <option key={u}>{u}</option>)}</select></td>
                   <td className="td"><PriceInput label={`Cena: ${m.name}`} className="!py-1" rsd={m.unitPrice} onChange={(v) => upsertMaterial({ ...m, unitPrice: v })} /></td>
                   <td className="td"><input aria-label={`Otpad: ${m.name}`} type="number" min={0} max={100} className="input !py-1 text-right tabular-nums" value={m.wastePercent} onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v >= 0 && v <= 100) upsertMaterial({ ...m, wastePercent: v }); }} /></td>
-                  <td className="td text-right whitespace-nowrap"><button className="btn btn-sm" title="Izmena materijala: naziv, šifra, kategorija i sve mere preseka (cena, jedinica i otpad se menjaju i direktno u tabeli)" data-testid="material-edit" onClick={() => { setIsNew(false); setForm(m); }}>Izmeni</button> <button className="btn btn-sm btn-icon btn-danger" aria-label={`Obriši ${m.name}`} onClick={() => setDel(m)}><Trash2 size={14} /></button></td>
+                  <td className="td text-right whitespace-nowrap"><button className="btn btn-sm" title="Izmena materijala: naziv, šifra, kategorija i sve mere preseka (cena, jedinica i otpad se menjaju i direktno u tabeli)" data-testid="material-edit" onClick={() => { setIsNew(false); setForm(m); }}>Izmeni</button> <button className="btn btn-sm btn-icon" title="Kopiraj materijal: otvara kopiju sa istim merama i presekom, pa promeniš samo ono što treba" aria-label={`Kopiraj ${m.name}`} data-testid="material-copy" onClick={() => copyMaterial(m)}><Copy size={14} /></button> <button className="btn btn-sm btn-icon btn-danger" aria-label={`Obriši ${m.name}`} onClick={() => setDel(m)}><Trash2 size={14} /></button></td>
                 </tr>
                 {open && (
                   <tr data-testid="material-drawing-row">
@@ -187,7 +198,15 @@ export default function MaterialsPage() {
             setDrawFor(null);
           }} />
       )}
-      {form && !drawFor && (
+      {traceFor && (
+        <TraceSectionModal onClose={() => setTraceFor(null)}
+          onSave={(d) => {
+            if (traceFor === 'form' && form) setForm({ ...form, drawn: d, wallMm: undefined, dims: undefined, unit: form.unit === 'kom' ? 'm' : form.unit });
+            else { setIsNew(true); setForm({ id: uid('mat'), sku: `NAC-${Date.now().toString(36).slice(-5).toUpperCase()}`, name: drawnName(d), category: 'profil', unit: 'm', unitPrice: 0, wastePercent: 0, demo: false, drawn: d }); }
+            setTraceFor(null);
+          }} />
+      )}
+      {form && !drawFor && !traceFor && (
         <Modal title={isNew ? 'Novi materijal' : 'Izmena materijala'} width={780} onClose={() => setForm(null)} footer={<><button className="btn" onClick={() => setForm(null)}>Otkaži</button><button className="btn btn-primary" disabled={!valid} data-testid="material-save" onClick={() => { upsertMaterial({ ...form, demo: isNew ? false : form.demo }); setForm(null); }}>Sačuvaj</button></>}>
           <div className="grid gap-x-5 md:grid-cols-[minmax(0,1fr)_260px]">
           <div>
@@ -200,10 +219,29 @@ export default function MaterialsPage() {
             <span><b>Materijal za ograde za terase</b><span className="block text-xs text-muted">Nudi se samo u crtanju ograda za terase (stubovi, rukohvati, prečke, staklo, okov).</span></span>
           </label>}
           <div className="rounded-lg border border-line p-2.5 my-1.5 flex flex-wrap items-center gap-2" data-testid="material-drawn">
-            <span className="text-[13px] flex-1 min-w-[180px]">{form.drawn ? <><b>Nacrtan presek</b> — koristi se u crtanju modela, 3D prikazu i krojnoj listi.</> : 'Presek se određuje po šifri i nazivu. Možete ga i nacrtati.'}</span>
-            <button className="btn btn-sm" data-testid="material-draw" onClick={() => setDrawFor('form')}><PenTool size={14} />{form.drawn ? 'Izmeni crtež' : 'Nacrtaj presek'}</button>
+            <span className="text-[13px] flex-1 min-w-[180px]">{form.drawn ? <><b>{form.drawn.polys ? 'Presek iz slike' : 'Nacrtan presek'}</b> — koristi se u crtanju modela, 3D prikazu i krojnoj listi.</> : 'Presek se određuje po šifri i nazivu. Možete ga i nacrtati.'}</span>
+            {!form.drawn?.polys && <button className="btn btn-sm" data-testid="material-draw" onClick={() => setDrawFor('form')}><PenTool size={14} />{form.drawn ? 'Izmeni crtež' : 'Nacrtaj presek'}</button>}
+            <button className="btn btn-sm" data-testid="material-trace" onClick={() => setTraceFor('form')}><ImageUp size={14} />{form.drawn?.polys ? 'Druga slika' : 'Presek iz slike'}</button>
             {form.drawn && <button className="btn btn-sm" data-testid="material-draw-remove" onClick={() => setForm({ ...form, drawn: undefined, wallMm: undefined })}>Ukloni crtež</button>}
           </div>
+          {form.drawn?.polys && (() => {
+            const size = drawnSize(form.drawn);
+            // mere preseka iz slike: razvlače se poligoni po širini i visini (npr. rukohvat 100 → 60 mm)
+            const resize = (w: number, h: number) => {
+              const d = form.drawn!;
+              const sx = w / size.w; const sy = h / size.h;
+              const r = (n: number) => Math.round(n * 100) / 100;
+              const polys = d.polys!.map((p) => ({ outline: p.outline.map(([x, y]) => [r(x * sx), r(y * sy)] as [number, number]), holes: p.holes.map((hl) => hl.map(([x, y]) => [r(x * sx), r(y * sy)] as [number, number])) }));
+              setForm({ ...form, drawn: { ...d, polys, wall: r(d.wall * Math.min(sx, sy)) } });
+            };
+            return (
+              <div className="rounded-lg border border-line p-2.5 my-1.5" data-testid="material-drawn-size">
+                <div className="text-[13px] font-semibold mb-1">Mere preseka (mm)</div>
+                <NumberField label="Širina" unit="mm" value={size.w} range={{ min: 1, max: 2000 }} integer={false} step={1} onCommit={(v) => resize(v, size.h)} />
+                <NumberField label="Visina" unit="mm" value={size.h} range={{ min: 1, max: 2000 }} integer={false} step={1} onCommit={(v) => resize(size.w, v)} />
+              </div>
+            );
+          })()}
           <NumberField label="Cena po jedinici" unit={settings.currency} value={toCurrency(form.unitPrice, settings.currency, settings.currencyRateToEur)} range={{ min: 0, max: 10_000_000 }} allowZero integer={false} step={settings.currency === 'EUR' ? 0.1 : 10} onCommit={(v) => setForm({ ...form, unitPrice: fromCurrency(v, settings.currency, settings.currencyRateToEur) })} />
           {dimFields.length > 0 && (
             <div className="rounded-lg border border-line p-2.5 my-1.5" data-testid="material-dims">

@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { create } from 'zustand';
 import { isBuiltinMaterial } from '../data/materials';
-import { DEFAULT_CARRIAGES, missingModelMaterials } from '../data/modelMaterials';
+import { DEFAULT_CARRIAGES, DEFAULT_PLATES, DEFAULT_RAILS, missingModelMaterials } from '../data/modelMaterials';
 import { withTerraceMaterials } from '../data/terraceMaterials';
 import { createSeedData } from '../data/seed';
 import { loadAll, saveAll, wipeAll } from '../db';
@@ -25,6 +25,7 @@ import type {
 } from '../domain/models/types';
 import { migrateProject } from '../domain/validation/project';
 import { applyPostTemplate as applyPostTemplateTo } from '../domain/models/postTemplates';
+import { bookProjectStock } from '../domain/pricing/stockBooking';
 import { uid } from '../utils/id';
 
 export interface RemotePatch {
@@ -311,6 +312,20 @@ export const useAppStore = create<AppState>((set, get) => {
               } else localStorage.setItem(CARRIAGES_KEY, '1');
             }
           } catch { /* bez localStorage-a: preskače se */ }
+          // jednokratno: profilisan rukohvat (nacrtan presek sa žlebovima) dobija mesto u cenovniku
+          // i lim za popunu pada terena (jednokratno, svaki spisak sa svojom oznakom)
+          const RAIL_KEY = 'alutim.railProfileV1';
+          const extraAdded: string[] = [];
+          for (const [key, list] of [[RAIL_KEY, DEFAULT_RAILS], ['alutim.slopePlateV1', DEFAULT_PLATES]] as [string, Material[]][]) {
+            try {
+              if (localStorage.getItem(key) !== '1') {
+                const have = new Set(materials.map((m) => m.id));
+                const add = list.filter((m) => !have.has(m.id));
+                if (add.length) { materials = [...materials, ...add.map((m) => ({ ...m }))]; extraAdded.push(key); } else localStorage.setItem(key, '1');
+              }
+            } catch { /* bez localStorage-a: preskače se */ }
+          }
+          const railAdded = extraAdded.length > 0;
           // jednokratno: materijali za ograde za terase (BTS stubovi, rukohvati, prečke, staklo i okov) i oznaka „za terase“ na starim BTS materijalima
           const TERRACE_KEY = 'alutim.terraceMaterialsV2';
           let terraceAdded = false;
@@ -336,7 +351,7 @@ export const useAppStore = create<AppState>((set, get) => {
               localStorage.setItem(PROJECTS_WIPED_KEY, '1');
             } catch { /* neuspeh: pokušaće se opet pri sledećem pokretanju */ }
           }
-          if (backfilled || renamed || carriagesAdded || terraceAdded) {
+          if (backfilled || renamed || carriagesAdded || terraceAdded || railAdded) {
             // autosave počinje tek posle init-a, pa se dodati materijali upisuju odmah; oznaka se postavlja tek kad je upis uspeo
             try {
               await saveAll({ projects: get().projects, customers: get().customers, materials, settings });
@@ -344,6 +359,7 @@ export const useAppStore = create<AppState>((set, get) => {
               if (renamed) localStorage.setItem(NAMES_KEY, '1');
               if (carriagesAdded) localStorage.setItem(CARRIAGES_KEY, '1');
               if (terraceAdded) localStorage.setItem(TERRACE_KEY, '1');
+              for (const key of extraAdded) localStorage.setItem(key, '1');
             } catch { /* neuspeh ne sme da sakrije učitane podatke; pokušaće se opet pri sledećem pokretanju */ }
           }
         }
@@ -807,6 +823,17 @@ export const useAppStore = create<AppState>((set, get) => {
 useAppStore.subscribe((s, prev) => {
   if (s.settings.customModels !== prev.settings.customModels || s.materials !== prev.materials) registerCustomModels(s.settings.customModels, s.materials);
   if (s.settings.hiddenModels !== prev.settings.hiddenModels) setHiddenModels(s.settings.hiddenModels);
+  // projekat prešao u „U izradi“: materijal iz krojne liste se knjiži u magacin (jednom po projektu, i kad se status menja tamo-amo ili poništi)
+  if (s.projects !== prev.projects) {
+    const before = new Map(prev.projects.map((p) => [p.id, p.status]));
+    const booked = s.settings.stockBooked ?? [];
+    const toBook = s.projects.filter((p) => p.status === 'u_izradi' && !p.modelDraft && before.has(p.id) && before.get(p.id) !== 'u_izradi' && !booked.includes(p.id));
+    if (toBook.length) {
+      let settings = s.settings;
+      for (const p of toBook) settings = { ...settings, stock: bookProjectStock(p, settings, s.materials).stock, stockBooked: [...(settings.stockBooked ?? []), p.id] };
+      useAppStore.setState({ settings });
+    }
+  }
 });
 
 export const useCurrentProject = (): Project | undefined =>

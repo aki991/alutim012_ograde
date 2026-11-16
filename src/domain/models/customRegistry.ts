@@ -1,6 +1,6 @@
 import { FEATURES } from '../../config/features';
 import { FENCE_MODEL_LIST, FENCE_MODELS, type FenceModelDef } from './catalog';
-import { miterEndsOf, partBounds, resolveParts, type CustomModel, type CustomPart, type ResolvedPart } from './custom';
+import { miterEndsOf, partBounds, resolveParts, sheetAreaMm2, type CustomModel, type CustomPart, type ResolvedPart } from './custom';
 import { applyGuides, guidesOf, scaleWithGuides } from './guides';
 import { isFramePart, resizeWithFrame } from './frame';
 import { materialShape, sectionFace, type MatShape } from './materialShape';
@@ -101,7 +101,7 @@ function roleOf(m: CustomModel, p: CustomPart, shape: MatShape | null, guideIds:
   const vSide = (b.x0 + b.x1) / 2 < m.widthMm / 2 ? 'leva' : 'desna';
   const hSide = (b.y0 + b.y1) / 2 > m.heightMm / 2 ? 'gornja' : 'donja';
   // bočna U vođica: deo u koji ulaze prečke, ili uspravan U profil (vođica i kad prečke nisu vezane za nju)
-  if (guideIds.has(p.id) || (shape?.type === 'linear' && shape.u && !horiz && ortho)) return { kind: 'guide', side: vSide };
+  if ((guideIds.has(p.id) && !horiz) || (shape?.type === 'linear' && shape.u && !horiz && ortho)) return { kind: 'guide', side: vSide };
   // ram: deo sa rezom 45° ili profil uz ivicu polja koji ide skoro celom širinom / visinom
   const edgeH = horiz && ortho && (b.y1 >= m.heightMm - 1 || b.y0 <= 1) && b.x1 - b.x0 >= 0.8 * m.widthMm;
   const edgeV = !horiz && ortho && (b.x0 <= 1 || b.x1 >= m.widthMm - 1) && b.y1 - b.y0 >= 0.8 * m.heightMm;
@@ -144,7 +144,7 @@ function specKey(m: CustomModel, p: CustomPart, guideIds: Set<string>) {
     miterMm = p.cut45 && shape?.type === 'linear' ? sectionFace(shape.section, p.rot).face : undefined;
     const me = miterEndsOf(p);
     miterEnds = p.cut45 && p.miter && !(me[0] && me[1]) ? me : undefined;
-    key = `${p.materialId}|${lengthMm}|${p.tiltDeg ?? 0}|${p.cut45 ? 45 : 0}|${miterMm ?? ''}|${role.kind}${miterEnds ? `|${+miterEnds[0]}${+miterEnds[1]}` : ''}`;
+    key = `${p.materialId}|${lengthMm}|${p.tiltDeg ?? 0}|${p.cut45 ? 45 : p.plumbEnds ? `p${r1(p.angleDeg)}` : 0}|${p.cutStartDeg ?? ''}/${p.cutEndDeg ?? ''}|${miterMm ?? ''}|${role.kind}${miterEnds ? `|${+miterEnds[0]}${+miterEnds[1]}` : ''}`;
     if (p.cut45) group = 'Ramovi';
   }
   return { key, lengthMm, group, miterMm, miterEnds, mat, role };
@@ -171,9 +171,13 @@ export function customSpec(m: CustomModel): SpecPart[] {
     const { key, lengthMm, group, miterMm, miterEnds, mat } = specKey(m, p, guideIds);
     const name = mat?.name ?? 'Deo sa crteža (materijal obrisan)';
     const role = lengthMm ? roles.get(p.id) : undefined;
+    const cutAngle = p.cutStartDeg ?? p.cutEndDeg;
+    const cutFromH = cutAngle === undefined ? 0 : Math.abs(Math.atan(Math.tan((cutAngle * Math.PI) / 180)) * 180 / Math.PI);
+    const plumbNote = cutAngle !== undefined && !p.cut45 ? `donji kraj sečen koso (pad terena), pod ${String(Math.round(cutFromH * 10) / 10).replace('.', ',')}° od vodoravne; dužina je duža ivica`
+      : p.plumbEnds && !p.cut45 && p.angleDeg % 180 !== 0 ? `kos profil (pad terena): oba kraja sečena uspravno, pod ${String(Math.round(Math.abs(90 - (((p.angleDeg % 180) + 180) % 180)) * 10) / 10).replace('.', ',')}° od ose; dužina je dužina ivice` : null;
     const tilt = p.cut45 && !p.heightMm ? (miterEnds ? `ram: rez 45° samo na ${miterEnds[0] && miterEnds[1] ? 'oba kraja' : miterEnds[0] || miterEnds[1] ? 'jednom kraju (ugao rama), drugi je ravan' : 'ugaonim krajevima — nema ih, ravni rezovi'}; dužina je spoljna mera` : 'ram: rez 45° na oba kraja; dužina je spoljna mera') : p.tiltDeg ? `koso: nagib ${String(Math.round(Math.abs(p.tiltDeg) * 100) / 100).replace('.', ',')}° od ravni ograde` : '';
-    const row = rows.get(key) ?? { id: `cs_${rows.size}`, name, materialId: p.materialId, group, qty: '0', lengthMm, enabled: true, n: 0, area: 0, ...(miterMm ? { miterMm } : {}), ...(miterEnds ? { miterEnds } : {}), ...(role ? { role } : {}), ...(tilt ? { note: tilt } : {}) };
-    row.n += 1; row.area += (p.lengthMm * (p.heightMm ?? 0)) / 1e6;
+    const row = rows.get(key) ?? { id: `cs_${rows.size}`, name, materialId: p.materialId, group, qty: '0', lengthMm, enabled: true, n: 0, area: 0, ...(miterMm ? { miterMm } : {}), ...(miterEnds ? { miterEnds } : {}), ...(role ? { role } : {}), ...(plumbNote ?? tilt ? { note: plumbNote ?? tilt } : {}) };
+    row.n += 1; row.area += sheetAreaMm2(p) / 1e6;
     rows.set(key, row);
   }
   const spec: SpecPart[] = [...rows.entries()].map(([key, { n, area, ...part }]) => ({

@@ -25,6 +25,11 @@ export interface CustomPart {
   lengthMm: number;
   /** samo ploča: visina */
   heightMm?: number;
+  /**
+   * samo ploča: kosa donja ivica (pad terena) — za koliko je desni kraj donje ivice viši od levog (mm; negativno: niži).
+   * Gornja ivica ostaje vodoravna, a y je najniža tačka donje ivice. Bez vrednosti ploča je pravougaona.
+   */
+  bottomSlopeMm?: number;
   /** ugao u ravni crteža (0 = vodoravno udesno, 90 = uspravno nagore) */
   angleDeg: number;
   /** okretanje preseka oko ose profila (0 / 90 / 180 / 270) */
@@ -44,6 +49,17 @@ export interface CustomPart {
   miter?: 'lo' | 'hi';
   /** deo rama: koji su krajevi pod 45° (početak, kraj ose); bez vrednosti su oba. Slobodan kraj rama (bez susedne strane) je ravan. */
   miterEnds?: [boolean, boolean];
+  /**
+   * kos profil čiji su krajevi sečeni uspravno (uz bočne cevi), npr. donja cev koja prati pad terena između dve bočne strane:
+   * obris spreda je paralelogram, a dužina je dužina ivice (ista za gornju i donju ivicu).
+   */
+  plumbEnds?: boolean;
+  /**
+   * kos rez kraja profila: ugao linije reza u ravni crteža (stepeni, kao ugao ose: 0 = vodoravno, 90 = uspravno) na početku / kraju ose.
+   * Npr. bočna cev kapije na kosom terenu ima donji kraj sečen pod uglom pada, u ravni sa limom. Bez vrednosti kraj je sečen pod pravim uglom.
+   */
+  cutStartDeg?: number;
+  cutEndDeg?: number;
   /** pomeraj po dubini (mm, + ka posmatraču) */
   z: number;
   /** sopstvena boja dela (RAL ključ ili #hex), npr. crn ram a sive prečke; bez vrednosti deo je u boji modela */
@@ -105,6 +121,37 @@ export function setPartsColor(model: CustomModel, ids: string[], color: string |
   return { ...model, parts: model.parts.map((p) => { if (!s.has(p.id)) return p; const { color: _old, ...rest } = p; return color ? { ...rest, color } : rest; }) };
 }
 
+/** Obris ploče (pravougaonik ili trapez sa kosom donjom ivicom): levo dole, desno dole, desno gore, levo gore. */
+export function sheetPoly(p: Pick<CustomPart, 'x' | 'y' | 'lengthMm' | 'heightMm' | 'bottomSlopeMm'>): [number, number][] {
+  const s = p.bottomSlopeMm ?? 0; const top = p.y + (p.heightMm ?? 0);
+  return [[p.x, p.y + Math.max(0, -s)], [p.x + p.lengthMm, p.y + Math.max(0, s)], [p.x + p.lengthMm, top], [p.x, top]];
+}
+
+/** Površina ploče (mm²), i kad joj je donja ivica kosa. */
+export const sheetAreaMm2 = (p: Pick<CustomPart, 'lengthMm' | 'heightMm' | 'bottomSlopeMm'>): number => p.lengthMm * Math.max(0, (p.heightMm ?? 0) - Math.abs(p.bottomSlopeMm ?? 0) / 2);
+
+/**
+ * Obris profila u lokalnim koordinatama (osa po x, presek po y od u0 do u1). Profil sa uspravno sečenim krajevima (`plumbEnds`)
+ * je paralelogram: uspravna linija kroz kraj ose je u lokalnim koordinatama pomerena za u · tg(ugao).
+ */
+export function linearLocalPoly(p: Pick<CustomPart, 'lengthMm' | 'angleDeg' | 'plumbEnds' | 'cutStartDeg' | 'cutEndDeg'>, u0: number, u1: number): [number, number][] {
+  const L = p.lengthMm;
+  // linija reza pod uglom φ (u ravni crteža) u lokalnim koordinatama: tačka sa poprečnom koordinatom u je na x = u · ctg(φ − ugao ose)
+  const k = (deg: number | undefined): number => {
+    if (deg === undefined) return 0;
+    const d = ((deg - p.angleDeg) * Math.PI) / 180;
+    const s = Math.sin(d);
+    return Math.abs(s) < 1e-6 ? 0 : Math.cos(d) / s;
+  };
+  const ks = k(p.cutStartDeg ?? (p.plumbEnds ? 90 : undefined));
+  const ke = k(p.cutEndDeg ?? (p.plumbEnds ? 90 : undefined));
+  return [[u0 * ks, u0], [L + u0 * ke, u0], [L + u1 * ke, u1], [u1 * ks, u1]];
+}
+
+/** profil sa bar jednim kosim rezom kraja (obris nije pravougaonik) */
+export const hasAngledEnds = (p: Pick<CustomPart, 'angleDeg' | 'plumbEnds' | 'cutStartDeg' | 'cutEndDeg'>): boolean =>
+  (!!p.plumbEnds && p.angleDeg % 180 !== 0) || p.cutStartDeg !== undefined || p.cutEndDeg !== undefined;
+
 /** Okvir dela u koordinatama crteža (za izbor, uklapanje pogleda i minijaturu). */
 export function partBounds(p: CustomPart, shape: MatShape): { x0: number; y0: number; x1: number; y1: number } {
   if (shape.type === 'sheet') return { x0: p.x, y0: p.y, x1: p.x + p.lengthMm, y1: p.y + (p.heightMm ?? 0) };
@@ -113,7 +160,7 @@ export function partBounds(p: CustomPart, shape: MatShape): { x0: number; y0: nu
   let local: [number, number][];
   if (shape.type === 'linear') {
     const { u0, u1 } = sectionFace(shape.section, partAngle(p));
-    local = [[0, u0], [p.lengthMm, u0], [p.lengthMm, u1], [0, u1]];
+    local = linearLocalPoly(p, u0, u1);
   } else {
     const b = solidsBounds(shape.solids);
     local = [[b.x0, b.y0], [b.x1, b.y0], [b.x1, b.y1], [b.x0, b.y1]];
@@ -219,7 +266,8 @@ export function resolveParts(model: Pick<CustomModel, 'parts' | 'color'> & { hw?
   const byId = new Map(materials.map((m) => [m.id, m]));
   const dims = model.hw ? hwDimsOf(model.hw) : null;
   const guideIds = new Set(model.parts.flatMap((p) => p.guides ?? []));
-  const ordered = guideIds.size ? [...model.parts.filter((p) => !guideIds.has(p.id)), ...model.parts.filter((p) => guideIds.has(p.id))] : model.parts;
+  // bez U vođica delovi se crtaju od zadnjeg ka prednjem (po dubini), pa deo ispred prekriva onaj iza njega
+  const ordered = guideIds.size ? [...model.parts.filter((p) => !guideIds.has(p.id)), ...model.parts.filter((p) => guideIds.has(p.id))] : [...model.parts].sort((p, q) => p.z - q.z);
   const all = ordered.map((part) => {
     const material = byId.get(part.materialId);
     // okov koji je aplikacija sama postavila se crta prema merama modela („Mere ograde“)
@@ -240,7 +288,7 @@ export function scaleModel(model: CustomModel, widthMm: number, heightMm: number
   return {
     ...model, widthMm, heightMm,
     parts: model.parts.map((p) => {
-      if (p.heightMm) return { ...p, x: p.x * sx, y: p.y * sy, lengthMm: p.lengthMm * sx, heightMm: p.heightMm * sy };
+      if (p.heightMm) return { ...p, x: p.x * sx, y: p.y * sy, lengthMm: p.lengthMm * sx, heightMm: p.heightMm * sy, ...(p.bottomSlopeMm ? { bottomSlopeMm: p.bottomSlopeMm * sy } : {}) };
       const a = (p.angleDeg * Math.PI) / 180;
       const cx = Math.cos(a) * sx; const cy = Math.sin(a) * sy;
       const ortho = p.angleDeg % 90 === 0;
@@ -258,7 +306,7 @@ export function customBom(model: CustomModel, materials: Material[]): CustomBomL
   const acc = new Map<string, { count: number; mm: number; mm2: number }>();
   for (const p of model.parts) {
     const a = acc.get(p.materialId) ?? { count: 0, mm: 0, mm2: 0 };
-    a.count += 1; a.mm += p.lengthMm; a.mm2 += p.lengthMm * (p.heightMm ?? 0);
+    a.count += 1; a.mm += p.lengthMm; a.mm2 += sheetAreaMm2(p);
     acc.set(p.materialId, a);
   }
   const lines: CustomBomLine[] = [...acc.entries()].map(([materialId, a]) => {

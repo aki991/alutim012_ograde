@@ -20,6 +20,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { itemLabel } from '../../utils/labels';
 import { uid } from '../../utils/id';
 import { SaveGateModelDialog } from './SaveGateModelDialog';
+import { PdfPreviewModal } from '../editor/PdfPreviewModal';
 import { Modal } from '../ui/Modal';
 import { GateSketch } from './GateSketch';
 
@@ -49,6 +50,7 @@ export function GateDesignModal({ projectId, itemId, onClose, embedded, inline }
   const [showDims, setShowDims] = useState(true);
   const [saveOpen, setSaveOpen] = useState(false);
   const [savedMsg, setSavedMsg] = useState('');
+  const [pdfOpen, setPdfOpen] = useState(false);
   const index = project ? project.items.findIndex((i) => i.id === itemId) : -1;
   const gate = project?.items[index] as (Gate | undefined);
   const layout = useMemo(() => (project ? computeLayout(project) : null), [project]);
@@ -71,7 +73,7 @@ export function GateDesignModal({ projectId, itemId, onClose, embedded, inline }
   const label = itemLabel(project.items, index);
 
   const title = `Mere kapije — ${design.template?.name ?? label} (${SYSTEM_LABELS[sys]})`;
-  const headerActions = <>{!embedded && <button className="btn btn-sm" data-testid="gd-save-model" onClick={() => setSaveOpen(true)}>Sačuvaj kao model</button>}<button className="btn btn-sm" data-testid="gd-pdf" onClick={async () => { const { downloadGatePdf } = await import('../../services/pdfGate'); await downloadGatePdf(project, itemId, materials, settings); }}><FileDown size={14} />PDF mera kapije</button></>;
+  const headerActions = <>{!embedded && <button className="btn btn-sm" data-testid="gd-save-model" onClick={() => setSaveOpen(true)}>Sačuvaj kao model</button>}<button className="btn btn-sm" data-testid="gd-pdf" onClick={() => setPdfOpen(true)}><FileDown size={14} />PDF mera kapije</button></>;
   const body = (
     <>
       <div className={`grid lg:grid-cols-[minmax(0,1fr)_400px] gap-4`} data-testid="gate-design">
@@ -102,6 +104,7 @@ export function GateDesignModal({ projectId, itemId, onClose, embedded, inline }
         </div>
       </div>
       {savedMsg && <p className="text-[12.5px] text-emerald-700 mt-2" data-testid="gd-model-msg">{savedMsg}</p>}
+      {pdfOpen && <PdfPreviewModal kind="gate" itemId={itemId} project={project} customer={null} materials={materials} settings={settings} onClose={() => setPdfOpen(false)} />}
       {saveOpen && <SaveGateModelDialog gate={g} clearWidthMm={li.clearWidth} defaultName={label} posts={postDimsOf(project.posts[index], project.posts[index + 1])} onClose={() => setSaveOpen(false)} onSaved={(id, nm, ver) => { update((d) => ({ ...d, template: { id, name: nm, version: ver } })); setSaveOpen(false); setSavedMsg(`Model „${nm}“ sačuvan (v${ver}).`); }} />}
     </>
   );
@@ -326,12 +329,12 @@ function ExtraDims({ design, update, sys }: { design: GateDesign; update: Update
           <NumInput value={x.valueMm} testId={`gd-extra-value-${i}`} ariaLabel="Vrednost kote" onCommit={(v) => patch(x.id, { valueMm: v })} />
           <input className="input !py-1" placeholder="Deo / crtež" aria-label="Deo" value={x.part} onChange={(e) => patch(x.id, { part: e.target.value })} />
           <input className="input !py-1" placeholder="Od – do (reference)" aria-label="Reference" value={x.ref} onChange={(e) => patch(x.id, { ref: e.target.value })} />
-          <label className="text-[12px] flex items-center gap-1 col-span-2">Zadaje kotu u proračunu:
-            <select className="input !py-0.5 !w-auto" data-testid={`gd-extra-link-${i}`} value={x.link ?? ''} onChange={(e) => patch(x.id, { link: e.target.value || undefined })}>
+          <label className="text-[12px] flex items-center gap-1 col-span-2 min-w-0">Zadaje kotu u proračunu:
+            <select className="input !py-0.5 !w-auto min-w-0 flex-1"data-testid={`gd-extra-link-${i}`} value={x.link ?? ''} onChange={(e) => patch(x.id, { link: e.target.value || undefined })}>
               <option value="">ne (samo zapis)</option>
               {dimsFor(sys).filter((d) => d.key !== 'W').map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
             </select></label>
-          <label className="text-[12px] flex items-center gap-1"><input type="checkbox" checked={x.inExport} onChange={(e) => patch(x.id, { inExport: e.target.checked })} />u izvozu</label>
+          <label className="text-[12px] flex items-center gap-1 whitespace-nowrap"><input type="checkbox" checked={x.inExport} onChange={(e) => patch(x.id, { inExport: e.target.checked })} />u izvozu</label>
           <button className="btn btn-sm justify-self-end" aria-label="Obriši kotu" onClick={() => update((d) => ({ ...d, extra: d.extra.filter((y) => y.id !== x.id) }))}><Trash2 size={13} /></button>
         </div>
       ))}

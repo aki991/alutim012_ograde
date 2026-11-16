@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { miterEndsOf, partAngle, partBounds, resolveParts, type CustomModel, type CustomPart, type ResolvedPart } from '../../domain/models/custom';
+import { hasAngledEnds, linearLocalPoly, miterEndsOf, partAngle, partBounds, resolveParts, sheetPoly, type CustomModel, type CustomPart, type ResolvedPart } from '../../domain/models/custom';
 import { sectionEdgeLines, sectionFace, solidsBounds, type MatShape, type Solid } from '../../domain/models/materialShape';
 import type { Material } from '../../domain/models/types';
 
@@ -24,7 +24,7 @@ export function PartSvg({ part, shape, hex, selected = false, ghost = false }: {
   const common = { stroke, strokeOpacity: selected ? 1 : 0.65, strokeWidth: sw, vectorEffect: 'non-scaling-stroke' as const };
   let body;
   if (shape.type === 'sheet') {
-    body = <rect x={part.x} y={part.y} width={part.lengthMm} height={part.heightMm ?? 0} fill={shape.glass ? GLASS : hex} fillOpacity={shape.glass ? 0.45 : 1} {...common} />;
+    body = part.bottomSlopeMm ? <polygon points={sheetPoly(part).map(([x, y]) => `${x},${y}`).join(' ')} fill={shape.glass ? GLASS : hex} fillOpacity={shape.glass ? 0.45 : 1} {...common} /> : <rect x={part.x} y={part.y} width={part.lengthMm} height={part.heightMm ?? 0} fill={shape.glass ? GLASS : hex} fillOpacity={shape.glass ? 0.45 : 1} {...common} />;
   } else if (shape.type === 'linear') {
     const { face, u0 } = sectionFace(shape.section, partAngle(part));
     // deo rama: krajevi pod 45° (duža ivica je spoljna), da se ramovi spajaju na uglovima
@@ -32,9 +32,10 @@ export function PartSvg({ part, shape, hex, selected = false, ghost = false }: {
     const [ma, mb] = miterEndsOf(part);
     const oa = ma ? face : 0; const ob = mb ? face : 0;
     const mit = !!part.miter && (oa > 0 || ob > 0) && L > oa + ob;
+    const plumb = hasAngledEnds(part);
     const poly = mit
       ? (part.miter === 'lo' ? [[0, u0], [L, u0], [L - ob, u0 + face], [oa, u0 + face]] : [[oa, u0], [L - ob, u0], [L, u0 + face], [0, u0 + face]]).map((q) => q.join(',')).join(' ')
-      : null;
+      : plumb ? linearLocalPoly(part, u0, u0 + face).map((q) => q.join(',')).join(' ') : null;
     const clipId = `miter-${part.id}${ghost ? '-g' : ''}`;
     body = (
       <g transform={`translate(${part.x} ${part.y}) rotate(${part.angleDeg})`}>

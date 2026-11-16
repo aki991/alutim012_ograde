@@ -1,7 +1,7 @@
 import { contentBounds, partAngle, scaleModel, type CustomModel, type CustomPart, type Lufta } from './custom';
 import { materialShape, sectionFace, type MatShape, type Section } from './materialShape';
 import { uid } from '../../utils/id';
-import { minVerticalPitch } from './overlap';
+import { depthRange, minVerticalPitch } from './overlap';
 import type { Material } from './types';
 
 /**
@@ -45,6 +45,42 @@ export function guideInfo(p: CustomPart, shape: MatShape): GuideInfo | null {
 
 /** Uspravan U profil koji može da postane vođica (kanal mu se okreće ka prečki pri uklapanju). */
 const isGuideCandidate = (p: CustomPart, shape: MatShape): boolean => shape.type === 'linear' && !!shape.u && (norm(p.angleDeg) === 90 || norm(p.angleDeg) === 270) && !p.tiltDeg;
+
+/**
+ * Vodoravna vođica: U profil (gore ili dole) u čiji kanal ulaze krajevi uspravnih prečki (tarabica). Isto što i `GuideInfo`, samo po
+ * visini: kanal donje vođice gleda nagore (dirY = +1), gornje nadole (−1).
+ */
+export interface HGuideInfo {
+  id: string;
+  dirY: 1 | -1;
+  /** y otvora kanala (ivica stranica) i unutrašnjeg dna kanala */
+  mouthY: number;
+  backY: number;
+  /** sredina i pola unutrašnjeg otvora po dubini (z) */
+  zc: number;
+  half: number;
+  /** dužina vođice po x */
+  x0: number;
+  x1: number;
+  u: { a: number; b: number; c: number };
+}
+
+export function hGuideInfo(p: CustomPart, shape: MatShape): HGuideInfo | null {
+  if (shape.type !== 'linear' || !shape.u) return null;
+  const a = norm(p.angleDeg);
+  const t = norm(partAngle(p));
+  if ((a !== 0 && a !== 180) || (t !== 90 && t !== 270)) return null;
+  // otvor U preseka gleda u smer sin t po normali ose n = (−sin a, cos a) = (0, ±1)
+  const ny = a === 0 ? 1 : -1;
+  const dirY = (ny * (t === 90 ? 1 : -1)) as 1 | -1;
+  const { a: A, b: B, c: C } = shape.u;
+  const x0 = a === 0 ? p.x : p.x - p.lengthMm;
+  return { id: p.id, dirY, mouthY: p.y + (dirY * B) / 2, backY: p.y - dirY * (B / 2 - C), zc: p.z, half: A / 2 - C, x0, x1: x0 + p.lengthMm, u: shape.u };
+}
+
+/** Vodoravan U profil koji može da postane vođica uspravnih prečki (kanal mu se okreće ka prečkama pri uklapanju). */
+const isHGuideCandidate = (p: CustomPart, shape: MatShape): boolean => shape.type === 'linear' && !!shape.u && (norm(p.angleDeg) === 0 || norm(p.angleDeg) === 180) && !p.tiltDeg;
+const isVerticalBar = (p: CustomPart): boolean => norm(p.angleDeg) === 90 || norm(p.angleDeg) === 270;
 
 export interface TiltFit {
   /** osnovno okretanje (0/90/180/270) u kome prečka ima najmanju dubinu (stoji u ravni ograde) */
@@ -91,7 +127,7 @@ function channel(L: GuideInfo, R: GuideInfo): { zLo: number; zHi: number } {
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 
 type ShapeOf = (p: CustomPart) => MatShape | null;
-const shapeLookup = (materials: Material[]): ShapeOf => {
+export const shapeLookup = (materials: Material[]): ShapeOf => {
   const byId = new Map(materials.map((m) => [m.id, m]));
   return (p) => { const m = byId.get(p.materialId); return m ? materialShape(m) : null; };
 };
@@ -105,8 +141,42 @@ export function guidesOf(model: CustomModel, bar: CustomPart, materials: Materia
   return L && R && L.dirX === 1 && R.dirX === -1 && L.mouthX < R.mouthX ? [L, R] : null;
 }
 
+/** Vođice uspravne prečke (donja, gornja) ako i dalje postoje i ispravne su. */
+export function hGuidesOf(model: CustomModel, bar: CustomPart, materials: Material[]): [HGuideInfo, HGuideInfo] | null {
+  if (!bar.guides) return null;
+  const shapeOf = shapeLookup(materials);
+  const info = (id: string) => { const p = model.parts.find((x) => x.id === id); const s = p && shapeOf(p); return p && s ? hGuideInfo(p, s) : null; };
+  const B = info(bar.guides[0]); const T = info(bar.guides[1]);
+  return B && T && B.dirY === 1 && T.dirY === -1 && B.mouthY < T.mouthY ? [B, T] : null;
+}
+
+/** Uspravna prečka u vodoravnim U profilima: dužina (do dna oba kanala), visina, dubina i nagib se ograničavaju na kanale. */
+function constrainVBar(model: CustomModel, bar: CustomPart, shape: MatShape | null, materials: Material[]): CustomPart {
+  const g = hGuidesOf(model, bar, materials);
+  if (!g || !shape || shape.type !== 'linear' || norm(bar.angleDeg) !== 90) { const { guides: _drop, ...free } = bar; return free; }
+  const [B, T] = g;
+  const zLo = Math.max(B.zc - B.half, T.zc - T.half); const zHi = Math.min(B.zc + B.half, T.zc + T.half);
+  const fit = tiltFit(shape.section, bar.rot, zHi - zLo - clearanceOf(model));
+  if (!fit) { const { guides: _drop, ...free } = bar; return free; }
+  const rot = fit.rot;
+  const tilt = clamp(norm(bar.rot) === rot ? bar.tiltDeg ?? 0 : 0, -fit.minus, fit.plus);
+  const ext = sectionFace(shape.section, rot + tilt);
+  const yLo = Math.max(B.backY, T.mouthY - bar.lengthMm);
+  const yHi = Math.min(B.mouthY, T.backY - bar.lengthMm);
+  let y: number; let len: number;
+  if (yLo <= yHi + 1e-9) { y = clamp(bar.y, yLo, yHi); len = bar.lengthMm; }
+  else { y = clamp(bar.y, B.backY, B.mouthY); len = clamp(bar.y + bar.lengthMm, T.mouthY, T.backY) - y; }
+  // uspravan profil (ugao 90°): presek se širi ulevo od ose (normala ose je (−1, 0)), pa je x − u1 … x − u0 unutar vođica
+  const xLo = Math.max(B.x0, T.x0) + ext.u1; const xHi = Math.min(B.x1, T.x1) + ext.u0;
+  const x = xLo <= xHi ? clamp(bar.x, xLo, xHi) : (xLo + xHi) / 2;
+  const z = (zLo + zHi) / 2 - (ext.v0 + ext.v1) / 2;
+  const r = (n: number) => Math.round(n * 1000) / 1000;
+  return { ...bar, x: r(x), y: r(y), z: r(z), lengthMm: r(len), rot, tiltDeg: tilt || undefined };
+}
+
 /** Prečka zadovoljava ograničenja svojih vođica (položaj, dužina, dubina, nagib, visina); bez važećih vođica se odvaja. */
 function constrainBar(model: CustomModel, bar: CustomPart, shape: MatShape | null, materials: Material[]): CustomPart {
+  if (isVerticalBar(bar)) return constrainVBar(model, bar, shape, materials);
   const g = guidesOf(model, bar, materials);
   if (!g || !shape || shape.type !== 'linear' || norm(bar.angleDeg) !== 0) { const { guides: _drop, ...free } = bar; return free; }
   const [L, R] = g;
@@ -162,6 +232,14 @@ export function orientGuides(model: CustomModel, materials: Material[]): CustomM
   let changed = false;
   const parts = model.parts.map((p) => {
     const s = shapeOf(p);
+    // vodoravni U profil je vođica samo ako je neka uspravna prečka uklopljena u njega: donja gleda nagore, gornja nadole
+    if (s && isHGuideCandidate(p, s) && role.has(p.id)) {
+      const dirY = role.get(p.id) === 1 ? 1 : -1;
+      const rotH = (norm(p.angleDeg) === 0) === (dirY === 1) ? 90 : 270;
+      if (p.rot === rotH) return p;
+      changed = true;
+      return { ...p, rot: rotH };
+    }
     if (!s || !isGuideCandidate(p, s)) return p;
     const byBar = role.get(p.id);
     const dirX: 1 | -1 = byBar ? byBar : p.x < cx ? 1 : -1;
@@ -179,12 +257,12 @@ export function orientGuides(model: CustomModel, materials: Material[]): CustomM
  */
 export function autoAttachBars(model: CustomModel, materials: Material[]): CustomModel {
   const shapeOf = shapeLookup(materials);
-  if (!model.parts.some((p) => { const s = shapeOf(p); return !!s && isGuideCandidate(p, s); })) return model;
+  if (!model.parts.some((p) => { const s = shapeOf(p); return !!s && (isGuideCandidate(p, s) || isHGuideCandidate(p, s)); })) return model;
   let out = model;
   for (const p of model.parts) {
     // deo rama (dodat dugmetom „Dodaj ram“) nije prečka: ne uklapa se samo u bočne U profile
     if (p.cut45 && p.miter) continue;
-    if (p.guides || (norm(p.angleDeg) !== 0 && norm(p.angleDeg) !== 180)) continue;
+    if (p.guides || norm(p.angleDeg) % 90 !== 0) continue;
     const s = shapeOf(p);
     if (!s || s.type !== 'linear' || s.u) continue;
     const r = attachToGuides(out, p.id, materials);
@@ -204,8 +282,9 @@ export function attachToGuides(model: CustomModel, barId: string, materials: Mat
   let bar = model.parts.find((p) => p.id === barId);
   const shape = bar && shapeOf(bar);
   if (!bar || !shape || shape.type !== 'linear') return { error: 'U U profile se uklapaju samo profili (prečke).' };
+  if (isVerticalBar(bar)) return attachVBarToGuides(model, bar, shape, materials);
   if (norm(bar.angleDeg) === 180) bar = { ...bar, x: bar.x - bar.lengthMm, angleDeg: 0, rot: norm(bar.rot + 180) };
-  if (norm(bar.angleDeg) !== 0) return { error: 'Prečka mora biti vodoravna da bi ušla u bočne U profile.' };
+  if (norm(bar.angleDeg) !== 0) return { error: 'Prečka mora biti vodoravna ili uspravna da bi ušla u U profile.' };
   const b = bar;
   const near = (end: number, side: 'L' | 'R') => model.parts
     .filter((p) => p.id !== b.id && isGuideCandidate(p, shapeOf(p)!))
@@ -231,6 +310,41 @@ export function attachToGuides(model: CustomModel, barId: string, materials: Mat
   // do dna oba kanala; ako uspravno ne staje, prečka se postavlja pod uglom uklapanja
   const upright = sectionFace(shape.section, placed.rot).depth <= zHi - zLo - clearanceOf(next);
   next = { ...next, parts: next.parts.map((p) => (p.id === b.id ? { ...p, x: g[0].backX, lengthMm: g[1].backX - g[0].backX, rot: fit.rot, tiltDeg: upright && norm(placed.rot) === fit.rot ? p.tiltDeg : -fit.minus } : p)) };
+  return { model: applyGuides(next, materials), fit };
+}
+
+/**
+ * Uklapanje uspravne prečke (tarabice) u vodoravne U profile: ispod donjeg i iznad gornjeg kraja traže se vodoravni U profili,
+ * kanali im se okreću ka prečki (donji nagore, gornji nadole), a prečka ulazi do dna oba kanala, na sredinu otvora po dubini.
+ */
+function attachVBarToGuides(model: CustomModel, input: CustomPart, shape: Extract<MatShape, { type: 'linear' }>, materials: Material[]): AttachResult {
+  const shapeOf = shapeLookup(materials);
+  let bar = input;
+  if (norm(bar.angleDeg) === 270) bar = { ...bar, y: bar.y - bar.lengthMm, angleDeg: 90, rot: norm(bar.rot + 180) };
+  const b = bar;
+  const barX0 = b.x - sectionFace(shape.section, partAngle(b)).u1; const barX1 = b.x - sectionFace(shape.section, partAngle(b)).u0;
+  const near = (end: number, side: 'B' | 'T') => model.parts
+    .filter((p) => p.id !== b.id && isHGuideCandidate(p, shapeOf(p)!))
+    .map((p) => {
+      const u = (shapeOf(p) as Extract<MatShape, { type: 'linear' }>).u!;
+      const x0 = norm(p.angleDeg) === 0 ? p.x : p.x - p.lengthMm;
+      return { p, u, d: Math.abs(p.y - end), x0, x1: x0 + p.lengthMm };
+    })
+    .filter((c) => c.d <= Math.max(c.u.a, c.u.b) / 2 + 60 && barX1 >= c.x0 - 50 && barX0 <= c.x1 + 50 && (side === 'B' ? c.p.y < b.y + b.lengthMm / 2 : c.p.y > b.y + b.lengthMm / 2))
+    .sort((p, q) => p.d - q.d)[0];
+  const lo = near(b.y, 'B'); const hi = near(b.y + b.lengthMm, 'T');
+  if (!lo || !hi || lo.p.id === hi.p.id) return { error: 'Nisu pronađena dva vodoravna U profila uz krajeve prečke (gore i dole). Nacrtajte U profile i uspravnu prečku između njih.' };
+  // kanal donje vođice gleda nagore, gornje nadole
+  const face = (p: CustomPart, dirY: 1 | -1) => ({ ...p, tiltDeg: undefined, rot: (norm(p.angleDeg) === 0) === (dirY === 1) ? 90 : 270 });
+  let next: CustomModel = { ...model, parts: model.parts.map((p) => (p.id === lo.p.id ? face(p, 1) : p.id === hi.p.id ? face(p, -1) : p.id === b.id ? { ...b, guides: [lo.p.id, hi.p.id] as [string, string] } : p)) };
+  const placed = next.parts.find((p) => p.id === b.id)!;
+  const g = hGuidesOf(next, placed, materials);
+  if (!g) return { error: 'U profili su preblizu jedan drugom.' };
+  const zLo = Math.max(g[0].zc - g[0].half, g[1].zc - g[1].half); const zHi = Math.min(g[0].zc + g[0].half, g[1].zc + g[1].half);
+  const fit = tiltFit(shape.section, placed.rot, zHi - zLo - clearanceOf(next));
+  if (!fit) return { error: `Presek prečke ne staje u otvor U profila (${Math.round((zHi - zLo - clearanceOf(next)) * 10) / 10} mm, uz toleranciju ${clearanceOf(next)} mm) ni pod jednim uglom.` };
+  const upright = sectionFace(shape.section, placed.rot).depth <= zHi - zLo - clearanceOf(next);
+  next = { ...next, parts: next.parts.map((p) => (p.id === b.id ? { ...p, y: g[0].backY, lengthMm: g[1].backY - g[0].backY, rot: fit.rot, tiltDeg: upright && norm(placed.rot) === fit.rot ? p.tiltDeg : -fit.minus } : p)) };
   return { model: applyGuides(next, materials), fit };
 }
 
@@ -335,7 +449,10 @@ function freeBarGroup(model: CustomModel, bar: CustomPart, shape: MatShape | nul
     const x = sectionFace(s.section, partAngle(p));
     return p.y + x.u0 > 1 && p.y + x.u1 < model.heightMm - 1;
   };
-  const same = (p: CustomPart) => geom(p) && (p.materialId === bar.materialId || inner(p));
+  // grupa su samo prečke u istoj ravni (po dubini): delovi iza ili ispred njih (drugi sloj) ne ulaze u raspored
+  const myDepth = depthRange(bar, materials);
+  const sameLayer = (p: CustomPart): boolean => { const d = depthRange(p, materials); return !myDepth || !d || Math.min(d.z1, myDepth.z1) - Math.max(d.z0, myDepth.z0) > 0.5 * Math.min(d.z1 - d.z0, myDepth.z1 - myDepth.z0); };
+  const same = (p: CustomPart) => geom(p) && sameLayer(p) && (p.materialId === bar.materialId || inner(p));
   const edgeOf = (p: CustomPart) => { const s = shapeOf(p) as Extract<MatShape, { type: 'linear' }>; return sectionFace(s.section, partAngle(p)); };
   const topOf = (p: CustomPart) => p.y + edgeOf(p).u1;
   const bars = model.parts.filter(same).sort((a, b) => topOf(b) - topOf(a));

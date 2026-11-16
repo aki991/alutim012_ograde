@@ -15,10 +15,14 @@ import { isTarabicaPost, tarabicaPostLines } from '../models/tarabica';
 
 export const DEFAULT_STOCK_MM = 6000;
 export const DEFAULT_KERF_MM = 3;
+/** najkraći ostatak koji se čuva u magacinu kad se ne zada u podešavanjima (mm) */
+export const DEFAULT_MIN_KEEP_MM = 500;
 
 export interface CutOptions {
   stockMm: number;
   kerfMm: number;
+  /** najkraći ostatak (mm) koji se posle sečenja vraća u magacin */
+  minKeepMm?: number;
   /** štednja materijala: komadi sa istim kosim uglom dele rez (jedan rez za dva komada), pa se manje baca */
   saveMaterial?: boolean;
   /** koji deo projekta se štampa: ceo (podrazumevano), samo kapije ili samo ograda (bez kapija) */
@@ -46,6 +50,7 @@ export const cutOptions = (settings: Pick<AppSettings, 'cutting'>): CutOptions =
   stockMm: settings.cutting?.stockMm ?? DEFAULT_STOCK_MM,
   kerfMm: settings.cutting?.kerfMm ?? DEFAULT_KERF_MM,
   saveMaterial: Boolean(settings.cutting?.saveMaterial),
+  minKeepMm: settings.cutting?.minKeepMm ?? DEFAULT_MIN_KEEP_MM,
 });
 
 export interface CutPiece {

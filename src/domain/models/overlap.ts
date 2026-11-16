@@ -1,4 +1,4 @@
-import { miterEndsOf, partAngle, partBounds, type CustomModel, type CustomPart } from './custom';
+import { hasAngledEnds, linearLocalPoly, miterEndsOf, partAngle, partBounds, type CustomModel, type CustomPart } from './custom';
 import { materialShape, rotateDeg, sectionFace, type Section } from './materialShape';
 import type { Material } from './types';
 
@@ -79,10 +79,12 @@ function boxOf(p: CustomPart, materials: Map<string, Material>): Box | null {
   const L = p.lengthMm; const fc = e.u1 - e.u0;
   const [ma, mb] = miterEndsOf(p);
   const oa = ma ? fc : 0; const ob = mb ? fc : 0;
-  const slanted = !!p.miter && (oa > 0 || ob > 0) && L > oa + ob;
-  const local: [number, number][] = slanted
+  const mitered = !!p.miter && (oa > 0 || ob > 0) && L > oa + ob;
+  const plumb = hasAngledEnds(p);
+  const slanted = mitered || plumb;
+  const local: [number, number][] = mitered
     ? (p.miter === 'lo' ? [[0, e.u0], [L, e.u0], [L - ob, e.u1], [oa, e.u1]] : [[oa, e.u0], [L - ob, e.u0], [L, e.u1], [0, e.u1]])
-    : [[0, e.u0], [L, e.u0], [L, e.u1], [0, e.u1]];
+    : linearLocalPoly(p, e.u0, e.u1);
   const corners = local.map(([lx, ly]) => [p.x + lx * c - ly * s, p.y + lx * s + ly * c] as [number, number]);
   const axes: [number, number][] = [[c, s], [-s, c]];
   if (slanted) {
@@ -189,4 +191,41 @@ function explainOverlap(prev: CustomModel, added: Overlap[], materials: Material
   if (before.x !== ch.x || before.y !== ch.y || before.z !== ch.z) return `${head} Deo ne može da se pomeri preko drugog dela. Pomerite ga manje${into > 0 ? ` (najviše do ${fmt(into)} mm bliže)` : ''} ili prvo pomerite „${otherName}“.${more}`;
   if (before.rot !== ch.rot || before.tiltDeg !== ch.tiltDeg || before.angleDeg !== ch.angleDeg) return `${head} Okrenut ili nagnut presek zauzima više mesta i dodiruje susedni deo. Ostavite više razmaka oko njega ili smanjite nagib.${more}`;
   return `${head} Delovi ne mogu da stoje jedan preko drugog; ostavite razmak ili ih pomerite.${more}`;
+}
+
+/* ---------- slojevi: delovi jedan iza drugog (po dubini) ---------- */
+
+/** Raspon dubine profila (zadnja z0 i prednja z1 ivica); null za delove koji nisu profili. */
+export function depthRange(p: CustomPart, materials: Material[]): { z0: number; z1: number } | null {
+  const b = boxOf(p, new Map(materials.map((m) => [m.id, m])));
+  return b ? { z0: b.z0, z1: b.z1 } : null;
+}
+
+/** Da li se dva profila poklapaju u pogledu spreda (bez obzira na dubinu): to su delovi koji moraju da se slože jedan iza drugog. */
+export function frontOverlap(a: CustomPart, b: CustomPart, materials: Material[]): boolean {
+  const byId = new Map(materials.map((m) => [m.id, m]));
+  const centered = (p: CustomPart): CustomPart => {
+    const bx = boxOf(p, byId);
+    return bx ? { ...p, z: p.z - (bx.z0 + bx.z1) / 2 } : p;
+  };
+  const A = boxOf(centered(a), byId); const B = boxOf(centered(b), byId);
+  return !!A && !!B && overlaps(A, B);
+}
+
+/**
+ * Deo se stavlja iza (behind) ili ispred (front) svih profila koje u pogledu spreda pokriva: menja se samo dubina z, tako da deo
+ * naleže na njih bez preklapanja po dubini. Deo koji ništa ne pokriva ostaje kakav jeste.
+ */
+export function layerPart(model: Pick<CustomModel, 'parts'>, part: CustomPart, mode: 'behind' | 'front', materials: Material[]): CustomPart {
+  const mine = depthRange(part, materials);
+  if (!mine) return part;
+  const hits = model.parts.filter((o) => o.id !== part.id && !part.guides?.includes(o.id) && !o.guides?.includes(part.id) && frontOverlap(part, o, materials));
+  const ranges = hits.map((o) => depthRange(o, materials)).filter((r): r is { z0: number; z1: number } => !!r);
+  if (!ranges.length) return part;
+  const r1 = (n: number) => Math.round(n * 10) / 10;
+  // a: za koliko je prednja ivica dela ispred njegove ose po dubini (z1 − z), b: koliko je zadnja iza nje
+  const front = mine.z1 - part.z; const back = part.z - mine.z0;
+  return mode === 'behind'
+    ? { ...part, z: r1(Math.min(...ranges.map((r) => r.z0)) - front) }
+    : { ...part, z: r1(Math.max(...ranges.map((r) => r.z1)) + back) };
 }

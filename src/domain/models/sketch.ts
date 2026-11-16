@@ -242,7 +242,7 @@ export function buildSketch(model: CustomModel, materials: Material[]): Sketch {
     });
   }
   // gornja linija na kojoj prečka naleže na ivicu bočnog U profila, merena od poda: tu se prečka vari
-  const welds = unique(items.filter((i) => i.p.guides && i.shape.type === 'linear' && !offBars.has(i.p.id)).map((i) => { const y = contactTopY(i.p, i.shape, i.b.y1); return { id: i.p.id, y, value: r1(y) }; }), (w) => String(w.value)).sort((a, b) => b.y - a.y);
+  const welds = unique(items.filter((i) => i.p.guides && i.orient === 'h' && i.shape.type === 'linear' && !offBars.has(i.p.id)).map((i) => { const y = contactTopY(i.p, i.shape, i.b.y1); return { id: i.p.id, y, value: r1(y) }; }), (w) => String(w.value)).sort((a, b) => b.y - a.y);
   // ograda za terasu: visina ose svake vodoravne prečke od poda (majstor zna na kojoj visini se postavlja)
   const rodCenters = model.kind !== 'terrace' ? [] : unique(items.filter((i) => i.orient === 'h' && i.shape.type === 'linear' && hwRoleOf(i.p, i.shape) === 'rod').map((i) => { const y = (i.b.y0 + i.b.y1) / 2; return { id: i.p.id, y, value: r1(y) }; }), (w) => String(w.value)).sort((a, b) => b.y - a.y);
   const useRods = welds.length === 0 && rodCenters.length > 0;

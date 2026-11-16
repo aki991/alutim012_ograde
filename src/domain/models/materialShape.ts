@@ -366,7 +366,7 @@ function resolveShape(m: ShapeInput, hwd?: HwDims): Resolved {
     const section = sectionOfDrawn(d, m.wallMm);
     return {
       shape: { type: 'linear', group: DRAWN_GROUP[d.kind] ?? 'trake', section, exact: true, wall, u: d.kind === 'u' ? { a: section.w, b: section.h, c: wall } : undefined },
-      fields: [{ key: 'c', label: d.kind === 'traka' ? 'Debljina' : 'Debljina zida', value: wall, wall: true }],
+      fields: d.polys ? [] : [{ key: 'c', label: d.kind === 'traka' ? 'Debljina' : 'Debljina zida', value: wall, wall: true }],
     };
   }
   const ov = m.dims ?? {};

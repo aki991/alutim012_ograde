@@ -1,4 +1,4 @@
-import { PencilRuler, RotateCcw, Trash2, Wrench } from 'lucide-react';
+import { PencilRuler, Trash2, Wrench } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CustomModelThumb } from '../../components/designer/PartsSvg';
@@ -40,7 +40,6 @@ export default function GateModelsPage() {
   const [delSlidePreset, setDelSlidePreset] = useState<SlidingPresetId | null>(null);
   const templates = useAppStore((s) => s.settings.slidingTemplates) ?? [];
   const [delTpl, setDelTpl] = useState<SlidingTemplate | null>(null);
-  const hiddenBasic = [...BASIC.filter((b) => hidden.includes(`gate:${b.type}`)), ...SLIDING_PRESETS.filter((p) => hidden.includes(`gate:slide:${p.id}`))];
   const visibleSlidePresets = SLIDING_PRESETS.filter((p) => !hidden.includes(`gate:slide:${p.id}`));
   const rework = (p: SlidingPresetId) => navigate(`/modeli/crtanje/${useAppStore.getState().startSlidingDorada(p)}`);
   const startSliding = (source: { preset: SlidingPresetId } | { template: string }) => { const id = useAppStore.getState().newProjectFromSliding(source); if (id) navigate(`/editor/${id}`); };
@@ -109,7 +108,7 @@ export default function GateModelsPage() {
       <section data-testid="basic-gates">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-bold text-lg">Osnovne kapije</h2>
-          {hiddenBasic.length > 0 && <button className="btn btn-sm" data-testid="restore-basic-gates" onClick={() => useAppStore.getState().updateSettings({ hiddenModels: hidden.filter((h) => !h.startsWith('gate:')) })}><RotateCcw size={14} />Vrati obrisane osnovne kapije ({hiddenBasic.length})</button>}
+          
         </div>
         <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
           {BASIC.filter((b) => !hidden.includes(`gate:${b.type}`)).map((b) => (

@@ -2,7 +2,7 @@ import { PackageOpen, Plus, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Material, Offcut, Project, StockItem } from '../../domain/models/types';
-import { materialIdForName } from '../../domain/models/spec';
+import { materialIdForName, materialName } from '../../domain/models/spec';
 import { compareMaterials } from '../../domain/models/materialShape';
 import { fmtNum } from '../../utils/units';
 
@@ -41,7 +41,8 @@ export function OffcutsPanel({ project, materials, stock, profiles, onChange }: 
     onChange(same ? list.map((x) => (x === same ? { ...x, qty: x.qty + o.qty } : x)) : [...list, o]);
   };
   // iz magacina se nude komadi profila koji se seku u ovom projektu, kojih još nema u spisku u punoj količini
-  const fromStock = stock.filter((s) => s.qty > 0 && byId.has(s.materialId) && inProject(byId.get(s.materialId)!));
+  // (i profili koji nisu u cenovniku: ostatak knjižen pri prelasku u „U izradi“ vodi se pod ugrađenim ID-em)
+  const fromStock = stock.filter((s) => s.qty > 0 && used.has(materialName(materials, s.materialId)));
   const taken = (s: StockItem) => (offcuts ?? []).find((o) => o.materialId === s.materialId && o.lengthMm === s.lengthMm)?.qty ?? 0;
 
   if (offcuts === undefined) {
@@ -97,8 +98,8 @@ export function OffcutsPanel({ project, materials, stock, profiles, onChange }: 
             {fromStock.map((s) => {
               const left = s.qty - taken(s);
               return (
-                <button key={s.id} className="btn btn-sm" disabled={left <= 0} title={byId.get(s.materialId)?.name} onClick={() => addOffcut({ materialId: s.materialId, lengthMm: s.lengthMm, qty: 1 })}>
-                  <Plus size={13} />{byId.get(s.materialId)?.sku} · {fmtNum(s.lengthMm, 0)} mm <span className="text-muted">({left} na stanju)</span>
+                <button key={s.id} className="btn btn-sm" disabled={left <= 0} title={materialName(materials, s.materialId)} onClick={() => addOffcut({ materialId: s.materialId, lengthMm: s.lengthMm, qty: 1 })}>
+                  <Plus size={13} />{byId.get(s.materialId)?.sku || materialName(materials, s.materialId)} ·{fmtNum(s.lengthMm, 0)} mm <span className="text-muted">({left} na stanju)</span>
                 </button>
               );
             })}

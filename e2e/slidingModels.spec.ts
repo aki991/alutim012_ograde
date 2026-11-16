@@ -151,14 +151,13 @@ test('klizna kapija od nule: tip kapije Klizna, delovi se postavljaju klikom', a
   expect(errors).toEqual([]);
 });
 
-test('osnovna klizna kapija se briše sa strane i vraća', async ({ page }) => {
+test('osnovna klizna kapija se briše sa strane (konačno)', async ({ page }) => {
   const errors = trackErrors(page);
   await page.goto('/modeli-kapija');
   await page.getByTestId('delete-basic-sliding-samonoseca_rucna').click();
   await page.getByRole('button', { name: 'Obriši', exact: true }).last().click();
   await expect(page.getByTestId('basic-sliding-samonoseca_rucna')).toHaveCount(0);
-  await page.getByTestId('restore-basic-gates').click();
-  await expect(page.getByTestId('basic-sliding-samonoseca_rucna')).toBeVisible();
+  await expect(page.getByTestId('restore-basic-gates')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 

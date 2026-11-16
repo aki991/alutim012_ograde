@@ -5,6 +5,7 @@ import { Page, PageHeader } from '../../components/ui/Common';
 import { ConfirmDialog } from '../../components/ui/Modal';
 import { compareMaterials, MATERIAL_GROUPS, materialShape } from '../../domain/models/materialShape';
 import { cutOptions } from '../../domain/pricing/cutting';
+import { materialName } from '../../domain/models/spec';
 import { visibleMaterials } from '../../config/features';
 import type { Material, StockItem } from '../../domain/models/types';
 import { useAppStore } from '../../store/useAppStore';
@@ -70,7 +71,7 @@ export default function StockPage() {
             <button className="btn btn-primary" data-testid="stock-add-btn" disabled={!valid} onClick={add}><Plus size={17} />Dodaj</button>
           </div>
         )}
-        <p className="text-xs text-muted mt-2">Cela šipka je {fmtNum(full, 0)} mm (menja se u Podešavanjima). Kraći komad je ostatak.</p>
+        <p className="text-xs text-muted mt-2">Cela šipka je {fmtNum(full, 0)} mm (menja se u Podešavanjima). Kraći komad je ostatak. Kad projekat pređe u „U izradi“, ostaci iz njegove krojne liste od {fmtNum(cutOptions(settings).minKeepMm ?? 500, 0)} mm i duži se sami dodaju ovde, a iskorišćeni ostaci iz magacina se skidaju sa stanja.</p>
       </section>
 
       <section className="card p-4">
@@ -87,7 +88,7 @@ export default function StockPage() {
                 return (
                   <tr key={s.id} data-testid="stock-row">
                     <td className="td text-xs text-muted">{m?.sku ?? '—'}</td>
-                    <td className="td font-medium">{m?.name ?? 'Materijal je obrisan iz cenovnika'}</td>
+                    <td className="td font-medium">{m?.name ?? (materialName(materials, s.materialId) !== s.materialId ? materialName(materials, s.materialId) : 'Materijal je obrisan iz cenovnika')}</td>
                     <td className="td text-right tabular-nums font-semibold">{fmtNum(s.lengthMm, 0)}</td>
                     <td className="td">{s.lengthMm >= full ? 'cela šipka' : <span className="text-[#b45309] font-semibold">ostatak</span>}</td>
                     <td className="td"><input aria-label={`Komada: ${m?.name ?? ''} ${s.lengthMm}`} type="number" min={0} className="input !py-1 text-right tabular-nums" value={s.qty} onChange={(e) => { const v = Number(e.target.value); if (Number.isInteger(v) && v >= 0) setQty(s, v); }} /></td>

@@ -16,6 +16,28 @@ export const DEFAULT_CARRIAGES: Material[] = [
   { id: 'mat_kolica_160', sku: 'KOL-160', name: 'Kolica za samonoseću kapiju 160×100, lakša', category: 'okov', unit: 'kom', unitPrice: 0, wastePercent: 0, demo: false, dims: { stemW: 70, wheelD: 45, wheelGap: 50 } },
 ];
 
+/**
+ * Profilisan rukohvat 100 × 40 mm sa tri žleba na prednjoj strani (kao rukohvat na ogradama sa tarabicama): presek je nacrtan
+ * (poligon sa žlebovima), pa ima 2D i 3D prikaz. Cena se upisuje ručno; presek može da se zameni slikom u Materijali i cene.
+ */
+export const DEFAULT_RAILS: Material[] = [
+  {
+    id: 'mat_rukohvat_profil_100', sku: 'RUK-100', name: 'Rukohvat profilisan 100×40', category: 'profil', unit: 'm', unitPrice: 0, wastePercent: 0, demo: false,
+    drawn: {
+      kind: 'ostalo', pts: [], wall: 4, closed: true,
+      polys: [{
+        outline: [[0, 0], [100, 0], [100, 34], [96, 40], [75.5, 40], [75.5, 37], [70.5, 37], [70.5, 40], [52.5, 40], [52.5, 37], [47.5, 37], [47.5, 40], [29.5, 40], [29.5, 37], [24.5, 37], [24.5, 40], [4, 40], [0, 34]],
+        holes: [],
+      }],
+    },
+  },
+];
+
+/** Ploče za popunu pada terena (kosa ploča ispod ispune, „Dodaj pad“ u crtanju modela); cena se upisuje ručno. */
+export const DEFAULT_PLATES: Material[] = [
+  { id: 'mat_lim_popuna_2', sku: 'LIM-2', name: 'Aluminijumski lim 2 mm (popuna pada)', category: 'panel', unit: 'm2', unitPrice: 0, wastePercent: 10, demo: false },
+];
+
 const RAW_MODEL_MATERIALS: Material[] = [
   m('mat_alu_profil', 'DEMO-HP-100', 'Aluminijumski profil 100×20', 'profil', 'm', 520, 6),
   m('mat_alu_panel', 'DEMO-PP-250', 'Aluminijumski panel-profil 250×20', 'profil', 'm', 1150, 5),
@@ -100,4 +122,4 @@ export function missingModelMaterials(existing: Material[]): Material[] {
 }
 
 /** nazivi su vrsta pa dimenzije (bez beleški iz uvoza), npr. „Kvadratna cev 30×30×2“; BTS materijali su za ograde za terase */
-export const MODEL_MATERIALS: Material[] = [...RAW_MODEL_MATERIALS, ...DEFAULT_CARRIAGES].map((m) => ({ ...m, name: cleanMaterialName(m.name), ...(m.id.startsWith('mat_bts_') ? { terrace: true } : {}) }));
+export const MODEL_MATERIALS: Material[] = [...RAW_MODEL_MATERIALS, ...DEFAULT_CARRIAGES, ...DEFAULT_RAILS, ...DEFAULT_PLATES].map((m) => ({ ...m, name: cleanMaterialName(m.name), ...(m.id.startsWith('mat_bts_') ? { terrace: true } : {}) }));

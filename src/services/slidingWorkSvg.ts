@@ -1,7 +1,7 @@
 import { slidingBom, resolveSliding, type Shape, type SlidingResult } from '../domain/gates/slidingAssembly';
 import { slidingH } from '../domain/gates/slidingLayout';
 import { computeLayout, type LaidOutItem } from '../domain/geometry/layout';
-import { partAngle } from '../domain/models/custom';
+import { linearLocalPoly, partAngle, sheetPoly } from '../domain/models/custom';
 import { customModelOf, customPartRoles, customPartsFor } from '../domain/models/customRegistry';
 import { sectionFace } from '../domain/models/materialShape';
 import type { Gate, Material, Project } from '../domain/models/types';
@@ -69,11 +69,11 @@ export function slidingDrawnItems(it: Gate, li: Pick<LaidOutItem, 'clearWidth'>,
     for (const r of rps) {
       const p = r.part;
       if (r.shape.type === 'piece') continue;
-      if (r.shape.type === 'sheet' || p.heightMm) { items.push({ kind: 'part', name: roles.get(p.id), poly: [[left + p.x, fb + p.y], [left + p.x + p.lengthMm, fb + p.y], [left + p.x + p.lengthMm, fb + p.y + (p.heightMm ?? 0)], [left + p.x, fb + p.y + (p.heightMm ?? 0)]] }); continue; }
+      if (r.shape.type === 'sheet' || p.heightMm) { items.push({ kind: 'part', name: roles.get(p.id), poly: sheetPoly(p).map(([x, y]) => [left + x, fb + y] as [number, number]) }); continue; }
       const { u0, u1 } = sectionFace(r.shape.section, partAngle(p));
       const a = (p.angleDeg * Math.PI) / 180; const c = Math.cos(a); const s = Math.sin(a);
       const at = (lx: number, ly: number): P => [left + p.x + lx * c - ly * s, fb + p.y + lx * s + ly * c];
-      items.push({ kind: 'part', name: roles.get(p.id), len: p.lengthMm, poly: [at(0, u0), at(p.lengthMm, u0), at(p.lengthMm, u1), at(0, u1)] });
+      items.push({ kind: 'part', name: roles.get(p.id), len: p.lengthMm, poly: linearLocalPoly(p, u0, u1).map(([lx, ly]) => at(lx, ly)) });
     }
   } else {
     // krilo iz sastavnice sklopa (ram, bočni U-profili, prečke) ili model iz kataloga: crta se kao ram i prečke sklopa

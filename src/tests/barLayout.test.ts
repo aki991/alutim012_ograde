@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { newCustomModel, type CustomModel, type CustomPart } from '../domain/models/custom';
-import { applyGuides, attachToGuides, barLayoutInfo, gapRange, layoutBars } from '../domain/models/guides';
+import { applyGuides, attachToGuides, barLayoutInfo, hGuideInfo, gapRange, layoutBars } from '../domain/models/guides';
 import { checkNewOverlap, findOverlaps } from '../domain/models/overlap';
+import { materialShape } from '../domain/models/materialShape';
+import { vLayoutInfo } from '../domain/models/vbars';
 import type { Material } from '../domain/models/types';
 
 const mat = (id: string, sku: string, name: string): Material => ({ id, sku, name, unit: 'm', category: 'profil', unitPrice: 100, wastePercent: 0, demo: false });
@@ -282,5 +284,37 @@ describe('razmak prečki različite debljine u U vođicama', () => {
     const r = layoutBars(m, 'b', M2, { count: 2, top: 100, bottom: 100, gap: 30, auto: 'bottom', lufta: 'sa' });
     if ('error' in r) throw new Error(r.error);
     expect(barLayoutInfo(r.model, r.model.parts.find((p) => p.id === 'b')!, M2)!.gap).toBe(30);
+  });
+});
+
+describe('uspravne prečke (tarabice) u vodoravnim U profilima', () => {
+  const base = (): CustomModel => ({
+    ...newCustomModel('cm_h'), widthMm: 600, heightMm: 450,
+    parts: [part('Ub', U60.id, 0, 10, 600, 0), part('Ut', U60.id, 0, 440, 600, 0), part('t1', KV80.id, 100, 10, 430, 90), part('t2', KV80.id, 200, 10, 430, 90)],
+  });
+  it('tarabica ulazi do dna oba kanala: donji gleda nagore, gornji nadole, dubina na sredini otvora', () => {
+    const r = attachToGuides(base(), 't1', [U60, KV80]);
+    if ('error' in r) throw new Error(r.error);
+    const m = r.model;
+    const t = m.parts.find((p) => p.id === 't1')!;
+    expect(t.guides).toEqual(['Ub', 'Ut']);
+    const hb = hGuideInfo(m.parts.find((p) => p.id === 'Ub')!, materialShape(U60))!;
+    const ht = hGuideInfo(m.parts.find((p) => p.id === 'Ut')!, materialShape(U60))!;
+    expect(hb.dirY).toBe(1); expect(ht.dirY).toBe(-1);
+    expect(hb.mouthY).toBeGreaterThan(hb.backY); expect(ht.mouthY).toBeLessThan(ht.backY);
+    expect(t.y).toBeCloseTo(hb.backY, 2);
+    expect(t.y + t.lengthMm).toBeCloseTo(ht.backY, 2);
+    expect(t.z).toBeCloseTo(0, 2);
+    // druga tarabica se uklapa u iste vođice (preko dugmeta), a pri pomeranju ostaje između krajeva vođica
+    const r2 = attachToGuides(m, 't2', [U60, KV80]);
+    if ('error' in r2) throw new Error(r2.error);
+    expect(r2.model.parts.find((p) => p.id === 't2')!.guides).toEqual(['Ub', 'Ut']);
+    const moved = { ...r2.model, parts: r2.model.parts.map((p) => (p.id === 't2' ? { ...p, x: 5000, y: 300 } : p)) };
+    const back = applyGuides(moved, [U60, KV80]).parts.find((p) => p.id === 't2')!;
+    expect(back.x).toBeLessThanOrEqual(600);
+    expect(back.y).toBeLessThanOrEqual(hb.mouthY);
+    // raspored letvica radi i za uklopljene
+    const info = vLayoutInfo(r2.model, r2.model.parts.find((p) => p.id === 't1')!, [U60, KV80])!;
+    expect(info.count).toBe(2);
   });
 });

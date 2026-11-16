@@ -132,10 +132,13 @@ test('dvokrilna: ručne mere, prazan cenovnik, okov bez šifre, dodatna kota, po
   await page.getByTestId('gd-tab-izrada').click();
   await expect(page.getByTestId('gd-bom')).toContainText('Šarka radionice M12');
 
-  // PDF mera kapije
-  const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), page.getByTestId('gd-pdf').click()]);
+  // PDF mera kapije: prvo pregled, pa preuzimanje dugmetom „Sačuvaj PDF“
+  await page.getByTestId('gd-pdf').click();
+  await expect(page.getByTestId('pdf-save')).toBeEnabled({ timeout: 30000 });
+  const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), page.getByTestId('pdf-save').click()]);
   const pdf = fs.readFileSync((await dl.path())!);
   expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
+  await page.getByTestId('pdf-close').click();
 
   // krojna lista projekta (proizvodnja) sadrži ram kapije
   await page.keyboard.press('Escape');
@@ -305,16 +308,15 @@ test('modeli kapija: kartica ima Koristi model, Otvori crtež i Obriši; u crte�
   await page.getByTestId('delete-gate-model').click();
   await page.getByRole('button', { name: 'Obriši', exact: true }).last().click();
   await expect(page.getByTestId('gate-models-empty')).toBeVisible();
-  // osnovna kapija: brisanje i vraćanje
+  // osnovna kapija: brisanje je konačno (nema vraćanja obrisanih)
   await page.getByTestId('delete-basic-sliding').click();
   await page.getByRole('button', { name: 'Obriši', exact: true }).last().click();
   await expect(page.getByTestId('basic-gate-sliding')).toHaveCount(0);
-  await page.getByTestId('restore-basic-gates').click();
-  await expect(page.getByTestId('basic-gate-sliding')).toBeVisible();
+  await expect(page.getByTestId('restore-basic-gates')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
-test('modeli ograda: svaki model iz kataloga može da se obriše i vrati', async ({ page }) => {
+test('modeli ograda: svaki model iz kataloga može da se obriše (konačno)', async ({ page }) => {
   const errors = trackErrors(page);
   await page.goto('/modeli');
   await expect(page.getByTestId('model-card-h_wide')).toBeVisible();
@@ -326,10 +328,10 @@ test('modeli ograda: svaki model iz kataloga može da se obriše i vrati', async
   await page.getByTestId('hero-new').click();
   await expect(page.getByTestId('catalog-model').locator('option', { hasText: 'Antracit — široke horizontalne letvice' })).toHaveCount(0);
   await expect(page.getByTestId('catalog-model').locator('option').first()).toBeAttached();
-  // vraćanje obrisanih modela
+  // nema vraćanja obrisanih modela
   await page.getByRole('link', { name: 'Modeli ograda' }).click();
-  await page.getByTestId('restore-hidden-models').click();
-  await expect(page.getByTestId('model-card-h_wide')).toBeVisible();
+  await expect(page.getByTestId('restore-hidden-models')).toHaveCount(0);
+  await expect(page.getByTestId('model-card-h_wide')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
