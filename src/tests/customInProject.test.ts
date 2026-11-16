@@ -82,3 +82,27 @@ describe('nacrtani model u projektu', () => {
     expect(buildBom(p, MATS).find((l) => l.materialId === cap.id)?.geometricQty).toBe(10);
   });
 });
+
+describe('shema radnog naloga sa nacrtanim modelom', () => {
+  it('platno ima prečke (delove sa crteža), ne samo okvir', async () => {
+    registerCustomModels([MODEL], MATS);
+    const { schemaSvg } = await import('../services/workorderSvg');
+    const p = createProject('t', [createFence({ modelId: ID, widthMm: 1000, heightMm: 1000 })]);
+    const { svg } = schemaSvg(p, () => '1', new Map([['1', '#2563eb']]));
+    expect((svg.match(/<polygon /g) ?? []).length).toBeGreaterThanOrEqual(MODEL.parts.filter((x) => x.materialId !== cap.id).length);
+  });
+});
+
+describe('sklopni crtež elementa', () => {
+  it('model elementa i pozicija radnog naloga imaju indeks elementa', async () => {
+    registerCustomModels([MODEL], MATS);
+    const { elementModel } = await import('../services/pdfSketch');
+    const { buildWorkOrder } = await import('../domain/pricing/workorder');
+    const p = createProject('t', [createFence({ modelId: ID, widthMm: 1000, heightMm: 1000 }), createFence({ modelId: ID, widthMm: 1000, heightMm: 1000 })]);
+    const m = elementModel(p, 1, MATS);
+    expect(m).not.toBeNull();
+    const wo = buildWorkOrder(p, undefined, MATS, { stockMm: 6000, kerfMm: 3 });
+    console.log(JSON.stringify(wo.elements.map((e) => [e.key, e.itemIndex])));
+    expect(wo.elements.every((e) => e.itemIndex !== undefined)).toBe(true);
+  });
+});

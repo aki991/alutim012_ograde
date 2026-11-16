@@ -42,7 +42,7 @@ type ViewMode = '2d' | '3d' | 'split' | 'skica' | 'mere';
  * pa međuvrednosti (npr. dok se briše 990 da bi se ukucalo novo) ne prave izmene ni greške. Neispravna vrednost se ne primenjuje
  * i polje javlja dozvoljeni opseg.
  */
-function Num({ label, value, onChange, min = -100000, max = 100000, testId, unit = 'mm', readOnly = false }: { label: string; value: number; onChange: (v: number) => void; min?: number; max?: number; testId?: string; unit?: string; readOnly?: boolean }) {
+function Num({ label, value, onChange, min = -100000, max = 100000, testId, unit = 'mm', readOnly = false, onSame }: { label: string; value: number; onChange: (v: number) => void; min?: number; max?: number; testId?: string; unit?: string; readOnly?: boolean; onSame?: () => void }) {
   const [text, setText] = useState(String(value));
   const [err, setErr] = useState<string | null>(null);
   const last = useRef(value);
@@ -55,7 +55,7 @@ function Num({ label, value, onChange, min = -100000, max = 100000, testId, unit
     if (text.trim() === '' || !Number.isFinite(parsed)) { setErr('Unesite broj.'); return; }
     if (parsed < min || parsed > max) { setErr(`Dozvoljeno od ${fmtLimit(min)} do ${fmtLimit(max)} ${unit}. Vrednost nije primenjena.`); return; }
     setErr(null);
-    if (parsed !== value) { last.current = value; onChange(parsed); }
+    if (parsed !== value) { last.current = value; onChange(parsed); } else onSame?.();
   };
   const showDirty = dirty && !readOnly;
   return (
@@ -90,8 +90,8 @@ function BarLayoutBox({ model, bar, materials, onApply, onError }: { model: Cust
   const eff: LayoutAuto = single && auto === 'gap' ? 'bottom' : auto;
   const cur = { count: info.count, top: info.top, bottom: info.bottom, gap: info.gap ?? gap1 };
   const lufta = info.lufta;
-  const run = (patch: Partial<typeof cur>, extra: { lufta?: Lufta; auto?: LayoutAuto } = {}) => {
-    const r = layoutBars(model, bar.id, materials, { ...cur, ...patch, auto: extra.auto ?? auto, lufta: extra.lufta ?? lufta });
+  const run = (patch: Partial<typeof cur>, extra: { lufta?: Lufta; auto?: LayoutAuto; countChange?: boolean } = {}) => {
+    const r = layoutBars(model, bar.id, materials, { ...cur, ...patch, auto: extra.auto ?? auto, lufta: extra.lufta ?? lufta, countChange: extra.countChange });
     if ('error' in r) onError(r.error); else onApply(r.model);
   };
   /** promena tipa: razmak se dovodi u opseg novog tipa (bez lufta: najviše 0, sa luftom: najmanje 0), a odstojanje od dna se preračuna */
@@ -118,7 +118,7 @@ function BarLayoutBox({ model, bar, materials, onApply, onError }: { model: Cust
       <p className="text-[11.5px] text-muted mb-1" data-testid="layout-lufta-help">{lufta === 'bez'
         ? 'Bez lufta: između prečki nema procepa, razmak ide od 0 u minus (prečke se uvlače jedna u drugu).'
         : 'Sa luftom: između prečki se vidi procep, razmak ide od 0 do najvećeg koji staje.'}</p>
-      <Num label="Broj prečki" unit="kom" value={info.count} min={1} max={200} testId="layout-count" onChange={(v) => run({ count: Math.round(v) })} />
+      <Num label="Broj prečki" unit="kom" value={info.count} min={1} max={200} testId="layout-count" onSame={() => onError('')} onChange={(v) => run({ count: Math.round(v) }, { countChange: true })} />
       <Num label="Od vrha" value={info.top} min={0} testId="layout-top" readOnly={eff === 'top'} onChange={(v) => run({ top: v })} />
       <Num label="Od dna" value={info.bottom} min={0} testId="layout-bottom" readOnly={eff === 'bottom'} onChange={(v) => run({ bottom: v })} />
       <Num label="Razmak između" value={info.gap ?? 0} min={-1000} testId="layout-gap" readOnly={eff === 'gap' || single} onChange={(v) => { setGap1(v); run({ gap: v }); }} />
@@ -762,7 +762,7 @@ function Designer({ id }: { id: string }) {
                   </div>
                 )}
                 {multi.every((r) => r.part.guides) && (() => {
-                  const fits = new Map(multi.map((r) => [r.part.id, guideReport(model, r.part, materials)?.fit.plus]));
+                  const fits = new Map(multi.map((r) => { const f = guideReport(model, r.part, materials)?.fit; return [r.part.id, f ? -f.minus : undefined]; }));
                   const ok = [...fits.values()].every((v) => v !== undefined);
                   return (
                     <button className="btn btn-sm btn-primary w-full mb-2" data-testid="multi-set-fit" disabled={!ok}
@@ -875,11 +875,13 @@ function Designer({ id }: { id: string }) {
                     <tr><td className="text-slate-600 py-0.5">Unutrašnji otvor U profila</td><td className="text-right font-medium tabular-nums">{fmtDeg(report.opening)} mm</td></tr>
                     <tr><td className="text-slate-600 py-0.5">Ugao uklapanja</td><td className="text-right font-bold tabular-nums text-primary" data-testid="guide-fit-angle">{fmtDeg(report.fit.plus)}°</td></tr>
                     <tr><td colSpan={2} className="text-[11.5px] text-muted pb-1">od ravni ograde ({fmtDeg(90 - report.fit.plus)}° od vodoravne): pod tim uglom prečka dodiruje obe stranice U profila. Veći nagib nije dozvoljen.</td></tr>
-                    <tr><td className="text-slate-600 py-0.5">Trenutni nagib</td><td className="text-right font-medium tabular-nums" data-testid="guide-tilt">{fmtDeg(Math.abs(sel.part.tiltDeg ?? 0))}°</td></tr>
+                    <tr><td className="text-slate-600 py-0.5">Trenutni nagib</td><td className="text-right font-medium tabular-nums" data-testid="guide-tilt">{fmtDeg(sel.part.tiltDeg ?? 0)}°</td></tr>
                     <tr><td className="text-slate-600 py-0.5">Visina prečke spreda</td><td className="text-right font-medium tabular-nums">{fmtDeg(sectionFace(report.section, sel.part.rot + (sel.part.tiltDeg ?? 0)).face)} mm</td></tr>
                     <tr><td className="text-slate-600 py-0.5">Ulazi u kanal (levo / desno)</td><td className="text-right font-medium tabular-nums" data-testid="guide-insert">{fmtDeg(report.L.mouthX - sel.part.x)} / {fmtDeg(sel.part.x + sel.part.lengthMm - report.R.mouthX)} mm</td></tr>
                   </tbody></table>
-                  <button className="btn btn-sm btn-primary w-full mt-2" data-testid="guide-set-fit" onClick={() => patchPart(sel.part.id, { tiltDeg: report.fit.plus })}>Postavi pod uglom uklapanja</button>
+                  <Num label="Tolerancija u kanalu" value={model.barClearance ?? 0} min={0} max={20} testId="guide-clearance" onChange={(v) => change((m) => ({ ...m, barClearance: v || undefined }))} />
+                  <p className="text-[11.5px] text-muted -mt-0.5">Zazor prečke u otvoru U profila (npr. 1 mm za lakiranje). Ugao uklapanja se računa za otvor umanjen za toleranciju; ako se promeni, postojeći nagibi se ograničavaju na novi ugao.</p>
+                  <button className="btn btn-sm btn-primary w-full mt-2" data-testid="guide-set-fit" onClick={() => patchPart(sel.part.id, { tiltDeg: -report.fit.minus })}>Postavi pod uglom uklapanja</button>
                   <p className="text-[11.5px] text-muted mt-1.5">Prečka ne može da izađe van U profila: dužina, položaj, dubina i nagib se ograničavaju na kanal.</p>
                 </div>
               )}

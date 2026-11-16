@@ -71,7 +71,7 @@ export function SlidingParts3D({ components, moving, mapX, hex, z: zLeaf = 0, sk
   return (
     <group position={[0, 0, zLeaf]} scale={[1, 1, -1]}>
       {list.map((c) => {
-        const depth = DEPTH[c.key] ?? 40;
+        const depth = c.depth ?? DEPTH[c.key] ?? 40;
         const { color, metal } = roleHex(c.role, hex);
         const m = mat(color, metal);
         if (c.key === 'upperGuide') return <GuideBracket key={c.key} c={c} material={m} mapX={mapX} z={z} face={face} leafHalf={gHalf} off={guideOff} rollerD={rollerD} postX={postX} />;

@@ -1,5 +1,5 @@
 import { buildRl10Sheet } from '../../domain/pricing/rl10Spec';
-import { ClipboardList, FileDown, FileSpreadsheet } from 'lucide-react';
+import { ClipboardList, FileDown, FileSpreadsheet, Ruler } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { FrontView } from '../../components/editor/FrontView';
 import { PdfPreviewModal } from '../../components/editor/PdfPreviewModal';
@@ -36,6 +36,7 @@ export default function ProductionPage() {
   const louver = useMemo(() => (project ? buildLouver08Sheet(project, specs) : null), [project, specs]);
   const [busy, setBusy] = useState(false);
   const [orderOpen, setOrderOpen] = useState(false);
+  const [sketchOpen, setSketchOpen] = useState(false);
 
   if (!project) return <Page><PageHeader title="Proizvodnja" /><EmptyState title="Nema projekata" text="Napravite projekat da biste dobili proizvodnu specifikaciju." /></Page>;
   const layout = computeLayout(project);
@@ -90,6 +91,7 @@ export default function ProductionPage() {
       <PageHeader title="Proizvodnja" subtitle="Osnovna proizvodna specifikacija za izabrani projekat" actions={
         <>
           <button className="btn" data-testid="prod-workorder" onClick={() => setOrderOpen(true)}><ClipboardList size={17} />Radni nalog</button>
+          <button className="btn" data-testid="prod-sketch" onClick={() => setSketchOpen(true)}><Ruler size={17} />Skica</button>
           <button className="btn" data-testid="prod-csv" onClick={csv}><FileSpreadsheet size={17} />CSV lista materijala</button>
           <button className="btn btn-primary" data-testid="prod-pdf" disabled={busy} onClick={async () => { setBusy(true); try { await downloadProductionPdf(project, customer, settings, materials); } finally { setBusy(false); } }}><FileDown size={17} />PDF specifikacija</button>
         </>
@@ -120,6 +122,7 @@ export default function ProductionPage() {
         </section>
       </div>
       <CutlistSection project={project} customer={customer} materials={materials} />
+      {sketchOpen && <PdfPreviewModal kind="sketch" project={project} customer={customer} materials={materials} settings={settings} onClose={() => setSketchOpen(false)} />}
       {orderOpen && <PdfPreviewModal kind="workorder" project={project} customer={customer} materials={materials} settings={settings} onClose={() => setOrderOpen(false)} />}
       <section className="card p-4 mt-5 overflow-x-auto">
         <h2 className="font-bold mb-2">Delovi (okvirno)</h2>

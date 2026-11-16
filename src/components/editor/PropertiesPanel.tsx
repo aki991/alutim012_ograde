@@ -591,6 +591,7 @@ function PriceSummary({ project }: { project: Project }) {
   const [pdfOpen, setPdfOpen] = useState(false);
   const [cutOpen, setCutOpen] = useState(false);
   const [orderOpen, setOrderOpen] = useState(false);
+  const [sketchOpen, setSketchOpen] = useState(false);
   const customer = customers.find((c) => c.id === project.customerId) ?? null;
   const price = useMemo(() => computePrice(project, materials, specs), [project, materials, specs]);
   const money = (n: number) => fmtMoney(n, settings.currency, settings.currencyRateToEur);
@@ -609,14 +610,16 @@ function PriceSummary({ project }: { project: Project }) {
       </div>
       <button className="btn btn-dark w-full mt-3" data-testid="btn-open-calc" onClick={() => window.dispatchEvent(new CustomEvent('open-calc'))}><Calculator size={16} />Detaljan obračun</button>
       {/* dokumenti odmah uz cenu, da se ne skroluje do dna panela */}
-      <div className="grid grid-cols-3 gap-2 mt-2">
-        <button className="btn !px-1 !py-2 flex-col !gap-1 text-[12.5px]" data-testid="btn-pdf" onClick={() => setPdfOpen(true)}><FileDown size={17} />PDF ponuda</button>
-        <button className="btn !px-1 !py-2 flex-col !gap-1 text-[12.5px]" data-testid="btn-cutlist" onClick={() => setCutOpen(true)}><Scissors size={17} />Krojna lista</button>
-        <button className="btn !px-1 !py-2 flex-col !gap-1 text-[12.5px]" data-testid="btn-workorder" onClick={() => setOrderOpen(true)}><ClipboardList size={17} />Radni nalog</button>
+      <div className="grid grid-cols-2 gap-2 mt-2">
+        <button className="btn !px-2 !py-1.5 !gap-1.5 text-[13px]" data-testid="btn-pdf" onClick={() => setPdfOpen(true)}><FileDown size={17} />PDF ponuda</button>
+        <button className="btn !px-2 !py-1.5 !gap-1.5 text-[13px]" data-testid="btn-cutlist" onClick={() => setCutOpen(true)}><Scissors size={17} />Krojna lista</button>
+        <button className="btn !px-2 !py-1.5 !gap-1.5 text-[13px]" data-testid="btn-workorder" onClick={() => setOrderOpen(true)}><ClipboardList size={17} />Radni nalog</button>
+        <button className="btn !px-2 !py-1.5 !gap-1.5 text-[13px]" data-testid="btn-sketch" onClick={() => setSketchOpen(true)}><Ruler size={17} />Skica</button>
       </div>
     </Section>
     {pdfOpen && <PdfPreviewModal project={project} customer={customer} materials={materials} settings={settings} onClose={() => setPdfOpen(false)} />}
     {orderOpen && <PdfPreviewModal kind="workorder" project={project} customer={customer} materials={materials} settings={settings} onClose={() => setOrderOpen(false)} />}
+    {sketchOpen && <PdfPreviewModal kind="sketch" project={project} customer={customer} materials={materials} settings={settings} onClose={() => setSketchOpen(false)} />}
     {cutOpen && <PdfPreviewModal kind="cutlist" askOffcuts project={project} customer={customer} materials={materials} settings={settings} onClose={() => setCutOpen(false)} />}
     </>
   );

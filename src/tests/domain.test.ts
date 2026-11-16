@@ -136,7 +136,7 @@ describe('fiksna ukupna dužina', () => {
   });
 
   it('prijavljuje razlog kad nije moguće (min/max)', () => {
-    const r = autoFillToFixedTotal(fixed(30000), 'proportional');
+    const r = autoFillToFixedTotal(fixed(5000000), 'proportional');
     expect(r.remainingMm).toBeGreaterThan(0);
     expect(r.reason).toMatch(/najveća/);
     const small = autoFillToFixedTotal(fixed(5000), 'proportional');
@@ -254,7 +254,7 @@ describe('validacija dimenzija', () => {
     expect(validateRange(-1, LIMITS.fenceWidth, 'Širina').message).toMatch(/negativna/);
     expect(validateRange(0, LIMITS.fenceWidth, 'Širina').message).toMatch(/nula/);
     expect(validateRange(100, LIMITS.fenceWidth, 'Širina').message).toMatch(/najmanja/);
-    expect(validateRange(99999, LIMITS.fenceWidth, 'Širina').message).toMatch(/najveća/);
+    expect(validateRange(100001, LIMITS.fenceWidth, 'Širina').message).toMatch(/najveća/);
     expect(validateRange(2000, LIMITS.fenceWidth, 'Širina').ok).toBe(true);
     expect(validateRange(NaN, LIMITS.fenceWidth, 'Širina').ok).toBe(false);
   });

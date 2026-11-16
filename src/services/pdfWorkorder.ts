@@ -10,6 +10,7 @@ import { downloadBlob, safeFilename } from './exports';
 import { getPdfMake, renderBlob } from './pdf';
 import { schemaSvg } from './workorderSvg';
 import { slidingWorkSvg } from './slidingWorkSvg';
+import { elementAssembly } from './pdfSketch';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -159,34 +160,52 @@ export async function buildWorkorderPdfBlob(project: Project, customer: Customer
   // klizne kapije: sklopni crtež sa brojevima delova (iz tabele dela) i slovima okova (legenda pored crteža)
   const assemblies: any[] = [];
   for (const e of wo.elements) {
-    if (e.slidingIndex === undefined) continue;
     const col = colors.get(e.key) ?? '#475569';
+    if (e.slidingIndex === undefined) {
+      // ograda i krilne kapije: sklopni crtež u boji elementa (iste boje kao shema i kartica elementa), sa tabelom brojeva pored
+      if (e.itemIndex === undefined) continue;
+      const a = await elementAssembly(project, e.itemIndex, materials, col);
+      if (!a) continue;
+      // svaki sklopni crtež je na svojoj strani; crtež dobija ostatak visine posle legende (pdfmake odbacuje nedeljiv blok koji ne staje na stranicu)
+      assemblies.push({
+        pageBreak: 'before',
+        stack: [
+          section(`Sklopni crtež — ${tag(e.key)} ${e.label}`, 'Broj u krugu je broj dela iz tabele (naziv, presek, dužina i uglovi). Kote su u mm, pogled spreda.'),
+          { image: a.png, fit: [786, Math.max(120, Math.min(360, 531 - 56 - a.legendH - 14))], alignment: 'center', margin: [0, 2, 0, 6] },
+          a.legend,
+        ],
+      });
+      continue;
+    }
     const d = slidingWorkSvg(project, e.slidingIndex, e.parts, materials, col);
     if (!d) continue;
     const png = await svgToPng(d.svg, d.width * 2, d.height * 2);
-    const imgW = 540;
+    // legenda okova ispod crteža, u dve kolone (slovo ostaje uz svoje redove)
+    const hwTable = (rows: typeof d.hardware): any => ({
+      table: {
+        widths: [16, '*', 34],
+        body: [
+          [label(''), label('OKOV NA CRTEŽU'), { ...label('KOM.'), alignment: 'right' }],
+          ...rows.map((h, i) => [
+            i > 0 && rows[i - 1].tag === h.tag ? { text: '' } : { text: h.tag, bold: true, fontSize: 9, color: '#ffffff', fillColor: '#334155', alignment: 'center' },
+            { text: h.name, fontSize: 8.5 },
+            { text: `${fmtNum(h.qty, 0)} ${h.unit}`, fontSize: 8.5, alignment: 'right' },
+          ]),
+        ],
+      },
+      layout: { hLineColor: () => LINE, hLineWidth: (i: number, node: any) => (i === 0 || i === node.table.body.length ? 0 : 0.4), vLineWidth: () => 0, paddingTop: () => 2.5, paddingBottom: () => 2.5, paddingLeft: () => 3, paddingRight: () => 3 },
+    });
+    let cut = Math.ceil(d.hardware.length / 2);
+    while (cut < d.hardware.length && cut > 0 && d.hardware[cut].tag === d.hardware[cut - 1].tag) cut += 1;
     const legend: any = d.hardware.length
-      ? {
-          table: {
-            widths: [16, '*', 34],
-            body: [
-              [label(''), label('OKOV NA CRTEŽU'), { ...label('KOM.'), alignment: 'right' }],
-              ...d.hardware.map((h, i) => [
-                i > 0 && d.hardware[i - 1].tag === h.tag ? { text: '' } : { text: h.tag, bold: true, fontSize: 9, color: '#ffffff', fillColor: '#334155', alignment: 'center' },
-                { text: h.name, fontSize: 8.5 },
-                { text: `${fmtNum(h.qty, 0)} ${h.unit}`, fontSize: 8.5, alignment: 'right' },
-              ]),
-            ],
-          },
-          layout: { hLineColor: () => LINE, hLineWidth: (i: number, node: any) => (i === 0 || i === node.table.body.length ? 0 : 0.4), vLineWidth: () => 0, paddingTop: () => 2.5, paddingBottom: () => 2.5, paddingLeft: () => 3, paddingRight: () => 3 },
-        }
+      ? { columns: [{ width: '*', stack: [hwTable(d.hardware.slice(0, cut))] }, { width: '*', stack: cut < d.hardware.length ? [hwTable(d.hardware.slice(cut))] : [] }], columnGap: 24 }
       : { text: 'Okov nije postavljen na kapiju.', fontSize: 8.5, color: MUTED };
     assemblies.push({
-      unbreakable: true,
-      margin: [0, 0, 0, 10],
+      pageBreak: 'before',
       stack: [
         section(`Sklopni crtež — ${tag(e.key)} ${e.label}`, 'Broj u krugu je broj dela iz tabele elementa (naziv, profil, dužina i uglovi). Slovo je okov iz legende. Kote su u mm, pogled spreda, u stvarnom smeru otvaranja.'),
-        { columns: [{ width: imgW, image: png, fit: [imgW, 400] }, { width: '*', stack: [legend], margin: [10, 0, 0, 0] }] },
+        { image: png, fit: [786, Math.max(120, Math.min(360, 531 - 56 - (Math.ceil(d.hardware.length / 2) + 2) * 15 - 14))], alignment: 'center', margin: [0, 2, 0, 6] },
+        legend,
       ],
     });
   }

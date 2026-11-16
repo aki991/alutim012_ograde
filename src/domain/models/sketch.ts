@@ -51,6 +51,9 @@ export interface SketchGroup {
   tiltDeg: number;
 }
 
+/** deo sa prečkama na drugim visinama od ostalih polja: crta se odvojeno, sa sopstvenim merama */
+export interface SketchSeparate { ids: string[]; x0: number; x1: number; fields: number }
+
 export interface Sketch {
   widthMm: number;
   heightMm: number;
@@ -62,6 +65,7 @@ export interface Sketch {
   right: ColDim[];
   oblique: { id: string; x: number; y: number; angleDeg: number; text: string }[];
   groups: SketchGroup[];
+  separate: SketchSeparate[];
   /** mesta zavarivanja: visina od poda do gornje linije naleganja svake prečke uklopljene u bočni U profil, odozgo naniže */
   welds: { id: string; y: number; value: number }[];
   /** delovi čiji je materijal obrisan iz cenovnika */
@@ -90,7 +94,8 @@ const unique = <T,>(items: T[], key: (t: T) => string): T[] => { const seen = ne
 
 /** Lanac mera po jednoj osi: odstojanje od početka, razmaci između susednih delova (i negativni kad se preklapaju), odstojanje od kraja. */
 function chain(intervals: { lo: number; hi: number }[], total: number, topDown: boolean): ChainDim[] {
-  const iv = unique(intervals.map((i) => ({ lo: r1(i.lo), hi: r1(i.hi) })), (i) => `${i.lo}|${i.hi}`);
+  // mere se računaju iz tačnih položaja (ne iz već zaokruženih), da se 18,97 ne pretvori čas u 18,9 čas u 19
+  const iv = unique(intervals.map((i) => ({ lo: i.lo, hi: i.hi })), (i) => `${r1(i.lo)}|${r1(i.hi)}`);
   if (!iv.length) return [];
   const out: ChainDim[] = [];
   // od početka (vrh odozgo / levo): sortirano po početku; razmak = početak sledećeg − kraj prethodnog
@@ -163,7 +168,36 @@ export function buildSketch(model: CustomModel, materials: Material[]): Sketch {
   }
 
   const H = model.heightMm; const W = model.widthMm;
-  const hor = items.filter((i) => i.orient === 'h' || i.orient === 'sheet');
+
+  // polja (par bočnih U profila + prečke između): ako sva polja imaju prečke na istim visinama, mere se daju jednom;
+  // polje sa drugačijim visinama se izdvaja i crta odvojeno, pa se pored njega daju njegove mere
+  const bays = new Map<string, { guides: string[]; bars: Item[]; sig: string }>();
+  for (const it of items) {
+    const g = it.p.guides;
+    if (!g || it.shape.type !== 'linear') continue;
+    const k = `${g[0]}|${g[1]}`;
+    const e = bays.get(k) ?? { guides: [...g], bars: [], sig: '' };
+    e.bars.push(it); bays.set(k, e);
+  }
+  for (const e of bays.values()) e.sig = e.bars.map((i) => `${r1(i.b.y0)}-${r1(i.b.y1)}-${r1(contactTopY(i.p, i.shape, i.b.y1))}`).sort().join(',');
+  const sigCount = new Map<string, number>();
+  for (const e of bays.values()) sigCount.set(e.sig, (sigCount.get(e.sig) ?? 0) + e.bars.length);
+  let mainSig = ''; let best = -1;
+  for (const [sg, c] of sigCount) if (c > best) { best = c; mainSig = sg; }
+  const offBars = new Set<string>();
+  const separate: SketchSeparate[] = [];
+  const sepBySig = new Map<string, SketchSeparate>();
+  for (const e of bays.values()) {
+    if (e.sig === mainSig) continue;
+    for (const b of e.bars) offBars.add(b.p.id);
+    const ex = sepBySig.get(e.sig);
+    if (ex) { ex.fields += 1; continue; }
+    const gi = e.guides.map((id) => items.find((i) => i.p.id === id)).filter((x): x is Item => !!x);
+    const all = [...gi, ...e.bars];
+    const sep: SketchSeparate = { ids: all.map((i) => i.p.id), x0: Math.min(...all.map((i) => i.b.x0)), x1: Math.max(...all.map((i) => i.b.x1)), fields: 1 };
+    sepBySig.set(e.sig, sep); separate.push(sep);
+  }
+  const hor = items.filter((i) => (i.orient === 'h' || i.orient === 'sheet') && !offBars.has(i.p.id));
   const ver = items.filter((i) => i.orient === 'v' || i.orient === 'sheet');
   const left = chain(hor.map((i) => ({ lo: i.b.y0, hi: i.b.y1 })), H, true);
   const bottom = chain(ver.map((i) => ({ lo: i.b.x0, hi: i.b.x1 })), W, false);
@@ -205,6 +239,6 @@ export function buildSketch(model: CustomModel, materials: Material[]): Sketch {
     });
   }
   // gornja linija na kojoj prečka naleže na ivicu bočnog U profila, merena od poda: tu se prečka vari
-  const welds = items.filter((i) => i.p.guides && i.shape.type === 'linear').map((i) => { const y = contactTopY(i.p, i.shape, i.b.y1); return { id: i.p.id, y, value: r1(y) }; }).sort((a, b) => b.y - a.y);
-  return { widthMm: W, heightMm: H, positions, noOf, left, bottom, top, right, oblique, groups, welds, missing };
+  const welds = unique(items.filter((i) => i.p.guides && i.shape.type === 'linear' && !offBars.has(i.p.id)).map((i) => { const y = contactTopY(i.p, i.shape, i.b.y1); return { id: i.p.id, y, value: r1(y) }; }), (w) => String(w.value)).sort((a, b) => b.y - a.y);
+  return { widthMm: W, heightMm: H, positions, noOf, left, bottom, top, right, oblique, groups, separate, welds, missing };
 }

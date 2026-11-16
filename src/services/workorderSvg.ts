@@ -4,6 +4,10 @@ import type { Project } from '../domain/models/types';
 import { itemLabel } from '../utils/labels';
 import { localToWorld } from '../domain/gates/slidingAssembly';
 import { slidingDrawnItems, type Drawn } from './slidingWorkSvg';
+import { leafHeightOf } from '../domain/gates/slidingLayout';
+import { partAngle } from '../domain/models/custom';
+import { customPartsFor, isCustomModel } from '../domain/models/customRegistry';
+import { sectionFace } from '../domain/models/materialShape';
 
 /**
  * Shema ograde za radni nalog: svaki element u boji svoje pozicije (kao na krojnoj listi), sa oznakom, nazivom i merom.
@@ -144,6 +148,25 @@ export function schemaSvg(project: Project, keyOfItem: (index: number) => string
     const modelId = it.kind === 'fence' ? it.modelId : it.infillModelId;
     const geo = computeInfill(modelId, li.clearWidth, it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount, it.params.liftMm, undefined, it.params.archMm);
     const ix = ox + li.clearStart * s;
+    // ručno nacrtan model: stvarni delovi sa crteža (ram, U profili, prečke), ne računska ispuna
+    if (!art && isCustomModel(modelId)) {
+      const mh = it.kind === 'fence' ? it.heightMm : leafHeightOf(it);
+      const yb = y + h;
+      for (const r of customPartsFor(modelId, li.clearWidth, mh, '#000000')) {
+        const p = r.part;
+        if (r.shape.type === 'piece') continue;
+        const P = (lx: number, ly: number): string => `${(ix + lx * s).toFixed(1)},${(yb - ly * s).toFixed(1)}`;
+        let pts: string;
+        if (r.shape.type === 'sheet' || p.heightMm) pts = [P(p.x, p.y), P(p.x + p.lengthMm, p.y), P(p.x + p.lengthMm, p.y + (p.heightMm ?? 0)), P(p.x, p.y + (p.heightMm ?? 0))].join(' ');
+        else {
+          const { u0, u1 } = sectionFace(r.shape.section, partAngle(p));
+          const a = (p.angleDeg * Math.PI) / 180; const c = Math.cos(a); const sn = Math.sin(a);
+          const at = (lx: number, ly: number) => P(p.x + lx * c - ly * sn, p.y + lx * sn + ly * c);
+          pts = [at(0, u0), at(p.lengthMm, u0), at(p.lengthMm, u1), at(0, u1)].join(' ');
+        }
+        out.push(`<polygon points="${pts}" fill="${color}" fill-opacity="0.55" stroke="${color}" stroke-width="0.6" stroke-linejoin="round"/>`);
+      }
+    }
     for (const b of art ? [] : geo.bars) {
       out.push(`<rect x="${(ix + b.x * s).toFixed(1)}" y="${(y + b.y * s).toFixed(1)}" width="${Math.max(0.8, b.w * s).toFixed(1)}" height="${Math.max(0.8, b.h * s).toFixed(1)}" fill="${color}" fill-opacity="0.55"/>`);
     }

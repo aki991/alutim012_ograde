@@ -52,6 +52,8 @@ export interface CustomModel {
   /** RAL ključ boje; materijali sa RAL oznakom ili inox u nazivu zadržavaju svoju boju */
   color: string;
   parts: CustomPart[];
+  /** tolerancija (zazor) prečki u kanalu bočnih U profila, mm: otvor za uklapanje se smanjuje za toliko (0 = prečka dodiruje obe stranice) */
+  barClearance?: number;
   updatedAt: string;
   /** model nastao doradom modela iz kataloga (ID tog modela) */
   baseModelId?: string;

@@ -104,3 +104,49 @@ describe('crtež skice', () => {
     expect(html).toContain('obrisan iz cenovnika');
   });
 });
+
+describe('više polja sa prečkama', () => {
+  function twoBays(count2: number): CustomModel {
+    let m: CustomModel = { ...newCustomModel('cm_two'), name: 'Dva polja', widthMm: 1000, heightMm: 1000, parts: [
+      part('L1', U60.id, 10, 0, 1000, 90), part('R1', U60.id, 490, 0, 1000, 90), part('L2', U60.id, 510, 0, 1000, 90), part('R2', U60.id, 990, 0, 1000, 90),
+      part('b1', KV80.id, 10, 500, 480, 0), part('b2', KV80.id, 510, 500, 480, 0)] };
+    for (const id of ['b1', 'b2']) { const a = attachToGuides(m, id, MATS); if ('error' in a) throw new Error(a.error); m = a.model; }
+    for (const [id, count] of [['b1', 5], ['b2', count2]] as [string, number][]) {
+      const r = layoutBars(m, id, MATS, { count, top: 50, bottom: 50, gap: 0, auto: 'gap', lufta: 'sa' });
+      if ('error' in r) throw new Error(r.error);
+      m = r.model;
+    }
+    return m;
+  }
+  it('polja sa prečkama na istim visinama: kote zavarivanja i lanac se daju jednom', () => {
+    const sk = buildSketch(twoBays(5), MATS);
+    expect(sk.separate).toHaveLength(0);
+    expect(sk.welds).toHaveLength(5);
+    expect(sk.left.filter((d) => d.kind === 'gap')).toHaveLength(4);
+  });
+  it('polje sa prečkama na drugim visinama se crta odvojeno, sa sopstvenim merama', () => {
+    const m = twoBays(3);
+    const sk = buildSketch(m, MATS);
+    expect(sk.separate).toHaveLength(1);
+    const html = renderToStaticMarkup(createElement(SketchSvg, { model: m, materials: MATS }));
+    expect(html).toContain('data-testid="sketch-separate"');
+    expect(html).toContain('Polje sa prečkama na drugim visinama');
+  });
+  it('oznake pozicija se ne preklapaju', () => {
+    const html = renderToStaticMarkup(createElement(SketchSvg, { model: twoBays(5), materials: MATS }));
+    const pts = [...html.matchAll(/<g data-testid="sketch-tag"><circle cx="([-\d.e]+)" cy="([-\d.e]+)" r="([-\d.e]+)"/g)].map((m) => [Number(m[1]), Number(m[2]), Number(m[3])]);
+    expect(pts.length).toBeGreaterThan(1);
+    for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) expect(Math.hypot(pts[i][0] - pts[j][0], pts[i][1] - pts[j][1])).toBeGreaterThanOrEqual(pts[i][2] * 2);
+  });
+});
+
+describe('sklopni crtež (bare)', () => {
+  it('ima brojeve pozicija, a nema lanaca mera, tabele ni preseka', () => {
+    const html = renderToStaticMarkup(createElement(SketchSvg, { model: fence(), materials: MATS, bare: true }));
+    expect(html).toContain('data-testid="sketch-tag"');
+    expect(html).not.toContain('data-testid="sketch-dim-v"');
+    expect(html).not.toContain('data-testid="sketch-legend"');
+    expect(html).not.toContain('data-testid="sketch-detail"');
+    expect(html).not.toContain('data-testid="sketch-welds"');
+  });
+});

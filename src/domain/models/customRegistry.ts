@@ -55,7 +55,7 @@ export const allFenceModels = (keep?: string): FenceModelDef[] => {
  * Model razvučen na polje druge veličine. Model sa ramom se ne razvlači ravnomerno (ram bi izgubio debljinu i ne bi legao uz bočne
  * U profile, a uglovi bi se razmakli): ram zadržava debljinu, a platno unutar njega se razvlači, kao pri izmeni mera u crtanju.
  */
-function scaledModel(m: CustomModel, widthMm: number, heightMm: number): CustomModel {
+export function scaledModel(m: CustomModel, widthMm: number, heightMm: number): CustomModel {
   if (m.parts.some(isFramePart) && (Math.abs(m.widthMm - widthMm) > 1e-9 || Math.abs(m.heightMm - heightMm) > 1e-9)) {
     const r = resizeWithFrame(m, widthMm, heightMm, MATERIALS);
     if (!('error' in r)) return applyGuides(r, MATERIALS);

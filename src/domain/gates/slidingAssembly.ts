@@ -435,7 +435,7 @@ export function resolveSliding(spec0: SlidingSpec, W: number, H: number): Slidin
     add({ key: 'rack', label: 'Zupčasta letva', moving: true, role: 'drive', detail: false, shapes: [{ t: 'rect', x: rs, y: rackY, w: spec.rackLength, h: rackH }] });
     add({ key: 'rackMounts', label: 'Nosači letve', moving: true, role: 'drive', detail: true, shapes: mounts.map((x) => ({ t: 'rect' as const, x: x - D('mount.w') / 2, y: rackY + rackH, w: D('mount.w'), h: D('mount.h') })) });
     const plateW = D('motor.plateW'); const plateH = D('motor.plateH'); const bodyW = D('motor.bodyW');
-    add({ key: 'motor', label: 'Motor sa centralom na ploči', moving: false, role: 'drive', detail: false, shapes: [{ t: 'rect', x: at('pinion') - plateW / 2, y: 0, w: plateW, h: plateH }, { t: 'rect', x: at('pinion') - bodyW / 2, y: plateH, w: bodyW, h: Math.max(60, rackY - plateH) }] });
+    add({ key: 'motor', label: 'Motor sa centralom na ploči', moving: false, role: 'drive', detail: false, depth: D('motor.depth'), shapes: [{ t: 'rect', x: at('pinion') - plateW / 2, y: 0, w: plateW, h: plateH }, { t: 'rect', x: at('pinion') - bodyW / 2, y: plateH, w: bodyW, h: Math.max(60, D('motor.h') - plateH) }] });
     add({ key: 'pinion', label: 'Pogonski zupčanik', moving: false, role: 'drive', detail: true, shapes: [{ t: 'circle', cx: at('pinion'), cy: rackY - 20, r: D('pinion.d') / 2 }] });
   } else {
     const hy = D('handle.y');

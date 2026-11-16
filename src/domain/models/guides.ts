@@ -81,6 +81,9 @@ export function tiltFit(section: Section, rot: number, opening: number): TiltFit
 }
 
 /** Unutrašnji otvor po dubini zajednički za obe vođice. */
+/** Tolerancija prečki u kanalu (mm) koja se oduzima od otvora U profila. */
+export const clearanceOf = (m: CustomModel): number => Math.max(0, m.barClearance ?? 0);
+
 function channel(L: GuideInfo, R: GuideInfo): { zLo: number; zHi: number } {
   return { zLo: Math.max(L.zc - L.half, R.zc - R.half), zHi: Math.min(L.zc + L.half, R.zc + R.half) };
 }
@@ -108,7 +111,7 @@ function constrainBar(model: CustomModel, bar: CustomPart, shape: MatShape | nul
   if (!g || !shape || shape.type !== 'linear' || norm(bar.angleDeg) !== 0) { const { guides: _drop, ...free } = bar; return free; }
   const [L, R] = g;
   const { zLo, zHi } = channel(L, R);
-  const fit = tiltFit(shape.section, bar.rot, zHi - zLo);
+  const fit = tiltFit(shape.section, bar.rot, zHi - zLo - clearanceOf(model));
   if (!fit) { const { guides: _drop, ...free } = bar; return free; }
   const rot = fit.rot;
   const tilt = clamp(norm(bar.rot) === rot ? bar.tiltDeg ?? 0 : 0, -fit.minus, fit.plus);
@@ -223,11 +226,11 @@ export function attachToGuides(model: CustomModel, barId: string, materials: Mat
   const g = guidesOf(next, placed, materials);
   if (!g) return { error: 'Bočni U profili su preblizu jedan drugom.' };
   const { zLo, zHi } = channel(g[0], g[1]);
-  const fit = tiltFit(shape.section, placed.rot, zHi - zLo);
-  if (!fit) return { error: `Presek prečke ne staje u otvor U profila (${Math.round((zHi - zLo) * 10) / 10} mm) ni pod jednim uglom.` };
+  const fit = tiltFit(shape.section, placed.rot, zHi - zLo - clearanceOf(next));
+  if (!fit) return { error: `Presek prečke ne staje u otvor U profila (${Math.round((zHi - zLo - clearanceOf(next)) * 10) / 10} mm, uz toleranciju ${clearanceOf(next)} mm) ni pod jednim uglom.` };
   // do dna oba kanala; ako uspravno ne staje, prečka se postavlja pod uglom uklapanja
-  const upright = sectionFace(shape.section, placed.rot).depth <= zHi - zLo;
-  next = { ...next, parts: next.parts.map((p) => (p.id === b.id ? { ...p, x: g[0].backX, lengthMm: g[1].backX - g[0].backX, rot: fit.rot, tiltDeg: upright && norm(placed.rot) === fit.rot ? p.tiltDeg : fit.plus } : p)) };
+  const upright = sectionFace(shape.section, placed.rot).depth <= zHi - zLo - clearanceOf(next);
+  next = { ...next, parts: next.parts.map((p) => (p.id === b.id ? { ...p, x: g[0].backX, lengthMm: g[1].backX - g[0].backX, rot: fit.rot, tiltDeg: upright && norm(placed.rot) === fit.rot ? p.tiltDeg : -fit.minus } : p)) };
   return { model: applyGuides(next, materials), fit };
 }
 
@@ -237,7 +240,7 @@ export function guideReport(model: CustomModel, bar: CustomPart, materials: Mate
   const shape = shapeLookup(materials)(bar);
   if (!g || !shape || shape.type !== 'linear') return null;
   const { zLo, zHi } = channel(g[0], g[1]);
-  const fit = tiltFit(shape.section, bar.rot, zHi - zLo);
+  const fit = tiltFit(shape.section, bar.rot, zHi - zLo - clearanceOf(model));
   return fit ? { L: g[0], R: g[1], opening: zHi - zLo, zLo, zHi, fit, section: shape.section } : null;
 }
 
@@ -370,7 +373,7 @@ export type LayoutResult = { model: CustomModel; values: BarLayoutValues } | { e
  * Sve tri mere ne mogu da se zadaju istovremeno (zbir mora da bude jednak visini), pa se jedna računa (`auto`).
  * Ako prečke sa zadatim merama ne staju u visinu bočnih strana, ništa se ne menja i vraća se razlog.
  */
-export function layoutBars(model: CustomModel, barId: string, materials: Material[], p: BarLayoutValues & { auto: LayoutAuto; lufta?: Lufta }): LayoutResult {
+export function layoutBars(model: CustomModel, barId: string, materials: Material[], p: BarLayoutValues & { auto: LayoutAuto; lufta?: Lufta; countChange?: boolean }): LayoutResult {
   const sel = model.parts.find((x) => x.id === barId);
   const grp = sel && barGroup(model, sel, materials);
   if (!sel || !grp) return { error: 'Raspored prečki važi za prečke uklopljene u bočne U profile.' };
@@ -378,7 +381,7 @@ export function layoutBars(model: CustomModel, barId: string, materials: Materia
   if (!(n >= 1)) return { error: 'Broj prečki mora biti najmanje 1.' };
   if (n > 200) return { error: 'Najviše 200 prečki.' };
   const H = grp.yTop - grp.yBot; const h = grp.h;
-  const auto: LayoutAuto = n === 1 && p.auto === 'gap' ? 'bottom' : p.auto;
+  let auto: LayoutAuto = n === 1 && p.auto === 'gap' ? 'bottom' : p.auto;
   let { top, bottom, gap } = p;
   if (n === 1) gap = 0;
   const gapMin = grp.gapMin;
@@ -386,6 +389,21 @@ export function layoutBars(model: CustomModel, barId: string, materials: Materia
   // sa luftom: razmak 0 … koliko staje; bez lufta: najmanji mogući (negativan) … 0
   const gLo = lufta === 'bez' ? gapMin : 0;
   const deg = Math.abs(sel.tiltDeg ?? 0);
+  // najveći broj prečki koji staje (odstojanje od vrha 0, najmanji mogući razmak)
+  const maxCount = Math.max(1, Math.floor((H + gLo) / (h + gLo) + 1e-9));
+  if (p.countChange && n > 1) {
+    // broj prečki ima prioritet: razmak (pa odstojanje od vrha) se prilagođava dok god prečke fizički staju
+    if (n > maxCount) return { error: `Operacija nije izvršena: ${n} prečki ne staje u visinu bočnih strana (${f(H)} mm), čak ni sa najmanjim mogućim razmakom${gLo < 0 ? ` od ${f(gLo)} mm` : ' (prečke se dodiruju)'}. Najviše prečki koje može da se postavi: ${maxCount}.` };
+    const gp = n - 1;
+    gap = lufta === 'bez' ? Math.min(0, Math.max(gLo, gap)) : Math.max(0, gap);
+    if (top < 0) top = 0;
+    if (n * h + top + gp * gap > H + 1e-6) {
+      const g = (H - top - n * h) / gp;
+      if (g >= gLo - 1e-6) gap = Math.max(gLo, g);
+      else { gap = gLo; top = Math.max(0, H - n * h - gp * gLo); }
+    }
+    auto = 'bottom';
+  }
   if (top < 0 || bottom < 0) return { error: 'Odstojanja od vrha i od dna ne mogu biti negativna.' };
   const tooClose = (g: number) => `razmak ${f(g)} mm nije moguć: ${gapMin < 0 ? `pri nagibu od ${f(deg)}° prečke se dodiruju već kad im je razmak ${f(gapMin)} mm, a dalje bi jedna prodrla u drugu` : 'uspravne prečke (bez nagiba) ne mogu da se preklope, najmanji razmak je 0 mm; za negativan razmak nagnite prečke'}.`;
   if (n > 1 && auto !== 'gap' && lufta === 'sa' && gap < -1e-6) return { error: `Operacija nije izvršena: razmak ${f(gap)} mm nije moguć: sa luftom razmak ne može biti negativan (najmanji je 0 mm). Negativan razmak imaju prečke „bez lufta“.` };
@@ -406,7 +424,7 @@ export function layoutBars(model: CustomModel, barId: string, materials: Materia
     if (auto !== 'bottom') parts.push(`odstojanje od dna ${f(bottom)} mm`);
     if (auto !== 'gap' && gaps > 0) parts.push(`${gaps} ${gaps === 1 ? 'razmak' : 'razmaka'} po ${f(gap)} mm (${f(gaps * gap)} mm)`);
     const need = n * h + (auto !== 'top' ? top : 0) + (auto !== 'bottom' ? bottom : 0) + (auto !== 'gap' ? gaps * gap : gaps * gLo);
-    return { error: `Operacija nije izvršena: prečke ne staju u visinu bočnih strana. ${parts.join(' + ')}${auto === 'gap' && gaps > 0 ? (gLo < 0 ? ` (sa najmanjim mogućim razmakom ${f(gLo)} mm)` : ' (bez razmaka između prečki)') : ''} zahtevaju ${f(need)} mm, a visina bočnih strana je ${f(H)} mm (nedostaje ${f(need - H)} mm).` };
+    return { error: `Operacija nije izvršena: prečke ne staju u visinu bočnih strana. ${parts.join(' + ')}${auto === 'gap' && gaps > 0 ? (gLo < 0 ? ` (sa najmanjim mogućim razmakom ${f(gLo)} mm)` : ' (bez razmaka između prečki)') : ''} zahtevaju ${f(need)} mm, a visina bočnih strana je ${f(H)} mm (nedostaje ${f(need - H)} mm). Najviše prečki koje staje (uz najmanji razmak i bez odstojanja od vrha): ${maxCount}.` };
   }
   // koje prečke ostaju: pri smanjenju broja skidaju se one pri dnu, a izabrana prečka se zadržava
   let keep = grp.bars;

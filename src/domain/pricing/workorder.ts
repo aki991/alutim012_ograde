@@ -31,6 +31,8 @@ export interface WorkElement {
   isGate: boolean;
   /** klizna kapija kao sklop: redni broj elementa u projektu (za sklopni crtež sa brojevima delova) */
   slidingIndex?: number;
+  /** redni broj (od 0) prvog elementa projekta koji pripada poziciji: za sklopni crtež elementa */
+  itemIndex?: number;
 }
 
 export interface WorkPost { name: string; where: string; type: string; widthMm: number; heightMm: number; mounting: string; color: string; plinthMm?: number }
@@ -112,6 +114,8 @@ export function buildWorkOrder(project: Project, specs: ModelSpecs | undefined, 
     if (isStubKey(pos.key)) continue; // stubovi su u zasebnoj tabeli
     const idx = /^\d+$/.test(pos.key) ? indexOfNumber(project.items, Number(pos.key)) : -1;
     const it = idx >= 0 ? project.items[idx] : undefined;
+    const range = /^(\d+)–\d+$/.exec(pos.key);
+    const firstIdx = idx >= 0 ? idx : range ? indexOfNumber(project.items, Number(range[1])) : -1;
     const sliding = it?.kind === 'gate' && it.sliding ? it.sliding : undefined;
     const parts = [...(partsBy.get(pos.key)?.values() ?? []), ...(glassBy.get(pos.key) ?? [])]
       .sort((a, b) => (sliding ? assemblyRank(a.name ?? a.part) - assemblyRank(b.name ?? b.part) : 0) || a.profile.localeCompare(b.profile, 'sr') || (b.lengthMm ?? 0) - (a.lengthMm ?? 0));
@@ -162,7 +166,7 @@ export function buildWorkOrder(project: Project, specs: ModelSpecs | undefined, 
         if (it.gateType === 'double' && it.unequalLeaves) facts.push({ label: 'Levo krilo', value: `${Math.round(it.leftLeafMm)} mm` });
       }
     }
-    elements.push({ key: pos.key, label: pos.label, detail: pos.detail, color, parts, facts, isGate, ...(sliding && idx >= 0 ? { slidingIndex: idx } : {}) });
+    elements.push({ key: pos.key, label: pos.label, detail: pos.detail, color, parts, facts, isGate, ...(sliding && idx >= 0 ? { slidingIndex: idx } : {}), ...(firstIdx >= 0 ? { itemIndex: firstIdx } : {}) });
   }
 
   const posts: WorkPost[] = project.posts.flatMap((p, i) => (layout.posts[i]?.hidden ? [] : [{ p, i }])).map(({ p, i }) => {

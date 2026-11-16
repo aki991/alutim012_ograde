@@ -161,7 +161,9 @@ export const PART_DEFS: PartDef[] = [
   { key: 'motor', label: 'Motor i zupčanik', button: 'Motor', group: 'pogon', actuation: 'motor', comps: ['motor', 'pinion'], bom: ['motor', 'motorPlate'], pos: ['pinion'], dims: [
     { key: 'motor.plateW', label: 'Širina ploče motora', def: 340, min: 10 },
     { key: 'motor.plateH', label: 'Debljina ploče motora', def: 30, min: 2 },
-    { key: 'motor.bodyW', label: 'Širina kućišta motora', def: 168, min: 10 },
+    { key: 'motor.bodyW', label: 'Dužina kućišta motora', def: 330, min: 10 },
+    { key: 'motor.depth', label: 'Širina kućišta motora (dubina)', def: 195, min: 10 },
+    { key: 'motor.h', label: 'Visina motora (sa pločom)', def: 277, min: 60 },
     { key: 'pinion.d', label: 'Prečnik zupčanika', def: 80, min: 5 },
   ] },
   { key: 'driveKit', label: 'Oprema pogona', button: 'Oprema pogona', group: 'pogon', actuation: 'motor', comps: [], bom: ['limits', 'photocells', 'lamp', 'safety', 'cabling'], dims: [], note: 'Krajnji prekidači, fotoćelije, lampa, sigurnosna oprema i kabliranje.' },

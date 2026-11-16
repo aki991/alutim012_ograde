@@ -3,22 +3,25 @@ import type { GateType, LayoutItem } from '../models/types';
 /** DEMONSTRACIONA ograničenja — nisu proizvodni standardi. */
 export interface Range { min: number; max: number }
 
+/** Gornje granice mera su praktično ukinute (100 m): korisnik sme da unese i veće mere od nekadašnjih demo ograničenja; ostaju samo najmanje mere. */
+const NO_MAX = 100000;
+
 export const LIMITS = {
-  fenceWidth: { min: 500, max: 4000 } as Range,
-  fenceHeight: { min: 500, max: 3000 } as Range,
-  openingWidth: { min: 300, max: 6000 } as Range,
+  fenceWidth: { min: 500, max: NO_MAX } as Range,
+  fenceHeight: { min: 500, max: NO_MAX } as Range,
+  openingWidth: { min: 300, max: NO_MAX } as Range,
   gateWidth: {
-    pedestrian: { min: 700, max: 1500 },
-    sliding: { min: 2000, max: 8000 },
-    double: { min: 2000, max: 6000 },
-    single: { min: 700, max: 2000 },
+    pedestrian: { min: 700, max: NO_MAX },
+    sliding: { min: 2000, max: NO_MAX },
+    double: { min: 2000, max: NO_MAX },
+    single: { min: 700, max: NO_MAX },
   } as Record<GateType, Range>,
-  gateHeight: { min: 800, max: 3000 } as Range,
+  gateHeight: { min: 800, max: NO_MAX } as Range,
   barSize: { min: 10, max: 400 } as Range,
   gap: { min: 2, max: 200 } as Range,
   frame: { min: 20, max: 100 } as Range,
   postWidth: { min: 60, max: 600 } as Range,
-  postHeight: { min: 600, max: 3500 } as Range,
+  postHeight: { min: 600, max: NO_MAX } as Range,
   fixedTotal: { min: 1000, max: 100000 } as Range,
   percent: { min: 0, max: 100 } as Range,
 } as const;

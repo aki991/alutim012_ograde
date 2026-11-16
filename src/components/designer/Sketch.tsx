@@ -34,15 +34,33 @@ const trunc = (s: string, n: number): string => (s.length > n ? `${s.slice(0, n 
  * dužine, širine, razmaci uspravnih delova), tabela delova sa dužinama i brojem komada i presek prečke u U profilu sa uglom nagiba.
  * Sve je u milimetrima; sve boje i veličine su zadate atributima, pa se ista skica koristi na ekranu i u PDF-u.
  */
-export function SketchSvg({ model, materials, className, style }: { model: CustomModel; materials: Material[]; className?: string; style?: React.CSSProperties }) {
+export function SketchSvg({ model, materials, className, style, bare, tint }: { model: CustomModel; materials: Material[]; className?: string; style?: React.CSSProperties; bare?: boolean; tint?: string }) {
   const sk = useMemo(() => buildSketch(model, materials), [model, materials]);
   const parts = useMemo(() => resolveParts(model, materials), [model, materials]);
-  return <SketchDrawing model={model} materials={materials} sk={sk} parts={parts} className={className} style={style} />;
+  const d = drawSketch({ model, materials, sk, parts, bare, tint });
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox={`${d.minX} ${d.minY} ${d.vw} ${d.vh}`} width={Math.round(d.vw)} height={Math.round(d.vh)} className={className} style={style} role="img" aria-label={`Skica sa kotama: ${model.name}`} data-testid="sketch-svg" fontFamily={FONT}>
+      {d.node}
+    </svg>
+  );
 }
 
-function SketchDrawing({ model, materials, sk, parts, className, style }: { model: CustomModel; materials: Material[]; sk: Sketch; parts: ReturnType<typeof resolveParts>; className?: string; style?: React.CSSProperties }) {
+interface DrawOpts {
+  model: CustomModel; materials: Material[]; sk: Sketch; parts: ReturnType<typeof resolveParts>;
+  /** odvojeni deo: brojevi i boje pozicija se uzimaju iz skice celog modela, bez tabele i preseka */
+  base?: Sketch; fsOverride?: number; title?: string;
+  /** sklopni crtež: samo delovi i brojevi pozicija i ukupne mere, bez lanaca mera, tabele i preseka */
+  bare?: boolean;
+  /** sklopni crtež elementa: svi delovi u boji elementa (umesto boja pozicija) */
+  tint?: string;
+}
+
+/** Crta skicu: vraća sadržaj i veličinu platna (koordinate su u mm modela, y raste naniže). Odvojeni delovi se crtaju istim postupkom. */
+function drawSketch({ model, materials, sk: skIn, parts, base, fsOverride, title, bare, tint }: DrawOpts): { node: React.ReactNode; minX: number; minY: number; vw: number; vh: number } {
+  const sk: Sketch = bare ? { ...skIn, left: [], bottom: [], top: [], right: [], welds: [], groups: [], separate: [], oblique: skIn.oblique } : skIn;
+  const compact = !!base || !!bare;
   const W = model.widthMm; const H = model.heightMm;
-  const fs = Math.max(8, Math.max(W, H) * 0.0185);
+  const fs = fsOverride ?? Math.max(8, Math.max(W, H) * 0.0185);
   const sw = fs * 0.07;
   const tick = fs * 0.32;
   const Y = (y: number): number => H - y; // y nagore → y naniže
@@ -88,7 +106,7 @@ function SketchDrawing({ model, materials, sk, parts, className, style }: { mode
   const titleY = topMost - 1.4 * fs;
   const minX = xOverall - 1.8 * fs;
   const drawMaxX = Math.max((weldItems.length ? weldEnd : W) + (rightColCount ? 1.8 * fs + rightColCount * 2.4 * fs : 1 * fs) + 0.8 * fs, weldItems.length ? xWeld + 11 * fs : 0);
-  const legendW = 80 * fs;
+  const legendW = compact ? 0 : 80 * fs;
   const maxX = Math.max(drawMaxX, minX + legendW);
   const minY = titleY - 1.6 * fs;
 
@@ -96,13 +114,28 @@ function SketchDrawing({ model, materials, sk, parts, className, style }: { mode
   const rowH = 1.75 * fs;
   const legendY0 = yOverall + 3.2 * fs;
   const col = { sw: 0, no: 2.4 * fs, name: 4.6 * fs, section: 38 * fs, length: 49 * fs, angle: 60 * fs, count: 75 * fs };
-  const legendH = rowH * (sk.positions.length + 1.2);
+  const legendH = compact ? 0 : rowH * (sk.positions.length + 1.2);
 
   /* ---- preseci prečki u U profilima ---- */
   const secY0 = legendY0 + legendH + 3 * fs;
   const secH = 22 * fs;
-  const details = sk.groups.map((g, i) => ({ g, report: guideReport(model, g.bar, materials), y: secY0 + i * (secH + 2.5 * fs) }));
-  const maxY = details.length ? details[details.length - 1].y + secH + 1.5 * fs : legendY0 + legendH + 1.5 * fs;
+  const details = compact ? [] : sk.groups.map((g, i) => ({ g, report: guideReport(model, g.bar, materials), y: secY0 + i * (secH + 2.5 * fs) }));
+  const mainEnd = details.length ? details[details.length - 1].y + secH + 1.5 * fs : legendY0 + legendH + 1.5 * fs;
+
+  /* ---- odvojeno nacrtana polja sa prečkama na drugim visinama (svako sa svojim merama) ---- */
+  const seps: { d: ReturnType<typeof drawSketch>; y: number; x: number }[] = [];
+  let sepY = mainEnd + 1 * fs;
+  if (!compact) {
+    for (const sp of sk.separate) {
+      const ids = new Set(sp.ids);
+      const subModel: CustomModel = { ...model, widthMm: sp.x1 - sp.x0, parts: model.parts.filter((p) => ids.has(p.id)).map((p) => ({ ...p, x: p.x - sp.x0 })) };
+      const subSk = buildSketch(subModel, materials);
+      const d = drawSketch({ model: subModel, materials, sk: subSk, parts: resolveParts(subModel, materials), base: sk, fsOverride: fs, title: `Polje sa prečkama na drugim visinama${sp.fields > 1 ? ` (važi za ${sp.fields} polja)` : ''}` });
+      seps.push({ d, y: sepY - d.minY, x: minX + 0.6 * fs - d.minX });
+      sepY += d.vh + 1.5 * fs;
+    }
+  }
+  const maxY = seps.length ? sepY : mainEnd;
 
   const vw = maxX - minX; const vh = maxY - minY;
   const dimLine = (props: { x1: number; y1: number; x2: number; y2: number }) => <line {...props} stroke={DIM} strokeWidth={sw} />;
@@ -112,12 +145,31 @@ function SketchDrawing({ model, materials, sk, parts, className, style }: { mode
     <text x={x} y={y} fontSize={size} fontFamily={FONT} fontWeight={bold ? 700 : 600} fill={INK} textAnchor={anchor} transform={rot ? `rotate(${rot} ${x} ${y})` : undefined}>{text}</text>
   );
   const typeLabel = CUSTOM_KIND_LABELS[model.kind];
-  const colorOf = (id: string): string => { const no = sk.noOf.get(id); return no ? sk.positions[no - 1].color : '#e2e8f0'; };
+  const ref = base ?? sk;
+  const colorOf = (id: string): string => { if (tint) return tint; const no = ref.noOf.get(id); return no ? ref.positions[no - 1].color : '#e2e8f0'; };
 
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox={`${minX} ${minY} ${vw} ${vh}`} width={Math.round(vw)} height={Math.round(vh)} className={className} style={style} role="img" aria-label={`Skica sa kotama: ${model.name}`} data-testid="sketch-svg" fontFamily={FONT}>
+  /* ---- oznake pozicija: krug na delu, pomeren duž dela tako da se ne preklapa sa drugim oznakama ---- */
+  const tagR = 0.85 * fs;
+  const placed: { x: number; y: number }[] = [];
+  const tags = ref.positions.flatMap((p) => {
+    const r = parts.find((x) => p.partIds.includes(x.part.id));
+    if (!r) return [];
+    const b = partBounds(r.part, r.shape);
+    const horiz = b.x1 - b.x0 >= b.y1 - b.y0;
+    const cands = [0.5, 0.25, 0.75, 0.12, 0.88, 0.37, 0.63, 0.04, 0.96].map((f) => (horiz
+      ? { x: b.x0 + (b.x1 - b.x0) * f, y: Y((b.y0 + b.y1) / 2) }
+      : { x: (b.x0 + b.x1) / 2, y: Y(b.y0 + (b.y1 - b.y0) * (1 - f)) }));
+    const clear = (c: { x: number; y: number }) => placed.reduce((m, q) => Math.min(m, Math.hypot(c.x - q.x, c.y - q.y)), Infinity);
+    let pick = cands.find((c) => clear(c) >= 2.2 * tagR);
+    if (!pick) pick = cands.reduce((a, c) => (clear(c) > clear(a) ? c : a), cands[0]);
+    placed.push(pick);
+    return [{ no: p.no, x: pick.x, y: pick.y }];
+  });
+
+  const node = (
+    <>
       <rect x={minX} y={minY} width={vw} height={vh} fill="#ffffff" />
-      {label(minX + 0.6 * fs, titleY, `${model.name || 'Model'} — ${typeLabel.toLowerCase()} ${fmtNum(W, 0)} × ${fmtNum(H, 0)} mm`, 'start', true, fs * 1.25)}
+      {label(minX + 0.6 * fs, titleY, title ?? `${model.name || 'Model'} — ${typeLabel.toLowerCase()} ${fmtNum(W, 0)} × ${fmtNum(H, 0)} mm`, 'start', true, fs * 1.25)}
 
       {/* crtež: delovi u bojama pozicija */}
       <g transform={`translate(0 ${H}) scale(1 -1)`}>
@@ -125,19 +177,13 @@ function SketchDrawing({ model, materials, sk, parts, className, style }: { mode
         {parts.map((r) => <PartSvg key={r.part.id} part={r.part} shape={r.shape} hex={colorOf(r.part.id)} />)}
       </g>
       <line x1={-fs} y1={H} x2={W + fs} y2={H} stroke="#475569" strokeWidth={sw * 2} />
-      {/* oznake pozicija (prvi deo svake pozicije) */}
-      {sk.positions.map((p) => {
-        const r = parts.find((x) => x.part.id === p.firstId);
-        if (!r) return null;
-        const b = partBounds(r.part, r.shape);
-        const cx = (b.x0 + b.x1) / 2; const cy = Y((b.y0 + b.y1) / 2);
-        return (
-          <g key={p.no} data-testid="sketch-tag">
-            <circle cx={cx} cy={cy} r={0.85 * fs} fill="#ffffff" stroke={INK} strokeWidth={sw * 1.2} />
-            {label(cx, cy + fs * 0.34, String(p.no), 'middle', true, fs * 0.95)}
-          </g>
-        );
-      })}
+      {/* oznake pozicija */}
+      {tags.map((t) => (
+        <g key={t.no} data-testid="sketch-tag">
+          <circle cx={t.x} cy={t.y} r={tagR} fill="#ffffff" stroke={INK} strokeWidth={sw * 1.2} />
+          {label(t.x, t.y + fs * 0.34, String(t.no), 'middle', true, fs * 0.95)}
+        </g>
+      ))}
       {sk.oblique.map((o) => <g key={o.id}>{label(o.x, Y(o.y) - 0.6 * fs, o.text, 'middle', true, fs * 0.9, -o.angleDeg)}</g>)}
 
       {/* levi lanac: odstojanje od vrha, razmaci, odstojanje od poda */}
@@ -209,7 +255,7 @@ function SketchDrawing({ model, materials, sk, parts, className, style }: { mode
       })}
 
       {/* tabela delova */}
-      <g data-testid="sketch-legend" transform={`translate(${minX + 0.6 * fs} ${legendY0})`}>
+      {!compact && <g data-testid="sketch-legend" transform={`translate(${minX + 0.6 * fs} ${legendY0})`}>
         <rect x={0} y={0} width={legendW - 1.2 * fs} height={rowH} fill="#f1f5f9" />
         {([['Poz.', col.no], ['Materijal', col.name], ['Presek (mm)', col.section], ['Dužina (mm)', col.length], ['Ugao / nagib', col.angle], ['Kom.', col.count]] as [string, number][]).map(([t, x]) => (
           <g key={t}>{label(x, rowH * 0.68, t, 'start', true, fs * 0.85)}</g>
@@ -229,7 +275,7 @@ function SketchDrawing({ model, materials, sk, parts, className, style }: { mode
             </g>
           );
         })}
-      </g>
+      </g>}
 
       {/* preseci: prečka u U profilu sa uglom nagiba i podaci o rasporedu */}
       {details.map(({ g, report, y }, i) => {
@@ -251,8 +297,10 @@ function SketchDrawing({ model, materials, sk, parts, className, style }: { mode
           </g>
         );
       })}
-      {sk.missing > 0 && label(minX + 0.6 * fs, maxY - 0.3 * fs, `Upozorenje: ${sk.missing} delova ima materijal koji je obrisan iz cenovnika.`, 'start', true, fs * 0.9)}
-      <text x={maxX - 0.6 * fs} y={maxY - 0.3 * fs} fontSize={fs * 0.8} fontFamily={FONT} fill={MUTED} textAnchor="end">Mere su u mm. Pozicije su obojene kao u tabeli. Zelena osa: visina od poda do linije na kojoj prečka naleže na U profil (mesto zavarivanja).</text>
-    </svg>
+      {seps.map((sp, i) => <g key={`sep${i}`} transform={`translate(${sp.x} ${sp.y})`} data-testid="sketch-separate">{sp.d.node}</g>)}
+      {!compact && sk.missing > 0 && label(minX + 0.6 * fs, maxY - 0.3 * fs, `Upozorenje: ${sk.missing} delova ima materijal koji je obrisan iz cenovnika.`, 'start', true, fs * 0.9)}
+      {!compact && <text x={maxX - 0.6 * fs} y={maxY - 0.3 * fs} fontSize={fs * 0.8} fontFamily={FONT} fill={MUTED} textAnchor="end">Mere su u mm. Pozicije su obojene kao u tabeli. Zelena osa: visina od poda do linije na kojoj prečka naleže na U profil (mesto zavarivanja).</text>}
+    </>
   );
+  return { node, minX, minY, vw, vh };
 }
