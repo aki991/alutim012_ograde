@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Sidebar } from '../components/layout/Sidebar';
+import { FEATURES } from '../config/features';
 import { Topbar } from '../components/layout/Topbar';
 import { UpdateBanner } from '../components/layout/UpdateBanner';
 import CustomersPage from '../pages/Customers/CustomersPage';
@@ -66,9 +67,11 @@ export default function App() {
             <Route path="/modeli/crtanje" element={<ModelDesignerPage />} />
             <Route path="/modeli/crtanje/:id" element={<ModelDesignerPage />} />
             {/* ograde za terase: posebna stranica i posebno crtanje (samo materijali za terase), bez veze sa dvorišnim ogradama */}
-            <Route path="/modeli-terasa" element={<ModelsPage key="terrace" terrace />} />
-            <Route path="/modeli-terasa/crtanje" element={<ModelDesignerPage terrace />} />
-            <Route path="/modeli-terasa/crtanje/:id" element={<ModelDesignerPage terrace />} />
+            {FEATURES.terraceFences && <>
+              <Route path="/modeli-terasa" element={<ModelsPage key="terrace" terrace />} />
+              <Route path="/modeli-terasa/crtanje" element={<ModelDesignerPage terrace />} />
+              <Route path="/modeli-terasa/crtanje/:id" element={<ModelDesignerPage terrace />} />
+            </>}
             <Route path="/materijali" element={<MaterialsPage />} />
             <Route path="/magacin" element={<StockPage />} />
             <Route path="/kupci" element={<CustomersPage />} />

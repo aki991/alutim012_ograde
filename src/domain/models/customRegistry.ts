@@ -1,8 +1,10 @@
+import { FEATURES } from '../../config/features';
 import { FENCE_MODEL_LIST, FENCE_MODELS, type FenceModelDef } from './catalog';
 import { miterEndsOf, partBounds, resolveParts, type CustomModel, type CustomPart, type ResolvedPart } from './custom';
 import { applyGuides, guidesOf, scaleWithGuides } from './guides';
 import { isFramePart, resizeWithFrame } from './frame';
 import { materialShape, sectionFace, type MatShape } from './materialShape';
+import { screwCounts, screwMaterial } from './terraceHardware';
 import type { SpecPart } from './spec';
 import type { FenceModelId, Material } from './types';
 
@@ -51,7 +53,10 @@ export const effectiveModelId = <T extends string>(id: T): T => (replacementOf(i
 export const allFenceModels = (keep?: string): FenceModelDef[] => {
   const all = FENCE_MODELS as Record<string, FenceModelDef>;
   const terrace = keep && all[keep] ? Boolean(all[keep].terrace) : undefined;
-  const sameFamily = (d: FenceModelDef | undefined): boolean => !!d && (terrace === undefined || Boolean(d.terrace) === terrace || d.id === keep);
+  // ograde za terase isključene: ne nude se za izbor (osim modela koji projekat već koristi)
+  const sameFamily = (d: FenceModelDef | undefined): boolean => !!d && (FEATURES.terraceFences
+    ? (terrace === undefined || Boolean(d.terrace) === terrace || d.id === keep)
+    : (!d.terrace || d.id === keep));
   const catalog = FENCE_MODEL_LIST.filter((d) => !HIDDEN.has(d.id) || d.id === keep).map((d) => { const r = replacementOf(d.id); return r ? all[r.id] : d; });
   return [...catalog, ...[...REG.values()].filter((m) => !m.replaces && (m.kind !== 'gate' || m.id === keep)).map((m) => all[m.id])].filter(sameFamily);
 };
@@ -171,9 +176,15 @@ export function customSpec(m: CustomModel): SpecPart[] {
     row.n += 1; row.area += (p.lengthMm * (p.heightMm ?? 0)) / 1e6;
     rows.set(key, row);
   }
-  return [...rows.entries()].map(([key, { n, area, ...part }]) => ({
+  const spec: SpecPart[] = [...rows.entries()].map(([key, { n, area, ...part }]) => ({
     ...part,
     qty: key.endsWith('|m2') ? `${Math.round(area * 10000) / 10000}*W/${m.widthMm}*H/${m.heightMm}` : String(n),
     note: key.endsWith('|m2') ? 'površina (m²) prati širinu i visinu polja' : part.note ?? (part.lengthMm ? 'dužina sa crteža, prati veličinu polja' : undefined),
   }));
+  // zavrtnji uz okov (prsten prečke, veza stub–rukohvat, flanša): po komadu okova na crtežu
+  for (const [sku, n] of screwCounts(m.parts, MATERIALS, m.hw)) {
+    const s = screwMaterial(sku, MATERIALS);
+    if (s && !spec.some((r) => r.materialId === s.id)) spec.push({ id: `cs_scr_${spec.length}`, name: s.name, materialId: s.id, group: 'Vijci', qty: String(n), enabled: true, note: 'zavrtnji uz okov sa crteža' });
+  }
+  return spec;
 }

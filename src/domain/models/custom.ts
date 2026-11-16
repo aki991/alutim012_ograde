@@ -1,5 +1,6 @@
 import { colorHex } from './catalog';
-import { materialOwnColor, materialShape, sectionFace, solidsBounds, type MatShape } from './materialShape';
+import { hwDimsOf, materialOwnColor, materialShape, materialShapeWith, sectionFace, solidsBounds, type HwDims, type MatShape } from './materialShape';
+import { screwCounts, screwMaterial } from './terraceHardware';
 import type { Material } from './types';
 
 /**
@@ -7,6 +8,12 @@ import type { Material } from './types';
  * Koordinate su u mm, pogled spreda: x udesno, y nagore, (0, 0) je donji levi ugao polja.
  */
 export type Lufta = 'sa' | 'bez';
+
+/**
+ * Vrste okova ograda za terase koje aplikacija sama postavlja (kvačice uz izabran element): flanša na dnu stuba, kapa na vrhu stuba,
+ * veza stuba i rukohvata, prsten (držač) prečke na stubu, kapica na kraju prečke i završetak na kraju rukohvata.
+ */
+export type HwKind = 'flange' | 'postCap' | 'connector' | 'holder' | 'rodCap' | 'railCap';
 
 export interface CustomPart {
   id: string;
@@ -41,6 +48,10 @@ export interface CustomPart {
   z: number;
   /** sopstvena boja dela (RAL ključ ili #hex), npr. crn ram a sive prečke; bez vrednosti deo je u boji modela */
   color?: string;
+  /** stub, rukohvat ili prečka (ograde za terase): izabrani okovi (ID materijala po vrsti); okov se pravi sam na pravom mestu */
+  hwPick?: Partial<Record<HwKind, string>>;
+  /** okov koji je aplikacija sama postavila: vrsta i deo na koji naleže (stub / rukohvat / prečka) i drugi deo (stub za prsten prečke) */
+  hw?: { kind: HwKind; on: string; at?: string };
 }
 
 export interface CustomModel {
@@ -64,6 +75,8 @@ export interface CustomModel {
   replaces?: string;
   /** upozorenja iz provere crteža koja je radnik prihvatio (ključevi); ne prikazuju se kao aktivna */
   acceptedWarnings?: string[];
+  /** samo ograda za terasu, „Mere ograde“: izmenjene mere okova (visina veze, podizanje stuba zbog flanše …); ostalo su podrazumevane mere */
+  hw?: Partial<HwDims>;
 }
 
 /** koji krajevi dela rama su pod 45° (početak i kraj ose); deo koji nije deo rama nema ugaone krajeve */
@@ -202,13 +215,15 @@ export interface ResolvedPart { part: CustomPart; shape: MatShape; hex: string; 
  * Delovi modela sa oblikom i bojom; deo čiji je materijal obrisan iz cenovnika crta se kao sivi profil 40 × 20.
  * Bočne U vođice se crtaju posle prečki, da krajevi prečki u kanalu budu iza stranice U profila (kao u stvarnosti).
  */
-export function resolveParts(model: Pick<CustomModel, 'parts' | 'color'>, materials: Material[]): ResolvedPart[] {
+export function resolveParts(model: Pick<CustomModel, 'parts' | 'color'> & { hw?: Partial<HwDims> }, materials: Material[]): ResolvedPart[] {
   const byId = new Map(materials.map((m) => [m.id, m]));
+  const dims = model.hw ? hwDimsOf(model.hw) : null;
   const guideIds = new Set(model.parts.flatMap((p) => p.guides ?? []));
   const ordered = guideIds.size ? [...model.parts.filter((p) => !guideIds.has(p.id)), ...model.parts.filter((p) => guideIds.has(p.id))] : model.parts;
   const all = ordered.map((part) => {
     const material = byId.get(part.materialId);
-    const shape = material ? materialShape(material) : materialShape({ sku: '', name: part.heightMm ? 'ploča' : 'profil 40x20', unit: part.heightMm ? 'm2' : 'm', category: 'ostalo' });
+    // okov koji je aplikacija sama postavila se crta prema merama modela („Mere ograde“)
+    const shape = material ? (part.hw && dims ? materialShapeWith(material, dims) : materialShape(material)) : materialShape({ sku: '', name: part.heightMm ? 'ploča' : 'profil 40x20', unit: part.heightMm ? 'm2' : 'm', category: 'ostalo' });
     return { part, shape, hex: material ? partHex(material, model, part) : part.color ? colorHex(part.color) : '#94a3b8', material };
   });
   // komadni delovi (brave, šarke, kape) se crtaju na kraju: uvek su iznad profila i mogu da stoje bilo gde, i na ramu
@@ -246,7 +261,7 @@ export function customBom(model: CustomModel, materials: Material[]): CustomBomL
     a.count += 1; a.mm += p.lengthMm; a.mm2 += p.lengthMm * (p.heightMm ?? 0);
     acc.set(p.materialId, a);
   }
-  return [...acc.entries()].map(([materialId, a]) => {
+  const lines: CustomBomLine[] = [...acc.entries()].map(([materialId, a]) => {
     const mat = materials.find((m) => m.id === materialId);
     const shape = mat ? materialShape(mat) : null;
     const unit = mat?.unit ?? 'kom';
@@ -261,6 +276,13 @@ export function customBom(model: CustomModel, materials: Material[]): CustomBomL
     const unitPrice = mat?.unitPrice ?? 0;
     return { materialId, sku: mat?.sku ?? '—', name: mat?.name ?? 'Materijal je obrisan iz cenovnika', unit, count: a.count, qty, qtyLabel, unitPrice, total: qty * unitPrice, missing: !mat || unitPrice <= 0 };
   });
+  // zavrtnji koji idu uz okov (prsten prečke, veza, flanša): po komadu okova
+  for (const [sku, n] of screwCounts(model.parts, materials, model.hw)) {
+    const s = screwMaterial(sku, materials);
+    if (!s || acc.has(s.id)) continue;
+    lines.push({ materialId: s.id, sku: s.sku, name: s.name, unit: s.unit, count: n, qty: n, qtyLabel: `${n} kom`, unitPrice: s.unitPrice, total: n * s.unitPrice, missing: s.unitPrice <= 0 });
+  }
+  return lines;
 }
 
 /** Kopije dela pomerene za korak (mm) upravno na osu profila (za ploče i komadne delove: udesno). */

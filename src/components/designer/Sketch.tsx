@@ -226,20 +226,20 @@ function drawSketch({ model, materials, sk: skIn, parts, base, fsOverride, title
       })}
       {/* zavarivanje: od poda do linije naleganja svake prečke na bočni U profil (zelena osa) */}
       {weldItems.length > 0 && (
-        <g data-testid="sketch-welds">
+        <g data-testid={sk.weldKind === 'rodCenter' ? 'sketch-rod-heights' : 'sketch-welds'}>
           <line x1={xWeld} y1={H} x2={xWeld} y2={weldItems[0].Y} stroke={WELD} strokeWidth={sw * 1.4} />
           <line x1={xWeld - 0.5 * fs} y1={H} x2={xWeld + 0.5 * fs} y2={H} stroke={WELD} strokeWidth={sw * 1.6} />
           {label(xWeld + 0.7 * fs, H + 0.1 * fs + 0.35 * fs, '0', 'start', true, fs * 0.9)}
           {weldItems.map((d, i) => (
-            <g key={d.id} data-testid="sketch-weld" data-value={d.value}>
+            <g key={d.id} data-testid={sk.weldKind === 'rodCenter' ? 'sketch-rod-height' : 'sketch-weld'} data-value={d.value}>
               <line x1={W} y1={d.Y} x2={xWeld} y2={d.Y} stroke={WELD} strokeWidth={sw * 0.8} strokeOpacity={0.7} />
               <circle cx={xWeld} cy={d.Y} r={sw * 1.9} fill={WELD} />
               {Math.abs(weldLabels[i] - d.Y) > 0.01 && <line x1={xWeld} y1={d.Y} x2={xWeld + 0.6 * fs} y2={weldLabels[i] - 0.3 * fs} stroke={WELD} strokeWidth={sw * 0.7} />}
               <text x={xWeld + 0.7 * fs} y={weldLabels[i] + 0.35 * fs} fontSize={fs} fontFamily={FONT} fontWeight={700} fill={WELD} textAnchor="start">{d.text}</text>
             </g>
           ))}
-          <text x={xWeld - 0.2 * fs} y={-1.75 * fs} fontSize={fs * 0.85} fontFamily={FONT} fontWeight={700} fill={WELD} textAnchor="start">Zavarivanje</text>
-          <text x={xWeld - 0.2 * fs} y={-0.75 * fs} fontSize={fs * 0.8} fontFamily={FONT} fontWeight={600} fill={WELD} textAnchor="start">od poda do linije naleganja</text>
+          <text x={xWeld - 0.2 * fs} y={-1.75 * fs} fontSize={fs * 0.85} fontFamily={FONT} fontWeight={700} fill={WELD} textAnchor="start">{sk.weldKind === 'rodCenter' ? 'Visine osa prečki' : 'Zavarivanje'}</text>
+          <text x={xWeld - 0.2 * fs} y={-0.75 * fs} fontSize={fs * 0.8} fontFamily={FONT} fontWeight={600} fill={WELD} textAnchor="start">{sk.weldKind === 'rodCenter' ? 'od poda do ose prečke' : 'od poda do linije naleganja'}</text>
         </g>
       )}
       {/* desne kote */}

@@ -1,4 +1,5 @@
 import { partAngle, partBounds, type CustomModel, type CustomPart } from './custom';
+import { hwRoleOf } from './terraceHardware';
 import { barLayoutInfo, guideReport, type BarLayoutValues } from './guides';
 import { materialShape, rotateDeg, type MatShape } from './materialShape';
 import type { Material } from './types';
@@ -68,6 +69,8 @@ export interface Sketch {
   separate: SketchSeparate[];
   /** mesta zavarivanja: visina od poda do gornje linije naleganja svake prečke uklopljene u bočni U profil, odozgo naniže */
   welds: { id: string; y: number; value: number }[];
+  /** što prikazuje desna osa visina: mesta zavarivanja (prečke u U profilima) ili visine osa prečki od poda (ograda za terasu) */
+  weldKind: 'weld' | 'rodCenter';
   /** delovi čiji je materijal obrisan iz cenovnika */
   missing: number;
 }
@@ -240,5 +243,8 @@ export function buildSketch(model: CustomModel, materials: Material[]): Sketch {
   }
   // gornja linija na kojoj prečka naleže na ivicu bočnog U profila, merena od poda: tu se prečka vari
   const welds = unique(items.filter((i) => i.p.guides && i.shape.type === 'linear' && !offBars.has(i.p.id)).map((i) => { const y = contactTopY(i.p, i.shape, i.b.y1); return { id: i.p.id, y, value: r1(y) }; }), (w) => String(w.value)).sort((a, b) => b.y - a.y);
-  return { widthMm: W, heightMm: H, positions, noOf, left, bottom, top, right, oblique, groups, separate, welds, missing };
+  // ograda za terasu: visina ose svake vodoravne prečke od poda (majstor zna na kojoj visini se postavlja)
+  const rodCenters = model.kind !== 'terrace' ? [] : unique(items.filter((i) => i.orient === 'h' && i.shape.type === 'linear' && hwRoleOf(i.p, i.shape) === 'rod').map((i) => { const y = (i.b.y0 + i.b.y1) / 2; return { id: i.p.id, y, value: r1(y) }; }), (w) => String(w.value)).sort((a, b) => b.y - a.y);
+  const useRods = welds.length === 0 && rodCenters.length > 0;
+  return { widthMm: W, heightMm: H, positions, noOf, left, bottom, top, right, oblique, groups, separate, welds: useRods ? rodCenters : welds, weldKind: useRods ? 'rodCenter' : 'weld', missing };
 }

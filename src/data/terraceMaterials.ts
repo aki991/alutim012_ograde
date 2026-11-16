@@ -36,7 +36,8 @@ export const TERRACE_MATERIALS: Material[] = [
   // rukohvati
   prof('P-1388', 'Rukohvat okrugli Ø50×2,5', 1.011),
   prof('P-1344', 'Rukohvat okrugli Ø50×1,5', 0.621),
-  prof('P-1037', 'Rukohvat okrugli Ø40×2', 0.648),
+  prof('P-1560', 'Rukohvat okrugli Ø40×2,5', 0.798),
+  prof('P-1037','Rukohvat okrugli Ø40×2', 0.648),
   prof('P-1072', 'Rukohvat 60×25×1,5', 0.783),
   prof('P-1634', 'Rukohvat 60×25×2', 0.943),
   prof('P-1071', 'Rukohvat 80×30×1,5', 1.108),
@@ -76,6 +77,8 @@ export const TERRACE_MATERIALS: Material[] = [
   glass('TER-VSG-88-SAT', 'Staklo kaljeno laminirano satinirano 17,52 mm (8+8)'),
   glass('TER-VSG-66-DIM', 'Staklo kaljeno laminirano dimljeno 12,76 mm (6+6)'),
   // veze stuba i rukohvata
+  kom('AK-5039-40', 'Veza stub Ø40 – rukohvat Ø40, fiksna'),
+  kom('AK-5237', 'Veza stub Ø40 – cev Ø40, fiksna'),
   kom('AK-5039', 'Veza stub Ø40 – rukohvat Ø50, fiksna kratka'),
   kom('AK-5066', 'Veza stub Ø40 – rukohvat Ø50, podesiva sa zglobom'),
   kom('AK-65039Y', 'Veza stub 40×40 – rukohvat Ø50, fiksna'),
@@ -93,6 +96,9 @@ export const TERRACE_MATERIALS: Material[] = [
   kom('AK-5020X', 'Koleno rukohvata Ø50, stezno'),
   kom('AK-5020NX', 'Koleno rukohvata Ø50, oštro'),
   kom('AK-5164', 'Zglob rukohvata Ø40, kuglasti podesiv ugao'),
+  kom('AK-5020K-40', 'Zglob rukohvata Ø40, kuglasti (AK-5020K-40)'),
+  kom('AK-5020NX-40', 'Koleno rukohvata Ø40, oštro'),
+  kom('AK-5007-40', 'Spojnica rukohvata Ø40, bilezik'),
   kom('AK-5165', 'Koleno rukohvata 60×25, zavareno'),
   kom('AK-5129', 'Koleno rukohvata 60×25, podesivo gore–dole'),
   kom('AK-5138', 'Koleno rukohvata 80×30, zavareno'),
@@ -125,6 +131,7 @@ export const TERRACE_MATERIALS: Material[] = [
   kom('AK-5010', 'Graničnik stakla'),
   // flanše, maske i montaža
   kom('AK-5036', 'Podna i zidna flanša Ø40 sa maskom'),
+  kom('AK-5186', 'Flanša stuba Ø40, spoljna'),
   kom('AK-5089', 'Flanša Ø40 sa pločom i ankerom, unutrašnja'),
   kom('AK-5196', 'Flanša Ø40 sa pločom Ø80, unutrašnja'),
   kom('AK-5037', 'Podna i zidna flanša Ø50 sa maskom'),
@@ -146,6 +153,7 @@ export const TERRACE_MATERIALS: Material[] = [
   kom('AK-5003/30', 'Ankerno gvožđe 30 cm'),
   kom('BTS-VT75100', 'Vijak za beton 7,5×100'),
   kom('BTS-VP4219', 'Vijak samobušivi 4,2×19'),
+  kom('BTS-VP4238', 'Vijak samobušivi 4,2×38'),
   kom('V330', 'Spigot za staklo 50×140'),
   kom('AK-5417', 'Podna stopa SlimLine'),
   // završeci i kape

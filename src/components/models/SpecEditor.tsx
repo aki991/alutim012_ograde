@@ -7,6 +7,7 @@ import type { FenceModelId } from '../../domain/models/types';
 import { useAppStore } from '../../store/useAppStore';
 import { fmtNum } from '../../utils/units';
 import { Modal } from '../ui/Modal';
+import { visibleMaterials } from '../../config/features';
 
 let counter = 0;
 const newId = () => `sp_new_${Date.now().toString(36)}_${++counter}`;
@@ -30,7 +31,8 @@ export function SpecEditor({ modelId, onClose }: { modelId: FenceModelId; onClos
   const byId = new Map(evaluated.map((e) => [e.part.id, e]));
   const matName = (id: string) => materials.find((m) => m.id === id);
   // grupe pa mere od najmanje do najveće
-  const sortedMaterials = useMemo(() => [...materials].sort(compareMaterials), [materials]);
+  const usedIds = parts.map((p) => p.materialId);
+  const sortedMaterials = useMemo(() => [...visibleMaterials(materials, usedIds)].sort(compareMaterials), [materials, usedIds.join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
   const errors = parts.some((p) => p.enabled && (checkFormula(p.qty, vars) !== null || checkFormula(p.lengthMm, vars) !== null || p.qty.trim() === ''));
 
   const patch = (id: string, change: Partial<SpecPart>) => setParts((ps) => ps.map((p) => (p.id === id ? { ...p, ...change } : p)));

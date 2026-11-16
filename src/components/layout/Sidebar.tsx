@@ -4,6 +4,7 @@ import {
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { currentProjectId, useAppStore } from '../../store/useAppStore';
 import { PHOTOS } from '../../assets/photos';
+import { FEATURES } from '../../config/features';
 import { Logo } from './Logo';
 
 interface Item { to: string; label: string; icon: LucideIcon; end?: boolean }
@@ -13,7 +14,7 @@ const MAIN: Item[] = [
   { to: '/projekti', label: 'Projekti', icon: FolderOpen },
   { to: '/modeli', label: 'Modeli ograda', icon: LayoutGrid },
   { to: '/modeli-kapija', label: 'Modeli kapija', icon: DoorOpen },
-  { to: '/modeli-terasa', label: 'Modeli ograda za terase', icon: Fence },
+  ...(FEATURES.terraceFences ? [{ to: '/modeli-terasa', label: 'Modeli ograda za terase', icon: Fence }] : []),
   { to: '/materijali', label: 'Materijali i cene', icon: Database },
   { to: '/magacin', label: 'Magacin', icon: Boxes },
   { to: '/kupci', label: 'Kupci', icon: Users },

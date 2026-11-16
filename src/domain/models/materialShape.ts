@@ -108,6 +108,11 @@ export function dimsFromName(name: string): number[] {
   return m ? m.slice(1).filter(Boolean).map(num) : [];
 }
 
+/** Svi prečnici iz naziva redom: „Veza stub Ø40 – rukohvat Ø50“ → [40, 50]. */
+export function diasOfName(name: string): number[] {
+  return [...name.matchAll(new RegExp(`[øØ⌀]\\s*${N}`, 'g'))].map((m) => num(m[1]));
+}
+
 /** Prečnik (i debljina zida) iz naziva: „Ø50 × 2 mm“. */
 function roundFromName(name: string): { d: number; wall: number } | null {
   const m = new RegExp(`[øØ⌀]\\s*${N}(?:\\s*[–-]\\s*\\d+)?(?:\\s*[x×]\\s*${N})?`).exec(name);
@@ -156,11 +161,76 @@ const solidSection = (w: number, h: number): Section => ({ polys: [{ outline: [[
 const box = (w: number, h: number, d: number, x: number, y: number, z = 0): Solid => ({ prim: 'box', size: [w, h, d], pos: [x, y, z] });
 const cyl = (r: number, len: number, axis: 'x' | 'y' | 'z', x: number, y: number, z = 0): Solid => ({ prim: 'cyl', r, len, axis, pos: [x, y, z] });
 
-type PieceKind = 'cap_flat' | 'cap_pyramid' | 'rosette' | 'foot' | 'side_foot' | 'plug' | 'hinge' | 'lock' | 'wheel' | 'motor' | 'bracket' | 'ring' | 'screw' | 'box';
+type PieceKind = 'cap_flat' | 'cap_pyramid' | 'rosette' | 'foot' | 'side_foot' | 'plug' | 'hinge' | 'lock' | 'wheel' | 'motor' | 'bracket' | 'ring' | 'screw' | 'box'
+  | 'flange_round' | 'holder' | 'end_cap' | 'connector';
 
-/** Tela komadnog dela; w × d je mera profila na koji deo ide (npr. kapa 80 × 80). */
-export function pieceSolids(kind: PieceKind, w: number, d: number): Solid[] {
+/**
+ * Mere okova ograde za terasu (mm), „Mere ograde“: zavise od materijala koji radionica koristi, pa se podešavaju po modelu.
+ * Podrazumevane vrednosti su procena prema katalogu BTS.
+ */
+export interface HwDims {
+  /** visina veze stub–rukohvat: od vrha stuba (ili kape) do donje ivice rukohvata */
+  connectorH: number;
+  /** prečnik vrata veze (uži deo između stuba i ploče pod rukohvatom) */
+  connectorNeckD: number;
+  /** dužina ploče veze duž rukohvata */
+  connectorPlateLen: number;
+  /** debljina ploče veze pod rukohvatom */
+  connectorPlateT: number;
+  /** visina kape na vrhu stuba */
+  capH: number;
+  /** debljina ploče flanše: za toliko je stub podignut od poda */
+  plateH: number;
+  /** prepust ploče flanše oko stuba (poluprečnik ploče = poluprečnik stuba + prepust) */
+  plateOver: number;
+  /** visina čaure flanše iznad ploče */
+  sleeveH: number;
+  /** rastojanje ose prečke od prednje ivice stuba (prsten naleže na stub); bez vrednosti: poluprečnik prečke + 7 */
+  rodOffset?: number;
+  /** dužina kapice na kraju cevi */
+  endCapLen: number;
+  /** zavrtnji po komadu okova (idu u spisak materijala) */
+  screwsHolder: number;
+  screwsConnector: number;
+  screwsFlange: number;
+}
+
+export const DEFAULT_HW_DIMS: HwDims = {
+  connectorH: 30, connectorNeckD: 24, connectorPlateLen: 44, connectorPlateT: 4, capH: 14, plateH: 8, plateOver: 32, sleeveH: 50, endCapLen: 8,
+  screwsHolder: 1, screwsConnector: 3, screwsFlange: 3,
+};
+
+/** Mere okova modela: podrazumevane, sa izmenama iz „Mere ograde“ (neispravne vrednosti se preskaču). */
+export function hwDimsOf(over?: Partial<HwDims>): HwDims {
+  const out: HwDims = { ...DEFAULT_HW_DIMS };
+  for (const [k, v] of Object.entries(over ?? {})) if (typeof v === 'number' && Number.isFinite(v) && v >= 0) (out as unknown as Record<string, number>)[k] = v;
+  return out;
+}
+
+/** Poluprečnik prstena za prečku Ø d: prsten naleže na stub, a osa prečke je za toliko ispred prednje ivice stuba. */
+export const holderRadius = (rodDia: number, dims: HwDims = DEFAULT_HW_DIMS): number => Math.max(rodDia / 2 + 2, dims.rodOffset ?? rodDia / 2 + 7);
+
+/**
+ * Tela komadnog dela; w × d je mera profila na koji deo ide (npr. kapa 80 × 80). Okov ograda za terase: flanša (w = prečnik stuba),
+ * prsten prečke (w = prečnik prečke, d = prečnik stuba), kapica (w = prečnik cevi) i veza (w = prečnik stuba, d = prečnik rukohvata).
+ * Početak dela je tačka naleganja: flanša i veza — sredina donje ivice, prsten — osa prečke, kapica — kraj cevi (telo ide u +x).
+ */
+export function pieceSolids(kind: PieceKind, w: number, d: number, dims: HwDims = DEFAULT_HW_DIMS): Solid[] {
   switch (kind) {
+    case 'flange_round': return [cyl(w / 2 + dims.plateOver, dims.plateH, 'y', 0, dims.plateH / 2), cyl(w / 2 + 5, dims.sleeveH, 'y', 0, dims.plateH + dims.sleeveH / 2)];
+    case 'holder': { const R = holderRadius(w, dims); return [cyl(R, 28, 'x', 0, 0, 0), cyl(3.5, 8, 'z', 0, 0, R + 2)]; }
+    case 'end_cap': return [cyl(w / 2 + 1.5, dims.endCapLen, 'x', dims.endCapLen / 2, 0, 0)];
+    case 'connector': {
+      // kao na fotografiji: uži vrat sa prstenom na vrhu stuba i ravna ploča pod rukohvatom
+      const t = Math.min(dims.connectorPlateT, dims.connectorH);
+      const neckH = Math.max(1, dims.connectorH - t);
+      const shoulder = Math.min(5, neckH);
+      return [
+        cyl(w / 2 - 0.5, shoulder, 'y', 0, shoulder / 2),
+        cyl(Math.max(2, dims.connectorNeckD / 2), neckH, 'y', 0, neckH / 2),
+        box(dims.connectorPlateLen, t, Math.max(10, d * 0.8), 0, dims.connectorH - t / 2),
+      ];
+    }
     case 'cap_flat': return [box(w + 4, 5, d + 4, 0, 2.5)];
     case 'cap_pyramid': return [box(w + 4, 4, d + 4, 0, 2), { prim: 'pyr', base: [w + 2, d + 2], h: Math.max(12, w * 0.28), pos: [0, 4, 0] }];
     case 'rosette': return [box(w + 44, 4, d + 44, 0, 2), box(w + 14, 16, d + 14, 0, 12)];
@@ -172,7 +242,7 @@ export function pieceSolids(kind: PieceKind, w: number, d: number): Solid[] {
     case 'wheel': return [cyl(40, 22, 'z', 0, 40), box(100, 8, 44, 0, 86), box(6, 50, 44, -47, 60), box(6, 50, 44, 47, 60)];
     case 'motor': return [box(320, 240, 180, 0, 130), box(360, 10, 220, 0, 5), cyl(34, 30, 'z', 60, 90, 105)];
     case 'bracket': return [box(Math.max(30, w), 4, Math.max(25, d), 0, 2), box(4, Math.max(30, w), Math.max(25, d), -Math.max(30, w) / 2 + 2, Math.max(30, w) / 2)];
-    case 'ring': return [cyl(w / 2 + 6, 14, 'y', 0, 7)];
+    case 'ring': return [cyl(w / 2 + 6, dims.capH, 'y', 0, dims.capH / 2)];
     case 'screw': return [cyl(3, 28, 'z', 0, 0, 0), cyl(6.5, 4, 'z', 0, 0, 16)];
     default: return [box(w, w, d, 0, w / 2)];
   }
@@ -202,7 +272,7 @@ export function solidsBounds(solids: Solid[]): { x0: number; y0: number; x1: num
   return { x0, y0, x1, y1 };
 }
 
-const piece = (group: MaterialGroupId, kind: PieceKind, w: number, d: number): MatShape => ({ type: 'piece', group, solids: pieceSolids(kind, w, d) });
+const piece = (group: MaterialGroupId, kind: PieceKind, w: number, d: number, dims?: HwDims): MatShape => ({ type: 'piece', group, solids: pieceSolids(kind, w, d, dims) });
 
 /** Mere kolica samonoseće kapije (mm): ploča sa otvorima za sidrenje, nosač i telo sa valjcima koji idu u C-profil. */
 export interface CarriageParams { plateW: number; plateD: number; plateH: number; stemW: number; stemH: number; wheelD: number; wheelGap: number }
@@ -233,11 +303,19 @@ type ShapeInput = Pick<Material, 'sku' | 'name' | 'unit' | 'category'> & { id?: 
 /** Ključ oblika materijala: isti ključ = isti presek (za keš oblika i 3D tela). */
 export const materialKey = (m: ShapeInput): string => `${m.sku}|${m.name}|${m.unit}|${m.category}|${m.wallMm ?? ''}|${m.dims ? JSON.stringify(m.dims) : ''}|${m.drawn ? JSON.stringify(m.drawn) : ''}|${isTerraceMaterial(m) ? 't' : ''}`;
 
-function resolved(m: ShapeInput): Resolved {
-  const key = materialKey(m);
+/**
+ * Oblik materijala sa merama okova modela („Mere ograde“): isti kao materialShape, a okov ograde za terasu (flanša, prsten, veza, kapica)
+ * se crta prema merama modela. Ostali materijali su isti kao u materialShape.
+ */
+export function materialShapeWith(m: ShapeInput, dims: HwDims): MatShape {
+  return resolved(m, dims).shape;
+}
+
+function resolved(m: ShapeInput, dims?: HwDims): Resolved {
+  const key = dims ? `${materialKey(m)}|${JSON.stringify(dims)}` : materialKey(m);
   let s = cache.get(key);
   if (!s) {
-    s = resolveShape(m);
+    s = resolveShape(m, dims);
     // materijal za terase: isti oblik, a grupa je jedna od grupa za terase (stubovi, rukohvati, prečke, staklo, okov)
     if (isTerraceMaterial(m)) s = { ...s, shape: { ...s.shape, group: terraceGroup(m.name, s.shape) } };
     cache.set(key, s);
@@ -274,7 +352,7 @@ export function sectionOfDrawn(d: NonNullable<Material['drawn']>, wallMm?: numbe
   return { polys: polys.map((p) => ({ outline: mv(p.outline), holes: p.holes.map(mv) })), w: r(b.x1 - b.x0), h: r(b.y1 - b.y0) };
 }
 
-function resolveShape(m: ShapeInput): Resolved {
+function resolveShape(m: ShapeInput, hwd?: HwDims): Resolved {
   // ručno nacrtan presek ima prednost nad presekom iz šifre i naziva
   if (drawnValid(m.drawn)) {
     const d = m.drawn;
@@ -308,6 +386,14 @@ function resolveShape(m: ShapeInput): Resolved {
   }
 
   // komadni delovi (naziv često sadrži i meru profila na koji idu, zato se proveravaju pre profila)
+  // okov ograda za terase sa prečnikom (Ø) u nazivu: pravi oblici flanše, prstena prečke, veze stub–rukohvat i kapice na kraju cevi
+  const dias = diasOfName(m.name);
+  if (dias.length) {
+    if (has(/flans|\bstop[aeu]\b|prirubnic/)) return plain(piece('stope', 'flange_round', dias[0], dias[0], hwd));
+    if (has(/prsten za prec|nosac prec|drzac prec/)) return plain(piece('okov', 'holder', dias[0], dias[1] ?? 40, hwd));
+    if (has(/veza stub/) && has(/rukohvat/) && dias.length >= 2) return plain(piece('okov', 'connector', dias[0], dias[1], hwd));
+    if (has(/zavrsetak (prec|rukohvat|cevi)|kapica prec/)) return plain(piece('okov', 'end_cap', dias[0], dias[0], hwd));
+  }
   // okov ograda za terase: flanše, bočne obujmice, spigoti i stezaljke stakla (pre provere „staklo“, da ne postanu ploča)
   if (has(/flans/)) return plain(piece('rozetne', 'rosette', w, d));
   if (has(/obujmic/)) return plain(piece('stope', 'side_foot', w, d));
@@ -322,7 +408,7 @@ function resolveShape(m: ShapeInput): Resolved {
   if (has(/tocki/)) return plain(piece('okov', 'wheel', w, d));
   if (has(/motor|automatik|pogon/) || m.category === 'automatika') return plain(piece('automatika', 'motor', w, d));
   if (has(/vijak|vijci|sraf|zakiv|sidro|anker|tipl/)) return plain(piece('okov', 'screw', w, d));
-  if (has(/prsten|maska stuba/)) return plain(piece('okov', 'ring', rd?.d ?? 40, rd?.d ?? 40));
+  if (has(/prsten|maska stuba/)) return plain(piece('okov', 'ring', rd?.d ?? 40, rd?.d ?? 40, hwd));
   if (has(/nosac|spojnic|veza|zglob|kolen|zavrsetak|podlosk|drzac|ugaonik|sidrenje|savijanje/)) return plain(piece('okov', 'bracket', Math.min(w, 60), Math.min(d, 60)));
 
   // ploče

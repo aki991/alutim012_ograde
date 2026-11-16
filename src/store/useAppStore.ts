@@ -286,7 +286,7 @@ export const useAppStore = create<AppState>((set, get) => {
             }
           } catch { /* bez localStorage-a: preskače se */ }
           // jednokratno: materijali za ograde za terase (BTS stubovi, rukohvati, prečke, staklo i okov) i oznaka „za terase“ na starim BTS materijalima
-          const TERRACE_KEY = 'alutim.terraceMaterialsV1';
+          const TERRACE_KEY = 'alutim.terraceMaterialsV2';
           let terraceAdded = false;
           try {
             if (localStorage.getItem(TERRACE_KEY) !== '1') {

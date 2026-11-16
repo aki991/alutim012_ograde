@@ -1,7 +1,12 @@
-import type { ReactNode } from 'react';
+import { isValidElement, type ReactNode } from 'react';
+import { FEATURES } from '../../config/features';
 import { Page, PageHeader } from '../../components/ui/Common';
 
 interface Topic { title: string; items: ReactNode[] }
+
+/** Tekst o ograda za terase: prikazuje se samo kad su ograde za terase uključene (config/features.ts). */
+const TerraceOnly = ({ children }: { children?: ReactNode }) => <>{children}</>;
+const shown = (items: ReactNode[]): ReactNode[] => items.filter((it) => FEATURES.terraceFences || !(isValidElement(it) && it.type === TerraceOnly));
 
 const TOPICS: Topic[] = [
   {
@@ -59,8 +64,8 @@ const TOPICS: Topic[] = [
       <>Dvokrilnoj kapiji možete da zadate nejednaka krila; prikazuje se i širina desnog krila.</>,
       <>Klizna kapija traži slobodan prostor za povlačenje; ako ga nema, javlja se upozorenje sa potrebnom dužinom (orijentaciona provera).</>,
       <>U 3D prikazu kapije se otvaraju i zatvaraju, što ne utiče na cenu.</>,
-      <><b>Ograde za terase</b> (Srebrni stubovi — crne prečke, Inox — horizontalne prečke, Inox i staklo) nemaju kapije ni zasebne stubove iz kataloga (betonski, dekorativni, stub kapije): njihovi stubovi su deo ograde. Model za terasu se ne može izabrati dok u projektu ima kapija.</>,
-      <><b>Stepenište</b> (samo ograde za terase): kartica „Stepenište" u katalogu ili prekidač „Stepenište" na polju. Širina polja je horizontalna dužina u osnovi; zadaju se smer (penje se / silazi, gledano s leva nadesno), visinska razlika i broj stepenika (oko 170 mm po stepeniku). Stubovi ostaju uspravni, rukohvat, prečke i staklo prate nagib, a ograda posle stepeništa je na novom nivou. U sastavnici i krojnoj listi rukohvat i prečke idu po kosoj dužini sa kosim rezom, a staklo je paralelogram.</>,
+      <TerraceOnly><b>Ograde za terase</b> (Srebrni stubovi — crne prečke, Inox — horizontalne prečke, Inox i staklo) nemaju kapije ni zasebne stubove iz kataloga (betonski, dekorativni, stub kapije): njihovi stubovi su deo ograde. Model za terasu se ne može izabrati dok u projektu ima kapija.</TerraceOnly>,
+      <TerraceOnly><b>Stepenište</b> (samo ograde za terase): kartica „Stepenište" u katalogu ili prekidač „Stepenište" na polju. Širina polja je horizontalna dužina u osnovi; zadaju se smer (penje se / silazi, gledano s leva nadesno), visinska razlika i broj stepenika (oko 170 mm po stepeniku). Stubovi ostaju uspravni, rukohvat, prečke i staklo prate nagib, a ograda posle stepeništa je na novom nivou. U sastavnici i krojnoj listi rukohvat i prečke idu po kosoj dužini sa kosim rezom, a staklo je paralelogram.</TerraceOnly>,
     ],
   },
   {
@@ -183,7 +188,7 @@ export default function HelpPage() {
           <section key={t.title} id={`tema-${i}`} className="card p-5 scroll-mt-4">
             <h2 className="font-bold mb-2">{t.title}</h2>
             <ul className="list-disc pl-5 space-y-1.5 text-sm text-slate-700">
-              {t.items.map((it, i) => <li key={i}>{it}</li>)}
+              {shown(t.items).map((it, i) => <li key={i}>{it}</li>)}
             </ul>
           </section>
         ))}

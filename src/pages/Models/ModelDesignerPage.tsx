@@ -1,4 +1,5 @@
 import { settleModel as settle } from '../../domain/models/settle';
+import { fillHardware, removeParts } from '../../domain/models/terraceHardware';
 import { checkDrawing } from '../../domain/models/drawingCheck';
 import { hingesAlongEdge, isHingeMaterial, restOnSurface } from '../../domain/models/surface';
 import { ALL_FRAME_SIDES, frameIds, isFramePart, modelWithFrame, modelWithoutFrame, modelWithRotatedFrame, resizeWithFrame } from '../../domain/models/frame';
@@ -15,6 +16,9 @@ import { lazy, Suspense, useCallback, useDeferredValue, useEffect, useMemo, useR
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Designer2D } from '../../components/designer/Designer2D';
 import { GuideSection } from '../../components/designer/GuideSection';
+import { FEATURES, visibleMaterials } from '../../config/features';
+import { HardwarePanel } from '../../components/designer/HardwarePanel';
+import { TerraceMeasuresModal } from '../../components/designer/TerraceMeasuresModal';
 import { MaterialPicker } from '../../components/designer/MaterialPicker';
 import { SketchSvg } from '../../components/designer/Sketch';
 import { downloadSketchPdf, downloadSketchSvg } from '../../services/pdfSketch';
@@ -214,10 +218,10 @@ function Palette({ materials, activeId, onPick, terrace, showAll }: {
       <div className="p-3 border-b border-line">
         <button className={`btn btn-sm w-full mb-2 ${activeId === null ? 'btn-dark' : ''}`} data-testid="designer-tool-select" onClick={() => onPick(null)}><MousePointer2 size={15} />Izbor i pomeranje</button>
         <div className="relative"><Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" /><input className="input !pl-8 !py-1.5" placeholder="Pretraga materijala" aria-label="Pretraga materijala" value={q} onChange={(e) => setQ(e.target.value)} /></div>
-        <label className="flex items-center gap-1.5 text-[12px] text-muted mt-2" title={terrace ? 'Pored materijala za terase nudi i materijale dvorišnih ograda i kapija' : 'Pored materijala dvorišnih ograda i kapija nudi i materijale za terase'}>
+        {FEATURES.terraceFences && <label className="flex items-center gap-1.5 text-[12px] text-muted mt-2" title={terrace ? 'Pored materijala za terase nudi i materijale dvorišnih ograda i kapija' : 'Pored materijala dvorišnih ograda i kapija nudi i materijale za terase'}>
           <input type="checkbox" data-testid="designer-show-all-materials" checked={showAll.checked} onChange={(e) => showAll.onChange(e.target.checked)} />
           {terrace ? 'Prikaži i ostale materijale' : 'Prikaži i materijale za terase'}
-        </label>
+        </label>}
       </div>
       <div className="flex-1 min-h-0 overflow-auto scroll-thin p-2">
         {materials.length === 0 && (
@@ -273,7 +277,9 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
   /** ograda za terasu: paleta nudi samo materijale za terase (dvorišne ograde i kapije ih ne nude) */
   const isTerrace = model.kind === 'terrace';
   const [showAllMaterials, setShowAllMaterials] = useState(false);
-  const paletteMaterials = useMemo(() => (showAllMaterials ? allMaterials : allMaterials.filter((m) => isTerraceMaterial(m) === isTerrace)), [allMaterials, isTerrace, showAllMaterials]);
+  /** „Mere ograde“ (ograda za terasu): mere okova */
+  const [measuresOpen, setMeasuresOpen] = useState(false);
+  const paletteMaterials = useMemo(() => { const shown = visibleMaterials(allMaterials); return showAllMaterials ? shown : shown.filter((m) => isTerraceMaterial(m) === isTerrace); }, [allMaterials, isTerrace, showAllMaterials]);
   const materials = allMaterials;
   // vrsta crteža ide u stanje adrese (ista adresa, bez ponovnog učitavanja): meni označava „Modeli kapija“ dok se crta kapija
   const navigateKind = useNavigate();
@@ -430,7 +436,8 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
     const all = swapTargets(ids);
     if (all.length > 1 && (ids.length === 1 || all.length > ids.length)) setPendingSwap({ ids, materialId }); else swapMaterial(ids, materialId);
   };
-  const removeSel = useCallback(() => { if (!selectedIds.length) return; const del = new Set(selectedIds); change((m) => ({ ...m, parts: m.parts.filter((p) => !del.has(p.id)) })); setSelectedIds([]); }, [selectedIds, change]);
+  // okov koji aplikacija sama postavlja se briše uklanjanjem izbora te vrste na delu koji ga nosi (inače bi se vratio); okov nestaje i sa obrisanim delom
+  const removeSel = useCallback(() => { if (!selectedIds.length) return; const del = new Set(selectedIds); change((m) => removeParts(m, del)); setSelectedIds([]); }, [selectedIds, change]);
   /** kopirani delovi (Ctrl + C) i delovi koji su nalepljeni (Ctrl + V) pa prate pokazivač dok se ne postave klikom */
   const clip = useRef<CustomPart[]>([]);
   const [placing, setPlacing] = useState<CustomPart[] | null>(null);
@@ -458,8 +465,9 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
   };
   const duplicateSel = useCallback(() => {
     const p = modelRef.current.parts.find((x) => x.id === selectedId);
-    if (!p) return;
-    const copy = { ...p, id: uid('part'), x: p.x + 50, y: p.y + 50 };
+    if (!p || p.hw) return; // okov koji aplikacija sama postavlja se ne duplira (uključuje se kvačicom)
+    const { hwPick: _pick, ...plain } = p;
+    const copy = { ...plain, id: uid('part'), x: p.x + 50, y: p.y + 50 };
     if (change((m) => ({ ...m, parts: [...m.parts, copy] }))) setSelectedId(copy.id);
   }, [selectedId, change]);
 
@@ -611,7 +619,10 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
         </button>
         {chartOpen && <ColorChartModal value={normalizeColorKey(model.color)} favorites={settings.favoriteColors ?? []} onPick={(k) => change((m) => ({ ...m, color: k }))} onFavorites={(list) => useAppStore.getState().updateSettings({ favoriteColors: list })} onClose={() => setChartOpen(false)} />}
         {model.kind === 'gate' && !slSpec && <button className="btn btn-sm" data-testid="designer-add-hinges" title="Dodaje šarke duž jedne ivice kapije" onClick={() => setHingeAsk({ side: model.gate?.opening ?? 'right', count: 2 })}>Dodaj šarke</button>}
-        <button className="btn btn-sm" data-testid="designer-add-frame" title="Dodaje ram oko platna (uglovi pod 45°)" onClick={() => setFrameAsk(true)}>Dodaj ram</button>
+        {isTerrace && <button className="btn btn-sm" data-testid="designer-terrace-measures" title="Mere okova: visina veze stub–rukohvat, podizanje stuba zbog flanše, visina kape, rastojanje prečke od stuba, zavrtnji" onClick={() => setMeasuresOpen(true)}>Mere ograde</button>}
+        {isTerrace && measuresOpen && <TerraceMeasuresModal model={model} onChange={(fn) => change(fn)} onClose={() => setMeasuresOpen(false)} />}
+        {isTerrace && <button className="btn btn-sm btn-primary" data-testid="designer-fill-hw" title="Svakom stubu, rukohvatu i prečki dodaje odgovarajući okov (flanše, veze, prstenove, kapice) na pravo mesto; šta ne treba, odkvačite uz izabran deo" onClick={() => { const before = modelRef.current; const next = fillHardware(before, materialsRef.current); if (next === before) setNotice('Nema šta da se doda: svi delovi već imaju okov ili u cenovniku nema odgovarajućeg okova. Crtajte stubove, rukohvat i prečke, pa kliknite ovo dugme.'); else change(() => next); }}>Dopuni okov</button>}
+        {!isTerrace && <button className="btn btn-sm" data-testid="designer-add-frame" title="Dodaje ram oko platna (uglovi pod 45°)" onClick={() => setFrameAsk(true)}>Dodaj ram</button>}
         {model.parts.some(isFramePart) && <button className="btn btn-sm" data-testid="designer-remove-frame" title="Briše dodat ram; mere modela se vraćaju na mere platna" onClick={removeFrame}><Trash2 size={14} />Obriši ram</button>}
         </>}
         <div className="flex-1" />
@@ -860,11 +871,14 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
                 </div>
               )}
               <PartColorField testPrefix="part" colors={[sel.part.color]} modelColor={model.color} onPick={(c) => change((m) => setPartsColor(m, [sel.part.id], c))} />
+              {isTerrace && <HardwarePanel model={model} part={sel.part} materials={materials} onChange={(fn) => change(fn)} />}
+              {!sel.part.hw && <>
               <Num label="X" value={sel.part.x} testId="part-x" onChange={(v) => patchPart(sel.part.id, { x: v })} />
               <Num label="Y (od tla)" value={sel.part.y} testId="part-y" onChange={(v) => patchPart(sel.part.id, { y: v })} />
-              {sel.shape.type !== 'piece' && <Num label={sel.shape.type === 'sheet' ? 'Širina' : 'Dužina'} value={sel.part.lengthMm} min={1} testId="part-length" onChange={(v) => patchPart(sel.part.id, { lengthMm: v })} />}
+              {sel.shape.type !== 'piece' &&<Num label={sel.shape.type === 'sheet' ? 'Širina' : 'Dužina'} value={sel.part.lengthMm} min={1} testId="part-length" onChange={(v) => patchPart(sel.part.id, { lengthMm: v })} />}
               {sel.shape.type === 'sheet' && <Num label="Visina" value={sel.part.heightMm ?? 0} min={1} testId="part-height" onChange={(v) => patchPart(sel.part.id, { heightMm: v })} />}
               {sel.shape.type !== 'sheet' && <Num label="Ugao" unit="°" value={sel.part.angleDeg} min={-360} max={360} testId="part-angle" onChange={(v) => patchPart(sel.part.id, { angleDeg: v })} />}
+              </>}
               {sel.shape.type === 'linear' && isSymmetricRect(sel.shape.section) && (() => {
                 // pravougaona cev ili traka: bira se čeona strana (koja stranica preseka je okrenuta ka posmatraču), ne ugao
                 const e = sectionFace(sel.shape.section, 0);
@@ -889,7 +903,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
                   <input type="checkbox" data-testid="part-cut45" checked={!!sel.part.cut45} onChange={(e) => patchPart(sel.part.id, { cut45: e.target.checked || undefined })} />
                 </label>
               )}
-              <Num label="Dubina (ka napred)" value={sel.part.z} min={-2000} max={2000} testId="part-z" onChange={(v) => patchPart(sel.part.id, { z: v })} />
+              {!sel.part.hw && <Num label="Dubina (ka napred)" value={sel.part.z} min={-2000} max={2000} testId="part-z" onChange={(v) => patchPart(sel.part.id, { z: v })} />}
               {report && (
                 <div className="mt-2 rounded-lg border border-primary/40 bg-primary-50/40 p-2" data-testid="guide-box">
                   <div className="text-[12.5px] font-semibold mb-1.5 flex items-center gap-1.5"><Link2 size={14} />Prečka u bočnim U profilima</div>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Clock, Plus, RotateCcw, Trash2, X } from 'lucide-react';
+import { visibleMaterials } from '../../config/features';
 import { MaterialPicker } from '../designer/MaterialPicker';
 import {
   POS_LABELS, resolveSliding, slidingBom, variantTitle,
@@ -294,7 +295,7 @@ function MaterialField({ label, kind, materialId, text, materials, testId, onCha
   /** pravougaona cev: čeona strana (okrenuta ka posmatraču); 90 = kraća stranica preseka */
   orient?: { face: number; depth: number; rot: number; onRot: (rot: number) => void };
 }) {
-  const options = materials.filter((m) => (kind === 'profile' ? materialShape(m).type === 'linear' : HW_CATEGORIES.includes(m.category)));
+  const options = visibleMaterials(materials, materialId ? [materialId] : []).filter((m) => (kind === 'profile' ? materialShape(m).type === 'linear' : HW_CATEGORIES.includes(m.category)));
   const chosen = materialId ? materials.find((m) => m.id === materialId) : undefined;
   const [draft, setDraft] = useState(text ?? '');
   useEffect(() => { setDraft(text ?? ''); }, [text]);

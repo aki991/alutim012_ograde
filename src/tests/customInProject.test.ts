@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { computeLayout } from '../domain/geometry/layout';
 import { changeModelAll } from '../domain/geometry/operations';
-import { FENCE_MODELS } from '../domain/models/catalog';
+import { FEATURES } from '../config/features';
+import { FENCE_MODEL_LIST, FENCE_MODELS } from '../domain/models/catalog';
 import { newCustomModel, scaleModel, type CustomModel } from '../domain/models/custom';
 import { allFenceModels, customPartsFor, isCustomModel, registerCustomModels } from '../domain/models/customRegistry';
 import { createFence, createGate, createProject } from '../domain/models/factories';
@@ -37,7 +38,7 @@ describe('nacrtani model u projektu', () => {
     expect(allFenceModels().map((m) => m.id)).toContain(ID);
     registerCustomModels([], MATS);
     expect(ID in FENCE_MODELS).toBe(false);
-    expect(allFenceModels()).toHaveLength(14);
+    expect(allFenceModels()).toHaveLength(FENCE_MODEL_LIST.filter((m) => FEATURES.terraceFences || !m.terrace).length); // ograde za terase su sakrivene dok je prekidač isključen
   });
 
   it('razvlačenje: dužine prate polje, preseci i broj delova ostaju isti', () => {

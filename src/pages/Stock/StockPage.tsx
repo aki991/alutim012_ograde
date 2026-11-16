@@ -5,6 +5,7 @@ import { Page, PageHeader } from '../../components/ui/Common';
 import { ConfirmDialog } from '../../components/ui/Modal';
 import { compareMaterials, MATERIAL_GROUPS, materialShape } from '../../domain/models/materialShape';
 import { cutOptions } from '../../domain/pricing/cutting';
+import { visibleMaterials } from '../../config/features';
 import type { Material, StockItem } from '../../domain/models/types';
 import { useAppStore } from '../../store/useAppStore';
 import { uid } from '../../utils/id';
@@ -13,9 +14,10 @@ import { fmtNum } from '../../utils/units';
 /** Izbor materijala razvrstan po grupama (kao u crtanju modela). */
 export function MaterialSelect({ materials, value, onChange, testId, only }: { materials: Material[]; value: string; onChange: (id: string) => void; testId?: string; only?: (m: Material) => boolean }) {
   const groups = useMemo(() => {
-    const list = only ? materials.filter(only) : materials;
+    const shown = visibleMaterials(materials, value ? [value] : []);
+    const list = only ? shown.filter(only) : shown;
     return MATERIAL_GROUPS.map((g) => ({ ...g, items: list.filter((m) => materialShape(m).group === g.id).sort(compareMaterials) })).filter((g) => g.items.length);
-  }, [materials, only]);
+  }, [materials, only, value]);
   return (
     <select className="input" data-testid={testId} value={value} onChange={(e) => onChange(e.target.value)}>
       <option value="">— izaberite materijal —</option>

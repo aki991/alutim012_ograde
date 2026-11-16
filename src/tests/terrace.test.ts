@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { FEATURES, visibleMaterials } from '../config/features';
 import { MODEL_MATERIALS } from '../data/modelMaterials';
 import { TERRACE_MATERIALS, withTerraceMaterials } from '../data/terraceMaterials';
 import { isTerraceModel, TERRACE_MODEL_LIST, YARD_MODEL_LIST } from '../domain/models/catalog';
@@ -59,9 +60,33 @@ describe('modeli ograda za terase', () => {
     expect(isTerraceModel('h_narrow')).toBe(false);
   });
 
-  it('izbor modela u editoru nudi samo modele iste vrste', () => {
-    expect(allFenceModels('rail_inox').every((m) => m.terrace)).toBe(true);
-    expect(allFenceModels('h_narrow').some((m) => m.terrace)).toBe(false);
-    expect(allFenceModels().length).toBe(allFenceModels('rail_inox').length + allFenceModels('h_narrow').length);
+  it('izbor modela u editoru nudi samo modele iste vrste (ograde za terase uključene)', () => {
+    const flags = FEATURES as { terraceFences: boolean };
+    const before = flags.terraceFences;
+    flags.terraceFences = true;
+    try {
+      expect(allFenceModels('rail_inox').every((m) => m.terrace)).toBe(true);
+      expect(allFenceModels('h_narrow').some((m) => m.terrace)).toBe(false);
+      expect(allFenceModels().length).toBe(allFenceModels('rail_inox').length + allFenceModels('h_narrow').length);
+    } finally { flags.terraceFences = before; }
+  });
+
+  it('ograde za terase isključene: ne nude se za izbor, osim modela koji projekat već koristi; materijali za terase se ne prikazuju', () => {
+    const flags = FEATURES as { terraceFences: boolean };
+    const before = flags.terraceFences;
+    flags.terraceFences = false;
+    try {
+      expect(allFenceModels().some((m) => m.terrace)).toBe(false);
+      expect(allFenceModels('h_narrow').some((m) => m.terrace)).toBe(false);
+      const ids = allFenceModels('rail_inox').filter((m) => m.terrace).map((m) => m.id);
+      expect(ids).toEqual(['rail_inox']); // projekat koji ga već koristi ga zadržava, a može da pređe na ostale
+      const mats = withTerraceMaterials(MODEL_MATERIALS)!;
+      const shown = visibleMaterials(mats);
+      expect(shown.some(isTerraceMaterial)).toBe(false);
+      expect(shown.length).toBeLessThan(mats.length);
+      expect(visibleMaterials(mats, ['mat_bts_p1033']).some((m) => m.id === 'mat_bts_p1033')).toBe(true); // izabran materijal dela ostaje
+      flags.terraceFences = true;
+      expect(visibleMaterials(mats)).toHaveLength(mats.length);
+    } finally { flags.terraceFences = before; }
   });
 });

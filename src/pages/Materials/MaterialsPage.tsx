@@ -18,6 +18,7 @@ import { readXlsx } from '../../services/xlsx';
 import { downloadCsv } from '../../services/exports';
 import { downloadMaterialsPdf } from '../../services/pdf';
 import { useAppStore } from '../../store/useAppStore';
+import { FEATURES, visibleMaterials } from '../../config/features';
 import { uid } from '../../utils/id';
 import { fmtMoney, fromCurrency, toCurrency } from '../../utils/units';
 
@@ -25,7 +26,9 @@ const CATS: Record<MaterialCategory, string> = { profil: 'Profili', stub: 'Stubo
 const UNITS: MaterialUnit[] = ['m', 'kom', 'set', 'm2', 'kg'];
 
 export default function MaterialsPage() {
-  const materials = useAppStore((s) => s.materials);
+  const allMaterials = useAppStore((s) => s.materials);
+  // ograde za terase isključene (config/features.ts): materijali za terase se ne prikazuju u listi i izvozu
+  const materials = useMemo(() => visibleMaterials(allMaterials), [allMaterials]);
   const settings = useAppStore((s) => s.settings);
   const { upsertMaterial, removeMaterial } = useAppStore.getState();
   const [q, setQ] = useState('');
@@ -122,11 +125,11 @@ export default function MaterialsPage() {
         <div className="flex flex-wrap gap-3 mb-4">
           <div className="relative flex-1 min-w-[220px] max-w-[380px]"><Search size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" /><input className="input !pl-10" placeholder="Pretraga po nazivu ili šifri" aria-label="Pretraga materijala" value={q} onChange={(e) => setQ(e.target.value)} /></div>
           <select className="input !w-auto" aria-label="Kategorija" value={cat} onChange={(e) => setCat(e.target.value as MaterialCategory | 'all')}><option value="all">Sve kategorije</option>{Object.entries(CATS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
-          <select className="input !w-auto" aria-label="Namena" data-testid="materials-use" value={use} onChange={(e) => setUse(e.target.value as 'all' | 'yard' | 'terrace')}>
+          {FEATURES.terraceFences && <select className="input !w-auto" aria-label="Namena" data-testid="materials-use" value={use} onChange={(e) => setUse(e.target.value as 'all' | 'yard' | 'terrace')}>
             <option value="all">Sve namene</option>
             <option value="yard">Dvorišne ograde i kapije</option>
             <option value="terrace">Ograde za terase</option>
-          </select>
+          </select>}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[820px]" data-testid="materials-table">
@@ -143,7 +146,7 @@ export default function MaterialsPage() {
                   className={`cursor-pointer hover:bg-slate-50 ${open ? 'bg-primary-50' : ''}`}
                   onClick={toggle} onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); toggle(e); } }}>
                   <td className="td text-xs text-muted">{m.sku}</td>
-                  <td className="td font-medium">{m.name}{m.drawn && <span className="ml-2 text-[11px] font-semibold text-slate-500 align-middle" data-testid="material-drawn-badge">nacrtan presek</span>}<span className="ml-2 inline-flex items-center gap-1 text-[11.5px] font-semibold text-primary align-middle" title="Kliknite na red da vidite crtež i karakteristike"><Ruler size={13} />crtež</span>{isTerraceMaterial(m) && <span className="ml-2 pill !text-[11px] bg-[#eff8ff] text-[#175cd3] align-middle" data-testid="material-terrace-badge">terasa</span>}{m.demo &&<span className="ml-2"><DemoBadge>demo</DemoBadge></span>}</td>
+                  <td className="td font-medium">{m.name}{m.drawn && <span className="ml-2 text-[11px] font-semibold text-slate-500 align-middle" data-testid="material-drawn-badge">nacrtan presek</span>}<span className="ml-2 inline-flex items-center gap-1 text-[11.5px] font-semibold text-primary align-middle" title="Kliknite na red da vidite crtež i karakteristike"><Ruler size={13} />crtež</span>{FEATURES.terraceFences && isTerraceMaterial(m) && <span className="ml-2 pill !text-[11px] bg-[#eff8ff] text-[#175cd3] align-middle" data-testid="material-terrace-badge">terasa</span>}{m.demo &&<span className="ml-2"><DemoBadge>demo</DemoBadge></span>}</td>
                   <td className="td text-slate-600">{CATS[m.category]}</td>
                   <td className="td"><select aria-label={`Jedinica: ${m.name}`} className="input !w-20 !py-1" value={m.unit} onChange={(e) => upsertMaterial({ ...m, unit: e.target.value as MaterialUnit })}>{UNITS.map((u) => <option key={u}>{u}</option>)}</select></td>
                   <td className="td"><PriceInput label={`Cena: ${m.name}`} className="!py-1" rsd={m.unitPrice} onChange={(v) => upsertMaterial({ ...m, unitPrice: v })} /></td>
@@ -192,10 +195,10 @@ export default function MaterialsPage() {
           <TextField label="Naziv" testId="material-name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} />
           <SelectField label="Kategorija" value={form.category} options={Object.entries(CATS).map(([value, label]) => ({ value: value as MaterialCategory, label }))} onChange={(v) => setForm({ ...form, category: v })} />
           <SelectField label="Jedinica mere" value={form.unit} options={UNITS.map((u) => ({ value: u, label: u }))} onChange={(v) => setForm({ ...form, unit: v })} />
-          <label className="flex items-start gap-2 text-[13px] py-1.5" title="Materijal za ograde za terase nudi se samo u crtanju ograda za terase, a ne u crtanju dvorišnih ograda i kapija">
+          {FEATURES.terraceFences && <label className="flex items-start gap-2 text-[13px] py-1.5" title="Materijal za ograde za terase nudi se samo u crtanju ograda za terase, a ne u crtanju dvorišnih ograda i kapija">
             <input type="checkbox" className="mt-0.5" data-testid="material-terrace" checked={isTerraceMaterial(form)} onChange={(e) => setForm({ ...form, terrace: e.target.checked })} />
             <span><b>Materijal za ograde za terase</b><span className="block text-xs text-muted">Nudi se samo u crtanju ograda za terase (stubovi, rukohvati, prečke, staklo, okov).</span></span>
-          </label>
+          </label>}
           <div className="rounded-lg border border-line p-2.5 my-1.5 flex flex-wrap items-center gap-2" data-testid="material-drawn">
             <span className="text-[13px] flex-1 min-w-[180px]">{form.drawn ? <><b>Nacrtan presek</b> — koristi se u crtanju modela, 3D prikazu i krojnoj listi.</> : 'Presek se određuje po šifri i nazivu. Možete ga i nacrtati.'}</span>
             <button className="btn btn-sm" data-testid="material-draw" onClick={() => setDrawFor('form')}><PenTool size={14} />{form.drawn ? 'Izmeni crtež' : 'Nacrtaj presek'}</button>
