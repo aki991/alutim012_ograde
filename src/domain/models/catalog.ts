@@ -78,6 +78,8 @@ export interface FenceModelDef {
   accentMaterialId?: string;
   /** Nazivi delova za listu sečenja */
   parts: { main: string; rail?: string; accent?: string };
+  /** ograda za terasu (rukohvat sa prečkama ili staklom): stranica „Modeli ograda za terase“, bez kapija; nema veze sa dvorišnim ogradama */
+  terrace?: boolean;
 }
 
 const model = (d: Omit<FenceModelDef, 'shortName'>): FenceModelDef => ({ shortName: d.name, ...d });
@@ -103,7 +105,7 @@ const MODEL_LIST: FenceModelDef[] = [
     id: 'rail_black', name: 'Srebrni stubovi — crne prečke', description: 'Rukohvat i crne horizontalne prečke', infill: 'Rukohvat i horizontalne okrugle prečke', material: 'Aluminijum / inox',
     image: '04', style: 'rods', defaultColor: 'RAL 9005', defaults: { barSizeMm: 16, gapMm: 324, frameMm: 0, barCount: 4 }, barLabel: 'Debljina prečke', gapLabel: 'Razmak prečki', hasBars: true,
     rods: { min: 1, max: 12, default: 4 },
-    materialId: 'mat_inox_cev', railMaterialId: 'mat_rukohvat', parts: { main: 'Prečka Ø16 (PEGA 2275/1)', rail: 'Rukohvat Ø50 (PEGA 04)' },
+    materialId: 'mat_inox_cev', railMaterialId: 'mat_rukohvat', parts: { main: 'Prečka Ø16 (PEGA 2275/1)', rail: 'Rukohvat Ø50 (PEGA 04)' }, terrace: true,
   }),
   model({
     id: 'panel_lines', name: 'Antracit panel — srebrne linije', description: 'Pun panel sa srebrnim horizontalnim linijama', infill: 'Pun panel sa srebrnim spojevima', material: 'Aluminijum / inox',
@@ -114,7 +116,7 @@ const MODEL_LIST: FenceModelDef[] = [
     id: 'rail_inox', name: 'Inox — horizontalne prečke', description: 'Inox rukohvat i okrugle prečke', infill: 'Inox rukohvat i okrugle prečke', material: 'Nerđajući čelik',
     image: '06', style: 'rods', defaultColor: INOX_COLOR, defaults: { barSizeMm: 16, gapMm: 400, frameMm: 0, barCount: 4 }, barLabel: 'Prečnik prečke (P-1146)', gapLabel: 'Razmak prečki', hasBars: true,
     rods: { min: 1, max: 10, default: 4 }, defaultSize: { widthMm: 1000, heightMm: 1000 },
-    materialId: 'mat_bts_p1146', railMaterialId: 'mat_bts_p1033', parts: { main: 'Prečka Ø16 (P-1146)', rail: 'Rukohvat Ø50 (P-1033)' },
+    materialId: 'mat_bts_p1146', railMaterialId: 'mat_bts_p1033', parts: { main: 'Prečka Ø16 (P-1146)', rail: 'Rukohvat Ø50 (P-1033)' }, terrace: true,
   }),
   model({
     id: 'picket_narrow', name: 'Bela — uske vertikalne letvice', description: 'Uske letvice sa zaobljenim vrhovima', infill: 'Uske vertikalne letvice, zaobljeni vrhovi', material: 'Aluminijum',
@@ -164,9 +166,15 @@ export const FENCE_MODELS = Object.fromEntries(MODEL_LIST.map((m) => [m.id, m]))
 
 export const FENCE_MODEL_LIST = MODEL_LIST;
 
-/** Ograde za terase (rukohvat sa prečkama ili staklom): nemaju kapije ni zasebne stubove iz kataloga; stubovi su deo same ograde. */
-export const TERRACE_MODELS: readonly FenceModelId[] = ['rail_black', 'rail_inox'];
-export const isTerraceModel = (id: FenceModelId): boolean => TERRACE_MODELS.includes(id);
+/**
+ * Ograde za terase (rukohvat sa prečkama ili staklom): nemaju kapije ni zasebne stubove iz kataloga; stubovi su deo same ograde.
+ * Modeli iz kataloga sa oznakom `terrace` i ručno nacrtani modeli vrste „Ograda za terasu“ (vidi customRegistry).
+ */
+export const TERRACE_MODELS: readonly FenceModelId[] = MODEL_LIST.filter((m) => m.terrace).map((m) => m.id);
+export const isTerraceModel = (id: FenceModelId): boolean => Boolean((FENCE_MODELS[id] as FenceModelDef | undefined)?.terrace);
+/** Modeli dvorišnih ograda iz kataloga (bez ograda za terase): stranica „Modeli ograda“. */
+export const YARD_MODEL_LIST: readonly FenceModelDef[] = MODEL_LIST.filter((m) => !m.terrace);
+export const TERRACE_MODEL_LIST: readonly FenceModelDef[] = MODEL_LIST.filter((m) => m.terrace);
 export const TERRACE_NO_GATES = 'Ograde za terase nemaju kapije.';
 
 /**

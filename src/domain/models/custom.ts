@@ -46,7 +46,8 @@ export interface CustomPart {
 export interface CustomModel {
   id: string;
   name: string;
-  kind: 'fence' | 'gate';
+  /** ograda (dvorište), kapija ili ograda za terasu (posebna stranica i crtanje, samo materijali za terase) */
+  kind: 'fence' | 'gate' | 'terrace';
   widthMm: number;
   heightMm: number;
   /** RAL ključ boje; materijali sa RAL oznakom ili inox u nazivu zadržavaju svoju boju */
@@ -68,9 +69,12 @@ export interface CustomModel {
 /** koji krajevi dela rama su pod 45° (početak i kraj ose); deo koji nije deo rama nema ugaone krajeve */
 export const miterEndsOf = (p: Pick<CustomPart, 'cut45' | 'miter' | 'miterEnds'>): [boolean, boolean] => (p.cut45 && p.miter ? p.miterEnds ?? [true, true] : [false, false]);
 
-export const CUSTOM_KIND_LABELS = { fence: 'Ograda', gate: 'Kapija' } as const;
+export const CUSTOM_KIND_LABELS = { fence: 'Ograda', gate: 'Kapija', terrace: 'Ograda za terasu' } as const;
 
 export const newCustomModel = (id: string): CustomModel => ({ id, name: 'Novi model', kind: 'fence', widthMm: 2000, heightMm: 1500, color: 'RAL 7016', parts: [], updatedAt: new Date().toISOString() });
+
+/** Nov crtež ograde za terasu: visina rukohvata 1100 mm, srebrna (eloksaža). */
+export const newTerraceModel = (id: string): CustomModel => ({ ...newCustomModel(id), kind: 'terrace', name: 'Nova ograda za terasu', widthMm: 2000, heightMm: 1100, color: 'RAL 9006' });
 
 /** Ukupan ugao preseka: okretanje + nagib (stepeni). */
 export const partAngle = (p: Pick<CustomPart, 'rot' | 'tiltDeg'>): number => p.rot + (p.tiltDeg ?? 0);

@@ -1,5 +1,5 @@
 import {
-  BarChart3, Boxes, CircleHelp, Database, DoorOpen, FileText, FolderOpen, Home, LayoutGrid, PencilRuler, Settings, Users, Wrench, type LucideIcon,
+  BarChart3, Boxes, CircleHelp, Database, DoorOpen, Fence, FileText, FolderOpen, Home, LayoutGrid, PencilRuler, Settings, Users, Wrench, type LucideIcon,
 } from 'lucide-react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { currentProjectId, useAppStore } from '../../store/useAppStore';
@@ -13,6 +13,7 @@ const MAIN: Item[] = [
   { to: '/projekti', label: 'Projekti', icon: FolderOpen },
   { to: '/modeli', label: 'Modeli ograda', icon: LayoutGrid },
   { to: '/modeli-kapija', label: 'Modeli kapija', icon: DoorOpen },
+  { to: '/modeli-terasa', label: 'Modeli ograda za terase', icon: Fence },
   { to: '/materijali', label: 'Materijali i cene', icon: Database },
   { to: '/magacin', label: 'Magacin', icon: Boxes },
   { to: '/kupci', label: 'Kupci', icon: Users },
@@ -36,8 +37,12 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const newProject = useAppStore((s) => s.newProject);
   const inEditor = pathname.startsWith('/editor');
   // crtež modela je na adresi /modeli/crtanje: dok se crta kapija, označena je stavka „Modeli kapija“, a ne „Modeli ograda“
-  const drawingGate = pathname.startsWith('/modeli/crtanje') && (location.state as { kind?: string } | null)?.kind === 'gate';
-  const activeOf = (to: string, isActive: boolean) => (to === '/modeli' ? isActive && !drawingGate : to === '/modeli-kapija' ? isActive || drawingGate : isActive);
+  const drawingKind = pathname.startsWith('/modeli/crtanje') ? (location.state as { kind?: string } | null)?.kind : undefined;
+  const drawingGate = drawingKind === 'gate';
+  // ograda za terasu otvorena na staroj adresi crtanja: označena je stavka „Modeli ograda za terase“
+  const drawingTerrace = drawingKind === 'terrace';
+  const activeOf = (to: string, isActive: boolean) => (to === '/modeli' ? isActive && !drawingGate && !drawingTerrace
+    : to === '/modeli-kapija' ? isActive || drawingGate : to === '/modeli-terasa' ? isActive || drawingTerrace : isActive);
 
   const renderItem = (it: Item) => (
     <NavLink key={it.to} to={it.to} end={it.end} onClick={onNavigate} className={({ isActive }) => `${base} ${activeOf(it.to, isActive) ? active : idle}`}>

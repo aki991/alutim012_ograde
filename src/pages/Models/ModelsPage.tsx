@@ -5,13 +5,18 @@ import { CustomModelThumb } from '../../components/designer/PartsSvg';
 import { SpecEditor } from '../../components/models/SpecEditor';
 import { ModelThumb, Page, PageHeader } from '../../components/ui/Common';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
-import { FENCE_MODEL_LIST, FENCE_MODELS, constructionOf } from '../../domain/models/catalog';
+import { FENCE_MODELS, TERRACE_MODEL_LIST, YARD_MODEL_LIST, constructionOf } from '../../domain/models/catalog';
 import { CUSTOM_KIND_LABELS, type CustomModel } from '../../domain/models/custom';
 import type { FenceModelId } from '../../domain/models/types';
 import { useAppStore, useListedProjects } from '../../store/useAppStore';
+import { uid } from '../../utils/id';
 import { itemLabel } from '../../utils/labels';
 
-export default function ModelsPage() {
+/**
+ * Modeli ograda (dvorište) ili, sa `terrace`, Modeli ograda za terase: isti prikaz, a odvojeni spiskovi modela, nacrtanih modela i
+ * crtanja. Ograde za terase (rukohvat, prečke, staklo) nemaju veze sa dvorišnim ogradama.
+ */
+export default function ModelsPage({ terrace = false }: { terrace?: boolean }) {
   const navigate = useNavigate();
   const [choice, setChoice] = useState<FenceModelId | null>(null);
   const [specFor, setSpecFor] = useState<FenceModelId | null>(null);
@@ -19,7 +24,11 @@ export default function ModelsPage() {
   const [restore, setRestore] = useState<CustomModel | null>(null);
   const [delBuiltin, setDelBuiltin] = useState<FenceModelId | null>(null);
   const hiddenModels = useAppStore((s) => s.settings.hiddenModels);
-  const hiddenFence = (hiddenModels ?? []).filter((id) => id in FENCE_MODELS);
+  const list = terrace ? TERRACE_MODEL_LIST : YARD_MODEL_LIST;
+  const listIds = new Set<string>(list.map((m) => m.id));
+  const hiddenFence = (hiddenModels ?? []).filter((id) => listIds.has(id));
+  const drawPath = terrace ? '/modeli-terasa/crtanje' : '/modeli/crtanje';
+  const kind: CustomModel['kind'] = terrace ? 'terrace' : 'fence';
   const modelSpecs = useAppStore((s) => s.settings.modelSpecs);
   const customModels = useAppStore((s) => s.settings.customModels);
   const materials = useAppStore((s) => s.materials);
@@ -48,13 +57,16 @@ export default function ModelsPage() {
 
   return (
     <Page>
-      <PageHeader title="Modeli ograda" subtitle="Svi modeli ograde i pripadajućih kapija. Model se menja bez promene ukupne širine segmenta; boja se postavlja prema slici modela."
-        actions={<>{hiddenFence.length > 0 && <button className="btn" data-testid="restore-hidden-models" onClick={() => useAppStore.getState().updateSettings({ hiddenModels: (hiddenModels ?? []).filter((id) => !(id in FENCE_MODELS)) })}><RotateCcw size={16} />Vrati obrisane modele ({hiddenFence.length})</button>}<button className="btn btn-primary" data-testid="btn-create-model" onClick={() => navigate('/modeli/crtanje')}><PencilRuler size={17} />Napravi model</button></>} />
-      {!!customModels?.some((m) => !m.replaces && m.kind !== 'gate') && (
-        <section className="mb-7" data-testid="custom-models">
-          <h2 className="font-bold text-lg mb-3">Moji modeli (ručno nacrtani)</h2>
+      <PageHeader title={terrace ? 'Modeli ograda za terase' : 'Modeli ograda'}
+        subtitle={terrace
+          ? 'Ograde za terase, stepeništa i galerije: stubovi, rukohvat, prečke ili staklo. Nemaju veze sa dvorišnim ogradama i nemaju kapije. „Napravi model“ otvara crtanje ograda za terase sa materijalima za terase.'
+          : 'Svi modeli ograde i pripadajućih kapija. Model se menja bez promene ukupne širine segmenta; boja se postavlja prema slici modela.'}
+        actions={<>{hiddenFence.length > 0 && <button className="btn" data-testid="restore-hidden-models" onClick={() => useAppStore.getState().updateSettings({ hiddenModels: (hiddenModels ?? []).filter((id) => !listIds.has(id)) })}><RotateCcw size={16} />Vrati obrisane modele ({hiddenFence.length})</button>}<button className="btn btn-primary" data-testid={terrace ? 'btn-create-terrace-model' : 'btn-create-model'} onClick={() => navigate(terrace ? `${drawPath}/${uid('cm')}` : drawPath)}><PencilRuler size={17} />Napravi model</button></>} />
+      {!!customModels?.some((m) => !m.replaces && m.kind === kind) && (
+        <section className="mb-7" data-testid={terrace ? 'custom-terrace-models' : 'custom-models'}>
+          <h2 className="font-bold text-lg mb-3">{terrace ? 'Moje ograde za terase (ručno nacrtane)' : 'Moji modeli (ručno nacrtani)'}</h2>
           <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-            {customModels!.filter((m) => !m.replaces && m.kind !== 'gate').map((m) => (
+            {customModels!.filter((m) => !m.replaces && m.kind === kind).map((m) => (
               <article key={m.id} className="card overflow-hidden flex flex-col" data-testid="custom-model-card">
                 <div className="relative aspect-[16/10] bg-[#eef2f6] overflow-hidden border-b border-line p-3"><CustomModelThumb model={m} materials={materials} /></div>
                 <div className="p-4 flex-1 flex flex-col">
@@ -62,7 +74,7 @@ export default function ModelsPage() {
                   <p className="text-sm text-muted mt-0.5">{CUSTOM_KIND_LABELS[m.kind]} · {m.widthMm} × {m.heightMm} mm · {m.parts.length} delova</p>
                   <div className="flex flex-wrap gap-2 mt-auto pt-4">
                     <button className="btn btn-primary" data-testid="use-custom-model" disabled={m.parts.length === 0} onClick={() => useModel(m.id as FenceModelId)}>Koristi model</button>
-                    <button className="btn" data-testid="open-custom-model" onClick={() => navigate(`/modeli/crtanje/${m.id}`)}><PencilRuler size={16} />Otvori crtež</button>
+                    <button className="btn" data-testid="open-custom-model" onClick={() => navigate(`${drawPath}/${m.id}`)}><PencilRuler size={16} />Otvori crtež</button>
                     <button className="btn btn-danger" aria-label={`Obriši model ${m.name}`} onClick={() => setDel(m)}><Trash2 size={16} />Obriši</button>
                   </div>
                 </div>
@@ -72,8 +84,11 @@ export default function ModelsPage() {
           <h2 className="font-bold text-lg mt-7 -mb-2">Modeli iz kataloga</h2>
         </section>
       )}
-      <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-        {FENCE_MODEL_LIST.filter((m) => !hiddenModels?.includes(m.id)).map((m) => {
+      {terrace && list.every((m) => hiddenModels?.includes(m.id)) && (
+        <p className="text-sm text-muted card p-4" data-testid="terrace-models-empty">Svi modeli ograda za terase iz kataloga su obrisani. Vratite ih dugmetom „Vrati obrisane modele“ ili nacrtajte nov dugmetom „Napravi model“.</p>
+      )}
+      <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3" data-testid={terrace ? 'terrace-models' : 'yard-models'}>
+        {list.filter((m) => !hiddenModels?.includes(m.id)).map((m) => {
           // dorađen model koji zamenjuje original: kartica prikazuje dorađen crtež, uz mogućnost vraćanja originala
           const rep = customModels?.find((c) => c.replaces === m.id);
           if (rep) return (
@@ -85,7 +100,7 @@ export default function ModelsPage() {
                 <p className="text-sm text-muted mt-0.5">Dorađen crtež modela iz kataloga · {rep.parts.length} delova. Projekti sa ovim modelom koriste dorađen crtež.</p>
                 <div className="flex flex-wrap gap-2 mt-auto pt-4">
                   <div className="w-full flex gap-2">
-                    <button className="btn flex-1" data-testid={`rework-model-${m.id}`} onClick={() => navigate(`/modeli/crtanje/${rep.id}`, { state: { dorada: true } })}><Wrench size={16} />Doradi</button>
+                    <button className="btn flex-1" data-testid={`rework-model-${m.id}`} onClick={() => navigate(`${drawPath}/${rep.id}`, { state: { dorada: true } })}><Wrench size={16} />Doradi</button>
                     <button className="btn btn-danger shrink-0" data-testid={`delete-model-${m.id}`} aria-label={`Obriši model ${m.name}`} title="Obriši model" onClick={() => setDelBuiltin(m.id)}><Trash2 size={16} /></button>
                   </div>
                   <button className="btn btn-primary" data-testid={`use-model-${m.id}`} onClick={() => useModel(rep.id as FenceModelId)}>Koristi model</button>
@@ -116,7 +131,7 @@ export default function ModelsPage() {
               <div className="flex flex-wrap gap-2 mt-auto pt-4">
                 {/* dorada: crtež modela u crtanju, gde se menja svaki deo (red iznad, da glavna dugmad ostanu u istoj liniji) */}
                 <div className="w-full flex gap-2">
-                  <button className="btn flex-1" data-testid={`rework-model-${m.id}`} title="Otvara crtež modela u crtanju, gde se menja svaki deo" onClick={() => navigate(`/modeli/crtanje/${useAppStore.getState().startDorada(m.id)}`, { state: { dorada: true } })}><Wrench size={16} />Doradi</button>
+                  <button className="btn flex-1" data-testid={`rework-model-${m.id}`} title="Otvara crtež modela u crtanju, gde se menja svaki deo" onClick={() => navigate(`${drawPath}/${useAppStore.getState().startDorada(m.id)}`, { state: { dorada: true } })}><Wrench size={16} />Doradi</button>
                   <button className="btn btn-danger shrink-0" data-testid={`delete-model-${m.id}`} aria-label={`Obriši model ${m.name}`} title="Obriši model" onClick={() => setDelBuiltin(m.id)}><Trash2 size={16} /></button>
                 </div>
                 <button className="btn btn-primary" data-testid={`use-model-${m.id}`} onClick={() => useModel(m.id)}>Koristi model</button>

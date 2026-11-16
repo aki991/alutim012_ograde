@@ -321,6 +321,8 @@ export interface Material {
   kgPerM?: number;
   /** ručno nacrtan poprečni presek (dugme „Nacrtaj element“): ima prednost nad presekom iz šifre i naziva */
   drawn?: DrawnSection;
+  /** materijal za ograde za terase (stubovi, rukohvati, prečke, staklo i okov): nudi se samo u crtanju ograda za terase */
+  terrace?: boolean;
 }
 
 /** Vrsta nacrtanog preseka (određuje grupu u spiskovima; „u“ se ponaša kao bočna U vođica). */

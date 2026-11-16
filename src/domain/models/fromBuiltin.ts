@@ -79,7 +79,7 @@ export function builtinToCustom(modelId: FenceModelId, materials: Material[], id
   if (geo.glass) parts.push({ id: pid(), materialId: GLASS_MATERIAL, x: geo.glass.x, y: H - (geo.glass.y + geo.glass.h), lengthMm: geo.glass.w, heightMm: geo.glass.h, angleDeg: 0, rot: 0, z: 0 });
 
   let model: CustomModel = {
-    id, name: `${def.name} — dorada`, kind: 'fence', widthMm: W, heightMm: H, color: def.defaultColor, parts,
+    id, name: `${def.name} — dorada`, kind: def.terrace ? 'terrace' : 'fence', widthMm: W, heightMm: H, color: def.defaultColor, parts,
     updatedAt: new Date().toISOString(), baseModelId: modelId,
   };
   // cevi ulaze u U vođice: svaka vodoravna cev se uklapa u njih (dužina do dna kanala, nagib i dubina kao kod crtanja)

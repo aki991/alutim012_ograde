@@ -19,6 +19,7 @@ const defOf = (m: CustomModel): FenceModelDef => ({
   image: '', style: 'custom', defaultColor: m.color, defaults: { barSizeMm: 0, gapMm: 0, frameMm: 0 }, barLabel: '', gapLabel: '', hasBars: false,
   defaultSize: { widthMm: m.widthMm, heightMm: m.heightMm, clearWidth: true }, defaultGateHeightMm: m.heightMm, postExtraMm: 0,
   materialId: m.parts[0]?.materialId ?? '', parts: { main: m.name },
+  ...(m.kind === 'terrace' ? { terrace: true } : {}),
 });
 
 export function registerCustomModels(models: CustomModel[] | undefined, materials: Material[]): void {
@@ -43,11 +44,16 @@ export const replacementOf = (builtinId: string): CustomModel | undefined => [..
 /** Model koji se stvarno koristi: zamena modela iz kataloga, ako je ima, inače isti model. */
 export const effectiveModelId = <T extends string>(id: T): T => (replacementOf(id)?.id as T | undefined) ?? id;
 
-/** Svi modeli za izbor u editoru: katalog (dorađen model stoji umesto originala), pa ostali ručno nacrtani. */
+/**
+ * Svi modeli za izbor u editoru: katalog (dorađen model stoji umesto originala), pa ostali ručno nacrtani. Uz model `keep`
+ * (model projekta) nude se samo modeli iste vrste: ograde za terase nemaju veze sa dvorišnim ogradama.
+ */
 export const allFenceModels = (keep?: string): FenceModelDef[] => {
   const all = FENCE_MODELS as Record<string, FenceModelDef>;
+  const terrace = keep && all[keep] ? Boolean(all[keep].terrace) : undefined;
+  const sameFamily = (d: FenceModelDef | undefined): boolean => !!d && (terrace === undefined || Boolean(d.terrace) === terrace || d.id === keep);
   const catalog = FENCE_MODEL_LIST.filter((d) => !HIDDEN.has(d.id) || d.id === keep).map((d) => { const r = replacementOf(d.id); return r ? all[r.id] : d; });
-  return [...catalog, ...[...REG.values()].filter((m) => !m.replaces && (m.kind !== 'gate' || m.id === keep)).map((m) => all[m.id])];
+  return [...catalog, ...[...REG.values()].filter((m) => !m.replaces && (m.kind !== 'gate' || m.id === keep)).map((m) => all[m.id])].filter(sameFamily);
 };
 
 /** Delovi nacrtanog modela razvučeni na polje zadate širine i visine, u boji elementa (hex ili RAL ključ). */

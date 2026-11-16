@@ -13,7 +13,11 @@ import { drawnBounds, drawnPolys, drawnValid } from './drawnSection';
 
 export type MaterialGroupId =
   | 'kv' | 'c' | 'u' | 'maske' | 'l' | 'h' | 'z' | 'kose' | 'okrugle' | 'trake'
-  | 'kape' | 'rozetne' | 'stope' | 'cepovi' | 'okov' | 'automatika' | 'ploce' | 'ostalo';
+  | 'kape' | 'rozetne' | 'stope' | 'cepovi' | 'okov' | 'automatika' | 'ploce'
+  | TerraceGroupId | 'ostalo';
+
+/** Grupe materijala za ograde za terase (crtanje ograda za terase nudi samo njih). */
+export type TerraceGroupId = 't_stubovi' | 't_rukohvati' | 't_ispuna' | 't_staklo' | 't_veze' | 't_kolena' | 't_drzaci' | 't_montaza' | 't_zavrseci' | 't_ostalo';
 
 export const MATERIAL_GROUPS: { id: MaterialGroupId; label: string }[] = [
   { id: 'kv', label: 'Kvadratne i pravougaone cevi' },
@@ -33,8 +37,42 @@ export const MATERIAL_GROUPS: { id: MaterialGroupId; label: string }[] = [
   { id: 'okov', label: 'Okov (šarke, brave, nosači, vijci)' },
   { id: 'automatika', label: 'Automatika' },
   { id: 'ploce', label: 'Staklo i paneli' },
+  { id: 't_stubovi', label: 'Stubovi terase i maskice' },
+  { id: 't_rukohvati', label: 'Rukohvati' },
+  { id: 't_ispuna', label: 'Prečke i profili ispune' },
+  { id: 't_staklo', label: 'Staklo i kanali za staklo' },
+  { id: 't_veze', label: 'Veze stuba i rukohvata' },
+  { id: 't_kolena', label: 'Kolena, zglobovi i spojnice' },
+  { id: 't_drzaci', label: 'Držači prečki i stezaljke stakla' },
+  { id: 't_montaza', label: 'Flanše, maske i montaža' },
+  { id: 't_zavrseci', label: 'Završeci i kape (terase)' },
+  { id: 't_ostalo', label: 'Ostali okov za terase' },
   { id: 'ostalo', label: 'Ostalo' },
 ];
+
+/** Materijal za ograde za terase: označen u cenovniku, ili BTS materijal koji je došao uz aplikaciju (ID mat_bts_… / mat_ter_…). */
+export const isTerraceMaterial = (m: { id?: string; terrace?: boolean }): boolean => m.terrace ?? /^mat_(bts|ter)_/.test(m.id ?? '');
+
+/** Grupa materijala za terase po vrsti oblika i nazivu (stub, rukohvat, prečka, staklo, veza, koleno, držač, flanša, završetak). */
+function terraceGroup(name: string, shape: MatShape): TerraceGroupId {
+  const n = norm(name);
+  const has = (re: RegExp): boolean => re.test(n);
+  if (shape.type === 'sheet') return 't_staklo';
+  if (shape.type === 'linear') {
+    if (has(/za staklo|gumen/)) return 't_staklo';
+    if (has(/rukohvat/)) return 't_rukohvati';
+    if (has(/stub/)) return 't_stubovi';
+    return 't_ispuna';
+  }
+  if (has(/stezaljk|granicnik|prsten za|drzac|nosac prec|ispun/)) return 't_drzaci';
+  if (has(/klin/)) return 't_staklo';
+  if (has(/kapijic|juliet/)) return 't_ostalo';
+  if (has(/zid|plafon|flans|mask|stop[aeu]|obujmic|anker|sidr|vijak|spigot/)) return 't_montaza';
+  if (has(/vrh stuba|zavrset|\bkap[aeu]\b|kugl|\bcep/)) return 't_zavrseci';
+  if (has(/veza/)) return 't_veze';
+  if (has(/kolen|zglob|ugao|ugaon|spojnic|skretnic/)) return 't_kolena';
+  return 't_ostalo';
+}
 
 /** Poprečni presek profila, centriran u (0, 0): u je širina (vidi se spreda kad presek nije okrenut), v je dubina. */
 export interface Section {
@@ -190,15 +228,20 @@ export function carriageSolids(p: CarriageParams): Solid[] {
 const cache = new Map<string, Resolved>();
 
 /** Oblik materijala (uvek postoji: nepoznat materijal dobija opšti oblik prema jedinici mere). */
-type ShapeInput = Pick<Material, 'sku' | 'name' | 'unit' | 'category'> & { wallMm?: number; dims?: Record<string, number>; drawn?: Material['drawn'] };
+type ShapeInput = Pick<Material, 'sku' | 'name' | 'unit' | 'category'> & { id?: string; terrace?: boolean; wallMm?: number; dims?: Record<string, number>; drawn?: Material['drawn'] };
 
 /** Ključ oblika materijala: isti ključ = isti presek (za keš oblika i 3D tela). */
-export const materialKey = (m: ShapeInput): string => `${m.sku}|${m.name}|${m.unit}|${m.category}|${m.wallMm ?? ''}|${m.dims ? JSON.stringify(m.dims) : ''}|${m.drawn ? JSON.stringify(m.drawn) : ''}`;
+export const materialKey = (m: ShapeInput): string => `${m.sku}|${m.name}|${m.unit}|${m.category}|${m.wallMm ?? ''}|${m.dims ? JSON.stringify(m.dims) : ''}|${m.drawn ? JSON.stringify(m.drawn) : ''}|${isTerraceMaterial(m) ? 't' : ''}`;
 
 function resolved(m: ShapeInput): Resolved {
   const key = materialKey(m);
   let s = cache.get(key);
-  if (!s) { s = resolveShape(m); cache.set(key, s); }
+  if (!s) {
+    s = resolveShape(m);
+    // materijal za terase: isti oblik, a grupa je jedna od grupa za terase (stubovi, rukohvati, prečke, staklo, okov)
+    if (isTerraceMaterial(m)) s = { ...s, shape: { ...s.shape, group: terraceGroup(m.name, s.shape) } };
+    cache.set(key, s);
+  }
   return s;
 }
 
@@ -265,6 +308,11 @@ function resolveShape(m: ShapeInput): Resolved {
   }
 
   // komadni delovi (naziv često sadrži i meru profila na koji idu, zato se proveravaju pre profila)
+  // okov ograda za terase: flanše, bočne obujmice, spigoti i stezaljke stakla (pre provere „staklo“, da ne postanu ploča)
+  if (has(/flans/)) return plain(piece('rozetne', 'rosette', w, d));
+  if (has(/obujmic/)) return plain(piece('stope', 'side_foot', w, d));
+  if (has(/spigot/)) return plain(piece('stope', 'foot', Math.min(w, 60), Math.min(d, 60)));
+  if (has(/stezaljk|granicnik|spider|kugl|topuz/)) return plain(piece('okov', 'bracket', Math.min(w, 60), Math.min(d, 60)));
   if (has(/\bkap[aeu]\b/)) return plain(piece('kape', has(/pismo|piramid|siljat/) ? 'cap_pyramid' : 'cap_flat', w, d));
   if (has(/rozetn/)) return plain(piece('rozetne', 'rosette', w, d));
   if (has(/\bstop[aeu]\b/)) return plain(piece('stope', has(/bocn/) ? 'side_foot' : 'foot', w, d));

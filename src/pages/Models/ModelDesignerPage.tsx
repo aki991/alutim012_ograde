@@ -21,13 +21,13 @@ import { downloadSketchPdf, downloadSketchSvg } from '../../services/pdfSketch';
 import { resolveParts, ShapeIcon } from '../../components/designer/PartsSvg';
 import { colorHex, FENCE_MODELS, normalizeColorKey } from '../../domain/models/catalog';
 import { ColorChartModal, normalizeFavorites } from '../../components/forms/ColorChartModal';
-import { CUSTOM_KIND_LABELS, customBom, newCustomModel, repeatPart, setPartsColor, type CustomModel, type CustomPart } from '../../domain/models/custom';
+import { CUSTOM_KIND_LABELS, customBom, newCustomModel, newTerraceModel, repeatPart, setPartsColor, type CustomModel, type CustomPart } from '../../domain/models/custom';
 import { attachToGuides, barGroup, barLayoutInfo, gapRange, guideReport, layoutBars, type LayoutAuto } from '../../domain/models/guides';
 import type { Lufta } from '../../domain/models/custom';
 import { checkNewOverlap } from '../../domain/models/overlap';
 import { replaceMaterial, replaceOptions, replaceRole, replaceTargets } from '../../domain/models/replace';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
-import { compareMaterials, isSymmetricRect, MATERIAL_GROUPS, materialShape, matchesSearch, sectionFace, type MaterialGroupId, type Section } from '../../domain/models/materialShape';
+import { compareMaterials, isSymmetricRect, isTerraceMaterial, MATERIAL_GROUPS, materialShape, matchesSearch, sectionFace, type MaterialGroupId, type Section } from '../../domain/models/materialShape';
 import type { FenceModelId, GateType, Material } from '../../domain/models/types';
 import { useAppStore } from '../../store/useAppStore';
 import { uid } from '../../utils/id';
@@ -192,7 +192,13 @@ function FaceChoice({ testPrefix, a, b, firstPressed, secondPressed, mixed, onPi
   );
 }
 
-function Palette({ materials, activeId, onPick }: { materials: Material[]; activeId: string | null; onPick: (id: string | null) => void }) {
+function Palette({ materials, activeId, onPick, terrace, showAll }: {
+  materials: Material[]; activeId: string | null; onPick: (id: string | null) => void;
+  /** crtanje ograde za terasu: podrazumevano se nude samo materijali za terase */
+  terrace: boolean;
+  /** izbor „prikaži i ostale materijale“ (dvorišne kod terasa, terasne kod dvorišnih ograda) */
+  showAll: { checked: boolean; onChange: (v: boolean) => void };
+}) {
   const [q, setQ] = useState('');
   const groups = useMemo(() => {
     const by = new Map<MaterialGroupId, Material[]>();
@@ -208,6 +214,10 @@ function Palette({ materials, activeId, onPick }: { materials: Material[]; activ
       <div className="p-3 border-b border-line">
         <button className={`btn btn-sm w-full mb-2 ${activeId === null ? 'btn-dark' : ''}`} data-testid="designer-tool-select" onClick={() => onPick(null)}><MousePointer2 size={15} />Izbor i pomeranje</button>
         <div className="relative"><Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" /><input className="input !pl-8 !py-1.5" placeholder="Pretraga materijala" aria-label="Pretraga materijala" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+        <label className="flex items-center gap-1.5 text-[12px] text-muted mt-2" title={terrace ? 'Pored materijala za terase nudi i materijale dvorišnih ograda i kapija' : 'Pored materijala dvorišnih ograda i kapija nudi i materijale za terase'}>
+          <input type="checkbox" data-testid="designer-show-all-materials" checked={showAll.checked} onChange={(e) => showAll.onChange(e.target.checked)} />
+          {terrace ? 'Prikaži i ostale materijale' : 'Prikaži i materijale za terase'}
+        </label>
       </div>
       <div className="flex-1 min-h-0 overflow-auto scroll-thin p-2">
         {materials.length === 0 && (
@@ -240,21 +250,31 @@ function Palette({ materials, activeId, onPick }: { materials: Material[]; activ
   );
 }
 
-export default function ModelDesignerPage() {
+/**
+ * Crtanje modela. Sa `terrace` (adresa /modeli-terasa/crtanje) je to crtanje ograda za terase: nov crtež je „Ograda za terasu“,
+ * paleta nudi samo materijale za terase, a povratak vodi na Modele ograda za terase.
+ */
+export default function ModelDesignerPage({ terrace = false }: { terrace?: boolean }) {
   const { id } = useParams();
   const navigate = useNavigate();
   // nov crtež odmah dobija svoju adresu, da se posle osvežavanja strane nastavi isti model
-  useEffect(() => { if (!id) navigate(`/modeli/crtanje/${uid('cm')}`, { replace: true }); }, [id, navigate]);
-  return id ? <Designer key={id} id={id} /> : null;
+  useEffect(() => { if (!id) navigate(`${terrace ? '/modeli-terasa/crtanje' : '/modeli/crtanje'}/${uid('cm')}`, { replace: true }); }, [id, navigate, terrace]);
+  return id ? <Designer key={id} id={id} terrace={terrace} /> : null;
 }
 
-function Designer({ id }: { id: string }) {
-  const materials = useAppStore((s) => s.materials);
+function Designer({ id, terrace }: { id: string; terrace: boolean }) {
+  const allMaterials = useAppStore((s) => s.materials);
   const settings = useAppStore((s) => s.settings);
   const location = useLocation();
   const locState = location.state as { dorada?: boolean; kind?: CustomModel['kind'] } | null;
   const [model, setModel] = useState<CustomModel>(() => useAppStore.getState().settings.customModels?.find((m) => m.id === id)
-    ?? (locState?.kind === 'gate' ? { ...newCustomModel(id), kind: 'gate', name: 'Nova kapija', widthMm: 1000, heightMm: 1500, gate: defaultGateConfig() } : newCustomModel(id)));
+    ?? (terrace || locState?.kind === 'terrace' ? newTerraceModel(id)
+      : locState?.kind === 'gate' ? { ...newCustomModel(id), kind: 'gate', name: 'Nova kapija', widthMm: 1000, heightMm: 1500, gate: defaultGateConfig() } : newCustomModel(id)));
+  /** ograda za terasu: paleta nudi samo materijale za terase (dvorišne ograde i kapije ih ne nude) */
+  const isTerrace = model.kind === 'terrace';
+  const [showAllMaterials, setShowAllMaterials] = useState(false);
+  const paletteMaterials = useMemo(() => (showAllMaterials ? allMaterials : allMaterials.filter((m) => isTerraceMaterial(m) === isTerrace)), [allMaterials, isTerrace, showAllMaterials]);
+  const materials = allMaterials;
   // vrsta crteža ide u stanje adrese (ista adresa, bez ponovnog učitavanja): meni označava „Modeli kapija“ dok se crta kapija
   const navigateKind = useNavigate();
   useEffect(() => {
@@ -567,11 +587,13 @@ function Designer({ id }: { id: string }) {
         </Modal>
       )}
       <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-line bg-white">
-        <Link to={model.kind === 'gate' ? '/modeli-kapija' : '/modeli'} className="btn btn-sm" data-testid="designer-back"><ArrowLeft size={15} />{model.kind === 'gate' ? 'Modeli kapija' : 'Modeli'}</Link>
+        <Link to={model.kind === 'gate' ? '/modeli-kapija' : isTerrace ? '/modeli-terasa' : '/modeli'} className="btn btn-sm" data-testid="designer-back"><ArrowLeft size={15} />{model.kind === 'gate' ? 'Modeli kapija' : isTerrace ? 'Modeli ograda za terase' : 'Modeli'}</Link>
         <input className="input !w-56 !py-1.5 font-semibold" aria-label="Naziv modela" data-testid="designer-name" value={model.name} onChange={(e) => change((m) => ({ ...m, name: e.target.value }), false)} />
+        {/* ograda za terasu ostaje ograda za terasu (posebna stranica i materijali); ograda i kapija se mogu menjati jedna u drugu */}
+        {isTerrace && <span className="pill !text-[12.5px] bg-[#eff8ff] text-[#175cd3]" data-testid="designer-kind-terrace">Ograda za terasu</span>}
         {/* u prikazu „Mere kapije“ alati crtanja se sklanjaju: mere se menjaju samo u tom prikazu, pa crtež i podešavanja ne mogu da se razilaze */}
-        {view !== 'mere' && <select className="input !w-auto !py-1.5" aria-label="Vrsta" data-testid="designer-kind" value={model.kind} onChange={(e) => change((m) => ({ ...m, kind: e.target.value as CustomModel['kind'], gate: e.target.value === 'gate' ? m.gate ?? defaultGateConfig() : m.gate }))}>
-          {Object.entries(CUSTOM_KIND_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        {view !== 'mere' && !isTerrace && <select className="input !w-auto !py-1.5" aria-label="Vrsta" data-testid="designer-kind" value={model.kind} onChange={(e) => change((m) => ({ ...m, kind: e.target.value as CustomModel['kind'], gate: e.target.value === 'gate' ? m.gate ?? defaultGateConfig() : m.gate }))}>
+          {Object.entries(CUSTOM_KIND_LABELS).filter(([k]) => k !== 'terrace').map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>}
         {model.kind === 'gate' && view !== 'mere' && (
           <select className="input !w-auto !py-1.5" aria-label="Tip kapije" data-testid="designer-gate-type" value={model.gate?.gateType ?? 'pedestrian'}
@@ -692,7 +714,8 @@ function Designer({ id }: { id: string }) {
         <div className="flex-1 min-h-0"><GateDesignModal projectId={draft.projectId} itemId={draft.itemId} embedded inline onClose={() => selectView('2d')} /></div>
       )}
       <div className={`flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[250px_minmax(0,1fr)_350px] ${view === 'mere' ? 'hidden' : ''}`}>
-        <aside className="border-r border-line bg-white min-h-0 max-h-[40vh] lg:max-h-none"><Palette materials={materials} activeId={activeId} onPick={(m) => { setActiveId(m); if (m) setSelectedId(null); }} /></aside>
+        <aside className="border-r border-line bg-white min-h-0 max-h-[40vh] lg:max-h-none"><Palette materials={paletteMaterials} activeId={activeId} onPick={(m) => { setActiveId(m); if (m) setSelectedId(null); }}
+          terrace={isTerrace} showAll={{ checked: showAllMaterials, onChange: setShowAllMaterials }} /></aside>
 
         <section className={`min-h-[420px] lg:min-h-0 grid ${view === 'split' ? 'grid-rows-2 xl:grid-rows-1 xl:grid-cols-2' : ''}`}>
           {view === 'skica' && (

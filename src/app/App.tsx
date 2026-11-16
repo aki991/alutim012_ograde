@@ -61,10 +61,14 @@ export default function App() {
             <Route path="/editor" element={<EditorPage />} />
             <Route path="/editor/:id" element={<EditorPage />} />
             <Route path="/projekti" element={<ProjectsPage />} />
-            <Route path="/modeli" element={<ModelsPage />} />
+            <Route path="/modeli" element={<ModelsPage key="yard" />} />
             <Route path="/modeli-kapija" element={<GateModelsPage />} />
             <Route path="/modeli/crtanje" element={<ModelDesignerPage />} />
             <Route path="/modeli/crtanje/:id" element={<ModelDesignerPage />} />
+            {/* ograde za terase: posebna stranica i posebno crtanje (samo materijali za terase), bez veze sa dvorišnim ogradama */}
+            <Route path="/modeli-terasa" element={<ModelsPage key="terrace" terrace />} />
+            <Route path="/modeli-terasa/crtanje" element={<ModelDesignerPage terrace />} />
+            <Route path="/modeli-terasa/crtanje/:id" element={<ModelDesignerPage terrace />} />
             <Route path="/materijali" element={<MaterialsPage />} />
             <Route path="/magacin" element={<StockPage />} />
             <Route path="/kupci" element={<CustomersPage />} />

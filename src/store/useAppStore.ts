@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { create } from 'zustand';
 import { isBuiltinMaterial } from '../data/materials';
 import { DEFAULT_CARRIAGES, missingModelMaterials } from '../data/modelMaterials';
+import { withTerraceMaterials } from '../data/terraceMaterials';
 import { createSeedData } from '../data/seed';
 import { loadAll, saveAll, wipeAll } from '../db';
 import {
@@ -284,18 +285,28 @@ export const useAppStore = create<AppState>((set, get) => {
               } else localStorage.setItem(CARRIAGES_KEY, '1');
             }
           } catch { /* bez localStorage-a: preskače se */ }
+          // jednokratno: materijali za ograde za terase (BTS stubovi, rukohvati, prečke, staklo i okov) i oznaka „za terase“ na starim BTS materijalima
+          const TERRACE_KEY = 'alutim.terraceMaterialsV1';
+          let terraceAdded = false;
+          try {
+            if (localStorage.getItem(TERRACE_KEY) !== '1') {
+              const next = withTerraceMaterials(materials);
+              if (next) { materials = next; terraceAdded = true; } else localStorage.setItem(TERRACE_KEY, '1');
+            }
+          } catch { /* bez localStorage-a: preskače se */ }
           // nacrtani modeli moraju biti u katalogu pre nego što se projekti učitaju
           registerCustomModels(settings.customModels, materials);
           setHiddenModels(settings.hiddenModels);
           // privremeni projekti za uređivanje modela ne preživljavaju ponovno pokretanje
           set({ projects: data.projects.filter((p) => !p.modelDraft).map(migrateProject).map(dropUnknownModels), customers: data.customers, materials, settings, ready: true });
-          if (backfilled || renamed || carriagesAdded) {
+          if (backfilled || renamed || carriagesAdded || terraceAdded) {
             // autosave počinje tek posle init-a, pa se dodati materijali upisuju odmah; oznaka se postavlja tek kad je upis uspeo
             try {
               await saveAll({ projects: get().projects, customers: get().customers, materials, settings });
               if (backfilled) localStorage.setItem(BACKFILL_KEY, '1');
               if (renamed) localStorage.setItem(NAMES_KEY, '1');
               if (carriagesAdded) localStorage.setItem(CARRIAGES_KEY, '1');
+              if (terraceAdded) localStorage.setItem(TERRACE_KEY, '1');
             } catch { /* neuspeh ne sme da sakrije učitane podatke; pokušaće se opet pri sledećem pokretanju */ }
           }
         }

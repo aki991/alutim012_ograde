@@ -46,10 +46,10 @@ const RAW_MODEL_MATERIALS: Material[] = [
   m('mat_ram_cev', 'RAM-40', 'Kvadratna cev za ram', 'profil', 'm', 900, 3),
   m('mat_u_20x20', 'U-20x20', 'U profil 20×20×1,35 mm', 'profil', 'm', 260, 3),
   m('mat_kv_30x20', 'KV-30x20', 'Kvadratna cev 30×20×1 mm', 'profil', 'm', 310, 3),
-  m('mat_bts_p1033', 'P-1033', 'Rukohvat', 'profil', 'm', 1700, 3),
-  m('mat_bts_p1054', 'P-1054', 'Stub', 'stub', 'm', 1300, 3),
-  m('mat_bts_pal2647', 'P-AL2647', 'Pokrivna lajsna kanala stuba', 'profil', 'm', 390, 3),
-  m('mat_bts_p1146', 'P-1146', 'Prečka', 'profil', 'm', 480, 3),
+  m('mat_bts_p1033', 'P-1033', 'Rukohvat okrugli Ø50×2', 'profil', 'm', 1700, 3),
+  m('mat_bts_p1054', 'P-1054', 'Stub okrugli Ø40×2 sa kanalom', 'stub', 'm', 1300, 3),
+  m('mat_bts_pal2647', 'P-AL2647', 'Maskica 11,9×8 za okrugli stub', 'profil', 'm', 390, 3),
+  m('mat_bts_p1146', 'P-1146', 'Prečka okrugla Ø16×1,5', 'profil', 'm', 480, 3),
   m('mat_bts_ak5039n', 'AK-5039N', 'Veza stub Ø40 – rukohvat Ø50, fiksna', 'okov', 'kom', 380, 0),
   m('mat_bts_ak5001', 'AK-5001', 'Veza stub Ø40 – rukohvat Ø50, podesiva', 'okov', 'kom', 520, 0),
   m('mat_bts_ak5020k', 'AK-5020K', 'Zglob rukohvata Ø50, kuglasti podesiv ugao', 'okov', 'kom', 640, 0),
@@ -99,5 +99,5 @@ export function missingModelMaterials(existing: Material[]): Material[] {
   return MODEL_MATERIALS.filter((x) => !ids.has(x.id) && !skus.has(x.sku.trim().toLowerCase())).map((x) => ({ ...x }));
 }
 
-/** nazivi su vrsta pa dimenzije (bez beleški iz uvoza), npr. „Kvadratna cev 30×30×2“ */
-export const MODEL_MATERIALS: Material[] = [...RAW_MODEL_MATERIALS, ...DEFAULT_CARRIAGES].map((m) => ({ ...m, name: cleanMaterialName(m.name) }));
+/** nazivi su vrsta pa dimenzije (bez beleški iz uvoza), npr. „Kvadratna cev 30×30×2“; BTS materijali su za ograde za terase */
+export const MODEL_MATERIALS: Material[] = [...RAW_MODEL_MATERIALS, ...DEFAULT_CARRIAGES].map((m) => ({ ...m, name: cleanMaterialName(m.name), ...(m.id.startsWith('mat_bts_') ? { terrace: true } : {}) }));
