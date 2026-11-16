@@ -52,8 +52,13 @@ test('četiri varijante iz kataloga: na šini ručna/motorna, samonoseća ručna
   }
   await expect(fv(page).locator('[data-testid="sliding-assembly"]')).toHaveCount(4);
   for (const id of ids) await expect(fv(page).locator(`[data-testid="sliding-assembly"][data-variant="${id}"]`)).toHaveCount(1);
-  // stara polja klizne kapije se ne prikazuju uz sklop
-  await expect(page.getByTestId('btn-gate-design')).toHaveCount(0);
+  // dugme „Mere kapije“ postoji i uz klizni sklop, kao kod ostalih kapija
+  await expect(page.getByTestId('btn-gate-design')).toBeVisible();
+  await page.getByTestId('btn-gate-design').click();
+  await expect(page.getByTestId('gate-design')).toBeVisible();
+  await expect(page.getByTestId('gate-sketch')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('gate-design')).toHaveCount(0);
   // samonoseća: kolica i C-profil; motorna: letva i motor
   await expect(fv(page).locator('[data-variant="samonoseca_motorna"] [data-sliding-part="carrier"]')).toHaveCount(1);
   await expect(fv(page).locator('[data-variant="samonoseca_motorna"] [data-sliding-part="motor"]')).toHaveCount(1);
@@ -154,16 +159,21 @@ test('promena oslonca i pogona menja samo pripadajuće delove; šablon je nezavi
   await page.getByTestId('sl-tpl-name').fill('Moja samonoseća 2800');
   await page.getByTestId('sl-tpl-save').click();
   await expect(page.getByTestId('sl-tpl-msg')).toContainText('Moja samonoseća 2800');
-  const card = page.locator('[data-testid^="cat-slidingtpl-"][data-testid$="-add"]');
-  await expect(card).toHaveCount(1);
-  await card.click();
+  // šablon se koristi na stranici Modeli kapija (katalog u editoru nudi samo osnovne elemente)
+  const addTemplate = async () => {
+    await page.getByRole('link', { name: 'Modeli kapija' }).click();
+    await expect(page.getByTestId('sliding-template-card')).toHaveCount(1);
+    await page.getByTestId('sliding-template-add').click();
+    await expect(page).toHaveURL(/\/editor\/proj_/);
+  };
+  await addTemplate();
   await expect(fv(page).locator('[data-testid="sliding-assembly"]')).toHaveCount(2);
   await expect(page.getByTestId('sl-name')).toHaveValue('Moja samonoseća 2800');
   await expect(page.getByTestId('sl-travel')).toHaveValue('2800');
   await expect(page.getByTestId('sl-variant')).toHaveText('Samonoseća · motorna');
   // izmena kopije ne menja šablon: nova kopija iz šablona ima staru vrednost
   await setNum(page, 'sl-travel', '2500');
-  await card.click();
+  await addTemplate();
   await expect(page.getByTestId('sl-travel')).toHaveValue('2800');
   expect(errors).toEqual([]);
 });

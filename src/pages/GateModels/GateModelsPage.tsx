@@ -10,7 +10,7 @@ import { GATE_TYPE_LABELS } from '../../domain/gates/gateModels';
 import { presetTitle, SLIDING_PRESETS, type SlidingPresetId } from '../../domain/gates/slidingAssembly';
 import { DEFAULT_MODEL_ID, GATE_LABELS } from '../../domain/models/catalog';
 import type { CustomModel } from '../../domain/models/custom';
-import type { GateType } from '../../domain/models/types';
+import type { GateType, SlidingTemplate } from '../../domain/models/types';
 import { useAppStore, useListedProjects } from '../../store/useAppStore';
 import { uid } from '../../utils/id';
 
@@ -38,6 +38,8 @@ export default function GateModelsPage() {
   const [delBasic, setDelBasic] = useState<GateType | null>(null);
   const [choice, setChoice] = useState<CustomModel | null>(null);
   const [delSlidePreset, setDelSlidePreset] = useState<SlidingPresetId | null>(null);
+  const templates = useAppStore((s) => s.settings.slidingTemplates) ?? [];
+  const [delTpl, setDelTpl] = useState<SlidingTemplate | null>(null);
   const hiddenBasic = [...BASIC.filter((b) => hidden.includes(`gate:${b.type}`)), ...SLIDING_PRESETS.filter((p) => hidden.includes(`gate:slide:${p.id}`))];
   const visibleSlidePresets = SLIDING_PRESETS.filter((p) => !hidden.includes(`gate:slide:${p.id}`));
   const rework = (p: SlidingPresetId) => navigate(`/modeli/crtanje/${useAppStore.getState().startSlidingDorada(p)}`);
@@ -77,6 +79,33 @@ export default function GateModelsPage() {
           </div>
         )}
       </section>
+      {/* šabloni klizne kapije (sačuvani u podešavanjima klizne kapije): ovde se koriste, jer se katalog u editoru ne puni modelima */}
+      {templates.length > 0 && (
+        <section className="mb-7" data-testid="sliding-templates">
+          <h2 className="font-bold text-lg mb-3">Moji šabloni klizne kapije</h2>
+          <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+            {templates.map((t) => (
+              <article key={t.id} className="card overflow-hidden flex flex-col" data-testid="sliding-template-card">
+                <div className="bg-[#eef2f6] border-b border-line p-3 grid place-items-center"><SlidingThumb template={t} /></div>
+                <div className="p-4 flex-1 flex flex-col">
+                  <h3 className="font-bold text-[16px]" data-testid="sliding-template-name">{t.name}</h3>
+                  <p className="text-sm text-muted">Šablon · {presetTitle(t.spec.presetId)}</p>
+                  <div className="flex flex-wrap gap-2 mt-auto pt-3">
+                    {current && <button className="btn btn-primary w-full" data-testid="sliding-template-add" onClick={() => { if (useAppStore.getState().addSlidingGate({ template: t.id })) navigate(`/editor/${current.id}`); }}>Dodaj u otvoreni projekat</button>}
+                    <button className={`btn flex-1 ${current ? '' : 'btn-primary'}`} data-testid="sliding-template-new" onClick={() => startSliding({ template: t.id })}>Novi projekat</button>
+                    <button className="btn btn-danger shrink-0" data-testid="sliding-template-delete" aria-label={`Obriši šablon ${t.name}`} onClick={() => setDelTpl(t)}><Trash2 size={16} /></button>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+      {delTpl && (
+        <ConfirmDialog title="Brisanje šablona" danger confirmLabel="Obriši"
+          message={<>Šablon <b>{delTpl.name}</b> se briše. Kapije koje su već napravljene po njemu ostaju iste.</>}
+          onCancel={() => setDelTpl(null)} onConfirm={() => { useAppStore.getState().removeSlidingTemplate(delTpl.id); setDelTpl(null); }} />
+      )}
       <section data-testid="basic-gates">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-bold text-lg">Osnovne kapije</h2>

@@ -389,6 +389,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
     // klizna kapija kao sklop: mere, pozicije, proba hoda i sastavnica u svom panelu (stara polja klizne kapije bi im protivrečila)
     if (g.sliding) body = (
       <>
+        <GateDesignEntry project={project} gate={g} />
         {/* krilo klizne kapije: model ograde ili nacrtan model kapije, kao kod ostalih kapija */}
         {g.sliding.drawnLeaf && <ModelSelect value={g.infillModelId} onChange={(m) => st.setItemModel(id, m)} />}
         <SlidingPanel project={project} gate={g} />

@@ -612,6 +612,12 @@ test('katalog: dva reda (platno i kapije; prazan prostor i stubovi), klizne kapi
   for (const t of ['concrete_plinth', 'decorative', 'gate']) await expect(page.getByTestId(`cat-post-${t}`)).toHaveCount(0);
   await expect(page.getByTestId('cat-gate-concrete')).toHaveCount(0);
   await expect(page.getByTestId('cat-corner')).toHaveCount(0); // ugao se pravi na stubu, ne kao poseban element
+  // nema reda sa modelima i šablonima kapija; sličice kliznih kapija prate izabrani model ograde
+  await expect(page.getByTestId('catalog-row-custom')).toHaveCount(0);
+  const slidingThumb = await page.getByTestId('cat-gate-sliding').innerHTML();
+  const other = (await page.getByTestId('catalog-model').inputValue()) === 'picket_wide' ? 'h_narrow' : 'picket_wide';
+  await page.getByTestId('catalog-model').selectOption(other);
+  await expect.poll(async () => page.getByTestId('cat-gate-sliding').innerHTML()).not.toBe(slidingThumb);
   // klizne kapije: izbor ručna / motorna na samoj kartici
   for (const id of ['klizna_sina_rucna', 'klizna_sina_motorna', 'samonoseca_rucna', 'samonoseca_motorna']) await expect(page.getByTestId(`cat-sliding-${id}-add`)).toBeVisible();
   await page.getByTestId('cat-sliding-samonoseca_motorna-add').click();

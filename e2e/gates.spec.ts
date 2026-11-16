@@ -298,7 +298,8 @@ test('modeli kapija: kartica ima Koristi model, Otvori crtež i Obriši; u crte�
   // model je u katalogu editora
   await page.getByRole('link', { name: 'Početna' }).click();
   await page.getByTestId('hero-new').click();
-  await expect(page.getByTestId('catalog').getByText('Pešačka 15')).toBeVisible();
+  // katalog u editoru ne nudi modele kapija (oni se koriste na stranici Modeli kapija)
+  await expect(page.getByTestId('catalog').getByText('Pešačka 15')).toHaveCount(0);
   // brisanje modela
   await page.getByRole('link', { name: 'Modeli kapija' }).click();
   await page.getByTestId('delete-gate-model').click();
