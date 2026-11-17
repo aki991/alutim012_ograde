@@ -1,6 +1,5 @@
 import { closingPostOffset, guideOverhangOf } from '../gates/slidingAssembly';
 import { rl10AuxPostShift, rl10JointShift } from '../models/rl10';
-import { capTiers, isTarabicaPost, postCaps } from '../models/tarabica';
 import { PLINTH_DEFAULT_MM, type LayoutItem, Mm, Post, Project } from '../models/types';
 import { stairGroupAt, stairRise, treadLevelAt } from './stair';
 
@@ -159,12 +158,8 @@ export function computeLayout(project: Pick<Project, 'items' | 'posts'>): Projec
     lp.lengthMm = Math.max(0, lp.topMm - lp.baseMm);
   });
 
-  // rozetna u dnu stuba na podnožju je šira od stuba: kraj rozetne je kraj podnožja, pa se podnožje produžava ispod nje
-  const flare = (lp: LaidOutPost | undefined): Mm => (lp && !lp.hidden && lp.baseMm > 0 && isTarabicaPost(items, lp.post, lp.index) && postCaps(lp.post).bottom === 'rosette' ? Math.max(0, (capTiers('rosette', lp.widthMm)[0].bottomW - lp.widthMm) / 2) : 0);
   laidItems.forEach((l) => {
     if (l.plinthMm <= 0 || l.item.kind !== 'fence') return;
-    l.plinthX0 -= flare(laidPosts[l.index]);
-    l.plinthX1 += flare(laidPosts[l.index + 1]);
     const own = l.item.plinthWidthMm;
     if (own && own > 0) {
       // zadato podnožje može biti samo kraće od polja sa stubovima; šire se dobija širenjem ograde, pa nikad ne prelazi preko suseda

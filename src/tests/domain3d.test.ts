@@ -144,8 +144,8 @@ describe('zajednički geometrijski opis ispune (2D = 3D)', () => {
     expect(v.bars.filter((b) => b.round)).toHaveLength(countVerticalBars(1820, 60, 30));
     expect(v.bars.filter((b) => b.tone === 'rail')).toHaveLength(2);
   });
-  it('svih 14 modela: geometrija staje u polje, i za ogradu i za kapiju, a kalkulacija nema stavki bez cene', () => {
-    expect(FENCE_MODEL_LIST).toHaveLength(14);
+  it('svih 13 modela: geometrija staje u polje, i za ogradu i za kapiju, a kalkulacija nema stavki bez cene', () => {
+    expect(FENCE_MODEL_LIST).toHaveLength(13);
     for (const def of FENCE_MODEL_LIST) {
       const geo = computeInfill(def.id, 2000, 1600, def.defaults.frameMm, def.defaults.barSizeMm, def.defaults.gapMm);
       if (def.hasBars || def.style === 'glass_rail') expect(geo.bars.length, def.id).toBeGreaterThan(0);

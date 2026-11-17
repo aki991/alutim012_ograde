@@ -16,7 +16,6 @@ import { GlbBoundary, GlbLeaf } from './GlbLeaf';
 import { PanelBody } from './PanelBody';
 import { customPartsFor, isCustomModel } from '../../../domain/models/customRegistry';
 import { zExtent, zExtentTop } from '../../../domain/models/custom';
-import { isTarabicaModel } from '../../../domain/models/tarabica';
 import { boxGeometry, darkMaterial, steelMaterial } from './materials';
 
 /** delovi krila koji dolaze iz modela (ne iz sklopa): u 3D se ne crtaju iz sklopa */
@@ -108,8 +107,7 @@ export function GateMesh({ gate, li, showZones, postWidthMm = 0 }: { gate: Gate;
   /** Rezervni (parametarski) prikaz krila dok se 3D model učitava ili ako učitavanje ne uspe. */
   const legacy = (p: ReturnType<typeof gateLeafPoses>[number], w: number) => (
     <>
-      <PanelBody modelId={gate.infillModelId} widthMm={p.widthMm} heightMm={leafH} params={gate.params} color={gate.color} centerZ={sliding}
-        overhangs={gate.gateType === 'double' ? (p.extendDir === 1 ? [gate.params.frameMm, 0] : [0, gate.params.frameMm]) : undefined} />
+      <PanelBody modelId={gate.infillModelId} widthMm={p.widthMm} heightMm={leafH} params={gate.params} color={gate.color} centerZ={sliding} />
       {/* ručka i brava prate krilo (na slobodnoj ivici) */}
       {!sliding && (lockSide === 1 || gate.gateType === 'double') && (
         <group position={[p.extendDir * (w / 2 - 0.1), lockY, 0]}>
@@ -144,8 +142,7 @@ export function GateMesh({ gate, li, showZones, postWidthMm = 0 }: { gate: Gate;
           <group key={k} ref={(g) => { outer.current[k] = g; }} position={[s(p.pivotX + p.slideX), 0, sliding ? slideZ : 0]}>
             <group ref={(g) => { inner.current[k] = g; }}>
               <group position={[p.extendDir * w / 2, s(fbMm), 0]}>
-                {/* tarabica nema gotov 3D model kapije (stari model je imao široke letvice): krilo se gradi od istih delova kao ograda */}
-                {isTarabicaModel(gate.infillModelId) || isTubesModel(gate.infillModelId) || isCustomModel(gate.infillModelId) ? legacy(p, w) : (
+                {isTubesModel(gate.infillModelId) || isCustomModel(gate.infillModelId) ? legacy(p, w) : (
                   <GlbBoundary fallback={legacy(p, w)}>
                     <Suspense fallback={legacy(p, w)}>
                       <GlbLeaf modelId={gate.infillModelId} gateType={gate.gateType} extendDir={p.extendDir} slideDir={dir} widthMm={p.widthMm} heightMm={leafH} color={gate.color} />

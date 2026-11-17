@@ -22,7 +22,6 @@ import { fmtMm } from '../../../utils/units';
 import { GateMesh } from './GateMesh';
 import { PanelBody } from './PanelBody';
 import { PostMesh } from './PostMesh';
-import { isTarabicaPost, postCaps } from '../../../domain/models/tarabica';
 import { computePlan, longestRunHeading, type Plan } from '../../../domain/geometry/plan';
 import { cornerInfo, isCorner, postRailInfo, type CornerInfo } from '../../../domain/geometry/corner';
 import { FENCE_MODELS, hasLightFence, leftPostShared, postDrawnByItems } from '../../../domain/models/catalog';
@@ -539,7 +538,7 @@ export function SceneContent(p: ContentProps) {
           }
           return (
             <group key={lp.post.id} position={[s(pp.at.x), s(lp.floorMm + lp.baseMm), s(pp.at.z)]} rotation={[0, -pp.heading, 0]}>
-              {!isRl10Post(project.items, lp.index) && <PostMesh post={{ ...lp.post, heightMm: lp.lengthMm }} onPlinth={lp.baseMm > 0} rails={postDrawnByItems(project.items, lp.index) ? withDrop(postRailInfo(project, lp.index), lp.lineMm - lp.floorMm) : null} caps={isTarabicaPost(project.items, lp.post, lp.index) ? postCaps(lp.post) : undefined} />}
+              {!isRl10Post(project.items, lp.index) && <PostMesh post={{ ...lp.post, heightMm: lp.lengthMm }} onPlinth={lp.baseMm > 0} rails={postDrawnByItems(project.items, lp.index) ? withDrop(postRailInfo(project, lp.index), lp.lineMm - lp.floorMm) : null} />}
               <Hit x={0} w={s(lp.post.widthMm) + 0.1} h={s(lp.lengthMm) + 0.1} depth={s(lp.post.widthMm) + 0.2} pick={{ kind: 'post', id: lp.post.id }} />
             </group>
           );

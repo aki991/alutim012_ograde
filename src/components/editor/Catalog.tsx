@@ -51,7 +51,7 @@ function CatalogCard({ title, subtitle, thumb, onAdd, onDragStart, testId, addLa
       <div className="mt-2 text-[13px] font-semibold leading-tight">{title}</div>
       <div className="text-[11.5px] text-muted leading-snug min-h-[28px] whitespace-pre-line">{subtitle}</div>
       {selector && (
-        <select className="input !py-1 !text-[12px] mt-1 w-full" aria-label={`Model kapije: ${title}`} data-testid={`${testId}-pick`} value={selector.value} onChange={(e) => selector.onChange(e.target.value)}>
+        <select className="input !py-1 !text-[12px] mt-1 w-full" aria-label={`Tip kapije: ${title}`} data-testid={`${testId}-pick`} value={selector.value} onChange={(e) => selector.onChange(e.target.value)}>
           {selector.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       )}

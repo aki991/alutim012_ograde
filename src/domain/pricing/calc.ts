@@ -9,7 +9,6 @@ import { CALC_RULES } from './rules';
 import { evaluateItemSpec, hasCustomSpec, specFor, type ModelSpecs, type SpecContext } from '../models/spec';
 import { buildLouver08Sheet, FILL_PROFILES, GUIDE_PROFILES, isLouver08, louverSpecOf } from './louverSpec';
 import { buildRail04Sheet, isRail04, RAIL04 } from './railSpec';
-import { isTarabicaPost, tarabicaPostLines } from '../models/tarabica';
 import { missingHardware, resolveGate, systemOf, unknownHwLabel, type HwRole } from '../gates/design';
 import { gateCutRows } from '../gates/production';
 import { resolveSliding, slidingBom, type SlidingBomItem } from '../gates/slidingAssembly';
@@ -180,8 +179,6 @@ export function buildBom(project: Project, materials: Material[], specs?: ModelS
   const railPosts = new Set(hasCustomSpec('rail_black', specs) ? [] : project.posts.map((_, i) => i).filter((i) => [project.items[i - 1], project.items[i]].some((x) => x && isRail04(x))));
   project.posts.forEach((p, i) => {
     if (railPosts.has(i) || layout.posts[i]?.hidden) return;
-    // stub uz tarabicu: kvadratna cev 80 × 80 ili 100 × 100 po dužini stuba i izabrane kape iz kataloga
-    if (isTarabicaPost(project.items, p, i)) { for (const l of tarabicaPostLines({ ...p, heightMm: layout.posts[i]?.lengthMm ?? p.heightMm })) add('Stubovi', l.materialId, l.qty); return; }
     // stubovi RL10 se obračunavaju u sastavnici modela (cev, lajsna, veza, stopa, sidra, nosači, završeci)
     if (isRl10Post(project.items, i) && !hasCustomSpec('rail_inox', specs)) return;
     // betonski stubovi se crtaju (na šta se kapija montira), ali ne ulaze u ponudu: aluminijumska radnja ih ne izvodi

@@ -131,7 +131,7 @@ export function buildWorkOrder(project: Project, specs: ModelSpecs | undefined, 
       isGate = it.kind === 'gate';
       const modelId = it.kind === 'fence' ? it.modelId : it.infillModelId;
       const li = layout.items[idx];
-      const geo = computeInfill(modelId, li.clearWidth, it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount, it.params.liftMm, undefined, it.params.archMm);
+      const geo = computeInfill(modelId, li.clearWidth, it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount);
       const bars = geo.bars.filter((b) => b.tone === 'main').length;
       // dvokrilna kapija: letvice oba krila (svako krilo ima svoju širinu)
       const leafWs = it.kind === 'gate' && it.gateType === 'double' ? gateLeafPoses(it, li.clearStart, li.clearEnd, 0).map((q) => q.widthMm) : [li.clearWidth];

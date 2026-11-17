@@ -8,6 +8,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { fmtNum } from '../../utils/units';
 import { NumberField, ToggleField } from '../forms/Fields';
 import { PdfPreviewModal } from '../editor/PdfPreviewModal';
+import { ConfirmCuttingButton } from './ConfirmCuttingButton';
 import { OffcutsPanel } from './OffcutsPanel';
 
 const posTag = (k: string) => (/^\d/.test(k) ? `P${k}` : k);
@@ -17,7 +18,6 @@ export function CutlistSection({ project, customer, materials }: { project: Proj
   const settings = useAppStore((s) => s.settings);
   const update = useAppStore((s) => s.updateSettings);
   const patchProject = useAppStore((s) => s.patchProject);
-  const asked = project.offcuts !== undefined; // krojna lista se prikazuje tek kad poslovođa odgovori ima li ostataka
   const [open, setOpen] = useState(false);
   const opts = cutOptions(settings);
   const list = useMemo(() => buildCuttingList(project, settings.modelSpecs, materials, opts), [project, settings.modelSpecs, materials, opts.stockMm, opts.kerfMm, opts.saveMaterial]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -32,7 +32,10 @@ export function CutlistSection({ project, customer, materials }: { project: Proj
           <h2 className="font-bold">Krojna lista</h2>
           <p className="text-sm text-muted">Raspored komada na nabavne šipke za projekat „{project.name}": svaki komad je u boji svoje pozicije, razmak je rez testere, šrafirani deo je ostatak.</p>
         </div>
-        <button className="btn btn-primary" data-testid="cutlist-pdf" disabled={t.pieces === 0 || !asked} onClick={() => setOpen(true)}><Scissors size={17} />Krojna lista PDF</button>
+        <div className="flex flex-wrap items-center gap-2">
+          {t.pieces > 0 && <ConfirmCuttingButton project={project} materials={materials} />}
+          <button className="btn btn-primary" data-testid="cutlist-pdf" disabled={t.pieces === 0} onClick={() => setOpen(true)}><Scissors size={17} />Krojna lista PDF</button>
+        </div>
       </div>
 
       <div className="grid gap-x-6 sm:grid-cols-2 xl:grid-cols-4 mb-3">
@@ -43,7 +46,7 @@ export function CutlistSection({ project, customer, materials }: { project: Proj
 
       {t.pieces > 0 && <OffcutsPanel project={project} materials={materials} stock={settings.stock ?? []} profiles={list.profiles.map((p) => p.profile)} onChange={(offcuts) => patchProject(project.id, { offcuts })} />}
 
-      {t.pieces > 0 && !asked ? null : t.pieces === 0 ? (
+      {t.pieces === 0 ? (
         <p className="text-sm text-muted" data-testid="cutlist-empty">Projekat nema šipkastih profila za sečenje. Dodajte ogradu ili kapiju.</p>
       ) : (
         <>

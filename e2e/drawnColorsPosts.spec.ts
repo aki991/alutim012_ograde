@@ -191,7 +191,6 @@ test('šabloni stubova: pravljenje u Podešavanjima, izbor za stub u projektu, �
   await expect(page.getByTestId('post-tpl-width')).toHaveValue('100');
   await page.getByTestId('post-tpl-mounting').selectOption('embedded');
   await page.getByTestId('post-tpl-color').getByRole('radio', { name: 'RAL 7035' }).click();
-  await page.getByTestId('post-tpl-cap-top').selectOption('pyramid');
   await page.getByTestId('post-tpl-save').click();
   const row = page.getByTestId('post-tpl-row').filter({ hasText: 'Stub 100 crni' });
   await expect(row).toContainText('Kvadratna cev 100×100×2');

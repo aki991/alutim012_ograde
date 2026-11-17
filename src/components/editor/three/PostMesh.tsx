@@ -1,7 +1,6 @@
 import { mmToScene as s } from '../../../domain/geometry/gates';
 import { colorHex, INOX_COLOR, normalizeColorKey, RAIL_POST_MM } from '../../../domain/models/catalog';
-import { capTiers } from '../../../domain/models/tarabica';
-import type { Post, PostCap } from '../../../domain/models/types';
+import type { Post } from '../../../domain/models/types';
 import { boxGeometry, concreteMaterial, darkMaterial, metalMaterial, steelMaterial } from './materials';
 import * as THREE from 'three';
 
@@ -14,35 +13,8 @@ function flatMaterial(hex: string): THREE.MeshBasicMaterial {
 
 const tubeGeometry = new THREE.CylinderGeometry(0.5, 0.5, 1, 32);
 
-/** Kvadratni zarubljeni stepenik kape: cilindar sa 4 stranice zaokrenut za 45°, pa su ivice paralelne osama. */
-const frustums = new Map<string, THREE.CylinderGeometry>();
-function frustumGeometry(bottomW: number, topW: number, h: number): THREE.CylinderGeometry {
-  const key = `${bottomW}|${topW}|${h}`;
-  let g = frustums.get(key);
-  if (!g) {
-    g = new THREE.CylinderGeometry((topW / 2) * Math.SQRT2, (bottomW / 2) * Math.SQRT2, h, 4, 1);
-    g.rotateY(Math.PI / 4);
-    frustums.set(key, g);
-  }
-  return g;
-}
-
-/** Kapa iz kataloga (ravna, pismo, rozetna) od ivice `base` naviše; koristi iste stepenike kao 2D crtež. */
-function CapMesh({ kind, wMm, base, mat }: { kind: PostCap; wMm: number; base: number; mat: THREE.Material }) {
-  let y = base;
-  return (
-    <group>
-      {capTiers(kind, wMm).map((tier, i) => {
-        const cy = y + s(tier.h) / 2;
-        y += s(tier.h);
-        return <mesh key={i} geometry={frustumGeometry(s(tier.bottomW), s(tier.topW), s(tier.h))} material={mat} position={[0, cy, 0]} castShadow receiveShadow />;
-      })}
-    </group>
-  );
-}
-
 /** Stub (aluminijumski, betonski, dekorativni, stub kapije) sa kapom i pojednostavljenim detaljem montaže. */
-export function PostMesh({ post, rails, caps, onPlinth }: { post: Post; rails?: { rodHeightsMm: number[]; railMm: number } | null; caps?: { top: PostCap; bottom: PostCap }; /** stub stoji na betonskom podnožju: bez ploče i betonskog bloka koji bi štrčali preko ivice */ onPlinth?: boolean }) {
+export function PostMesh({ post, rails, onPlinth }: { post: Post; rails?: { rodHeightsMm: number[]; railMm: number } | null; /** stub stoji na betonskom podnožju: bez ploče i betonskog bloka koji bi štrčali preko ivice */ onPlinth?: boolean }) {
   const w = s(post.widthMm);
   const h = s(post.heightMm);
   const masonry = post.type === 'concrete' || post.type === 'concrete_plinth' || post.type === 'decorative';
@@ -67,8 +39,6 @@ export function PostMesh({ post, rails, caps, onPlinth }: { post: Post; rails?: 
     return (
       <group>
         <mesh geometry={boxGeometry} material={body} scale={[w, h, w]} position={[0, h / 2, 0]} castShadow receiveShadow />
-        {caps && <CapMesh kind={caps.top} wMm={post.widthMm} base={h} mat={body} />}
-        {caps && <CapMesh kind={caps.bottom} wMm={post.widthMm} base={0} mat={body} />}
         {post.mounting === 'concrete_base' && !onPlinth && <mesh geometry={boxGeometry} material={darkMaterial} scale={[w + 0.07, 0.012, w + 0.07]} position={[0, 0.006, 0]} receiveShadow />}
         {post.mounting === 'embedded' && !onPlinth && <mesh geometry={boxGeometry} material={concreteMaterial} scale={[w + 0.14, 0.1, w + 0.14]} position={[0, 0.05, 0]} receiveShadow castShadow />}
         {post.mounting === 'wall' && <mesh geometry={boxGeometry} material={darkMaterial} scale={[w + 0.05, 0.05, 0.02]} position={[0, 0.3, -w / 2 - 0.01]} />}

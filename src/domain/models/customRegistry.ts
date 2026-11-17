@@ -1,5 +1,5 @@
 import { FEATURES } from '../../config/features';
-import { FENCE_MODEL_LIST, FENCE_MODELS, setDefaultModelProvider, type FenceModelDef } from './catalog';
+import { defaultModelId, FENCE_MODEL_LIST, FENCE_MODELS, setDefaultModelProvider, setGateFenceResolver, type FenceModelDef } from './catalog';
 import { miterEndsOf, partBounds, resolveParts, sheetAreaMm2, type CustomModel, type CustomPart, type ResolvedPart } from './custom';
 import { applyGuides, guidesOf, scaleWithGuides } from './guides';
 import { anchoredLengthFormula, anchoredModel } from './anchored';
@@ -266,6 +266,13 @@ export function customSlatLayout(modelId: string, widthMm: number, heightMm: num
 }
 
 setDefaultModelProvider(() => allFenceModels()[0]?.id as FenceModelId | undefined);
+// tip kapije pripada ogradi za koju je nacrtan (ako je ona obrisana: ograda koju je kapija imala, pa prvi model sa stranice Modeli ograda)
+setGateFenceResolver((id, prevId) => {
+  const m = REG.get(id);
+  if (!m || m.kind !== 'gate') return undefined;
+  const listed = (key?: string): FenceModelId | undefined => { if (!key) return undefined; const e = effectiveModelId(key); return allFenceModels().some((x) => x.id === e) ? (e as FenceModelId) : undefined; };
+  return listed(m.leafModelId) ?? listed(prevId) ?? defaultModelId();
+});
 
 // registar modela živi u modulu: pri razvojnoj izmeni ovog fajla (HMR) bi ostao prazan dok se modeli ne promene, pa se stranica ponovo učitava
 if (import.meta.hot) import.meta.hot.accept(() => window.location.reload());

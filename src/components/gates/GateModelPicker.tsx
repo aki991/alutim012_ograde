@@ -1,10 +1,13 @@
+import { leafKeyOf } from '../../domain/gates/gateModels';
+import { fenceModelOfGate } from '../../domain/models/catalog';
 import type { Gate } from '../../domain/models/types';
 import { useAppStore } from '../../store/useAppStore';
 
-/** moji modeli kapija koji mogu na ovu kapiju: isti tip (klizne: isti oslonac), podrazumevani prvi */
+/** moji tipovi kapija koji mogu na ovu kapiju: isti tip (klizne: isti oslonac) i samo za ogradu ove kapije, podrazumevani prvi */
 export function gateModelChoices(models: ReturnType<typeof useAppStore.getState>['settings']['customModels'], g: Gate) {
+  const fence = leafKeyOf(fenceModelOfGate(g), models);
   return (models ?? [])
-    .filter((m) => m.kind === 'gate' && !m.replaces && m.parts.length > 0 && m.gate?.gateType === g.gateType && (g.gateType !== 'sliding' || m.gate?.sliding?.support === g.sliding?.support))
+    .filter((m) => m.kind === 'gate' && !m.replaces && m.parts.length > 0 && m.gate?.gateType === g.gateType && m.leafModelId === fence && (g.gateType !== 'sliding' || m.gate?.sliding?.support === g.sliding?.support))
     .sort((a, b) => Number(!!b.gateDefault) - Number(!!a.gateDefault));
 }
 
@@ -12,7 +15,7 @@ export function gateModelChoices(models: ReturnType<typeof useAppStore.getState>
  * Izbor modela kapije u projektu: „Obična kapija“ ili neki od mojih modela istog tipa. Bez mojih modela samo piše da je kapija obična.
  * Izbor modela postavlja njegov crtež, mere i okove na kapiju; povratak na običnu kapiju vraća polazne vrednosti tog tipa.
  */
-export function GateModelPicker({ gate, label = 'Model kapije' }: { gate: Gate; label?: string }) {
+export function GateModelPicker({ gate, label = 'Tip kapije' }: { gate: Gate; label?: string }) {
   const models = useAppStore((s) => s.settings.customModels);
   const choices = gateModelChoices(models, gate);
   const current = gate.design?.template?.id && choices.some((m) => m.id === gate.design?.template?.id) ? gate.design.template.id : '';

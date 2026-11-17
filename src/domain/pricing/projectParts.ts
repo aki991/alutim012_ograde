@@ -96,7 +96,7 @@ export function paramsForPart(modelId: string, role: PartRole, material: Materia
       : { frameMm: clamp(w, { min: 5, max: 200 }) };
   }
   if (role === 'ram') return { ramMm: clamp(Math.round(w * 10) / 10, { min: 10, max: 200 }) };
-  if (role === 'frame' && style !== 'tubes' && style !== 'tarabica' && style !== 'rods' && style !== 'custom') return { frameMm: clamp(Math.round(w), LIMITS.frame) };
+  if (role === 'frame' && style !== 'tubes' && style !== 'rods' && style !== 'custom') return { frameMm: clamp(Math.round(w), LIMITS.frame) };
   return {};
 }
 

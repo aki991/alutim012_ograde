@@ -6,7 +6,7 @@ export const SCHEMA_VERSION = 3;
 export type ProjectStatus = 'nacrt' | 'ponuda' | 'u_izradi' | 'zavrseno';
 export type FenceModelId =
   | 'h_narrow' | 'h_boards' | 'h_combo' | 'rail_black' | 'panel_lines' | 'rail_inox' | 'picket_narrow' | 'louver_light'
-  | 'louver_dark' | 'picket_brown' | 'h_white' | 'v_framed' | 'picket_wide' | 'h_wide'
+  | 'louver_dark' | 'picket_brown' | 'h_white' | 'v_framed' | 'h_wide'
   /** ručno nacrtan model (ID iz settings.customModels) */
   | `cm_${string}`;
 export type GateType = 'pedestrian' | 'sliding' | 'double' | 'single';
@@ -23,16 +23,14 @@ export interface FenceParams {
   barSizeMm: Mm;
   /** Razmak između profila, mm */
   gapMm: Mm;
-  /** Debljina ramova, mm (kod modela „tarabica“: prepust spojnih cevi 30 × 30 sa svake strane) */
+  /** Debljina ramova, mm */
   frameMm: Mm;
   /** Broj prečki (samo modeli sa prečkama, npr. „Srebrni stubovi — crne prečke"); bez vrednosti važi standard modela */
   barCount?: number;
-  /** Samo tarabica: razmak od poda do donjeg kraja tarabica (mm); bez vrednosti važi podrazumevani */
+  /** ručno nacrtan model: razmak od poda do donjeg kraja ispune (mm); bez vrednosti važi razmak iz crteža modela */
   liftMm?: number;
   /** ručno nacrtan model sa uspravnim letvicama: ručno zadata odstojanja prve i poslednje letvice od ivica i razmak (mm); bez vrednosti važi crtež modela */
   slats?: import('./gateRefill').SlatOverride;
-  /** Samo tarabica: luk gornje ivice (mm) — za toliko su najniže tarabice (uz krajeve) kraće od najviše; 0 / bez vrednosti = ravno */
-  archMm?: number;
   /** Samo model RL10 (inox prečke): mere delova (rukohvat, stub, veza, prsten, stopa, nosači, prečke); bez vrednosti važe podrazumevane */
   rl10?: Partial<import('./rl10').Rl10Dims>;
   /** Samo model uske horizontalne letvice (kvadratne cevi u U profilima): dubina i zidovi cevi, dubina i zid U profila, zazor; bez vrednosti važe podrazumevane */
@@ -346,6 +344,11 @@ export interface Offcut {
   materialId: string;
   lengthMm: number;
   qty: number;
+  /**
+   * komad uzet iz magacina: ID stavke magacina. Dok projekat nije „U izradi“ komad je rezervisan (drugi projekti ga ne nude),
+   * a pri prelasku u „U izradi“ se skida sa stanja. Bez vrednosti = ručno unet komad, magacin se ne dira.
+   */
+  stockId?: string;
 }
 
 /** Knjiženje projekta u magacin: ostaci dodati na stanje i ostaci uzeti sa stanja. */

@@ -3,8 +3,7 @@ import { useState } from 'react';
 import { colorHex, MOUNTING_LABELS, normalizeColorKey, POST_LABELS } from '../../domain/models/catalog';
 import { materialShape } from '../../domain/models/materialShape';
 import { newPostTemplate, postSizeFromMaterial } from '../../domain/models/postTemplates';
-import { CAP_LABELS, TOP_CAPS } from '../../domain/models/tarabica';
-import type { MountingType, PostCap, PostTemplate, PostType } from '../../domain/models/types';
+import type { MountingType, PostTemplate, PostType } from '../../domain/models/types';
 import { PLINTH_DEFAULT_MM } from '../../domain/models/types';
 import { LIMITS } from '../../domain/validation/limits';
 import { useAppStore } from '../../store/useAppStore';
@@ -59,8 +58,6 @@ export function PostTemplateForm({ initial, onSave, onClose }: { initial: PostTe
       <SelectField label="Montaža" testId="post-tpl-mounting" value={t.mounting} options={(Object.entries(MOUNTING_LABELS) as [MountingType, string][]).map(([value, label]) => ({ value, label }))} onChange={(v) => setT({ ...t, mounting: v })} />
       {!concrete && <ColorField testId="post-tpl-color" value={t.color} onChange={(c) => setT({ ...t, color: c })} finish={t.finish} onFinishChange={(f) => setT({ ...t, finish: f })} />}
       {!concrete && <ToggleField label="Okrugao stub" testId="post-tpl-round" checked={!!t.round} onChange={(v) => setT({ ...t, round: v || undefined })} />}
-      {!concrete && <SelectField label="Kapa na vrhu" testId="post-tpl-cap-top" value={t.capTop ?? 'flat'} options={TOP_CAPS.map((value) => ({ value, label: CAP_LABELS[value] }))} onChange={(v: PostCap) => setT({ ...t, capTop: v })} />}
-      {!concrete && <ToggleField label="Rozetna u dnu" testId="post-tpl-cap-bottom" checked={t.capBottom === 'rosette'} onChange={(v) => setT({ ...t, capBottom: v ? 'rosette' : 'none' })} />}
       <p className="text-[12px] text-muted mt-1">Šablon se bira u panelu stuba u projektu (izabran stub → „Šablon stuba“). Prazna visina znači da stub prati visinu ograde.</p>
     </Modal>
   );

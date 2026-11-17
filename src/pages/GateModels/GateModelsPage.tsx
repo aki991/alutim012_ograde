@@ -53,15 +53,17 @@ export default function GateModelsPage() {
   const usedBy = (modelId: string): string[] => projects.filter((p) => p.items.some((it) => it.kind === 'gate' && it.infillModelId === modelId)).map((p) => p.name);
   const startNew = (m: CustomModel) => { const id = useAppStore.getState().newProjectFromGateModel(m.id); if (id) navigate(`/editor/${id}`); };
   const addToOpen = (m: CustomModel) => { if (useAppStore.getState().addGateFromModel(m.id) && current) navigate(`/editor/${current.id}`); };
+  // tip kapije važi samo uz ogradu za koju je nacrtan: u otvorenom projektu sa drugom ogradom se ne dodaje
+  const openFence = current ? projectModelId(current.items) : null;
+  const fitsOpen = (m: CustomModel) => !openFence || !m.leafModelId || leafKeyOf(openFence, customModels) === m.leafModelId;
   const useModel = (m: CustomModel) => { if (current) setChoice(m); else startNew(m); };
   const useBasic = (t: GateType) => navigate(`/editor/${useAppStore.getState().newProject({ modelId: shownModel, startGate: t, name: `Novi projekat — ${GATE_LABELS[t]}` })}`);
 
   return (
     <Page>
-      <PageHeader title="Modeli kapija" subtitle="Ručno nacrtani modeli kapija. U crtežu kapije dugme „Mere kapije“ otvara podešavanja kapije (mere, zazori, okovi) koja se čuvaju uz model."
+      <PageHeader title="Modeli kapija"
         actions={<button className="btn btn-primary" data-testid="btn-create-gate-model" onClick={() => navigate(`/modeli/crtanje/${uid('cm')}`, { state: { kind: 'gate' } })}><PencilRuler size={17} />Napravi model</button>} />
       <section className="mb-7" data-testid="basic-gates">
-        <h2 className="font-bold text-lg mb-3">Osnovne kapije</h2>
         <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
           {BASIC.filter((b) => !hidden.includes(`gate:${b.type}`)).map((b) => (
             <article key={b.type} className="card overflow-hidden flex flex-col" data-testid={`basic-gate-${b.type}`}>
@@ -96,7 +98,7 @@ export default function GateModelsPage() {
       </section>
       <section className="mb-7" data-testid="gate-models">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="font-bold text-lg">Moji modeli kapija</h2>
+          <h2 className="font-bold text-lg">Moji tipovi kapija</h2>
           {models.length > 0 && <button className="btn btn-danger" data-testid="delete-all-gate-models" onClick={() => setDelAll(true)}><Trash2 size={16} />Obriši sve</button>}
         </div>
         {models.length === 0 ? (
@@ -136,7 +138,7 @@ export default function GateModelsPage() {
           <p className="text-sm text-slate-600 mb-3">Trenutno je otvoren projekat <b>{current?.name}</b>.</p>
           <div className="flex flex-col gap-2">
             <button className="btn btn-primary justify-start" data-testid="gate-model-new-project" onClick={() => { startNew(choice); setChoice(null); }}>Napravi novi projekat sa ovom kapijom</button>
-            <button className="btn justify-start" data-testid="gate-model-add-to-open" onClick={() => { addToOpen(choice); setChoice(null); }}>Dodaj kapiju u otvoreni projekat</button>
+            <button className="btn justify-start" data-testid="gate-model-add-to-open" disabled={!fitsOpen(choice)} onClick={() => { addToOpen(choice); setChoice(null); }}>Dodaj kapiju u otvoreni projekat{fitsOpen(choice) ? '' : ' (u projektu je druga ograda)'}</button>
             <button className="btn justify-start" onClick={() => setChoice(null)}>Otkaži</button>
           </div>
         </Modal>

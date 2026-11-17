@@ -8,7 +8,7 @@ import { FENCE_MODELS, GATE_LABELS } from '../models/catalog';
 import type { Project } from '../models/types';
 import { itemLabel } from '../../utils/labels';
 import { Material } from '../models/types';
-import { evaluateItemSpec, hasCustomSpec, materialName, slatCutLengths, specFor, type ModelSpecs, type SpecContext } from '../models/spec';
+import { evaluateItemSpec, hasCustomSpec, materialName, specFor, type ModelSpecs, type SpecContext } from '../models/spec';
 import { isLouver08 } from './louverSpec';
 import { isRail04 } from './railSpec';
 import { HW_ROLE_LABELS, missingHardware, resolveGate, systemOf, unknownHwLabel } from '../gates/design';
@@ -65,12 +65,11 @@ export function buildCutList(project: Project, specs?: ModelSpecs, materials?: M
     const slope = itemSlope(li);
     const stairNote = slope.factor > 1 ? `stepenište: krajevi pod uglom ${Math.round(slope.deg)}°` : '';
     const specCtx: SpecContext = ({ modelId, slopeFactor: slope.factor, widthMm: it.kind === 'gate' ? gateSpecWidth(it, li.clearWidth) : li.clearWidth, heightMm: it.kind === 'gate' ? leafHeightOf(it) : it.heightMm, axisMm: li.axisEnd - li.axisStart, params: it.params, doubleGate: it.kind === 'gate' && it.gateType === 'double', leafWidthsMm: it.kind === 'gate' && it.gateType === 'double' ? gateLeafPoses(it, li.clearStart, li.clearEnd, 1).map((q) => q.widthMm) : undefined });
-    const geo = computeInfill(modelId, it.kind === 'gate' ? gateSpecWidth(it, li.clearWidth) : li.clearWidth, it.kind === 'gate' ? leafHeightOf(it) : it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount, it.params.liftMm, undefined, it.params.archMm);
+    const geo = computeInfill(modelId, it.kind === 'gate' ? gateSpecWidth(it, li.clearWidth) : li.clearWidth, it.kind === 'gate' ? leafHeightOf(it) : it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount);
     if (geo.glass) {
       rows.push({ element: name, index: li.index, glass: true, part: 'Staklo', profile: FENCE_MODELS[modelId].parts.main, lengthMm: Math.round(geo.glass.w), qty: 1, note: slope.factor > 1 ? `paralelogram: ${Math.round(geo.glass.w)} mm horizontalno × ${Math.round(geo.glass.h)} mm vertikalno, nagib ${Math.round(slope.deg)}°` : `${Math.round(geo.glass.w)} × ${Math.round(geo.glass.h)} mm` });
     }
     const group = new Map<string, CutRow>();
-    const slats = slatCutLengths({ modelId, slopeFactor: slope.factor, widthMm: it.kind === 'gate' ? gateSpecWidth(it, li.clearWidth) : li.clearWidth, heightMm: it.kind === 'gate' ? leafHeightOf(it) : it.heightMm, axisMm: li.axisEnd - li.axisStart, params: it.params, doubleGate: it.kind === 'gate' && it.gateType === 'double', leafWidthsMm: it.kind === 'gate' && it.gateType === 'double' ? gateLeafPoses(it, li.clearStart, li.clearEnd, 1).map((q) => q.widthMm) : undefined });
     if (it.kind === 'gate' && it.design && !it.sliding) {
       // mere kapije: ram krila, noseći profil, rep, šina — red koji još nema meru ostaje u prozoru „Mere kapije“ (ne ide u plan rezanja)
       for (const r of gateCutRows(it, resolveGate(it, li.clearWidth), materials ?? [])) {
@@ -98,16 +97,6 @@ export function buildCutList(project: Project, specs?: ModelSpecs, materials?: M
       const cutEnds: Pick<CutRow, 'ends' | 'endShape'> | null = partial && (mEnds![0] || mEnds![1])
         ? { ends: [[mEnds![0] ? 45 : 90], [mEnds![1] ? 45 : 90]], endShape: [mEnds![0] ? [[0, 0], [1, 1]] : [[0, 0], [0, 1]], mEnds![1] ? [[0, 0], [1, 1]] : [[0, 0], [0, 1]]] }
         : null;
-      // tarabice sa lukom: svaka grupa iste dužine je poseban red krojne liste
-      if (slats && ev.part.lengthMm === 'MAINLEN-CAPH') {
-        const byLen = new Map<number, number>();
-        for (const l of slats) byLen.set(Math.round(l), (byLen.get(Math.round(l)) ?? 0) + 1);
-        for (const [l, n] of [...byLen].sort((a, b) => b[0] - a[0])) {
-          if (l <= 0) continue;
-          group.set(`${partName}|${ev.part.materialId}|${l}`, { element: name, index: li.index, part: partName, profile, lengthMm: l, qty: n, note: [ev.part.note, 'luk: tarabice različitih dužina', stairNote].filter(Boolean).join(' · ') });
-        }
-        continue;
-      }
       // isti naziv i dužina ne spaja delove od različitih profila (npr. široke i uske prečke): materijal je deo ključa
       const key = `${partName}|${ev.part.materialId}|${len}`;
       const cur = group.get(key);

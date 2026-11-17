@@ -7,12 +7,10 @@ import { swingLeafBoxes } from '../../domain/geometry/gates';
 import { computeLayout, isSpacer } from '../../domain/geometry/layout';
 import { cornerInfo, isCorner } from '../../domain/geometry/corner';
 import { colorHex, GATE_LABELS, hasLightFence, leftPostShared, postDrawnByItems, rodCountFor } from '../../domain/models/catalog';
-import { isTarabicaPost, postCaps } from '../../domain/models/tarabica';
-import type { Post, PostCap, Project } from '../../domain/models/types';
+import type { Post, Project } from '../../domain/models/types';
 import { fmtMm } from '../../utils/units';
 import { itemLabel } from '../../utils/labels';
 import { InfillArt, SvgDefs } from '../fences/InfillArt';
-import { CapArt } from '../fences/TarabicaArt';
 import { GateArt } from '../gates/GateArt';
 import { slidingOverflow } from '../../domain/gates/slidingLayout';
 
@@ -155,7 +153,7 @@ export function fitScale(project: Project, containerW: number, containerH: numbe
   return Math.min(0.5, Math.max(0.02, Math.min(sw, sh)));
 }
 
-function PostArt({ post, x, groundY, hex, caps, plinthMm = 0 }: { post: Post; x: number; groundY: number; hex: string; caps?: { top: PostCap; bottom: PostCap }; /** visina podnožja uz betonski stub: stub i podnožje se crtaju kao jedna livena celina (bez šava, ivica samo iznad podnožja) */ plinthMm?: number }) {
+function PostArt({ post, x, groundY, hex, plinthMm = 0 }: { post: Post; x: number; groundY: number; hex: string; /** visina podnožja uz betonski stub: stub i podnožje se crtaju kao jedna livena celina (bez šava, ivica samo iznad podnožja) */ plinthMm?: number }) {
   const w = post.widthMm;
   const top = groundY - post.heightMm;
   const left = x - w / 2;
@@ -178,14 +176,10 @@ function PostArt({ post, x, groundY, hex, caps, plinthMm = 0 }: { post: Post; x:
     );
   }
   if (!isMasonry && post.type !== 'decorative') {
-    // aluminijumski stub i stub kapije: ravna pravougaona površina u boji stuba, bez senčenja i ivice (uz tarabicu sa izabranim kapama)
+    // aluminijumski stub i stub kapije: ravna pravougaona površina u boji stuba, bez senčenja i ivice
     return (
       <g>
         <rect x={left} y={top} width={w} height={post.heightMm} fill={body} />
-        {caps && <rect x={left} y={top} width={w} height={post.heightMm} fill="url(#shade-v)" />}
-        {caps && <rect x={left} y={top} width={w} height={post.heightMm} fill="none" stroke="#000" strokeOpacity="0.38" strokeWidth="2" />}
-        {caps && <CapArt kind={caps.top} x={x} w={w} base={top} hex={body} />}
-        {caps && <CapArt kind={caps.bottom} x={x} w={w} base={groundY} hex={body} />}
       </g>
     );
   }
@@ -390,7 +384,7 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
               );
             })()}
             {it.kind === 'fence' && !isRl10Model(it.modelId) && (
-              <InfillArt modelId={it.modelId} x={x} y={y} w={w} h={it.heightMm} frame={it.params.frameMm} barSize={it.params.barSizeMm} gap={it.params.gapMm} lift={it.params.liftMm} slats={it.params.slats} arch={it.params.archMm} hex={colorHex(it.color)} colorKey={it.color} skipLeftPost={leftPostShared(project.items, li.index) || isStairPost(project.items, li.index)} skipRightPost={isStairPost(project.items, li.index + 1)} sloped={li.floorStart !== li.floorEnd} axis={{ x: li.axisStart, w: li.axisEnd - li.axisStart }} rodCount={rodCountFor(it.modelId, it.params, it.heightMm) ?? undefined} ram={ramInsets(it.modelId, it.params)} uid={it.id} />
+              <InfillArt modelId={it.modelId} x={x} y={y} w={w} h={it.heightMm} frame={it.params.frameMm} barSize={it.params.barSizeMm} gap={it.params.gapMm} lift={it.params.liftMm} slats={it.params.slats} hex={colorHex(it.color)} colorKey={it.color} skipLeftPost={leftPostShared(project.items, li.index) || isStairPost(project.items, li.index)} skipRightPost={isStairPost(project.items, li.index + 1)} sloped={li.floorStart !== li.floorEnd} axis={{ x: li.axisStart, w: li.axisEnd - li.axisStart }} rodCount={rodCountFor(it.modelId, it.params, it.heightMm) ?? undefined} ram={ramInsets(it.modelId, it.params)} uid={it.id} />
             )}
             {/* klizna kapija (sklop) se crta posebno, iza stubova (vidi dole) */}
             {it.kind === 'gate' && !(it.gateType === 'sliding' && it.sliding) && <GateArt gate={it} x={x} y={y} w={w} h={it.heightMm} hex={colorHex(it.color)} px={px} realistic={opts.transparent} showDims={opts.showDimensions && !compact} />}
@@ -461,7 +455,7 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
               </>
             );
           })()}
-          {!isRl10Post(project.items, lp.index) && (!postDrawnByItems(project.items, lp.index) || isStairPost(project.items, lp.index)) && <PostArt post={{ ...lp.post, heightMm: lp.lengthMm }} x={lp.x} groundY={groundY - lp.floorMm - lp.baseMm} hex={colorHex(lp.post.color)} plinthMm={lp.levelMm} caps={isTarabicaPost(project.items, lp.post, lp.index) ? postCaps(lp.post) : undefined} />}
+          {!isRl10Post(project.items, lp.index) && (!postDrawnByItems(project.items, lp.index) || isStairPost(project.items, lp.index)) && <PostArt post={{ ...lp.post, heightMm: lp.lengthMm }} x={lp.x} groundY={groundY - lp.floorMm - lp.baseMm} hex={colorHex(lp.post.color)} plinthMm={lp.levelMm} />}
           {interactive && <rect
             x={lp.x + lp.shiftMm - lp.post.widthMm / 2 - 10 * px} y={groundY - lp.floorMm - lp.topMm - 70} width={lp.post.widthMm + 20 * px} height={lp.lengthMm + 70}
             fill="transparent" data-hit="post" data-id={lp.post.id} style={{ cursor: 'pointer' }}

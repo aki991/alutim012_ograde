@@ -3,8 +3,10 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Page, PageHeader } from '../../components/ui/Common';
 import { ConfirmDialog } from '../../components/ui/Modal';
+import { SearchSelect } from '../../components/ui/SearchSelect';
 import { compareMaterials, MATERIAL_GROUPS, materialShape } from '../../domain/models/materialShape';
 import { cutOptions } from '../../domain/pricing/cutting';
+import { stockReservations } from '../../domain/pricing/stockBooking';
 import { materialName } from '../../domain/models/spec';
 import { visibleMaterials } from '../../config/features';
 import type { Material, StockItem } from '../../domain/models/types';
@@ -19,12 +21,8 @@ export function MaterialSelect({ materials, value, onChange, testId, only }: { m
     const list = only ? shown.filter(only) : shown;
     return MATERIAL_GROUPS.map((g) => ({ ...g, items: list.filter((m) => materialShape(m).group === g.id).sort(compareMaterials) })).filter((g) => g.items.length);
   }, [materials, only, value]);
-  return (
-    <select className="input" data-testid={testId} value={value} onChange={(e) => onChange(e.target.value)}>
-      <option value="">— izaberite materijal —</option>
-      {groups.map((g) => <optgroup key={g.id} label={g.label}>{g.items.map((m) => <option key={m.id} value={m.id}>{m.name} ({m.sku})</option>)}</optgroup>)}
-    </select>
-  );
+  const searchGroups = useMemo(() => groups.map((g) => ({ label: g.label, items: g.items.map((m) => ({ value: m.id, label: `${m.name} (${m.sku})` })) })), [groups]);
+  return <SearchSelect value={value} onChange={onChange} groups={searchGroups} placeholder="— izaberite materijal —" testId={testId} searchPlaceholder="Kucajte naziv ili šifru materijala…" />;
 }
 
 const isLinear = (m: Material): boolean => materialShape(m).type === 'linear';
@@ -38,6 +36,7 @@ export default function StockPage() {
   const full = cutOptions(settings).stockMm;
   const [form, setForm] = useState({ materialId: '', lengthMm: String(full), qty: '1', note: '' });
   const [del, setDel] = useState<StockItem | null>(null);
+  const [clearAll, setClearAll] = useState(false);
   const byId = useMemo(() => new Map(materials.map((m) => [m.id, m])), [materials]);
   const len = Number(form.lengthMm.replace(',', '.')); const qty = Number(form.qty);
   const valid = !!form.materialId && Number.isFinite(len) && len > 0 && len <= 20000 && Number.isInteger(qty) && qty > 0;
@@ -52,6 +51,9 @@ export default function StockPage() {
   };
   const setQty = (item: StockItem, q: number) => update({ stock: stock.map((s) => (s.id === item.id ? { ...s, qty: q } : s)) });
 
+  // komadi koje su projekti izabrali u krojnoj listi, a još nisu „U izradi“ (tada se skidaju sa stanja)
+  const projects = useAppStore((s) => s.projects);
+  const reserved = useMemo(() => stockReservations(projects, undefined, settings.stockBookings), [projects, settings.stockBookings]);
   const rows = [...stock].sort((a, b) => (byId.get(a.materialId)?.name ?? '').localeCompare(byId.get(b.materialId)?.name ?? '', 'sr', { numeric: true }) || b.lengthMm - a.lengthMm);
   const totalM = stock.reduce((s, i) => s + (i.lengthMm * i.qty) / 1000, 0);
 
@@ -71,17 +73,20 @@ export default function StockPage() {
             <button className="btn btn-primary" data-testid="stock-add-btn" disabled={!valid} onClick={add}><Plus size={17} />Dodaj</button>
           </div>
         )}
-        <p className="text-xs text-muted mt-2">Cela šipka je {fmtNum(full, 0)} mm (menja se u Podešavanjima). Kraći komad je ostatak. Kad projekat pređe u „U izradi“ ili „Završeno“, ostaci iz njegove krojne liste od {fmtNum(cutOptions(settings).minKeepMm ?? 500, 0)} mm i duži se sami dodaju ovde, a iskorišćeni ostaci iz magacina se skidaju sa stanja. Ako se status vrati na „Nacrt“ ili „Ponuda“, to se povlači.</p>
+        <p className="text-xs text-muted mt-2">Cela šipka je {fmtNum(full, 0)} mm (menja se u Podešavanjima). Kraći komad je ostatak. Kad projekat pređe u „U izradi“ ili „Završeno“, ostaci iz njegove krojne liste od {fmtNum(cutOptions(settings).minKeepMm ?? 500, 0)} mm i duži se sami dodaju ovde. Komad koji izaberete iz magacina u krojnoj listi je rezervisan za taj projekat (drugi projekti ga ne nude), a kad kliknete „Potvrdi sečenje“ ili projekat pređe u „U izradi“ skida se sa stanja. Ako se status vrati na „Nacrt“ ili „Ponuda“, to se povlači.</p>
       </section>
 
       <section className="card p-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
           <h2 className="font-bold">Stanje</h2>
-          <span className="text-sm text-muted" data-testid="stock-total">{stock.reduce((s, i) => s + i.qty, 0)} komada · {fmtNum(totalM, 2)} m</span>
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-sm text-muted" data-testid="stock-total">{stock.reduce((s, i) => s + i.qty, 0)} komada · {fmtNum(totalM, 2)} m</span>
+            <button className="btn btn-sm btn-danger" data-testid="stock-clear" disabled={stock.length === 0} onClick={() => setClearAll(true)}><Trash2 size={14} />Obriši sve</button>
+          </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px]" data-testid="stock-table">
-            <thead><tr><th className="th">Šifra</th><th className="th">Materijal</th><th className="th text-right">Dužina (mm)</th><th className="th">Vrsta</th><th className="th text-right w-[110px]">Komada</th><th className="th text-right">Ukupno (m)</th><th className="th">Napomena</th><th className="th w-12" /></tr></thead>
+          <table className="w-full min-w-[840px]" data-testid="stock-table">
+            <thead><tr><th className="th">Šifra</th><th className="th">Materijal</th><th className="th text-right">Dužina (mm)</th><th className="th">Vrsta</th><th className="th text-right w-[110px]">Komada</th><th className="th text-right">Ukupno (m)</th><th className="th">Rezervisano</th><th className="th">Napomena</th><th className="th w-12" /></tr></thead>
             <tbody>
               {rows.map((s) => {
                 const m = byId.get(s.materialId);
@@ -93,16 +98,22 @@ export default function StockPage() {
                     <td className="td">{s.lengthMm >= full ? 'cela šipka' : <span className="text-[#b45309] font-semibold">ostatak</span>}</td>
                     <td className="td"><input aria-label={`Komada: ${m?.name ?? ''} ${s.lengthMm}`} type="number" min={0} className="input !py-1 text-right tabular-nums" value={s.qty} onChange={(e) => { const v = Number(e.target.value); if (Number.isInteger(v) && v >= 0) setQty(s, v); }} /></td>
                     <td className="td text-right tabular-nums">{fmtNum((s.lengthMm * s.qty) / 1000, 2)}</td>
+                    <td className="td text-[13px]" data-testid="stock-reserved">{(() => {
+                      const r = reserved.get(s.id);
+                      if (!r) return <span className="text-muted">—</span>;
+                      return <><b className={r.qty > s.qty ? 'text-[#b42318]' : 'text-primary'}>{r.qty} kom</b> <span className="text-slate-600">{r.projects.map((p) => `${p.name}${r.projects.length > 1 ? ` (${p.qty})` : ''}`).join(', ')}</span>{r.qty > s.qty && <span className="block text-[11.5px] text-[#b42318] font-semibold">više nego na stanju</span>}</>;
+                    })()}</td>
                     <td className="td text-slate-600">{s.note ?? ''}</td>
                     <td className="td text-right"><button className="btn btn-sm btn-icon btn-danger" aria-label="Obriši stavku" onClick={() => setDel(s)}><Trash2 size={14} /></button></td>
                   </tr>
                 );
               })}
-              {rows.length === 0 && <tr><td className="td text-muted" colSpan={8}>Magacin je prazan. Dodajte šipke i ostatke koje imate na stanju.</td></tr>}
+              {rows.length === 0 && <tr><td className="td text-muted" colSpan={9}>Magacin je prazan. Dodajte šipke i ostatke koje imate na stanju.</td></tr>}
             </tbody>
           </table>
         </div>
       </section>
+      {clearAll && <ConfirmDialog title="Brisanje celog magacina" danger confirmLabel="Obriši sve" message={<>Obrisati <b>sve stavke</b> iz magacina ({stock.length} {stock.length === 1 ? 'stavka' : 'stavki'}, {stock.reduce((s, i) => s + i.qty, 0)} komada)? Ovo se ne može poništiti.</>} onCancel={() => setClearAll(false)} onConfirm={() => { update({ stock: [] }); setClearAll(false); }} />}
       {del && <ConfirmDialog title="Brisanje sa stanja" danger confirmLabel="Obriši" message={<>Obrisati <b>{byId.get(del.materialId)?.name ?? 'stavku'}</b> ({del.lengthMm} mm × {del.qty})?</>} onCancel={() => setDel(null)} onConfirm={() => { update({ stock: stock.filter((s) => s.id !== del.id) }); setDel(null); }} />}
     </Page>
   );

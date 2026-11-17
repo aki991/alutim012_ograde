@@ -5,13 +5,13 @@ import { gateLeafPoses } from '../../domain/geometry/gates';
 import { leafHeightOf } from '../../domain/gates/slidingLayout';
 import { AlertTriangle, ArrowLeft, ArrowRight, Copy, Trash2, Calculator, FileDown, Scissors, ClipboardList, Ruler } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
-import { autoFillToFixedTotal, changeColor, changeFinish, isTotalLocked, setItemWidthLock, setTotalLock, indexOfItem, resetPostHeights, setAllColors, setAllFinishes, setAllGatesOwnPosts, setAllPlinths, removeItemPlinths, setItemPlinthHeight, setRl10Params, resetRl10Params, setTubesParams, resetTubesParams, setPlinthWidth, setAllHeights, setOuterWidth, updateItem, updatePost } from '../../domain/geometry/operations';
+import { autoFillToFixedTotal, changeColor, changeFinish, isTotalLocked, setItemWidthLock, setTotalLock, indexOfItem, resetPostHeights, setAllColors, setAllFinishes, setAllGatesOwnPosts, setAllPlinths, removeItemPlinths, setItemPlinthHeight, setRl10Params, resetRl10Params, setTubesParams, resetTubesParams, setPlinthWidth, setAllHeights, updateItem, updatePost } from '../../domain/geometry/operations';
 import { computeInfill } from '../../domain/geometry/infill';
 import { MAX_TURN_DEG } from '../../domain/geometry/plan';
 import { cornerInfo } from '../../domain/geometry/corner';
 import { computeLayout, isSpacer, outerWidthMm, postHalfSum, totalStatus } from '../../domain/geometry/layout';
 import {
-  AUTOMATION_LABELS, FENCE_MODELS, HINGE_LABELS, LOCK_LABELS, MOUNTING_LABELS, POST_LABELS, POST_SIZES, isTerraceModel, maxRods, projectModelId, rodCountFor,
+  AUTOMATION_LABELS, FENCE_MODELS, HINGE_LABELS, LOCK_LABELS, MOUNTING_LABELS, POST_LABELS, POST_SIZES, fenceModelOfGate, isTerraceModel, maxRods, projectModelId, rodCountFor,
 } from '../../domain/models/catalog';
 import { MAX_FIELDS, STAIR_DEFAULT_RISE_MM, STAIR_MAX_DEG, STAIR_MIN_DEG, recommendedStairPosts, slopeOf, stairGroupAt } from '../../domain/geometry/stair';
 import { clearStair, makeStair, setStairGroup, stairOuterRunMm, type StairPatch } from '../../domain/geometry/stairOps';
@@ -19,7 +19,6 @@ import { OWN_POSTS_GAP_MM } from '../../domain/models/factories';
 import { PLINTH_DEFAULT_MM, type FenceModelId, type FenceParams, type Gate, type LayoutItem, type Post, type Project } from '../../domain/models/types';
 import { RL10_LABELS, RL10_LIMITS, isRl10Model, rl10Dims, type Rl10Dims } from '../../domain/models/rl10';
 import { TUBES_LABELS, TUBES_LIMITS, isTubesModel, tubesDims, type TubesDims } from '../../domain/models/tubes';
-import { CAP_LABELS, catalogPostSize, isTarabicaPost, maxArchMm, postCaps, TARABICA, TOP_CAPS, tarabicaClearWidth, tarabicaLayout } from '../../domain/models/tarabica';
 import { computePrice } from '../../domain/pricing/calc';
 import { LIMITS, heightRangeFor, widthRangeFor } from '../../domain/validation/limits';
 import { useAppStore } from '../../store/useAppStore';
@@ -247,23 +246,6 @@ function ModelSelect({ value, onChange }: { value: FenceModelId; onChange: (m: F
 }
 
 /* ---------- Izabrani element ---------- */
-/** Razmak tarabica od poda (ograda i kapija). */
-function LiftField({ id, value }: { id: string; value: number }) {
-  return (
-    <NumberField label="Razmak od poda" testId="field-lift" value={value} range={{ min: 0, max: TARABICA.maxLiftMm }} onCommit={(v) => useAppStore.getState().patchItemParams(id, { liftMm: v }, 'lift')}
-      hint="Tarabice su podignute od poda (podrazumevano koliko je visina čepa)" />
-  );
-}
-
-/** Luk gornje ivice tarabica: za toliko su tarabice uz krajeve niže od najviše (u sredini); 0 = ravna ivica. */
-function ArchField({ id, heightMm, value }: { id: string; heightMm: number; value: number }) {
-  const max = maxArchMm(heightMm);
-  return (
-    <NumberField label="Luk gornje ivice" testId="field-arch" value={Math.min(value, max)} range={{ min: 0, max }} onCommit={(v) => useAppStore.getState().patchItemParams(id, { archMm: v }, 'arch')}
-      hint="Razlika visine između najviše (srednje) i najniže tarabice. 0 = ravna ivica. Kod dvokrilne kapije svako krilo je polovina luka." />
-  );
-}
-
 /** stubovi kapije (za sve vrste kapija): zajednički stub sa susedom, ili svoj stub levo, desno ili sa obe strane, i razmak do susednog stuba */
 function GateOwnPosts({ project, id, g }: { project: Project; id: string; g: Gate }) {
   const st = useAppStore.getState();
@@ -352,13 +334,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
     body = common;
   } else if (it.kind === 'fence') {
     const def = FENCE_MODELS[it.modelId];
-    const count = computeInfill(it.modelId, li.clearWidth, it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount, it.params.liftMm, undefined, it.params.archMm).bars.filter((b: { tone: string }) => b.tone === 'main').length;
-    const tl = def.style === 'tarabica' ? tarabicaLayout(li.clearWidth, it.heightMm, it.params.barSizeMm, it.params.gapMm, it.params.frameMm) : null;
-    const slatCountRange = (() => {
-      const per = it.params.barSizeMm + it.params.gapMm;
-      const fit = (outer: number) => (outer - 2 * half - 2 * it.params.frameMm + it.params.gapMm) / per;
-      return { min: Math.max(1, Math.ceil(fit(wRange.min + half) - 1e-9)), max: Math.max(1, Math.floor(fit(wRange.max + half) + 1e-9)) };
-    })();
+    const count = computeInfill(it.modelId, li.clearWidth, it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount).bars.filter((b: { tone: string }) => b.tone === 'main').length;
     body = (
       <>
         {common}
@@ -368,24 +344,17 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
           <>
             <NumberField label={def.barLabel} testId="field-bar" value={it.params.barSizeMm} range={isRl10Model(it.modelId) ? { min: 8, max: 40 } : LIMITS.barSize}
               onCommit={(v) => (isRl10Model(it.modelId) ? st.mutate((p) => setRl10Params(p, { barSizeMm: v }), 'rl10-bar') : st.patchItemParams(id, { barSizeMm: v }, 'bar'))} />
-            {tl && (
-              <NumberField label="Broj tarabica" testId="field-slat-count" unit="kom" step={1} value={tl.count} range={slatCountRange}
-                onCommit={(n) => st.mutate((p) => setOuterWidth(p, id, tarabicaClearWidth(n, it.params.barSizeMm, it.params.gapMm, it.params.frameMm) + 2 * half), `w:${id}`)}
-                hint="Menja širinu polja tako da n tarabica stane sa zadatim razmakom i prepustom" />
-            )}
             {def.rods ? (
               <NumberField label="Broj prečki" testId="field-rods" unit="kom" step={1} value={rodCountFor(it.modelId, it.params, it.heightMm) ?? def.rods.default}
                 range={{ min: def.rods.min, max: maxRods(it.modelId, it.heightMm) }} onCommit={(v) => st.patchItemParams(id, { barCount: v }, 'rods')}
                 hint={`Razmak ${Math.round((it.heightMm - 200) / (rodCountFor(it.modelId, it.params, it.heightMm) ?? def.rods.default))} mm`} />
             ) : (
-              <NumberField label={def.gapLabel} testId="field-gap" value={it.params.gapMm} range={LIMITS.gap} onCommit={(v) => st.patchItemParams(id, { gapMm: v }, 'gap')} hint={tl ? `Tarabica: ${count}, stvarni razmak ${fmtNum(tl.gapMm, 1)} mm` : `Profila: ${count}`} />
+              <NumberField label={def.gapLabel} testId="field-gap" value={it.params.gapMm} range={LIMITS.gap} onCommit={(v) => st.patchItemParams(id, { gapMm: v }, 'gap')} hint={`Profila: ${count}`} />
             )}
           </>
         )}
         {def.style !== 'rods' && def.style !== 'glass_rail' && def.style !== 'custom' && (
-          <NumberField label={def.frameLabel ?? 'Debljina rama'} testId={def.style === 'tarabica' ? 'field-overhang' : undefined} value={it.params.frameMm}
-            range={def.style === 'tarabica' ? { min: 0, max: TARABICA.maxOverhangMm } : LIMITS.frame} onCommit={(v) => st.patchItemParams(id, { frameMm: v }, 'frame')}
-            hint={def.style === 'tarabica' ? 'Koliko cev 30×30 viri iza krajnje tarabice sa svake strane' : undefined} />
+          <NumberField label={def.frameLabel ?? 'Debljina rama'} value={it.params.frameMm} range={LIMITS.frame} onCommit={(v) => st.patchItemParams(id, { frameMm: v }, 'frame')} />
         )}
         <ToggleField label="Betonsko podnožje" testId="field-item-plinth-on" checked={li.plinthMm > 0} onLabel="Sa podnožjem" offLabel="Bez podnožja" onChange={(v) => (v ? st.patchItem(id, { plinthMm: PLINTH_DEFAULT_MM }) : st.mutate((p) => removeItemPlinths(p, [id])))} />
         {li.plinthMm > 0 && (
@@ -455,8 +424,6 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
             </>
           );
         })()}
-        {def.style === 'tarabica' && <LiftField id={id} value={it.params.liftMm ?? TARABICA.defaultLiftMm} />}
-        {def.style === 'tarabica' && <ArchField id={id} heightMm={it.heightMm} value={it.params.archMm ?? 0} />}
       </>
     );
   } else {
@@ -467,7 +434,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
       <>
         <GateDesignEntry project={project} gate={g} />
         {/* krilo klizne kapije: model ograde ili nacrtan model kapije, kao kod ostalih kapija */}
-        {g.sliding.drawnLeaf && <ModelSelect value={g.infillModelId} onChange={(m) => st.setItemModel(id, m)} />}
+        {g.sliding.drawnLeaf && <ModelSelect value={fenceModelOfGate(g)} onChange={(m) => st.setItemModel(id, m)} />}
         <SlidingPanel project={project} gate={g} />
         <ColorField stacked value={g.color} testId="field-color" onChange={(c) => st.setItemColor(id, c)} finish={g.finish} onFinishChange={(f) => st.setItemFinish(id, f)} />
         <GateOwnPosts project={project} id={id} g={g} />
@@ -478,7 +445,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
         <GateDesignEntry project={project} gate={g} />
         {common}
         <GateModelPicker gate={g} />
-        <ModelSelect value={g.infillModelId} onChange={(m) => st.setItemModel(id, m)} />
+        <ModelSelect value={fenceModelOfGate(g)} onChange={(m) => st.setItemModel(id, m)} />
         <ColorField stacked value={g.color} testId="field-color" onChange={(c) => st.setItemColor(id, c)} finish={g.finish} onFinishChange={(f) => st.setItemFinish(id, f)} />
         <GateOwnPosts project={project} id={id} g={g} />
         <SegmentedField label={g.gateType === 'sliding' ? 'Smer klizanja' : 'Strana šarki'} testId="field-opening" value={g.opening} options={[{ value: 'left', label: 'Levo' }, { value: 'right', label: 'Desno' }]} onChange={(v) => st.patchItem(id, { opening: v })} />
@@ -512,8 +479,6 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
           </>
         )}
         <NumberField label="Debljina rama" value={g.params.frameMm} range={LIMITS.frame} onCommit={(v) => st.patchItemParams(id, { frameMm: v }, 'frame')} />
-        {FENCE_MODELS[g.infillModelId].style === 'tarabica' && <LiftField id={id} value={g.params.liftMm ?? TARABICA.defaultLiftMm} />}
-        {FENCE_MODELS[g.infillModelId].style === 'tarabica' && <ArchField id={id} heightMm={g.heightMm} value={g.params.archMm ?? 0} />}
         {g.gateType !== 'sliding' && <SlatSettings id={id} modelId={g.infillModelId} widthMm={gateLeafPoses(g, li.clearStart, li.clearEnd, 0)[0]?.widthMm ?? li.clearWidth} heightMm={leafHeightOf(g)} params={g.params} gate={g} clearWidth={li.clearWidth} />}
         <PartsPanel project={project} params={g.params} />
       </>
@@ -573,7 +538,6 @@ let applyToAllPosts = true;
 
 /** Tipovi stuba koji se biraju ručno (stub kapije i dekorativni stub se ne nude; stub kapije se postavlja sam uz kapiju). */
 const MANUAL_POST_TYPES = ['aluminium', 'concrete', 'concrete_plinth'];
-const TOP_CAP_OPTIONS = TOP_CAPS.map((value) => ({ value, label: CAP_LABELS[value] }));
 
 function PostPanel({ project, id }: { project: Project; id: string }) {
   const [allPosts, setAllPostsState] = useState(applyToAllPosts);
@@ -588,7 +552,6 @@ function PostPanel({ project, id }: { project: Project; id: string }) {
   const lp = layout.posts.find((p) => p.post.id === id);
   if (!lp) return null;
   const p = lp.post;
-  const tarabicaPost = isTarabicaPost(project.items, p, lp.index);
   // izmene važe za izabrane stubove (Ctrl+klik), za sve stubove (prekidač) ili samo za ovaj stub
   const picked = multiPosts.filter((x) => project.posts.some((q) => q.id === x));
   const targets = picked.length > 1 ? picked : allPosts ? project.posts.map((q) => q.id) : [id];
@@ -661,15 +624,6 @@ function PostPanel({ project, id }: { project: Project; id: string }) {
       {p.heightCustom && <button className="btn btn-sm mb-1.5" data-testid="post-height-auto" onClick={() => st.mutate((pr) => resetPostHeights(pr, targets))}>Vrati automatsku visinu</button>}
       {/* betonski stub ima boju betona: izbor boje menjao bi boju aluminijumskog stuba koji nije ni postavljen */}
       {!targets.every((tid) => { const t = project.posts.find((x) => x.id === tid)?.type; return t === 'concrete' || t === 'concrete_plinth'; }) && <ColorField testId="post-color" value={p.color} onChange={(c) => applyPatch({ color: c })} finish={p.finish} onFinishChange={(f) => applyPatch({ finish: f })} />}
-      {tarabicaPost && (
-        <div data-testid="post-caps">
-          <SelectField label="Kapa na vrhu" testId="post-cap-top" value={postCaps(p).top} options={TOP_CAP_OPTIONS} onChange={(v) => applyPatch({ capTop: v })} />
-          <ToggleField label="Rozetna u dnu" testId="post-cap-bottom" checked={postCaps(p).bottom === 'rosette'} onLabel="Da" offLabel="Ne" onChange={(v) => applyPatch({ capBottom: v ? 'rosette' : 'none' })} />
-          <div className="text-[12px] text-muted pb-1.5" data-testid="post-cap-note">
-            Stub {catalogPostSize(p.widthMm)}×{catalogPostSize(p.widthMm)} (kvadratna cev). Kape i rozetne u katalogu postoje za 80×80 i 100×100 mm{p.widthMm !== 80 && p.widthMm !== 100 ? `; za širinu ${p.widthMm} mm obračunava se najbliža veličina` : ''}.
-          </div>
-        </div>
-      )}
       <SelectField label="Montaža" value={p.mounting} options={Object.entries(MOUNTING_LABELS).map(([value, label]) => ({ value: value as typeof p.mounting, label }))} onChange={(v) => applyPatch({ mounting: v })} />
     </Section>
   );

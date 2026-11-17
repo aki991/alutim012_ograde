@@ -4,7 +4,6 @@ import { PANEL_IMAGES } from '../../assets/panels';
 import { MODEL_IMAGES } from '../../assets/models';
 import { FENCE_MODELS, panelArt, panelTiles, railArt, railBands, RAIL_POST_MM } from '../../domain/models/catalog';
 import type { FenceModelId } from '../../domain/models/types';
-import { TarabicaArt } from './TarabicaArt';
 import { customLiftOf, customPartsFor } from '../../domain/models/customRegistry';
 import { PartSvg } from '../designer/PartsSvg';
 
@@ -73,14 +72,10 @@ interface InfillProps {
   axis?: { x: number; w: number };
   /** broj prečki (modeli sa izborom broja prečki) */
   rodCount?: number;
-  /** tarabica: razmak od poda (mm) */
+  /** ručno nacrtan model: razmak od poda (mm) */
   lift?: number;
-  /** tarabica: luk gornje ivice (mm) */
-  arch?: number;
   /** ručno nacrtan model sa uspravnim letvicama: ručno zadata odstojanja od ivica i razmak */
   slats?: import('../../domain/models/gateRefill').SlatOverride;
-  /** tarabica: prepust levo i desno kad se razlikuje (krilo dvokrilne kapije nema prepust uz sredinu) */
-  edgeOverhang?: [number, number];
   /** ram (okvir sa sve četiri strane, rez 45°) kod modela sa horizontalnim kvadratnim cevima */
   ram?: { kind: 'u' | 'tube' | null; side: number; top: number };
   /** jedinstveni sufiks za clipPath */
@@ -114,7 +109,7 @@ function RoundedPicket({ x, y, w, h, hex }: { x: number; y: number; w: number; h
 
 /** Crta ispunu jednog polja (ram + model ispune) kao pravi SVG oblici. Koordinate u mm. */
 export function InfillArt(props: InfillProps) {
-  const { modelId, x, y, w, h, frame, barSize, gap, hex, colorKey, skipLeftPost, skipRightPost, sloped, axis, rodCount, lift, arch, edgeOverhang, uid, ram } = props;
+  const { modelId, x, y, w, h, frame, barSize, gap, hex, colorKey, skipLeftPost, skipRightPost, sloped, axis, rodCount, lift, uid, ram } = props;
   // ram: članovi rama sa kosim spojevima u uglovima (45°), a ispuna (U vođice i cevi) se crta unutar njega
   if (ram?.kind && FENCE_MODELS[modelId].style === 'tubes') {
     const t = Math.min(ram.kind === 'tube' ? ram.side : ram.top, w / 3, h / 3);
@@ -151,8 +146,6 @@ export function InfillArt(props: InfillProps) {
       </g>
     );
   }
-  // tarabica: detaljan crtež delova iz kataloga (u mestu „debljine rama“ je prepust spojnih cevi)
-  if (FENCE_MODELS[modelId].style === 'tarabica') return <TarabicaArt x={x} y={y} w={w} h={h} barSize={barSize} gap={gap} overhang={frame} overhangs={edgeOverhang} lift={lift} arch={arch} hex={hex} />;
   // stepenište: nema slike sa stubovima (iskosila bi se i stub); crta se samo rukohvat i prečke, stubovi su uspravni
   const rail = colorKey !== undefined && !sloped ? railArt(modelId, colorKey) : null;
   if (rail && MODEL_IMAGES[rail.id]) {

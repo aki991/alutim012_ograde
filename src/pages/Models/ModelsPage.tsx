@@ -52,31 +52,32 @@ export default function ModelsPage({ terrace = false }: { terrace?: boolean }) {
     navigate(`/editor/${current.id}`);
   };
 
+  // ručno nacrtani modeli: za dvorišne ograde idu u istu mrežu kao ostali modeli (bez posebnog naslova), za terase u svoj odeljak
+  const customCards = customModels?.filter((m) => !m.replaces && m.kind === kind).map((m) => (
+      <article key={m.id} className="card overflow-hidden flex flex-col" data-testid="custom-model-card">
+        <div className="relative aspect-[16/10] bg-[#eef2f6] overflow-hidden border-b border-line p-3"><CustomModelThumb model={m} materials={materials} /></div>
+        <div className="p-4 flex-1 flex flex-col">
+          <h3 className="font-bold text-[17px]">{m.name || 'Model bez naziva'}</h3>
+          <p className="text-sm text-muted mt-0.5">{CUSTOM_KIND_LABELS[m.kind]} · {m.widthMm} × {m.heightMm} mm · {m.parts.length} delova</p>
+          <div className="flex flex-wrap gap-2 mt-auto pt-4">
+            <button className="btn btn-primary" data-testid="use-custom-model" disabled={m.parts.length === 0} onClick={() => useModel(m.id as FenceModelId)}>Koristi model</button>
+            <button className="btn" data-testid="open-custom-model" onClick={() => navigate(`${drawPath}/${m.id}`)}><PencilRuler size={16} />Otvori crtež</button>
+            <button className="btn btn-danger" aria-label={`Obriši model ${m.name}`} onClick={() => setDel(m)}><Trash2 size={16} />Obriši</button>
+          </div>
+        </div>
+      </article>
+  ));
+
   return (
     <Page>
       <PageHeader title={terrace ? 'Modeli ograda za terase' : 'Modeli ograda'}
-        subtitle={terrace
-          ? 'Ograde za terase, stepeništa i galerije: stubovi, rukohvat, prečke ili staklo. Nemaju veze sa dvorišnim ogradama i nemaju kapije. „Napravi model“ otvara crtanje ograda za terase sa materijalima za terase.'
-          : 'Svi modeli ograde i pripadajućih kapija. Model se menja bez promene ukupne širine segmenta; boja se postavlja prema slici modela.'}
+        subtitle={terrace ? 'Ograde za terase, stepeništa i galerije: stubovi, rukohvat, prečke ili staklo. Nemaju veze sa dvorišnim ogradama i nemaju kapije. „Napravi model“ otvara crtanje ograda za terase sa materijalima za terase.' : undefined}
         actions={<><button className="btn btn-primary" data-testid={terrace ? 'btn-create-terrace-model' : 'btn-create-model'} onClick={() => navigate(terrace ? `${drawPath}/${uid('cm')}` : drawPath)}><PencilRuler size={17} />Napravi model</button></>} />
-      {!!customModels?.some((m) => !m.replaces && m.kind === kind) && (
-        <section className="mb-7" data-testid={terrace ? 'custom-terrace-models' : 'custom-models'}>
-          <h2 className="font-bold text-lg mb-3">{terrace ? 'Moje ograde za terase (ručno nacrtane)' : 'Moji modeli (ručno nacrtani)'}</h2>
+      {terrace && !!customModels?.some((m) => !m.replaces && m.kind === kind) && (
+        <section className="mb-7" data-testid="custom-terrace-models">
+          <h2 className="font-bold text-lg mb-3">Moje ograde za terase (ručno nacrtane)</h2>
           <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-            {customModels!.filter((m) => !m.replaces && m.kind === kind).map((m) => (
-              <article key={m.id} className="card overflow-hidden flex flex-col" data-testid="custom-model-card">
-                <div className="relative aspect-[16/10] bg-[#eef2f6] overflow-hidden border-b border-line p-3"><CustomModelThumb model={m} materials={materials} /></div>
-                <div className="p-4 flex-1 flex flex-col">
-                  <h3 className="font-bold text-[17px]">{m.name || 'Model bez naziva'}</h3>
-                  <p className="text-sm text-muted mt-0.5">{CUSTOM_KIND_LABELS[m.kind]} · {m.widthMm} × {m.heightMm} mm · {m.parts.length} delova</p>
-                  <div className="flex flex-wrap gap-2 mt-auto pt-4">
-                    <button className="btn btn-primary" data-testid="use-custom-model" disabled={m.parts.length === 0} onClick={() => useModel(m.id as FenceModelId)}>Koristi model</button>
-                    <button className="btn" data-testid="open-custom-model" onClick={() => navigate(`${drawPath}/${m.id}`)}><PencilRuler size={16} />Otvori crtež</button>
-                    <button className="btn btn-danger" aria-label={`Obriši model ${m.name}`} onClick={() => setDel(m)}><Trash2 size={16} />Obriši</button>
-                  </div>
-                </div>
-              </article>
-            ))}
+            {customCards}
           </div>
           <h2 className="font-bold text-lg mt-7 -mb-2">Modeli iz kataloga</h2>
         </section>
@@ -85,6 +86,7 @@ export default function ModelsPage({ terrace = false }: { terrace?: boolean }) {
         <p className="text-sm text-muted card p-4" data-testid="terrace-models-empty">Svi modeli ograda za terase iz kataloga su obrisani. Vratite ih dugmetom „Vrati obrisane modele“ ili nacrtajte nov dugmetom „Napravi model“.</p>
       )}
       <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3" data-testid={terrace ? 'terrace-models' : 'yard-models'}>
+        {!terrace && customCards}
         {list.filter((m) => !hiddenModels?.includes(m.id)).map((m) => {
           // dorađen model koji zamenjuje original: kartica prikazuje dorađen crtež, uz mogućnost vraćanja originala
           const rep = customModels?.find((c) => c.replaces === m.id);

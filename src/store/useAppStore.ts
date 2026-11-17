@@ -14,7 +14,7 @@ import { removeStair, setStairGroup } from '../domain/geometry/stairOps';
 import { defaultModelId, FENCE_MODELS, TERRACE_NO_GATES, isTerraceModel, projectModelId } from '../domain/models/catalog';
 import { allFenceModels, effectiveModelId, registerCustomModels, setHiddenModels } from '../domain/models/customRegistry';
 import { presetTitle, slidingForModel, specFromPreset, type SlidingSpec } from '../domain/gates/slidingAssembly';
-import { defaultGateConfig, gateClearWidth, gateConfigFromGate, gateFieldsFromModel, GATE_TYPE_LABELS, postDimsOf, withModelPosts } from '../domain/gates/gateModels';
+import { defaultGateConfig, gateClearWidth, gateConfigFromGate, gateFieldsFromModel, GATE_TYPE_LABELS, leafKeyOf, postDimsOf, withModelPosts } from '../domain/gates/gateModels';
 import { postHalfSum } from '../domain/geometry/layout';
 import { leafKey, leafSeed } from '../domain/models/leafSeed';
 import { builtinToCustom } from '../domain/models/fromBuiltin';
@@ -87,6 +87,10 @@ interface AppState {
   newProject: (opts?: { name?: string; customerId?: string | null; modelId?: FenceModelId; startGate?: GateType }) => string;
   openProject: (id: string) => void;
   patchProject: (id: string, patch: Partial<Project>) => void;
+  /** potvrda sečenja: materijal iz krojne liste se knjiži u magacin (komadi iz magacina se skidaju, ostaci se dodaju), nezavisno od statusa */
+  confirmCutting: (id: string) => void;
+  /** poništava knjiženje sečenja (komadi se vraćaju, dodati ostaci se skidaju) */
+  undoCutting: (id: string) => void;
   removeProject: (id: string) => void;
   copyProject: (id: string) => string | null;
   importProject: (p: Project) => string;
@@ -140,7 +144,8 @@ interface AppState {
   /** postavlja kapiju u otvorenom projektu prema modelu (ispuna, boja, visina, tip, mere, okovi); svetli otvor je onaj iz modela */
   applyGateModel: (itemId: string, modelId: string) => boolean;
   /** vraća kapiju u projektu na običnu (osnovnu) kapiju istog tipa, uz istu ogradu */
-  applyBasicGate: (itemId: string) => void;
+  /** vraća kapiju na običnu; `fenceId` zadaje ogradu (inače ostaje ona koju je kapija imala) */
+  applyBasicGate: (itemId: string, fenceId?: FenceModelId) => void;
   /** dodaje kapiju iz modela na kraj niza u otvorenom projektu; vraća ID kapije */
   addGateFromModel: (modelId: string, index?: number) => string | null;
   setGateModelDefault: (modelId: string, on: boolean) => void;
@@ -454,6 +459,23 @@ export const useAppStore = create<AppState>((set, get) => {
       set((s) => ({ projects: s.projects.map((p) => (p.id === id ? { ...p, ...patch, updatedAt: nowIso() } : p)) }));
     },
 
+    confirmCutting(id) {
+      const s = get();
+      const p = s.projects.find((x) => x.id === id);
+      if (!p || s.settings.stockBookings?.[id] || (s.settings.stockBooked ?? []).includes(id)) return;
+      const r = bookProjectStock(p, s.settings, s.materials);
+      set({ settings: { ...s.settings, stock: r.stock, stockBookings: { ...(s.settings.stockBookings ?? {}), [id]: r.record } } });
+    },
+
+    undoCutting(id) {
+      const s = get();
+      const rec = s.settings.stockBookings?.[id];
+      if (!rec) return;
+      const bookings = { ...(s.settings.stockBookings ?? {}) };
+      delete bookings[id];
+      set({ settings: { ...s.settings, stock: unbookProjectStock(s.settings.stock ?? [], rec), stockBookings: bookings } });
+    },
+
     removeProject(id) {
       set((s) => ({
         projects: s.projects.filter((p) => p.id !== id),
@@ -606,7 +628,15 @@ export const useAppStore = create<AppState>((set, get) => {
         get().setNotice('Nije moguće: ograde za terase nemaju kapije. Prvo uklonite kapije iz projekta.');
         return;
       }
-      get().mutate((p) => changeModelAll(p, modelId)); set((s) => ({ editor: { ...s.editor, activeModelId: modelId } })); },
+      get().mutate((p) => changeModelAll(p, modelId)); set((s) => ({ editor: { ...s.editor, activeModelId: modelId } }));
+      // tip kapije važi samo za svoju ogradu: kapija sa tipom druge ograde se vraća na običnu kapiju nove ograde
+      const list = get().settings.customModels ?? [];
+      const key = leafKeyOf(modelId, list);
+      for (const g of currentProject()?.items ?? []) {
+        const type = g.kind === 'gate' ? list.find((x) => x.id === g.design?.template?.id && x.kind === 'gate') : undefined;
+        if (type && type.leafModelId !== key) get().applyBasicGate(g.id, modelId);
+      }
+    },
     setItemColor(id, color) { get().mutate((p) => changeColor(p, id, color)); },
     setItemFinish(id, finish) { get().mutate((p) => changeFinish(p, id, finish)); },
     setWidth(id, outerMm, key) {
@@ -698,27 +728,30 @@ export const useAppStore = create<AppState>((set, get) => {
       get().mutate((p) => {
         const g0 = p.items.find((x) => x.id === itemId);
         // ograda i boja pre primene modela (ako kapija već ima model, ostaje prvobitno stanje): povratak na običnu kapiju ih vraća
-        const prev = g0 && g0.kind === 'gate' ? g0.design?.template?.prev ?? (g0.infillModelId in FENCE_MODELS && !(get().settings.customModels ?? []).some((x) => x.id === g0.infillModelId) ? { infillModelId: g0.infillModelId, color: g0.color } : undefined) : undefined;
+        // pamti se i nacrtan ili dorađen model ograde; ne pamti se samo drugi model kapije
+        const isGateModel = (id: string) => (get().settings.customModels ?? []).some((x) => x.id === id && x.kind === 'gate');
+        const prev = g0 && g0.kind === 'gate' ? g0.design?.template?.prev ?? (g0.infillModelId in FENCE_MODELS && !isGateModel(g0.infillModelId) ? { infillModelId: g0.infillModelId, color: g0.color } : undefined) : undefined;
         const fields = gateFieldsFromModel(m);
         const q = updateItem(p, itemId, { ...fields, infillModelId: m.id as FenceModelId, ...(fields.design && prev ? { design: { ...fields.design, template: { ...fields.design.template!, prev } } } : {}) } as Partial<Gate>);
         return withModelPosts(setOuterWidth(q, itemId, gateClearWidth(m) + 2 * postHalfSum(q, indexOfItem(q, itemId))), itemId, m.gate);
       });
       return true;
     },
-    applyBasicGate(itemId) {
+    applyBasicGate(itemId, fenceId) {
       const cur = currentProject();
       const g = cur?.items.find((i) => i.id === itemId);
       if (!cur || !g || g.kind !== 'gate') return;
       const list = get().settings.customModels;
-      const isModel = (id: string) => (list ?? []).some((x) => x.id === id);
-      const usable = (id?: string): id is FenceModelId => !!id && id in FENCE_MODELS && !isModel(id);
-      // ograda koju je kapija imala pre modela; inače ograda ostalih elemenata projekta, pa izabrana ograda, pa prvi model sa stranice Modeli ograda
+      // samo modeli sa stranice „Modeli ograda“ (iz kataloga, dorađeni i nacrtani); model kapije i obrisan model se ne vraćaju.
+      // Model iz kataloga koji je dorađen vodi na svoj dorađen crtež.
+      const listed = (id?: string): FenceModelId | undefined => { if (!id) return undefined; const e = effectiveModelId(id); return e in FENCE_MODELS && isListedModel(e) ? (e as FenceModelId) : undefined; };
+      // tip kapije je samo drugačije nacrtana kapija: ograda ostaje ona kojoj tip pripada (inače ona koju je kapija imala pre tipa),
+      // pa ograda kapije, ograda ostalih elemenata projekta, ograda izabrana među modelima ograda i prvi model sa stranice Modeli ograda
       const prev = g.design?.template?.prev;
-      const other = cur.items.find((x) => x.id !== itemId && x.kind !== 'opening' && usable(x.kind === 'fence' ? x.modelId : x.infillModelId));
-      const otherModel = other && other.kind !== 'opening' ? (other.kind === 'fence' ? other.modelId : other.infillModelId) : undefined;
-      const active = get().editor.activeModelId;
-      const fence: FenceModelId = usable(prev?.infillModelId) ? prev!.infillModelId as FenceModelId : usable(otherModel) ? otherModel : usable(active) && isListedModel(active) ? active : defaultModelId();
-      const base = createGate(g.gateType, { infillModelId: fence, ...(prev?.color ? { color: prev.color } : {}) });
+      const leaf = (list ?? []).find((x) => x.id === g.design?.template?.id)?.leafModelId;
+      const otherModel = cur.items.map((x) => (x.id === itemId || x.kind === 'opening' ? undefined : listed(x.kind === 'fence' ? x.modelId : x.infillModelId))).find(Boolean);
+      const fence: FenceModelId = listed(fenceId) ?? listed(leaf) ?? listed(prev?.infillModelId) ?? listed(g.infillModelId) ?? otherModel ?? listed(get().editor.activeModelId) ?? defaultModelId();
+      const base = createGate(g.gateType, { infillModelId: fence, ...(!fenceId && prev?.color ? { color: prev.color } : {}) });
       get().mutate((p) => {
         let patch: Partial<Gate> = { infillModelId: base.infillModelId, color: base.color, heightMm: base.heightMm, opening: base.opening, swing: base.swing, lock: base.lock, hinge: base.hinge, automation: base.automation, automationType: base.automationType, unequalLeaves: false, leftLeafMm: 0, design: undefined, sliding: undefined, params: base.params };
         let width: number | null = null;
@@ -734,7 +767,14 @@ export const useAppStore = create<AppState>((set, get) => {
     },
     addGateFromModel(modelId, index) {
       const m = (get().settings.customModels ?? []).find((x) => x.id === modelId);
-      if (!m || !currentProject()) return null;
+      const cur = currentProject();
+      if (!m || !cur) return null;
+      // tip kapije važi samo uz svoju ogradu: u projektu sa drugom ogradom se ne dodaje
+      const fence = projectModelId(cur.items);
+      if (fence && m.leafModelId && leafKeyOf(fence, get().settings.customModels) !== m.leafModelId) {
+        get().setNotice(`Tip kapije „${m.name}“ je za drugu ogradu. U ovom projektu se koristi ${FENCE_MODELS[fence]?.name ?? 'druga ograda'}.`);
+        return null;
+      }
       const id = get().addElement({ kind: 'gate', gateType: m.gate?.gateType ?? 'pedestrian', modelId: m.id as FenceModelId }, index);
       if (!id) return null;
       get().applyGateModel(id, modelId);
@@ -876,10 +916,18 @@ useAppStore.subscribe((s, prev) => {
   }
   // magacin prati status projekta: „U izradi“ / „Završeno“ = materijal iz krojne liste je proknjižen (jednom), povratak na „Nacrt“ / „Ponuda“ ga povlači
   if (s.projects !== prev.projects) {
-    const before = new Map(prev.projects.map((p) => [p.id, p.status]));
-    const changed = s.projects.filter((p) => !p.modelDraft && before.has(p.id) && isStockStatus(before.get(p.id)!) !== isStockStatus(p.status));
-    if (changed.length) {
+    const before = new Map(prev.projects.map((p) => [p.id, p]));
+    const changed = s.projects.filter((p) => !p.modelDraft && before.has(p.id) && isStockStatus(before.get(p.id)!.status) !== isStockStatus(p.status));
+    // projekat sa proknjiženim sečenjem („U izradi“ ili potvrđeno dugmetom) kome se promene ostaci: knjiženje se povlači i ponovo radi
+    // (novi komad iz magacina se skida, uklonjen se vraća); projekat kome je status upravo promenjen rešava petlja ispod
+    const reoffcut = s.projects.filter((p) => !p.modelDraft && before.has(p.id) && !changed.includes(p) && before.get(p.id)!.offcuts !== p.offcuts && s.settings.stockBookings?.[p.id]);
+    if (changed.length || reoffcut.length) {
       let settings = s.settings;
+      for (const p of reoffcut) {
+        const stock = unbookProjectStock(settings.stock ?? [], settings.stockBookings![p.id]);
+        const r = bookProjectStock(p, { ...settings, stock }, s.materials);
+        settings = { ...settings, stock: r.stock, stockBookings: { ...settings.stockBookings, [p.id]: r.record } };
+      }
       for (const p of changed) {
         const bookings = { ...(settings.stockBookings ?? {}) };
         const legacy = settings.stockBooked ?? [];

@@ -263,6 +263,9 @@ async function run(withPull: boolean): Promise<void> {
   busy = (async () => {
     setStatus({ status: 'syncing' });
     try {
+      // bez važeće prijave zahtevi bi išli kao anonimni (prazni odgovori bi izgledali kao obrisani podaci): čeka se obnova prijave
+      const { data: auth } = await supabase!.auth.getSession();
+      if (!auth.session) throw new Error('Nema veze sa serverom (prijava se obnavlja kad se veza vrati).');
       await ensureState();
       if (withPull) await pull();
       await push();

@@ -1,7 +1,7 @@
 import type { Session } from '@supabase/supabase-js';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { displayLogin, toLoginEmail } from './loginName';
-import { authEnabled, loginErrorMessage, supabase } from './supabase';
+import { authEnabled, isOfflineAuthFailure, loginErrorMessage, readStoredSession, supabase } from './supabase';
 import { changeAccount, effectiveRole, fetchMyProfile, readCachedProfile, writeCachedProfile, type TeamProfile, type TeamRole } from './teamAccounts';
 
 interface AuthState {
@@ -72,8 +72,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!supabase) return;
     let alive = true;
-    void supabase.auth.getSession().then(({ data }) => { if (alive) { setSession(data.session); setLoading(false); } }).catch(() => { if (alive) setLoading(false); });
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => setSession(s));
+    // bez interneta istekla prijava ne može da se obnovi: ostaje poslednja sačuvana (rad sa lokalnim podacima),
+    // a Supabase je sam obnavlja čim se veza vrati (TOKEN_REFRESHED) ili javlja odjavu ako je nalog ukinut (SIGNED_OUT)
+    void supabase.auth.getSession()
+      .then(({ data, error }) => { if (alive) { setSession(data.session ?? (isOfflineAuthFailure(error) ? readStoredSession() : null)); setLoading(false); } })
+      .catch((e) => { if (alive) { setSession(isOfflineAuthFailure(e) ? readStoredSession() : null); setLoading(false); } });
+    // početno stanje daje getSession iznad (INITIAL_SESSION bi offline javio praznu sesiju i poništio sačuvanu)
+    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => { if (event !== 'INITIAL_SESSION') setSession(s); });
     return () => { alive = false; sub.subscription.unsubscribe(); };
   }, []);
 

@@ -2,7 +2,6 @@ import { customLiftOf, customModelOf, customPatternCounts, customSlatCount, cust
 import { tubeLengthMm, ramInsets } from './tubes';
 import { computeInfill, summarizeInfill } from '../geometry/infill';
 import { CALC_RULES } from '../pricing/rules';
-import { tarabicaCapHeight } from './tarabica';
 import { FENCE_MODELS } from './catalog';
 import { FALLBACK_MATERIAL_NAMES } from '../../data/materialNames';
 import type { BomGroup } from '../pricing/calc';
@@ -45,7 +44,6 @@ export const SPEC_VARIABLES: { name: string; label: string }[] = [
   { name: 'R', label: 'broj nosača/rukohvata (poprečni profili)' },
   { name: 'K', label: 'broj dodatnih traka (srebrne linije)' },
   { name: 'MAINLEN', label: 'dužina jednog glavnog profila (mm)' },
-  { name: 'CAPH', label: 'visina čepa tarabice: kupola + okovratnik (mm); 0 za druge modele' },
   { name: 'RAILLEN', label: 'dužina jednog nosača/rukohvata (mm)' },
   { name: 'ACCLEN', label: 'dužina jedne dodatne trake (mm)' },
   { name: 'GLASS', label: 'površina stakla (m²)' },
@@ -75,30 +73,17 @@ export interface SpecContext {
   axisMm: number;
   params: FenceParams;
   doubleGate?: boolean;
-  /** širine dva krila dvokrilne kapije (mm): tarabice se računaju po krilu, bez prepusta uz sredinu */
+  /** širine dva krila dvokrilne kapije (mm): nacrtan model se računa po krilu */
   leafWidthsMm?: number[];
   /** stepenište: odnos kose i horizontalne dužine (horizontalni delovi prate nagib); bez vrednosti 1 */
   slopeFactor?: number;
 }
 
-/** Geometrija ispune polja: jedna, a kod tarabice dvokrilne kapije po jedna za svako krilo. */
+/** Geometrija ispune polja (ram sužava ispunu: manje cevi po visini, kraće po širini). */
 function leafGeometries(c: SpecContext): ReturnType<typeof computeInfill>[] {
   const f = c.slopeFactor && c.slopeFactor > 1 ? c.slopeFactor : 1;
-  const ins = ramInsets(c.modelId, c.params); // ram sužava ispunu: manje cevi po visini, kraće po širini
-  const geoOf = (w: number, left: number, right?: number) => computeInfill(c.modelId, Math.max(0, w - 2 * ins.side) * f, Math.max(0, c.heightMm - 2 * ins.top), left, c.params.barSizeMm, c.params.gapMm, c.params.barCount, c.params.liftMm, right, c.params.archMm);
-  return FENCE_MODELS[c.modelId].style === 'tarabica' && c.leafWidthsMm?.length === 2
-    ? [geoOf(c.leafWidthsMm[0], c.params.frameMm, 0), geoOf(c.leafWidthsMm[1], 0, c.params.frameMm)]
-    : [geoOf(c.widthMm, c.params.frameMm)];
-}
-
-/**
- * Tarabica sa lukom: svaka tarabica ima svoju dužinu reza (visina − čep − pad luka). Vraća dužine reza svih tarabica polja
- * (u mm, nezaokružene) ili null kad nema luka — tada su sve iste i važi dužina iz specifikacije.
- */
-export function slatCutLengths(c: SpecContext): number[] | null {
-  if (FENCE_MODELS[c.modelId].style !== 'tarabica' || !(c.params.archMm && c.params.archMm > 0)) return null;
-  const capH = tarabicaCapHeight(c.params.barSizeMm);
-  return leafGeometries(c).flatMap((g) => g.bars.filter((b) => b.tone === 'main').map((b) => b.h - capH));
+  const ins = ramInsets(c.modelId, c.params);
+  return [computeInfill(c.modelId, Math.max(0, c.widthMm - 2 * ins.side) * f, Math.max(0, c.heightMm - 2 * ins.top), c.params.frameMm, c.params.barSizeMm, c.params.gapMm, c.params.barCount)];
 }
 
 function hbarVars(c: SpecContext): Record<string, number> {
@@ -120,7 +105,6 @@ export function specVars(c: SpecContext): Record<string, number> {
     W: c.widthMm * f, H: c.heightMm, A: c.axisMm * f,
     N: sum.main.count, R: sum.rail.count, K: sum.accent.count,
     MAINLEN: avg(sum.main), RAILLEN: avg(sum.rail), ACCLEN: avg(sum.accent),
-    CAPH: FENCE_MODELS[c.modelId].style === 'tarabica' ? tarabicaCapHeight(c.params.barSizeMm) : 0,
     GLASS: sum.glassAreaM2 / f,
     PERIM: 2 * c.widthMm * f + 2 * c.heightMm, AREA: (c.widthMm * c.heightMm) / 1_000_000,
     DOUBLE: c.doubleGate ? 1 : 0,
@@ -259,7 +243,6 @@ export function defaultSpec(modelId: FenceModelId): SpecPart[] {
   const framed = def.style !== 'rods' && def.style !== 'glass_rail';
   if (modelId === 'rail_black') return railBlackSpec();
   if (modelId === 'louver_light') return louverLightSpec();
-  if (modelId === 'picket_wide') return tarabicaSpec();
   if (modelId === 'h_narrow') return tubesSpec();
   if (modelId === 'rail_inox') return rl10Spec();
   if (framed) {
@@ -293,16 +276,6 @@ function railBlackSpec(): SpecPart[] {
     part({ name: 'Završetak rukohvata (PEGA ECO 46)', materialId: 'mat_pega_eco_46', group: 'Nosači i spojnice', qty: '2' }),
     part({ name: 'Završetak prečke (PEGA SKS 51/2)', materialId: 'mat_pega_sks_51_2', group: 'Nosači i spojnice', qty: '2*N' }),
     part({ name: 'Vijci i stezni elementi', materialId: 'mat_screw', group: 'Vijci', qty: '2+2*N' }),
-  ];
-}
-
-/** Tarabica po polju: cevi 80 × 20 sa čepom, dve spojne cevi 30 × 30. Stubovi i njihove kape su deo stubova projekta. */
-function tarabicaSpec(): SpecPart[] {
-  return [
-    part({ name: 'Tarabica — kvadratna cev 80 × 20', materialId: 'mat_ek_kv000007', group: 'Profili ispune', qty: 'N', lengthMm: 'MAINLEN-CAPH', note: 'dužina = visina polja − visina čepa (CAPH: kupola + okovratnik, 40 mm za tarabicu 80); katalog KTWM3865' }),
-    part({ name: 'Čep tarabice pun 80 × 20 (K100018)', materialId: 'mat_ek_k100018', group: 'Nosači i spojnice', qty: 'N' }),
-    part({ name: 'Spojna cev 30 × 30 (gore i dole)', materialId: 'mat_ek_ktwm3899', group: 'Profili ispune', qty: 'R', lengthMm: 'RAILLEN', note: 'dužina = svetli otvor; cevi se oslanjaju na stubove' }),
-    { ...part({ name: 'Vijci (tarabica na spojnu cev)', materialId: 'mat_screw', group: 'Vijci', qty: '2*N', note: 'Spoj nije potvrđen (vijci sa zadnje strane ili varenje); uključiti ako se spaja vijcima' }), enabled: false },
   ];
 }
 

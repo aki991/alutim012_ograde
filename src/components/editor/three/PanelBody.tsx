@@ -15,7 +15,6 @@ import { colorHex, FENCE_MODELS, panelArt, panelTiles, railArt, railBands, rodCo
 import type { FenceModelId, FenceParams } from '../../../domain/models/types';
 import { Instances } from './Instances';
 import { LouverPanel } from './LouverPanel';
-import { TarabicaPanel } from './TarabicaPanel';
 import { boxGeometry, darkMaterial, glassMaterial, metalMaterial, steelMaterial } from './materials';
 
 export interface PanelProps {
@@ -28,8 +27,6 @@ export interface PanelProps {
   axisWidthMm?: number;
   /** levi stub je zajednički sa prethodnim poljem i već je nacrtan */
   skipLeftPost?: boolean;
-  /** tarabica: prepust levo i desno kad se razlikuje (krilo dvokrilne kapije nema prepust uz sredinu) */
-  overhangs?: [number, number];
   /** ručno nacrtan model: sredina dubine (Z) se postavlja u ravan polja (klizno krilo, uz koje stoji okov) */
   centerZ?: boolean;
 }
@@ -159,8 +156,6 @@ export function PanelBody(props: PanelProps) {
   if (props.modelId === 'louver_light') return <LouverPanel {...props} />;
   // uske horizontalne letvice: kvadratne cevi u bočnim U profilima (stvarne dimenzije)
   if (isTubesModel(props.modelId)) return <TubesWithRam {...props} />;
-  // tarabica: stvarni delovi iz kataloga (cevi 80 × 20 sa čepom, spojne cevi 30 × 30, zavrtnji)
-  if (FENCE_MODELS[props.modelId].style === 'tarabica') return <TarabicaPanel {...props} />;
   const rail = railArt(props.modelId, props.color);
   if (rail && MODEL_IMAGES[rail.id] && props.axisWidthMm) {
     return (
@@ -217,7 +212,7 @@ function ParamPanel({ modelId, widthMm, heightMm, params, color }: PanelProps) {
     const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(rotX, 0, 0));
     m.compose(new THREE.Vector3(cx, cy, z), q, new THREE.Vector3(s(b.w), s(b.h), depth));
   };
-  const picket = def.style === 'picket' || def.style === 'tarabica';
+  const picket = def.style === 'picket';
 
   return (
     <group>

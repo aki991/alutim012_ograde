@@ -31,9 +31,9 @@ export function builtinToCustom(modelId: FenceModelId, materials: Material[], id
     return Math.abs(a - want) <= Math.abs(b - want) ? a : b;
   };
   const tubesStyle = def.style === 'tubes';
-  const f0 = computeInfill(modelId, W, H, d.frameMm, d.barSizeMm, d.gapMm, d.barCount, d.liftMm, undefined, d.archMm).frame;
+  const f0 = computeInfill(modelId, W, H, d.frameMm, d.barSizeMm, d.gapMm, d.barCount).frame;
   const frameMm = f0 > 0 ? frameFace(tubesStyle ? def.railMaterialId ?? 'mat_u_20x20' : FRAME_MATERIAL, f0) : d.frameMm;
-  const geo = computeInfill(modelId, W, H, frameMm, d.barSizeMm, d.gapMm, d.barCount, d.liftMm, undefined, d.archMm);
+  const geo = computeInfill(modelId, W, H, frameMm, d.barSizeMm, d.gapMm, d.barCount);
   const parts: CustomPart[] = [];
   let n = 0;
   const pid = () => `${id}_p${++n}`;

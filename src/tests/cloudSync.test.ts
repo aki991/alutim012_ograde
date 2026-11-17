@@ -31,7 +31,9 @@ const noopTarget = { addEventListener() {}, removeEventListener() {}, visibility
 vi.stubGlobal('window', noopTarget);
 vi.stubGlobal('document', noopTarget);
 
-vi.mock('../services/supabase', () => ({ supabase: { from: fakeFrom }, authEnabled: true }));
+/** prijava u lažnom klijentu: null = istekla i ne može da se obnovi (nema interneta) */
+const auth = { session: { access_token: 't' } as unknown };
+vi.mock('../services/supabase', () => ({ supabase: { from: fakeFrom, auth: { getSession: async () => ({ data: { session: auth.session }, error: null }) } }, authEnabled: true }));
 
 import { _resetCloudSyncForTests, flattenSettings, schedulePush, startCloudSync, unflattenSettings, useCloudStatus } from '../services/cloudSync';
 import { SEED_SETTINGS } from '../data/seed';
@@ -61,6 +63,25 @@ describe('sinhronizacija sa bazom', () => {
     _resetCloudSyncForTests();
     useCloudStatus.setState({ status: 'off', error: null, firstDone: false, lastSync: null });
     useAppStore.setState({ ready: true, projects: [], customers: [], materials: [], settings: SEED_SETTINGS });
+    auth.session = { access_token: 't' };
+  });
+
+  it('bez važeće prijave ništa se ne šalje ni briše; kad se prijava obnovi, offline izmene stižu u bazu', async () => {
+    const p = createProject('Offline', [], null);
+    useAppStore.setState({ projects: [p] });
+    auth.session = null;
+    const stop = startCloudSync();
+    await settle();
+    expect(useCloudStatus.getState().status).toBe('offline');
+    expect(tables.ograde_projects?.size ?? 0).toBe(0);
+    expect(useAppStore.getState().projects).toHaveLength(1);
+
+    auth.session = { access_token: 't' };
+    schedulePush();
+    await new Promise((r) => setTimeout(r, 1700));
+    expect(useCloudStatus.getState().status).toBe('synced');
+    expect(tables.ograde_projects.get(p.id)).toBeTruthy();
+    stop();
   });
 
   it('prazna baza dobija lokalne podatke; izmena i brisanje projekta stižu u bazu', async () => {

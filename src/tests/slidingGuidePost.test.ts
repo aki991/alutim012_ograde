@@ -16,7 +16,7 @@ describe('vođica kapije nacrtanog modela prati stub u projektu', () => {
     const model = { ...newCustomModel('cm_gp'), kind: 'gate' as const, widthMm: 3000, heightMm: 1500, gate: { ...defaultGateConfig('sliding'), sliding, opening } };
     const fields = gateFieldsFromModel(model);
     const gate = createGate('sliding', { ...fields, opening } as Partial<Gate>);
-    const items = opening === 'right' ? [createFence({ modelId: 'picket_wide', widthMm: 2000 }), gate, createFence({ modelId: 'picket_wide', widthMm: 2000 })] : [createFence({ modelId: 'picket_wide', widthMm: 2000 }), gate, createFence({ modelId: 'picket_wide', widthMm: 2000 })];
+    const items = opening === 'right' ? [createFence({ modelId: 'picket_narrow', widthMm: 2000 }), gate, createFence({ modelId: 'picket_narrow', widthMm: 2000 })] : [createFence({ modelId: 'picket_narrow', widthMm: 2000 }), gate, createFence({ modelId: 'picket_narrow', widthMm: 2000 })];
     let p = createProject('t', items);
     for (const post of p.posts) p = updatePost(p, post.id, { type: postType });
     const lay = computeLayout(p);
@@ -44,7 +44,7 @@ describe('vođica kapije nacrtanog modela prati stub u projektu', () => {
     const r = build('right', 'aluminium');
     const stale = { ...r.gate, sliding: { ...r.gate.sliding!, manual: { ...r.gate.sliding!.manual, upperGuide: 2400, guidePost: 2400 } } };
     expect(guideOnFencePost(stale.sliding)).toBe(true);
-    const items = [createFence({ modelId: 'picket_wide', widthMm: 2000 }), stale, createFence({ modelId: 'picket_wide', widthMm: 2000 })];
+    const items = [createFence({ modelId: 'picket_narrow', widthMm: 2000 }), stale, createFence({ modelId: 'picket_narrow', widthMm: 2000 })];
     let p = createProject('t', items);
     for (const post of p.posts) p = updatePost(p, post.id, { type: 'concrete' });
     const li = computeLayout(p).items[1];

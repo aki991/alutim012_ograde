@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { loginErrorMessage } from '../services/supabase';
+import { AuthRetryableFetchError } from '@supabase/supabase-js';
+import { isOfflineAuthFailure, loginErrorMessage, parseStoredSession } from '../services/supabase';
 
 describe('poruke o greškama prijave', () => {
   it('prevodi poznate greške Supabase-a na srpski', () => {
@@ -20,5 +21,22 @@ describe('inicijali', () => {
     expect(initialsOf('andrejamilenkovic991')).toBe('AN');
     expect(initialsOf('andreja.milenkovic')).toBe('AM');
     expect(initialsOf('')).toBe('');
+  });
+});
+
+describe('prijava bez interneta', () => {
+  it('sačuvana sesija se čita i kad je token istekao; neispravan zapis daje null', () => {
+    const raw = JSON.stringify({ access_token: 'a', refresh_token: 'r', expires_at: 1, user: { id: 'u1' } });
+    expect(parseStoredSession(raw)?.user.id).toBe('u1');
+    expect(parseStoredSession(null)).toBeNull();
+    expect(parseStoredSession('{neispravno')).toBeNull();
+    expect(parseStoredSession(JSON.stringify({ access_token: 'a' }))).toBeNull();
+  });
+
+  it('poslednja prijava ostaje samo kad obnova ne uspe zbog veze', () => {
+    expect(isOfflineAuthFailure(null, false)).toBe(true);
+    expect(isOfflineAuthFailure(new AuthRetryableFetchError('Failed to fetch', 0), true)).toBe(true);
+    expect(isOfflineAuthFailure(null, true)).toBe(false);
+    expect(isOfflineAuthFailure(new Error('Invalid Refresh Token'), true)).toBe(false);
   });
 });

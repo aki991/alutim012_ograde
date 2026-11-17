@@ -147,7 +147,7 @@ export function schemaSvg(project: Project, keyOfItem: (index: number) => string
     if (!art) out.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="${color}" fill-opacity="0.14" stroke="${color}" stroke-width="2"/>`);
     // ispuna iz istog proračuna kao crtež
     const modelId = it.kind === 'fence' ? it.modelId : it.infillModelId;
-    const geo = computeInfill(modelId, li.clearWidth, it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount, it.params.liftMm, undefined, it.params.archMm);
+    const geo = computeInfill(modelId, li.clearWidth, it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount);
     const ix = ox + li.clearStart * s;
     // ručno nacrtan model: stvarni delovi sa crteža (ram, U profili, prečke), ne računska ispuna
     if (!art && isCustomModel(modelId)) {

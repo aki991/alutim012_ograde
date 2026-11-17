@@ -4,7 +4,8 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { adaptLeaf, LEAF_CLEARANCE, type LeafKind } from '../components/editor/three/gateGlb';
 
-const DESIGNS = Array.from({ length: 15 }, (_, i) => String(i + 1).padStart(2, '0'));
+// dizajn 13 (tarabica) je izbačen iz kataloga zajedno sa svojim 3D kapijama
+const DESIGNS = Array.from({ length: 15 }, (_, i) => String(i + 1).padStart(2, '0')).filter((d) => d !== '13');
 const TYPES: { suffix: string; kinds: LeafKind[] }[] = [
   { suffix: 'pesacka', kinds: ['levo'] },
   { suffix: 'jednokrilna', kinds: ['levo'] },
@@ -88,7 +89,7 @@ describe('GLB krila kapija se prilagođavaju merama projekta', () => {
       expect(pitchOf(g, 'Ispuna_horizontalna', 'y')).toBeGreaterThan(target * 0.9);
       expect(pitchOf(g, 'Ispuna_horizontalna', 'y')).toBeLessThan(target * 1.1);
     }
-    const vert = await load('13-pesacka');
+    const vert = await load('07-pesacka');
     const gv = adaptLeaf(vert, 'levo', { width: 1, height: 1.6, clearance: 0.07, hex: '#eeeeee', keepDecor: false, pitch: { axis: 'x', value: 0.2 } })!;
     expect(pitchOf(gv, 'Ispuna_zaobljena_letvica', 'x')).toBeGreaterThan(0.18);
     expect(pitchOf(gv, 'Ispuna_zaobljena_letvica', 'x')).toBeLessThan(0.22);

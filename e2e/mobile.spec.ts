@@ -61,8 +61,7 @@ test('telefon: ponuda, krojna lista i radni nalog se otvaraju kao PDF (bez okvir
     await page.getByTestId(btn).click();
     await expect(page.getByRole('dialog')).toContainText(title);
     if (btn === 'btn-cutlist') {
-      // pre krojne liste: pitanje o ostacima materijala
-      await page.getByTestId('offcuts-none').click();
+      // pre krojne liste: unos ostataka materijala
       await page.getByTestId('offcuts-continue').click();
     }
     const open = page.getByTestId('pdf-open');

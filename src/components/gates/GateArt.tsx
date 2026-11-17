@@ -52,12 +52,12 @@ function Hinges({ x, y, w, h, side, gate, clearX, clear }: { x: number; y: numbe
   );
 }
 
-function Leaf({ gate, x, y, w, h, hex, uid, withHandle, handleSide, edge, cy: cyProp }: { cy?: number; gate: Gate; x: number; y: number; w: number; h: number; hex: string; uid: string; withHandle: boolean; handleSide: 'left' | 'right'; edge?: [number, number] }) {
+function Leaf({ gate, x, y, w, h, hex, uid, withHandle, handleSide, cy: cyProp }: { cy?: number; gate: Gate; x: number; y: number; w: number; h: number; hex: string; uid: string; withHandle: boolean; handleSide: 'left' | 'right' }) {
   const cy = cyProp ?? y + h * 0.5;
   const hxPos = handleSide === 'left' ? x + gate.params.frameMm + 50 : x + w - gate.params.frameMm - 80;
   return (
     <g>
-      <InfillArt modelId={gate.infillModelId} x={x} y={y} w={w} h={h} frame={gate.params.frameMm} barSize={gate.params.barSizeMm} gap={gate.params.gapMm} lift={gate.params.liftMm} slats={gate.params.slats} arch={gate.params.archMm} edgeOverhang={edge} hex={hex} colorKey={gate.color} ram={ramInsets(gate.infillModelId, gate.params)} uid={uid} />
+      <InfillArt modelId={gate.infillModelId} x={x} y={y} w={w} h={h} frame={gate.params.frameMm} barSize={gate.params.barSizeMm} gap={gate.params.gapMm} lift={gate.params.liftMm} slats={gate.params.slats} hex={hex} colorKey={gate.color} ram={ramInsets(gate.infillModelId, gate.params)} uid={uid} />
       {withHandle && (
         <g>
           <rect x={hxPos} y={cy - 220} width={22} height={440} rx="8" fill="#d8dee6" stroke="#6b7380" strokeWidth="3" />
@@ -117,8 +117,8 @@ export function GateArt({ gate, x, y, w, h, hex, px, realistic, showDims }: Prop
     const [bl, br] = boxes;
     return (
       <g>
-        <Leaf gate={gate} x={x + bl.x} y={yl} w={bl.w} h={h} hex={hex} uid={`${gate.id}-l`} withHandle={false} handleSide="right" edge={[gate.params.frameMm, 0]} />
-        <Leaf gate={gate} x={x + br.x} y={yl} w={br.w} h={h} hex={hex} uid={`${gate.id}-r`} withHandle={false} handleSide="left" edge={[0, gate.params.frameMm]} />
+        <Leaf gate={gate} x={x + bl.x} y={yl} w={bl.w} h={h} hex={hex} uid={`${gate.id}-l`} withHandle={false} handleSide="right" />
+        <Leaf gate={gate} x={x + br.x} y={yl} w={br.w} h={h} hex={hex} uid={`${gate.id}-r`} withHandle={false} handleSide="left" />
         {!realistic && <SwingMark x={x + bl.x} y={yl} w={bl.w} h={h} hingeSide="left" px={px} />}
         {!realistic && <SwingMark x={x + br.x} y={yl} w={br.w} h={h} hingeSide="right" px={px} />}
         <Hinges x={x + bl.x} y={yl} w={bl.w} h={h} side="left" gate={gate} clearX={x} clear={w} />
@@ -136,8 +136,8 @@ export function GateArt({ gate, x, y, w, h, hex, px, realistic, showDims }: Prop
     const rightW = total - gapC - leftW;
     return (
       <g>
-        <Leaf gate={gate} x={x} y={y} w={leftW} h={h} hex={hex} uid={`${gate.id}-l`} withHandle={false} handleSide="right" edge={[gate.params.frameMm, 0]} />
-        <Leaf gate={gate} x={x + leftW + gapC} y={y} w={rightW} h={h} hex={hex} uid={`${gate.id}-r`} withHandle={false} handleSide="left" edge={[0, gate.params.frameMm]} />
+        <Leaf gate={gate} x={x} y={y} w={leftW} h={h} hex={hex} uid={`${gate.id}-l`} withHandle={false} handleSide="right" />
+        <Leaf gate={gate} x={x + leftW + gapC} y={y} w={rightW} h={h} hex={hex} uid={`${gate.id}-r`} withHandle={false} handleSide="left" />
         {!realistic && <SwingMark x={x} y={y} w={leftW} h={h} hingeSide="left" px={px} />}
         {!realistic && <SwingMark x={x + leftW + gapC} y={y} w={rightW} h={h} hingeSide="right" px={px} />}
         <Hinges x={x} y={y} w={leftW} h={h} side="left" />

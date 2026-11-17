@@ -9,7 +9,6 @@ import { buildCutList, describeItem } from './production';
 import { FILL_PROFILES, GUIDE_PROFILES, buildLouver08Sheet, louver08Panels } from './louverSpec';
 import { buildRail04Sheet, isRail04, rail04Posts, rail04Runs } from './railSpec';
 import { postMaterialLine } from '../models/postTemplates';
-import { isTarabicaPost, tarabicaPostLines } from '../models/tarabica';
 
 /** Krojna lista: raspored komada profila na nabavne šipke (širina reza testere uračunata), sa ostatkom po šipki. */
 
@@ -244,21 +243,12 @@ function collectPieces(project: Project, specs: ModelSpecs | undefined, material
     for (let i = 0; i < c.qty; i++) add(c.profile, { lengthMm: c.lengthMm, pos, name: c.part, part: c.miter ? `${c.part} (45°)` : c.ends ? `${c.part} (${endsLabel(c.ends)})` : c.part, ...(c.miter ? { miter: true } : {}), ...(c.ends ? { ends: c.ends, ...(c.endShape ? { endShape: c.endShape } : {}) } : {}), ...(c.faceMm ? { w: c.faceMm } : {}) });
   }
 
-  // stubovi uz tarabicu: cev stuba (80 × 80 ili 100 × 100) se seče iz šipke po visini stuba
   // stubovi: samo oni uz elemente dela koji se štampa (kod „samo kapije“ stubovi uz kapije)
   const laid = computeLayout(scopedProject(project, scope));
-  project.posts.forEach((p, i) => {
-    if (laid.posts[i]?.hidden || !isTarabicaPost(project.items, p, i)) return;
-    const post = { ...p, heightMm: laid.posts[i]?.lengthMm ?? p.heightMm };
-    const tube = tarabicaPostLines(post)[0];
-    const key = `S${i + 1}`;
-    positions.set(key, { key, label: `Stub ${key}`, detail: `${tube.label} · visina ${Math.round(post.heightMm)} mm` });
-    add(materialName(materials, tube.materialId), { lengthMm: Math.round(post.heightMm), pos: key, part: 'Stub' });
-  });
 
   // stubovi od profila izabranog šablonom stuba: cev stuba se seče iz šipke po dužini stuba
   project.posts.forEach((p, i) => {
-    if (laid.posts[i]?.hidden || isTarabicaPost(project.items, p, i) || [project.items[i - 1], project.items[i]].some((x) => x && isRail04(x))) return;
+    if (laid.posts[i]?.hidden || [project.items[i - 1], project.items[i]].some((x) => x && isRail04(x))) return;
     const len = Math.round(laid.posts[i]?.lengthMm ?? p.heightMm);
     const own = postMaterialLine(project, i, materials, len);
     if (!own?.linear) return;

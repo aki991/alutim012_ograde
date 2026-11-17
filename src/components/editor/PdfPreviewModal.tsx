@@ -5,6 +5,7 @@ import { downloadBlob, safeFilename } from '../../services/exports';
 import { buildQuotePdfBlob } from '../../services/pdf';
 import { buildCuttingList, cutOptions, PRINT_SCOPE_LABELS, type PrintScope } from '../../domain/pricing/cutting';
 import { useAppStore } from '../../store/useAppStore';
+import { ConfirmCuttingButton } from '../production/ConfirmCuttingButton';
 import { OffcutsPanel } from '../production/OffcutsPanel';
 import { Modal } from '../ui/Modal';
 
@@ -22,7 +23,7 @@ export function PdfPreviewModal({ project, customer, materials, settings, onClos
   project: Project; customer: Customer | null; materials: Material[]; settings: AppSettings; onClose: () => void;
   /** vrsta dokumenta: ponuda (podrazumevano), krojna lista, radni nalog, skica ili mere kapije */
   kind?: 'quote' | 'cutlist' | 'workorder' | 'sketch' | 'gate';
-  /** krojna lista: pre PDF-a se prvo pita ima li ostataka materijala (unos ručno ili iz magacina) */
+  /** krojna lista: pre PDF-a se prvo prikazuje unos ostataka materijala (ručno ili iz magacina) */
   askOffcuts?: boolean;
   /** mere kapije: ID kapije u projektu */
   itemId?: string;
@@ -77,10 +78,11 @@ export function PdfPreviewModal({ project, customer, materials, settings, onClos
       onClose={onClose}
       headerActions={<button className="btn btn-icon" aria-label={full ? 'Smanji prikaz' : 'Prikaži preko celog ekrana'} title={full ? 'Smanji prikaz' : 'Preko celog ekrana'} aria-pressed={full} onClick={() => setFull((f) => !f)} data-testid="pdf-fullscreen">{full ? <Minimize2 size={18} /> : <Maximize2 size={18} />}</button>}
       footer={
-        <div className="flex justify-end gap-2 w-full">
+        <div className="flex flex-wrap items-center justify-end gap-2 w-full">
+          {cutlist && askOffcuts && ready && <ConfirmCuttingButton project={project} materials={materials} />}
           <button className="btn" onClick={onClose} data-testid="pdf-close">Zatvori</button>
           {offcutsStep
-            ? <button className="btn btn-primary" onClick={() => setReady(true)} disabled={project.offcuts === undefined} data-testid="offcuts-continue"><FileText size={16} />Prikaži krojnu listu</button>
+            ? <button className="btn btn-primary" onClick={() => setReady(true)} data-testid="offcuts-continue"><FileText size={16} />Prikaži krojnu listu</button>
             : <button className="btn btn-primary" onClick={save} disabled={!blob} data-testid="pdf-save"><Download size={16} />Sačuvaj PDF</button>}
         </div>
       }
@@ -98,7 +100,7 @@ export function PdfPreviewModal({ project, customer, materials, settings, onClos
       {offcutsStep ? (
         <div data-testid="offcuts-step">
           <OffcutsPanel project={project} materials={materials} stock={settings.stock ?? []} profiles={cutProfiles!.profiles.map((p) => p.profile)} onChange={(offcuts) => patchProject(project.id, { offcuts })} />
-          {project.offcuts !== undefined && <p className="text-sm text-muted">Kad završite unos ostataka, kliknite „Prikaži krojnu listu".</p>}
+          <p className="text-sm text-muted">Kad završite unos ostataka (ili ako ih nemate), kliknite „Prikaži krojnu listu".</p>
         </div>
       ) : (
       <div className={`${full ? 'h-[calc(100vh-10.5rem)]' : 'h-[68vh]'} min-h-[320px] bg-slate-100 rounded-lg overflow-hidden`} data-testid="pdf-preview">

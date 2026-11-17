@@ -1,4 +1,4 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { createClient, isAuthRetryableFetchError, type Session, type SupabaseClient } from '@supabase/supabase-js';
 
 /**
  * Supabase se podešava preko okruženja (.env.local lokalno, Environment Variables na Vercel-u):
@@ -14,6 +14,29 @@ export const authEnabled = Boolean(url && anonKey);
 export const supabase: SupabaseClient | null = authEnabled
   ? createClient(url!, anonKey!, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } })
   : null;
+
+/** Sesija zapisana u lokalnoj memoriji (i kad joj je pristupni token istekao); null ako zapis nije ispravan. */
+export function parseStoredSession(raw: string | null): Session | null {
+  if (!raw) return null;
+  try {
+    const s = JSON.parse(raw) as Partial<Session> | null;
+    return s && typeof s.access_token === 'string' && typeof s.refresh_token === 'string' && s.user?.id ? (s as Session) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Poslednja sačuvana prijava na ovom uređaju, bez provere na serveru. */
+export function readStoredSession(): Session | null {
+  const key = supabase ? (supabase.auth as unknown as { storageKey?: string }).storageKey : undefined;
+  if (!key) return null;
+  try { return parseStoredSession(localStorage.getItem(key)); } catch { return null; }
+}
+
+/** prijava nije mogla da se obnovi samo zato što nema veze (a ne zato što je nalog odjavljen ili ukinut) */
+export function isOfflineAuthFailure(err: unknown, online: boolean = typeof navigator === 'undefined' ? true : navigator.onLine): boolean {
+  return !online || (err != null && isAuthRetryableFetchError(err));
+}
 
 /** Prevod grešaka prijave na srpski. */
 export function loginErrorMessage(err: { message?: string; status?: number; code?: string } | null | undefined): string {

@@ -24,6 +24,8 @@ export function Modal({ title, onClose, children, footer, width = 480, fullscree
     const first = root?.querySelector<HTMLElement>('[data-autofocus]') ?? root?.querySelector<HTMLElement>(FOCUSABLE);
     (first ?? root)?.focus();
     const onKey = (e: KeyboardEvent) => {
+      // Esc u otvorenoj listi za pretragu zatvara samo listu, ne dijalog
+      if (e.key === 'Escape' && (e.target as HTMLElement | null)?.closest?.('[data-search-select-open]')) return;
       if (e.key === 'Escape') { e.stopPropagation(); onCloseRef.current(); return; }
       if (e.key !== 'Tab' || !root) return;
       const items = Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((el) => el.offsetParent !== null);
