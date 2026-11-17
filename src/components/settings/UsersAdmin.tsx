@@ -4,6 +4,7 @@ import { useAuth } from '../../services/auth';
 import { displayLogin } from '../../services/loginName';
 import { changeAccount, fetchAccounts, ROLE_LABEL, type StaffRole, type TeamAccount } from '../../services/teamAccounts';
 import { ConfirmDialog, Modal } from '../ui/Modal';
+import { ChangePasswordButton } from './ChangePassword';
 
 const ROLE_PILL: Record<TeamAccount['role'], string> = {
   admin: 'bg-[#fde4e4] text-[#b4141b]',
@@ -93,7 +94,7 @@ export function UsersAdmin() {
   return (
     <section className="card p-5 lg:col-span-2" data-testid="users-admin">
       <h2 className="font-bold mb-1">Nalozi zaposlenih</h2>
-      <p className="text-sm text-muted mb-4">Isti nalozi i uloge važe u Ogradama i u Stolariji. Šef pravi naloge za šefove i majstore i postavlja im početnu lozinku; posle toga svako menja svoju lozinku na svom profilu (Podešavanja → Promeni lozinku).</p>
+      <p className="text-sm text-muted mb-4">Isti nalozi i uloge važe u Ogradama i u Stolariji. Šef pravi naloge za šefove i majstore i postavlja im početnu lozinku; posle toga svako menja svoju lozinku sam: dugme „Lozinka“ u svom redu ovde ili Podešavanja → Firma i korisnik → Promeni lozinku.</p>
 
       <div className="flex gap-1 mb-3" role="tablist">
         <button type="button" role="tab" aria-selected={mode === 'create'} className={`btn btn-sm ${mode === 'create' ? 'btn-primary' : ''}`} data-testid="user-mode-create" onClick={() => setMode('create')}><UserPlus size={14} />Novi nalog</button>
@@ -148,6 +149,8 @@ export function UsersAdmin() {
                     <td className="td"><span className={`pill !py-0 !px-2 !text-[11px] ${ROLE_PILL[a.role]}`} data-testid="user-row-role">{ROLE_LABEL[a.role]}</span></td>
                     <td className="td">
                       <span className="flex justify-end gap-1.5">
+                        {/* sopstvena lozinka se menja odmah ovde (i u Podešavanjima → Firma i korisnik) */}
+                        {self && <ChangePasswordButton label="Lozinka" className="btn btn-sm" testId="user-own-password" />}
                         <button className="btn btn-sm" aria-label={`Izmeni nalog ${loginOf(a)}`} data-testid="user-edit" disabled={locked} onClick={() => setEditing(a)}><Pencil size={14} />Izmeni</button>
                         <button className="btn btn-sm btn-danger" aria-label={`Obriši nalog ${loginOf(a)}`} data-testid="user-delete" disabled={self || a.role === 'admin'} title={self ? 'Sopstveni nalog ne možete obrisati' : undefined} onClick={() => setDeleting(a)}><Trash2 size={14} />Obriši</button>
                       </span>
@@ -220,7 +223,7 @@ function EditAccount({ account, isAdmin, onClose, onSaved }: {
           <input className="input" value={login} onChange={(e) => setLogin(e.target.value)} disabled={loginLocked} autoCapitalize="none" spellCheck={false} data-testid="user-edit-login" />
           {loginLocked && <span className="text-[12px] text-muted">Stvarnu e-mail adresu za prijavu menja samo administrator.</span>}
         </label>
-        <p className="text-[12px] text-muted">Ulogu i lozinku ovde ne menjate: lozinku menja vlasnik naloga na svom profilu.</p>
+        <p className="text-[12px] text-muted">Ulogu i lozinku ovde ne menjate: lozinku menja vlasnik naloga (dugme „Lozinka“ u svom redu ili Podešavanja → Firma i korisnik → Promeni lozinku).</p>
         {error && <p role="alert" className="text-[13px] text-[#b42318] rounded-md bg-[#fef3f2] border border-[#fecdca] px-3 py-2" data-testid="user-edit-error">{error}</p>}
       </div>
     </Modal>

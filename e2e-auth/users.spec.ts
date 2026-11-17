@@ -16,7 +16,7 @@ test('prijava korisničkim imenom (bez e-maila): obični korisnik nema ovlašće
   await page.getByTestId('login-email').fill('petar');
   await page.getByTestId('login-password').fill('pogresna');
   await page.getByTestId('login-submit').click();
-  await expect(page.getByTestId('login-error')).toHaveText('Pogrešan email ili lozinka.');
+  await expect(page.getByTestId('login-error')).toHaveText('Pogrešno korisničko ime, e-mail ili lozinka.');
 });
 
 test('administrator u Podešavanjima pravi korisnika (korisničko ime ili e-mail) i vidi spisak', async ({ page }) => {

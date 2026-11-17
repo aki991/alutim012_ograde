@@ -15,7 +15,7 @@ test('pogrešna lozinka, previše pokušaja, pa uspešna prijava, ostaje posle o
   await page.getByTestId('login-email').fill('radnik@alutim.rs');
   await page.getByTestId('login-password').fill('pogresna');
   await page.getByTestId('login-submit').click();
-  await expect(page.getByTestId('login-error')).toHaveText('Pogrešan email ili lozinka.');
+  await expect(page.getByTestId('login-error')).toHaveText('Pogrešno korisničko ime, e-mail ili lozinka.');
   await expect(page.getByTestId('login-password')).toHaveValue('');
 
   await page.getByTestId('login-email').fill('spor@alutim.rs');

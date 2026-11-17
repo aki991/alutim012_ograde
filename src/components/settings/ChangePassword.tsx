@@ -5,11 +5,11 @@ import { changeOwnPassword } from '../../services/teamAccounts';
 import { Modal } from '../ui/Modal';
 
 /** Promena sopstvene lozinke (na profilu). Nova lozinka važi i u Stolariji, jer je nalog zajednički. */
-export function ChangePasswordButton() {
+export function ChangePasswordButton({ label = 'Promeni lozinku', className = 'btn btn-sm mt-1', testId = 'btn-change-password' }: { label?: string; className?: string; testId?: string }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button type="button" className="btn btn-sm mt-1" data-testid="btn-change-password" onClick={() => setOpen(true)}><KeyRound size={14} />Promeni lozinku</button>
+      <button type="button" className={className} data-testid={testId} onClick={() => setOpen(true)}><KeyRound size={14} />{label}</button>
       {open && <ChangePasswordDialog onClose={() => setOpen(false)} />}
     </>
   );

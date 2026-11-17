@@ -22,6 +22,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
   const navigate = useNavigate();
   const settings = useAppStore((s) => s.settings);
   const [bell, setBell] = useState(false);
+  const [clearAsk, setClearAsk] = useState(false);
   const auth = useAuth();
   const [user, setUser] = useState(false);
   const specs = useFieldSpecs();
@@ -29,7 +30,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
   const cloud = useCloudStatus();
   const bellRef = useRef<HTMLDivElement>(null);
   const userRef = useRef<HTMLDivElement>(null);
-  useOutside(bellRef, () => setBell(false));
+  useOutside(bellRef, () => { setBell(false); setClearAsk(false); });
   useOutside(userRef, () => setUser(false));
 
   // prijavljen korisnik: ime iz naloga, a ako ga nema deo emaila; bez prijave ostaje lokalno ime iz podešavanja
@@ -62,7 +63,11 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
                 <>
                   <div className="flex items-center justify-between px-2 pb-1.5 pt-1">
                     <span className="text-[12px] font-semibold uppercase tracking-wide text-slate-500">Specifikacije sa terena</span>
-                    {specs.unread > 0 && <button className="whitespace-nowrap font-medium text-primary hover:underline" style={{ fontSize: 12 }} data-testid="bell-mark-all" onClick={specs.markAllSeen}>Označi sve kao pročitano</button>}
+                    <span className="flex items-center gap-3">
+                      {specs.unread > 0 && <button className="whitespace-nowrap font-medium text-primary hover:underline" style={{ fontSize: 12 }} data-testid="bell-mark-all" onClick={specs.markAllSeen}>Označi sve kao pročitano</button>}
+                      {/* brisanje u dva koraka: prvi klik pita, drugi briše */}
+                      <button className="whitespace-nowrap font-medium text-[#b42318] hover:underline" style={{ fontSize: 12 }} data-testid="bell-clear-all" onClick={() => { if (clearAsk) { specs.clearAll(); setClearAsk(false); } else setClearAsk(true); }}>{clearAsk ? 'Potvrdi brisanje' : 'Obriši sva'}</button>
+                    </span>
                   </div>
                   <ul className="max-h-[360px] overflow-y-auto scroll-thin" data-testid="bell-list">
                     {specs.items.map((s) => {

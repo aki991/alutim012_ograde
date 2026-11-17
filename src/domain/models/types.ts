@@ -380,6 +380,8 @@ export interface AppSettings {
   customModels?: import('./custom').CustomModel[];
   /** modeli iz kataloga (ograde i osnovne kapije) koje je korisnik obrisao; „Vrati obrisane modele“ ih vraća */
   hiddenModels?: string[];
+  /** obaveštenja (specifikacije sa terena) pristigla do ovog trenutka (ISO) su obrisana u Ogradama; u Stolariji ostaju */
+  notificationsClearedAt?: string;
   /** korisnički šabloni kliznih kapija (sklop sa merama, smerom i stanjem potvrde) */
   /** šabloni stubova (tip, presek, mere, montaža, boja, kape) za izbor u panelu stuba */
   postTemplates?: PostTemplate[];

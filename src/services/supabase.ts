@@ -42,7 +42,7 @@ export function isOfflineAuthFailure(err: unknown, online: boolean = typeof navi
 export function loginErrorMessage(err: { message?: string; status?: number; code?: string } | null | undefined): string {
   const msg = (err?.message ?? '').toLowerCase();
   const code = (err?.code ?? '').toLowerCase();
-  if (code === 'invalid_credentials' || msg.includes('invalid login credentials')) return 'Pogrešan email ili lozinka.';
+  if (code === 'invalid_credentials' || msg.includes('invalid login credentials')) return 'Pogrešno korisničko ime, e-mail ili lozinka.';
   if (code === 'email_not_confirmed' || msg.includes('email not confirmed')) return 'Email adresa još nije potvrđena. Proverite poštu ili kontaktirajte administratora.';
   if (code === 'over_request_rate_limit' || err?.status === 429 || msg.includes('rate limit')) return 'Previše pokušaja prijave. Sačekajte nekoliko minuta pa pokušajte ponovo.';
   if (code === 'user_banned' || msg.includes('banned')) return 'Ovaj nalog je blokiran. Kontaktirajte administratora.';

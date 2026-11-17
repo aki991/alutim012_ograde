@@ -35,7 +35,11 @@ function AccountName() {
       </div>
       {state === 'saved' && <div className="text-[12px] text-[#15803d] mt-1" role="status">Ime je sačuvano u nalogu.</div>}
       {state === 'error' && <div className="text-[12px] text-[#b42318] mt-1" role="alert">{error ?? 'Ime nije sačuvano. Pokušajte ponovo.'}</div>}
-      <ChangePasswordButton />
+      {/* lozinka prijavljenog naloga: poseban red, da se vidi (ranije malo dugme ispod imena) */}
+      <div className="mt-3 rounded-lg border border-line bg-slate-50 px-3 py-2.5 flex flex-wrap items-center justify-between gap-2" data-testid="account-password">
+        <span className="min-w-0"><span className="block text-[13.5px] font-semibold">Lozinka naloga {auth.login}</span><span className="block text-[12px] text-muted">Nova lozinka važi i u Ogradama i u Stolariji.</span></span>
+        <ChangePasswordButton className="btn btn-sm" />
+      </div>
     </div>
   );
 }
