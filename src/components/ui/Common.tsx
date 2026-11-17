@@ -72,7 +72,8 @@ export function ProjectThumb({ project, width = 64 }: { project: Project; width?
 
 export interface MenuAction { label: string; onClick: () => void; danger?: boolean }
 
-export function ActionsMenu({ actions, label = 'Akcije' }: { actions: MenuAction[]; label?: string }) {
+/** Meni sa akcijama; bez `text` je dugme sa tri tačke, a sa `text` (i `icon`) vidljivo dugme sa natpisom. */
+export function ActionsMenu({ actions, label = 'Akcije', text, icon, testId }: { actions: MenuAction[]; label?: string; text?: string; icon?: ReactNode; testId?: string }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
@@ -102,7 +103,9 @@ export function ActionsMenu({ actions, label = 'Akcije' }: { actions: MenuAction
   }, [open]);
   return (
     <div className="relative inline-block" ref={ref}>
-      <button ref={btnRef} className="btn btn-icon !border-transparent" aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={() => { setPos(null); setOpen((o) => !o); }}><MoreHorizontal size={18} /></button>
+      <button ref={btnRef} className={text ? 'btn btn-sm whitespace-nowrap' : 'btn btn-icon !border-transparent'} aria-label={label} aria-haspopup="menu" aria-expanded={open} data-testid={testId} onClick={() => { setPos(null); setOpen((o) => !o); }}>
+        {text ? <>{icon}{text}</> : <MoreHorizontal size={18} />}
+      </button>
       {open && createPortal(
         <div ref={menuRef} role="menu" className="fixed w-44 card p-1.5 z-[100]" style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999 }}>
           {actions.map((a) => (

@@ -5,6 +5,7 @@ import { CustomModelThumb } from '../../components/designer/PartsSvg';
 import { SpecEditor } from '../../components/models/SpecEditor';
 import { ModelThumb, Page, PageHeader } from '../../components/ui/Common';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
+import { extraSpecKey } from '../../domain/models/spec';
 import { FENCE_MODELS, TERRACE_MODEL_LIST, YARD_MODEL_LIST, constructionOf } from '../../domain/models/catalog';
 import { CUSTOM_KIND_LABELS, type CustomModel } from '../../domain/models/custom';
 import type { FenceModelId } from '../../domain/models/types';
@@ -52,6 +53,17 @@ export default function ModelsPage({ terrace = false }: { terrace?: boolean }) {
     navigate(`/editor/${current.id}`);
   };
 
+  /** Dugme „Sastavnica“ (spisak materijala modela): isto na svim karticama, tik ispred dugmeta za brisanje. */
+  const specButton = (id: string, modified: boolean) => (
+    <button className="btn !px-2.5 shrink-0" data-testid={`spec-model-${id}`} title="Sastavnica ograde: sav materijal koji se koristi za ovu ogradu (ulazi u spisak materijala projekta)" onClick={() => setSpecFor(id as FenceModelId)}>
+      <ListChecks size={16} />Sastavnica{modified && <><span aria-hidden="true" className="w-2 h-2 rounded-full bg-primary" /><span className="sr-only"> (izmenjena)</span></>}
+    </button>
+  );
+  /** Dugme za brisanje modela: isto na svim karticama (samo ikona). */
+  const deleteButton = (testId: string, name: string, onClick: () => void) => (
+    <button className="btn btn-danger shrink-0" data-testid={testId} aria-label={`Obriši model ${name}`} title="Obriši model" onClick={onClick}><Trash2 size={16} /></button>
+  );
+
   // ručno nacrtani modeli: za dvorišne ograde idu u istu mrežu kao ostali modeli (bez posebnog naslova), za terase u svoj odeljak
   const customCards = customModels?.filter((m) => !m.replaces && m.kind === kind).map((m) => (
       <article key={m.id} className="card overflow-hidden flex flex-col" data-testid="custom-model-card">
@@ -59,10 +71,11 @@ export default function ModelsPage({ terrace = false }: { terrace?: boolean }) {
         <div className="p-4 flex-1 flex flex-col">
           <h3 className="font-bold text-[17px]">{m.name || 'Model bez naziva'}</h3>
           <p className="text-sm text-muted mt-0.5">{CUSTOM_KIND_LABELS[m.kind]} · {m.widthMm} × {m.heightMm} mm · {m.parts.length} delova</p>
-          <div className="flex flex-wrap gap-2 mt-auto pt-4">
-            <button className="btn btn-primary" data-testid="use-custom-model" disabled={m.parts.length === 0} onClick={() => useModel(m.id as FenceModelId)}>Koristi model</button>
-            <button className="btn" data-testid="open-custom-model" onClick={() => navigate(`${drawPath}/${m.id}`)}><PencilRuler size={16} />Otvori crtež</button>
-            <button className="btn btn-danger" aria-label={`Obriši model ${m.name}`} onClick={() => setDel(m)}><Trash2 size={16} />Obriši</button>
+          <div className="flex gap-2 mt-auto pt-4">
+            <button className="btn flex-1 !px-2" data-testid="open-custom-model" onClick={() => navigate(`${drawPath}/${m.id}`)}><PencilRuler size={16} />Otvori crtež</button>
+            <button className="btn btn-primary flex-1 !px-2" data-testid="use-custom-model" disabled={m.parts.length === 0} onClick={() => useModel(m.id as FenceModelId)}>Koristi model</button>
+            {specButton(m.id, Boolean(modelSpecs?.[extraSpecKey(m.id)]?.length))}
+            {deleteButton(`delete-custom-model-${m.id}`, m.name, () => setDel(m))}
           </div>
         </div>
       </article>
@@ -99,7 +112,8 @@ export default function ModelsPage({ terrace = false }: { terrace?: boolean }) {
                 <div className="flex gap-2 mt-auto pt-4">
                     <button className="btn flex-1 !px-2" data-testid={`rework-model-${m.id}`} onClick={() => navigate(`${drawPath}/${rep.id}`, { state: { dorada: true } })}><Wrench size={16} />Doradi</button>
                     <button className="btn btn-primary flex-1 !px-2" data-testid={`use-model-${m.id}`} onClick={() => useModel(rep.id as FenceModelId)}>Koristi model</button>
-                    <button className="btn btn-danger shrink-0" data-testid={`delete-model-${m.id}`} aria-label={`Obriši model ${m.name}`} title="Obriši model" onClick={() => setDelBuiltin(m.id)}><Trash2 size={16} /></button>
+                    {specButton(rep.id, Boolean(modelSpecs?.[extraSpecKey(rep.id)]?.length))}
+                    {deleteButton(`delete-model-${m.id}`, m.name, () => setDelBuiltin(m.id))}
                 </div>
               </div>
             </article>
@@ -123,13 +137,11 @@ export default function ModelsPage({ terrace = false }: { terrace?: boolean }) {
               {constructionOf(m.id)?.note && (
                 <p className="text-[12px] text-muted mt-2" data-testid={`construction-note-${m.id}`}>{constructionOf(m.id)!.note}</p>
               )}
-              <div className="flex flex-wrap gap-2 mt-auto pt-4">
-                <div className="w-full flex gap-2">
-                  <button className="btn flex-1 !px-2" data-testid={`rework-model-${m.id}`} title="Otvara crtež modela u crtanju, gde se menja svaki deo" onClick={() => navigate(`${drawPath}/${useAppStore.getState().startDorada(m.id)}`, { state: { dorada: true } })}><Wrench size={16} />Doradi</button>
-                  <button className="btn btn-primary flex-1 !px-2" data-testid={`use-model-${m.id}`} onClick={() => useModel(m.id)}>Koristi model</button>
-                  <button className="btn btn-danger shrink-0" data-testid={`delete-model-${m.id}`} aria-label={`Obriši model ${m.name}`} title="Obriši model" onClick={() => setDelBuiltin(m.id)}><Trash2 size={16} /></button>
-                </div>
-                <button className="btn" data-testid={`spec-model-${m.id}`} onClick={() => setSpecFor(m.id)}><ListChecks size={16} />Specifikacija{modelSpecs?.[m.id] ? ' (izmenjena)' : ''}</button>
+              <div className="flex gap-2 mt-auto pt-4">
+                <button className="btn flex-1 !px-2" data-testid={`rework-model-${m.id}`} title="Otvara crtež modela u crtanju, gde se menja svaki deo" onClick={() => navigate(`${drawPath}/${useAppStore.getState().startDorada(m.id)}`, { state: { dorada: true } })}><Wrench size={16} />Doradi</button>
+                <button className="btn btn-primary flex-1 !px-2" data-testid={`use-model-${m.id}`} onClick={() => useModel(m.id)}>Koristi model</button>
+                {specButton(m.id, Boolean(modelSpecs?.[m.id]))}
+                {deleteButton(`delete-model-${m.id}`, m.name, () => setDelBuiltin(m.id))}
               </div>
             </div>
           </article>

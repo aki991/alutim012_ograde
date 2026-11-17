@@ -8,7 +8,8 @@ import { buildRail04Sheet } from '../domain/pricing/railSpec';
 import { computeLayout, isSpacer, outerWidthMm } from '../domain/geometry/layout';
 import { itemLabel, itemNumber } from '../utils/labels';
 import { fmtDate, fmtMoney, fmtNum } from '../utils/units';
-import { downloadBlob, frontViewPng, safeFilename, topViewPng } from './exports';
+import { buildMaterialList, materialListRows, materialQtyText } from '../domain/pricing/materialList';
+import { downloadBlob, downloadCsv, frontViewPng, safeFilename, topViewPng } from './exports';
 import { BRAND_RED, docHeader, loadHeaderLogos } from './pdfHeader';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -146,6 +147,65 @@ export async function buildQuotePdfBlob(project: Project, customer: Customer | n
 export async function downloadQuotePdf(project: Project, customer: Customer | null, materials: Material[], settings: AppSettings): Promise<void> {
   const blob = await buildQuotePdfBlob(project, customer, materials, settings);
   downloadBlob(blob, `ponuda_${safeFilename(project.quoteNo || project.name)}.pdf`);
+}
+
+/** Spisak materijala projekta (bez cena) kao PDF: za nabavku i radionicu. */
+export async function buildProjectMaterialsPdfBlob(project: Project, customer: Customer | null, materials: Material[], settings: AppSettings): Promise<Blob> {
+  const pdfMake = await getPdfMake();
+  const groups = buildMaterialList(project, materials, settings.modelSpecs);
+  const logos = await loadHeaderLogos();
+  const info = settings.companyInfo ?? {};
+  const contact = [info.address, info.phone, info.email, info.pib ? `PIB: ${info.pib}` : ''].filter(Boolean).join('  ·  ');
+  const count = groups.reduce((n, g) => n + g.lines.length, 0);
+  const rows = groups.flatMap((g) => [
+    [{ text: g.group, colSpan: 5, bold: true, fontSize: 9, fillColor: '#f1f5f9', margin: [0, 2, 0, 2] }, {}, {}, {}, {}],
+    ...g.lines.map((l) => [td(l.sku, 'left', { fontSize: 7.5 }), td(l.name), td(l.unit), td(materialQtyText(l.needed, l.unit), 'right'), td(materialQtyText(l.purchase, l.unit), 'right', { bold: true })]),
+  ]);
+  const def: any = {
+    pageSize: 'A4',
+    pageMargins: [36, 40, 36, 50],
+    defaultStyle: { font: 'Roboto', fontSize: 9.5, color: INK },
+    info: { title: `Spisak materijala — ${project.name}`, author: settings.companyName },
+    footer: (page: number, pages: number) => ({
+      columns: [
+        { text: `${settings.companyName} · Spisak materijala · ${project.name}`, fontSize: 8, color: MUTED },
+        { text: `Strana ${page} od ${pages}`, alignment: 'right', fontSize: 8, color: MUTED },
+      ],
+      margin: [36, 12, 36, 0],
+    }),
+    content: [
+      docHeader('SPISAK MATERIJALA', `${project.quoteNo ? `Ponuda ${project.quoteNo}  ·  ` : ''}${fmtDate(new Date().toISOString())}`, settings.companyName, contact, logos),
+      { canvas: [{ type: 'rect', x: 0, y: 0, w: 523, h: 3, color: BRAND_RED }], margin: [0, 0, 0, 4] },
+      {
+        margin: [0, 12, 0, 10],
+        columns: [
+          { width: '50%', stack: [{ text: 'PROJEKAT', fontSize: 8, color: MUTED, bold: true }, { text: project.name, bold: true }, { text: `Status: ${STATUS_LABELS[project.status]}`, color: MUTED }] },
+          { width: '50%', stack: [{ text: 'KUPAC', fontSize: 8, color: MUTED, bold: true }, { text: customer?.name ?? 'Nije izabran', bold: true }, { text: [customer?.phone, customer?.address].filter(Boolean).join(' · '), color: MUTED }] },
+        ],
+      },
+      count === 0
+        ? { text: 'Projekat nema elemenata, pa nema ni materijala.', color: MUTED }
+        : {
+          table: {
+            headerRows: 1, dontBreakRows: true, widths: [58, '*', 28, 62, 78],
+            body: [[th('Šifra'), th('Naziv'), th('JM'), th('Potrebno', 'right'), th('Za nabavku', 'right')], ...rows],
+          },
+          layout: tableLayout,
+        },
+      { text: '„Potrebno“ je količina prema crtežu. „Za nabavku“ uključuje otpad kod profila (m, m²) i zaokruživanje komada naviše.', fontSize: 8, color: MUTED, margin: [0, 6, 0, 0] },
+    ],
+  };
+  return renderBlob(pdfMake, def);
+}
+
+export async function downloadProjectMaterialsPdf(project: Project, customer: Customer | null, materials: Material[], settings: AppSettings): Promise<void> {
+  downloadBlob(await buildProjectMaterialsPdfBlob(project, customer, materials, settings), `spisak_materijala_${safeFilename(project.quoteNo || project.name)}.pdf`);
+}
+
+/** Spisak materijala projekta kao tabela (CSV, otvara se u Excelu). */
+export function downloadProjectMaterialsCsv(project: Project, customer: Customer | null, materials: Material[], settings: AppSettings): void {
+  const rows = materialListRows(project, customer?.name ?? null, buildMaterialList(project, materials, settings.modelSpecs));
+  downloadCsv(rows, `spisak_materijala_${safeFilename(project.quoteNo || project.name)}.csv`);
 }
 
 export async function buildProductionPdfBlob(project: Project, customer: Customer | null, settings: AppSettings, materials?: Material[]): Promise<Blob> {

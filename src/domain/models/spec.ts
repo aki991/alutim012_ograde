@@ -319,7 +319,18 @@ function louverLightSpec(): SpecPart[] {
 /** Mesto u specifikaciji za kvadratnu cev rama (stvarni materijal se bira u projektu, „Delovi ograde“). */
 export const RAM_TUBE_MATERIAL = 'mat_ram_cev';
 
-export const specFor = (modelId: FenceModelId, specs?: ModelSpecs): SpecPart[] => specs?.[modelId] ?? defaultSpec(modelId);
+/**
+ * Ključ u `modelSpecs` za materijal koji je korisnik dodao u sastavnicu nacrtanog (ili dorađenog) modela. Crtež modela daje svoje
+ * delove, a dodati materijal (vijci, nosači, kape …) se čuva odvojeno, pa ostaje kad se crtež promeni.
+ */
+export const extraSpecKey = (modelId: string): string => `${modelId}#dodato`;
+
+/** Sastavnica modela: izmenjena ili podrazumevana specifikacija; kod nacrtanog modela uz crtež idu i dodati materijali. */
+export const specFor = (modelId: FenceModelId, specs?: ModelSpecs): SpecPart[] => {
+  const base = specs?.[modelId] ?? defaultSpec(modelId);
+  const extra = customModelOf(modelId) ? (specs as Record<string, SpecPart[]> | undefined)?.[extraSpecKey(modelId)] : undefined;
+  return extra?.length ? [...base, ...extra] : base;
+};
 
 /** Da li model ima izmenjenu specifikaciju (tada se zamenjuje i detaljna sastavnica modela 04 i 08). */
 export const hasCustomSpec = (modelId: FenceModelId, specs?: ModelSpecs): boolean => Boolean(specs?.[modelId]);

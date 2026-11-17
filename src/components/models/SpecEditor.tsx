@@ -2,7 +2,8 @@ import { Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { compareMaterials } from '../../domain/models/materialShape';
 import { FENCE_MODELS } from '../../domain/models/catalog';
-import { BOM_GROUPS, checkFormula, defaultSpec, evaluateSpec, hasCustomSpec, SPEC_VARIABLES, specVars, type SpecPart } from '../../domain/models/spec';
+import { isCustomModel } from '../../domain/models/customRegistry';
+import { BOM_GROUPS, checkFormula, defaultSpec, evaluateSpec, extraSpecKey, hasCustomSpec, SPEC_VARIABLES, specVars, type SpecPart } from '../../domain/models/spec';
 import type { FenceModelId } from '../../domain/models/types';
 import { useAppStore } from '../../store/useAppStore';
 import { fmtNum } from '../../utils/units';
@@ -12,66 +13,84 @@ import { visibleMaterials } from '../../config/features';
 let counter = 0;
 const newId = () => `sp_new_${Date.now().toString(36)}_${++counter}`;
 
-/** Uređivanje specifikacije modela: dodavanje i brisanje elemenata, formule količine i dužine reza. */
+/**
+ * Sastavnica modela: dodavanje i brisanje elemenata, formule količine i dužine reza. Kod nacrtanog (ili dorađenog) modela delovi
+ * crteža su zaključani (menjaju se u crtanju), a ovde se dodaje sav ostali materijal ograde (vijci, nosači, kape …).
+ */
 export function SpecEditor({ modelId, onClose }: { modelId: FenceModelId; onClose: () => void }) {
   const def = FENCE_MODELS[modelId];
   const materials = useAppStore((s) => s.materials);
   const settings = useAppStore((s) => s.settings);
-  const saved = settings.modelSpecs?.[modelId];
-  const [parts, setParts] = useState<SpecPart[]>(() => (saved ?? defaultSpec(modelId)).map((p) => ({ ...p })));
+  const drawn = isCustomModel(modelId);
+  const extraKey = extraSpecKey(modelId);
+  const saved = drawn ? settings.modelSpecs?.[extraKey] : settings.modelSpecs?.[modelId];
+  // nacrtan model: delovi crteža (zaključani) + dodati materijal; ostali modeli: cela sastavnica se uređuje
+  const drawnParts = useMemo(() => (drawn ? defaultSpec(modelId) : []), [drawn, modelId]);
+  const [parts, setParts] = useState<SpecPart[]>(() => (saved ?? (drawn ? [] : defaultSpec(modelId))).map((p) => ({ ...p })));
   const [sample, setSample] = useState({ w: 2000, h: 1600 });
-  const custom = hasCustomSpec(modelId, settings.modelSpecs);
+  const custom = drawn ? Boolean(saved?.length) : hasCustomSpec(modelId, settings.modelSpecs);
   const dedicated = modelId === 'rail_black' || modelId === 'louver_light' || modelId === 'rail_inox';
 
   const vars = useMemo(
     () => specVars({ modelId, widthMm: sample.w, heightMm: sample.h, axisMm: sample.w + 100, params: def.defaults }),
     [modelId, sample, def.defaults],
   );
-  const evaluated = useMemo(() => evaluateSpec(parts, vars), [parts, vars]);
+  const allParts = useMemo(() => [...drawnParts, ...parts], [drawnParts, parts]);
+  const evaluated = useMemo(() => evaluateSpec(allParts, vars), [allParts, vars]);
   const byId = new Map(evaluated.map((e) => [e.part.id, e]));
   const matName = (id: string) => materials.find((m) => m.id === id);
   // grupe pa mere od najmanje do najveće
-  const usedIds = parts.map((p) => p.materialId);
+  const usedIds = allParts.map((p) => p.materialId);
   const sortedMaterials = useMemo(() => [...visibleMaterials(materials, usedIds)].sort(compareMaterials), [materials, usedIds.join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
   const errors = parts.some((p) => p.enabled && (checkFormula(p.qty, vars) !== null || checkFormula(p.lengthMm, vars) !== null || p.qty.trim() === ''));
 
   const patch = (id: string, change: Partial<SpecPart>) => setParts((ps) => ps.map((p) => (p.id === id ? { ...p, ...change } : p)));
-  const add = () => setParts((ps) => [...ps, { id: newId(), name: 'Novi element', materialId: materials[0]?.id ?? '', group: 'Profili ispune', qty: '1', enabled: true }]);
+  const add = () => setParts((ps) => [...ps, { id: newId(), name: 'Novi element', materialId: materials[0]?.id ?? '', group: drawn ? 'Dodatni materijal' : 'Profili ispune', qty: '1', enabled: true }]);
   const total = evaluated.reduce((s, e) => {
     const m = matName(e.part.materialId);
     return s + (m ? e.materialQty * (1 + (m.unit === 'm' || m.unit === 'm2' ? m.wastePercent : 0) / 100) * m.unitPrice : 0);
   }, 0);
 
   const save = () => {
-    useAppStore.getState().updateSettings({ modelSpecs: { ...settings.modelSpecs, [modelId]: parts.map((p) => ({ ...p, lengthMm: p.lengthMm?.trim() ? p.lengthMm : undefined })) } });
+    const key = drawn ? extraKey : modelId;
+    const list = parts.map((p) => ({ ...p, lengthMm: p.lengthMm?.trim() ? p.lengthMm : undefined }));
+    const next = { ...settings.modelSpecs };
+    if (drawn && list.length === 0) delete next[key];
+    else next[key] = list;
+    useAppStore.getState().updateSettings({ modelSpecs: next });
     onClose();
   };
   const reset = () => {
     const next = { ...settings.modelSpecs };
-    delete next[modelId];
+    delete next[drawn ? extraKey : modelId];
     useAppStore.getState().updateSettings({ modelSpecs: next });
     onClose();
   };
 
   return (
     <Modal
-      title={`Specifikacija — ${def.name}`}
+      title={`Sastavnica — ${def.name}`}
       width={1180}
       onClose={onClose}
       footer={
         <div className="flex flex-wrap gap-2 justify-between w-full">
-          <button className="btn" data-testid="spec-reset" onClick={reset} disabled={!custom}><RotateCcw size={15} />Vrati podrazumevanu</button>
+          <button className="btn" data-testid="spec-reset" onClick={reset} disabled={!custom}><RotateCcw size={15} />{drawn ? 'Ukloni dodati materijal' : 'Vrati podrazumevanu'}</button>
           <div className="flex gap-2">
             <button className="btn" onClick={onClose}>Otkaži</button>
-            <button className="btn btn-primary" data-testid="spec-save" disabled={errors || parts.length === 0} onClick={save}>Sačuvaj specifikaciju</button>
+            <button className="btn btn-primary" data-testid="spec-save" disabled={errors || (!drawn && parts.length === 0)} onClick={save}>Sačuvaj sastavnicu</button>
           </div>
         </div>
       }
     >
       <div data-testid="spec-editor">
         <p className="text-[13px] text-slate-600 mb-2">
-          Elementi se računaju za <b>jedno polje</b> ove ograde (i za kapiju sa ovom ispunom) i ulaze u krojnu listu i cenu. Količina i dužina reza su formule; ako element ima dužinu reza, materijal se računa u metrima (količina × dužina).
+          Elementi se računaju za <b>jedno polje</b> ove ograde (i za kapiju sa ovom ispunom) i ulaze u spisak materijala, krojnu listu i cenu projekta. Količina i dužina reza su formule; ako element ima dužinu reza, materijal se računa u metrima (količina × dužina).
         </p>
+        {drawn && (
+          <p className="text-[12.5px] rounded-md bg-slate-50 text-slate-700 border border-line px-3 py-1.5 mb-2" data-testid="spec-drawn-note">
+            Prvi redovi (sivi) su delovi crteža modela i menjaju se u crtanju („Otvori crtež“ / „Doradi“). Ispod njih dodajte sav ostali materijal koji ide uz ovu ogradu (vijci, nosači, kape …): ulazi u ukupan spisak materijala svakog projekta sa ovim modelom.
+          </p>
+        )}
         {dedicated && (
           <p className="text-[12.5px] rounded-md bg-[#fffaeb] text-[#93370d] border border-[#fedf89] px-3 py-1.5 mb-2" data-testid="spec-dedicated-note">
             {custom ? 'Izmenjena specifikacija zamenjuje detaljnu sastavnicu ovog modela (neprekinute cevi u nizu, ugaoni spojevi, stubovi iz sastavnice).' : 'Dok se specifikacija ne sačuva, za ovaj model važi detaljna sastavnica (neprekinute cevi u nizu, ugaoni spojevi, stubovi). Čuvanjem prelazite na obračun po polju sa elementima ispod; stubovi tada ostaju obični stubovi projekta.'}
@@ -91,6 +110,24 @@ export function SpecEditor({ modelId, onClose }: { modelId: FenceModelId; onClos
           <table className="w-full min-w-[1100px] text-sm" data-testid="spec-table">
             <thead><tr><th className="th w-8"></th><th className="th min-w-[210px]">Element</th><th className="th min-w-[250px]">Materijal</th><th className="th min-w-[150px]">Grupa</th><th className="th">Količina po polju</th><th className="th">Dužina reza (mm)</th><th className="th text-right">Rezultat (primer)</th><th className="th w-8"></th></tr></thead>
             <tbody>
+              {drawnParts.map((p) => {
+                const ev = byId.get(p.id);
+                const mat = matName(p.materialId);
+                return (
+                  <tr key={p.id} className="bg-slate-50 text-slate-600" data-testid="spec-drawn-row">
+                    <td className="td"><input type="checkbox" aria-label="Deo crteža (uključen)" checked={p.enabled} disabled /></td>
+                    <td className="td">{p.name}</td>
+                    <td className="td">{mat ? `${mat.name} [${mat.unit}]` : `${p.materialId} (nepoznat)`}</td>
+                    <td className="td">{p.group}</td>
+                    <td className="td font-mono">{p.qty}</td>
+                    <td className="td font-mono">{p.lengthMm ?? '—'}</td>
+                    <td className="td text-right tabular-nums text-[13px] whitespace-nowrap">
+                      {ev && !ev.error ? <>{fmtNum(ev.qty, ev.qty % 1 ? 2 : 0)} {ev.lengthMm !== null ? `× ${fmtNum(ev.lengthMm, 0)} mm` : mat?.unit ?? ''}</> : '—'}
+                    </td>
+                    <td className="td" />
+                  </tr>
+                );
+              })}
               {parts.map((p, i) => {
                 const ev = byId.get(p.id);
                 const qErr = p.enabled ? (p.qty.trim() === '' ? 'Unesite formulu' : checkFormula(p.qty, vars)) : null;
@@ -126,7 +163,7 @@ export function SpecEditor({ modelId, onClose }: { modelId: FenceModelId; onClos
                   </tr>
                 );
               })}
-              {parts.length === 0 && <tr><td className="td text-muted" colSpan={8}>Specifikacija je prazna: ovaj model neće imati materijal u obračunu.</td></tr>}
+              {parts.length === 0 && <tr><td className="td text-muted" colSpan={8}>{drawn ? 'Nema dodatog materijala: u spisak ulaze samo delovi crteža.' : 'Sastavnica je prazna: ovaj model neće imati materijal u obračunu.'}</td></tr>}
             </tbody>
           </table>
         </div>

@@ -934,7 +934,7 @@ test('modeli: kartice navode profile (vertikale i horizontale) po podacima radni
   await expect(page.getByTestId('construction-vertical-h_wide')).toHaveCount(0);
 });
 
-test('modeli: dugmad „Koristi model" i „Specifikacija" su na istoj visini u svim karticama istog reda', async ({ page }) => {
+test('modeli: dugmad „Koristi model" i „Sastavnica" su na istoj visini u svim karticama istog reda', async ({ page }) => {
   await page.goto('/modeli');
   const ys = async (testId: (id: string) => string) => {
     const ids = ['h_narrow', 'h_boards', 'h_combo'];

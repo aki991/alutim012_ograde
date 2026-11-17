@@ -1,4 +1,4 @@
-import { Download, FileUp, Search } from 'lucide-react';
+import { Download, FileSpreadsheet, FileUp, Search } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { SelectField, TextField } from '../../components/forms/Fields';
@@ -10,6 +10,7 @@ import type { Project, ProjectStatus } from '../../domain/models/types';
 import { computeLayout } from '../../domain/geometry/layout';
 import { parseProject } from '../../domain/validation/project';
 import { exportProjectJson } from '../../services/exports';
+import { downloadProjectMaterialsCsv, downloadProjectMaterialsPdf } from '../../services/pdf';
 import { useAppStore, useListedProjects } from '../../store/useAppStore';
 import { fmtDate, fmtM } from '../../utils/units';
 
@@ -18,6 +19,9 @@ export default function ProjectsPage() {
   const [params, setParams] = useSearchParams();
   const projects = useListedProjects();
   const customers = useAppStore((s) => s.customers);
+  const materials = useAppStore((s) => s.materials);
+  const settings = useAppStore((s) => s.settings);
+  const [exportError, setExportError] = useState<string | null>(null);
   const { copyProject, removeProject, patchProject, importProject } = useAppStore.getState();
   const q = params.get('q') ?? '';
   const [status, setStatus] = useState<ProjectStatus | 'all'>('all');
@@ -57,6 +61,7 @@ export default function ProjectsPage() {
         </>
       } />
       {importError && <div role="alert" className="mb-3 rounded-lg bg-[#fef3f2] text-[#b42318] px-4 py-2.5 text-sm">{importError}</div>}
+      {exportError && <div role="alert" className="mb-3 rounded-lg bg-[#fef3f2] text-[#b42318] px-4 py-2.5 text-sm">{exportError}</div>}
       {importOk && <div role="status" className="mb-3 rounded-lg bg-[#ecfdf3] text-[#067647] px-4 py-2.5 text-sm">{importOk}</div>}
       <div className="card p-4">
         <div className="flex flex-wrap gap-3 mb-4">
@@ -72,7 +77,7 @@ export default function ProjectsPage() {
         {list.length === 0 ? <EmptyState title="Nema projekata" text="Nijedan projekat ne odgovara pretrazi ili filteru." /> : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px]" data-testid="projects-table">
-              <thead><tr><th className="th">Naziv projekta</th><th className="th">Kupac</th><th className="th">Status</th><th className="th">Dužina</th><th className="th">Izmenjeno</th><th className="th w-12"><span className="sr-only">Akcije</span></th></tr></thead>
+              <thead><tr><th className="th">Naziv projekta</th><th className="th">Kupac</th><th className="th">Status</th><th className="th">Dužina</th><th className="th">Izmenjeno</th><th className="th">Materijal</th><th className="th w-12"><span className="sr-only">Akcije</span></th></tr></thead>
               <tbody>
                 {list.map((p) => (
                   <tr key={p.id} data-testid="project-row">
@@ -81,6 +86,12 @@ export default function ProjectsPage() {
                     <td className="td"><StatusPill status={p.status} /></td>
                     <td className="td tabular-nums text-slate-600">{fmtM(computeLayout(p).totalModularMm)}</td>
                     <td className="td text-slate-600">{fmtDate(p.updatedAt)}</td>
+                    <td className="td">
+                      <ActionsMenu text="Materijal" icon={<FileSpreadsheet size={15} />} label={`Spisak materijala: ${p.name}`} testId="project-materials" actions={[
+                        { label: 'Tabela (Excel / CSV)', onClick: () => { setExportError(null); try { downloadProjectMaterialsCsv(p, customers.find((c) => c.id === p.customerId) ?? null, materials, settings); } catch (e) { setExportError(`Tabela nije napravljena: ${(e as Error).message}`); } } },
+                        { label: 'PDF', onClick: () => { setExportError(null); downloadProjectMaterialsPdf(p, customers.find((c) => c.id === p.customerId) ?? null, materials, settings).catch((e: Error) => setExportError(`PDF nije napravljen: ${e.message}`)); } },
+                      ]} />
+                    </td>
                     <td className="td"><ActionsMenu actions={[
                       { label: 'Otvori', onClick: () => navigate(`/editor/${p.id}`) },
                       { label: 'Izmeni podatke', onClick: () => setEditing(p) },
