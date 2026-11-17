@@ -1,6 +1,6 @@
 import { partBounds, type CustomModel, type CustomPart } from './custom';
 import { shapeLookup } from './guides';
-import { capOn, layoutVBars, vBarGroup, vLayoutInfo } from './vbars';
+import { capOn, capsOver, layoutVBars, vBarGroup, vLayoutInfo } from './vbars';
 import type { Material } from './types';
 
 /**
@@ -79,6 +79,7 @@ export function slatIdsOf(model: CustomModel, materials: Material[]): Set<string
   if (!refillsVBars(model)) return new Set();
   const bar = slatGroupOf(model, materials);
   const g = bar && vBarGroup(model, bar, materials);
+  if (g && g.bars.some((b) => b.fit?.repeat === 'off')) return new Set();
   // čep na vrhu letvice prati svoju letvicu, pa se broji kao i ona
   return new Set(g ? g.bars.flatMap((b) => [b.id, ...(capOn(model, b, materials) ? [capOn(model, b, materials)!.id] : [])]) : []);
 }
@@ -98,6 +99,8 @@ export function refillVBars(original: CustomModel, scaled: CustomModel, material
   const sBar = scaled.parts.find((p) => p.id === bar0.id);
   const sGroup = sBar && vBarGroup(scaled, sBar, materials);
   if (!info || !sBar || !sGroup || info.mixed || info.gap === null) return scaled;
+  // radnik je isključio preračunavanje: broj letvica ostaje kao na crtežu
+  if (vBarGroup(original, bar0, materials)?.bars.some((b) => b.fit?.repeat === 'off')) return scaled;
   const bar = info.h;
   const gap = Math.max(0, fill?.gapMm ?? info.gap);
   const edge = (v: number) => Math.min(Math.max(0, v), Math.max(0, gap));
@@ -142,7 +145,7 @@ export function planPattern(original: CustomModel, heightMm: number, materials: 
     if (c.edge === 'lo') lowFrame = Math.max(lowFrame, c.y1); else topFrame = Math.min(topFrame, c.y0);
   }
   const n = cands.length;
-  if (n < 3) return null;
+  if (n < 3 || cands.some((c) => c.p.fit?.repeat === 'off')) return null;
   cands.sort((a, b) => a.y0 - b.y0);
   // razmak između susednih prečki mora da bude isti (sa odstupanjem 1,5 mm); prva ili poslednja prečka može biti pomerena zbog ivice
   const gaps = cands.slice(1).map((c, i) => c.y0 - cands[i].y1);
@@ -249,7 +252,7 @@ export interface RailGroup {
 export function railGroups(original: CustomModel, materials: Material[]): RailGroup[] {
   const shapeOf = shapeLookup(materials);
   const W0 = original.widthMm; const H0 = original.heightMm;
-  const inPattern = new Set(planPattern(original, H0, materials)?.cands.map((c) => c.p.id) ?? []);
+  const inPattern = new Set(planPattern(withoutRepeatOff(original), H0, materials)?.cands.map((c) => c.p.id) ?? []);
   const items: { id: string; y0: number; y1: number }[] = [];
   for (const p of original.parts) {
     if (inPattern.has(p.id) || p.cut45 || p.heightMm || (norm(p.angleDeg) !== 0 && norm(p.angleDeg) !== 180)) continue;
@@ -289,4 +292,40 @@ export function applyRails(original: CustomModel, model: CustomModel, materials:
   }
   if (!shift.size) return model;
   return { ...model, parts: model.parts.map((p) => (shift.has(p.id) ? { ...p, y: p.y + shift.get(p.id)! } : p)) };
+}
+
+/** Da li deo pripada nizu letvica ili prečki čiji se broj i razmak preračunavaju za veličinu polja (za izbor pravila u crtanju modela). */
+/** model sa uključenim preračunom nizova (kao da nijedan deo nema „ne preračunavaj“): za prepoznavanje delova koji pripadaju nizu */
+const withoutRepeatOff = (model: CustomModel): CustomModel => (model.parts.some((p) => p.fit?.repeat) ? { ...model, parts: model.parts.map((p) => (p.fit?.repeat ? { ...p, fit: { ...p.fit, repeat: undefined } } : p)) } : model);
+
+/** uspravne letvice glavnog niza modela, sleva udesno (prazno kad ih nema) */
+export function slatGroupBars(model: CustomModel, materials: Material[]): CustomPart[] {
+  const bar = slatGroupOf(model, materials);
+  return (bar && vBarGroup(model, bar, materials)?.bars) || [];
+}
+
+/**
+ * Delovi koji čine isti niz kao deo `id`: sve uspravne letvice niza sa svojim čepovima ili sve vodoravne prečke koje se ponavljaju.
+ * Isključivanje preračuna broja i razmaka važi za ceo niz (letvice i čepovi na njima), ne za jedan deo. Deo koji nije u nizu: samo on.
+ */
+export function groupMembers(model: CustomModel, materials: Material[], id: string): string[] {
+  const on = withoutRepeatOff(model);
+  const bars = slatGroupBars(on, materials);
+  const caps = bars.flatMap((b) => capsOver(on, b, materials).map((c) => c.id));
+  if (bars.some((b) => b.id === id) || caps.includes(id)) return [...bars.map((b) => b.id), ...caps];
+  const plan = planPattern(on, on.heightMm, materials);
+  if (plan?.cands.some((c) => c.p.id === id)) return plan.cands.map((c) => c.p.id);
+  return [id];
+}
+
+/** Delovi nizova iz kojih je radnik isključio preračun (bar jedan deo niza ima „ne preračunavaj“): važi za ceo niz. */
+export function repeatOffIds(model: CustomModel, materials: Material[]): Set<string> {
+  const out = new Set<string>();
+  for (const p of model.parts) if (p.fit?.repeat === 'off') for (const id of groupMembers(model, materials, p.id)) out.add(id);
+  return out;
+}
+
+/** Da li deo pripada nizu letvica ili prečki čiji se broj i razmak preračunavaju za veličinu polja (za izbor pravila u crtanju modela). */
+export function isRepeating(model: CustomModel, materials: Material[], id: string): boolean {
+  return groupMembers(model, materials, id).length > 1;
 }

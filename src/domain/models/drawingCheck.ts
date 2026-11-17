@@ -1,6 +1,7 @@
 import { partBounds, type CustomModel, type CustomPart } from './custom';
 import { materialShape, type MatShape } from './materialShape';
 import { findOverlaps } from './overlap';
+import { capsOver, orphanCaps } from './vbars';
 import type { Material } from './types';
 
 /**
@@ -8,7 +9,7 @@ import type { Material } from './types';
  * Posle „slobodnog crtanja“ (gde je dozvoljeno sve) i na zahtev. Upozorenje koje ima smisla radnik može da prihvati; prihvaćena
  * upozorenja (po ključu) čuvaju se uz model i više se ne prikazuju kao aktivna.
  */
-export type ProblemKind = 'overlap' | 'crooked' | 'gap' | 'size';
+export type ProblemKind = 'overlap' | 'crooked' | 'gap' | 'size' | 'cap';
 export interface DrawingProblem {
   kind: ProblemKind;
   /** stabilan ključ upozorenja (vrsta + delovi): po njemu se pamti da je radnik upozorenje prihvatio */
@@ -65,6 +66,17 @@ export function checkDrawing(model: CustomModel, materials: Material[]): Drawing
       const dir = Math.abs(((p.angleDeg % 180) + 180) % 180 - 90) < 45 ? 'uspravna' : 'vodoravna';
       out.push({ kind: 'crooked', key: keyOf('crooked', [p.id]), msg: `„${nameOf(p)}“ nije ravna: trebalo bi da bude ${dir}, a odstupa ${fmt(dev)}°. Ispravite ugao ili uključite „Pod pravim uglom“.`, ids: [p.id] });
     }
+  }
+
+  // 2b) čepovi: čep bez letvice ispod sebe ili dva čepa na istoj letvici (na većim poljima bi se odvojili od letvica)
+  for (const c of orphanCaps(model, materials)) {
+    out.push({ kind: 'cap', key: keyOf('cap', [c.id]), msg: `„${nameOf(c)}“ nema letvicu ispod sebe (ostao je čep bez letvice). Obrišite ga ili ga postavite na vrh letvice.`, ids: [c.id] });
+  }
+  for (const b of model.parts) {
+    const s = shapeOf(b);
+    if (!s || s.type !== 'linear' || ((b.angleDeg % 180) + 180) % 180 !== 90) continue;
+    const caps = capsOver(model, b, materials);
+    if (caps.length > 1) out.push({ kind: 'cap', key: keyOf('cap', caps.map((c) => c.id)), msg: `Na istoj letvici su ${caps.length} čepa. Obrišite višak.`, ids: caps.map((c) => c.id) });
   }
 
   // 3) nejednaki razmaci u nizu istih cevi (letvice jedna ispod druge, uspravne jedna pored druge)

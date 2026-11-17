@@ -62,12 +62,27 @@ export interface CustomPart {
   cutEndDeg?: number;
   /** pomeraj po dubini (mm, + ka posmatraču) */
   z: number;
+  /** pravilo promene veličine dela (vidi `PartFit`); bez vrednosti je automatsko */
+  fit?: PartFit;
   /** sopstvena boja dela (RAL ključ ili #hex), npr. crn ram a sive prečke; bez vrednosti deo je u boji modela */
   color?: string;
   /** stub, rukohvat ili prečka (ograde za terase): izabrani okovi (ID materijala po vrsti); okov se pravi sam na pravom mestu */
   hwPick?: Partial<Record<HwKind, string>>;
   /** okov koji je aplikacija sama postavila: vrsta i deo na koji naleže (stub / rukohvat / prečka) i drugi deo (stub za prsten prečke) */
   hw?: { kind: HwKind; on: string; at?: string };
+}
+
+/**
+ * Kako se deo ponaša kad se polje (ili krilo) poveća ili smanji. Bez vrednosti („automatski“) deo se vezuje za bližu ivicu: ram i profili
+ * uz ivicu ostaju uz ivicu, nosači zadržavaju odstojanje od dna ili vrha, a letvice i prečke koje se ponavljaju dobijaju broj i jednak razmak.
+ */
+export interface PartFit {
+  /** po širini: prati levu ili desnu ivicu, ostaje na sredini, proteže se od ivice do ivice ili se menja srazmerno */
+  h?: 'auto' | 'left' | 'right' | 'center' | 'stretch' | 'scale';
+  /** po visini: prati dno ili vrh, ostaje na sredini, proteže se ili se menja srazmerno */
+  v?: 'auto' | 'bottom' | 'top' | 'center' | 'stretch' | 'scale';
+  /** „off“: deo ne ulazi u niz letvica ili prečki koji se preračunava (broj ostaje kao na crtežu) */
+  repeat?: 'off';
 }
 
 export interface CustomModel {

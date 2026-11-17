@@ -4,7 +4,7 @@ import { miterEndsOf, partBounds, resolveParts, sheetAreaMm2, type CustomModel, 
 import { applyGuides, guidesOf, scaleWithGuides } from './guides';
 import { anchoredLengthFormula, anchoredModel } from './anchored';
 import { isFramePart, resizeWithFrame } from './frame';
-import { applyRails, planPattern, railGroups, refillsVBars, patternCounts, refillPattern, refillVBars, slatIdsOf, slatLayoutOf, type SlatOverride } from './gateRefill';
+import { repeatOffIds, applyRails, planPattern, railGroups, refillsVBars, patternCounts, refillPattern, refillVBars, slatIdsOf, slatLayoutOf, type SlatOverride } from './gateRefill';
 import { materialShape, sectionFace, type MatShape } from './materialShape';
 import { screwCounts, screwMaterial } from './terraceHardware';
 import type { SpecPart } from './spec';
@@ -157,7 +157,7 @@ function specKey(m: CustomModel, p: CustomPart, guideIds: Set<string>) {
     // model iz kataloga: bočni U profili ostaju uz ivice polja, pa se prečka produžava za razliku širina; ostali modeli razvlače razmak srazmerno
     const anchoredGuides = g && refillsVBars(m) && !m.parts.some(isFramePart);
     lengthMm = anchoredGuides ? `${r1(p.lengthMm)}+1*(W-${m.widthMm})` : g ? `${r1(p.lengthMm)}+${r1(m.parts.find((x) => x.id === g[1].id)!.x - m.parts.find((x) => x.id === g[0].id)!.x)}*(W/${m.widthMm}-1)`
-      : (refillsVBars(m) && !m.parts.some(isFramePart) && anchoredLengthFormula(m, p)) || (Math.abs(Math.cos(a)) >= Math.abs(Math.sin(a)) ? `${r1(p.lengthMm)}*W/${m.widthMm}` : `${r1(p.lengthMm)}*H/${m.heightMm}`);
+      : (refillsVBars(m) && !m.parts.some(isFramePart) && anchoredLengthFormula(m, p, repeatOffIds(m, MATERIALS).has(p.id))) || (Math.abs(Math.cos(a)) >= Math.abs(Math.sin(a)) ? `${r1(p.lengthMm)}*W/${m.widthMm}` : `${r1(p.lengthMm)}*H/${m.heightMm}`);
     // deo rama: širina profila u ravni spoja (okretanje preseka) određuje koliko komadi mogu da dele kosi rez
     miterMm = p.cut45 && shape?.type === 'linear' ? sectionFace(shape.section, p.rot).face : undefined;
     const me = miterEndsOf(p);

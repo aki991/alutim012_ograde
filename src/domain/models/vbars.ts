@@ -84,12 +84,26 @@ export function vLayoutInfo(model: CustomModel, bar: CustomPart, materials: Mate
 
 const isCapShape = (s: MatShape | null): boolean => !!s && s.type === 'piece' && s.solids.some((x) => x.prim === 'dome');
 
-/** čep koji stoji na vrhu letvice (komadni deo čepa sa sredinom ispod nje) */
+/** svi čepovi koji stoje na vrhu letvice (sredina čepa iznad letvice, dno čepa na vrhu letvice); normalno je jedan */
+export function capsOver(model: CustomModel, bar: CustomPart, materials: Material[]): CustomPart[] {
+  const shapeOf = shapeLookupFor(materials);
+  const b = partBounds(bar, shapeOf(bar) as Extract<MatShape, { type: 'linear' }>);
+  return model.parts.filter((p) => isCapShape(shapeOf(p)) && p.x > b.x0 - 1 && p.x < b.x1 + 1 && Math.abs(p.y - b.y1) < 3);
+}
+
+/** čep koji stoji na vrhu letvice (onaj čija je sredina najbliža sredini letvice; čep pomeren za nekoliko mm i dalje pripada letvici) */
 export function capOn(model: CustomModel, bar: CustomPart, materials: Material[]): CustomPart | undefined {
   const shapeOf = shapeLookupFor(materials);
   const b = partBounds(bar, shapeOf(bar) as Extract<MatShape, { type: 'linear' }>);
   const cx = (b.x0 + b.x1) / 2;
-  return model.parts.find((p) => isCapShape(shapeOf(p)) && Math.abs(p.x - cx) < 2 && Math.abs(p.y - b.y1) < 3);
+  return capsOver(model, bar, materials).sort((p, q) => Math.abs(p.x - cx) - Math.abs(q.x - cx))[0];
+}
+
+/** čepovi tarabica bez letvice ispod sebe */
+export function orphanCaps(model: CustomModel, materials: Material[]): CustomPart[] {
+  const shapeOf = shapeLookupFor(materials);
+  const bars = model.parts.filter((p) => { const s = shapeOf(p); return s && s.type === 'linear' && (((p.angleDeg % 180) + 180) % 180 === 90); });
+  return model.parts.filter((p) => isCapShape(shapeOf(p)) && !bars.some((b) => capsOver(model, b, materials).some((c) => c.id === p.id)));
 }
 
 /** Čep tarabice iz cenovnika čija kupola je najbliža širini letvice; null ako takvog materijala nema. */
@@ -117,10 +131,13 @@ export function setGroupCaps(model: CustomModel, bar: CustomPart, materials: Mat
   if (!g) return { error: 'Čepovi važe za uspravne letvice.' };
   const shapeOf = shapeLookupFor(materials);
   if (!on) {
-    const rm = new Set(g.bars.map((b) => capOn(model, b, materials)?.id).filter((x): x is string => !!x));
+    const rm = new Set(g.bars.flatMap((b) => capsOver(model, b, materials).map((c) => c.id)));
     return { model: { ...model, parts: model.parts.filter((p) => !rm.has(p.id)) } };
   }
   const add: CustomPart[] = [];
+  // dva čepa na istoj letvici: ostaje jedan (najbliži sredini)
+  const dup = new Set(g.bars.flatMap((b) => { const keep = capOn(model, b, materials); return capsOver(model, b, materials).filter((c) => c !== keep).map((c) => c.id); }));
+  if (dup.size) model = { ...model, parts: model.parts.filter((p) => !dup.has(p.id)) };
   for (let i = 0; i < g.bars.length; i++) {
     const b = g.bars[i];
     if (capOn(model, b, materials)) continue;

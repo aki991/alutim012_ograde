@@ -3,6 +3,7 @@ import { fillHardware, removeParts } from '../../domain/models/terraceHardware';
 import { checkDrawing } from '../../domain/models/drawingCheck';
 import { checkSizes } from '../../domain/models/sizeCheck';
 import { SizeProbe } from '../../components/designer/SizeProbe';
+import { FitBox } from '../../components/designer/FitBox';
 import { hingesAlongEdge, isHingeMaterial, restOnSurface } from '../../domain/models/surface';
 import { layerPart } from '../../domain/models/overlap';
 import { ALL_FRAME_SIDES, frameIds, isFramePart, modelWithFrame, modelWithoutFrame, modelWithRotatedFrame, resizeWithFrame } from '../../domain/models/frame';
@@ -802,7 +803,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
           <button className="btn btn-sm" data-testid="designer-free-off" onClick={() => { setFree(false); setCheckOpen(true); }}>Vrati normalno crtanje</button>
         </div>
       )}
-      {probeOpen && !free && model.kind !== 'terrace' && <SizeProbe model={deferredModel} materials={materials} onClose={() => setProbeOpen(false)} />}
+      {probeOpen && !free && model.kind !== 'terrace' && <SizeProbe model={deferredModel} materials={materials} highlightId={selectedId} onClose={() => setProbeOpen(false)} />}
       {checkOpen && !free && activeProblems && (
         <div className={`px-3 py-2 border-b text-[13px] ${activeProblems.length ? 'bg-[#fef3f2] border-[#fecdca] text-[#b42318]' : 'bg-[#ecfdf3] border-[#abefc6] text-[#067647]'}`} data-testid="designer-problems">
           <div className="flex items-center gap-2">
@@ -1061,6 +1062,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
                   <button className="btn btn-sm w-full" data-testid="guide-attach" onClick={() => { const fitted = attach(modelRef.current, sel.part.id, false); if (fitted) change(() => fitted); }}><Link2 size={14} />{sel.part.angleDeg % 180 === 0 ? 'Uklopi u bočne U profile' : 'Uklopi u U profile (gore i dole)'}</button>
                 </div>
               )}
+              {model.kind !== 'terrace' && !sel.part.hw && sel.shape.type !== 'piece' && <FitBox model={model} part={sel.part} shape={sel.shape} materials={materials} onChange={(fit) => { patchPart(sel.part.id, { fit }); setProbeOpen(true); }} onRepeat={(ids, off) => { change((m) => ({ ...m, parts: m.parts.map((p) => { if (!ids.includes(p.id)) return p; const f = { ...p.fit, repeat: off ? ('off' as const) : undefined }; if (!f.repeat) delete f.repeat; return { ...p, fit: Object.keys(f).length ? f : undefined }; }) })); setProbeOpen(true); }} onShowProbe={() => setProbeOpen(true)} />}
               <div className="mt-2 rounded-lg border border-line p-2">
                 <div className="text-[12.5px] font-semibold mb-1 flex items-center gap-1.5"><Rows3 size={14} />Ponovi deo</div>
                 <Num label="Broj kopija" unit="kom" value={rep.count} min={1} max={200} onChange={(v) => setRep({ ...rep, count: Math.round(v) })} />
