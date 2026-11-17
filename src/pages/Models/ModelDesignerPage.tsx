@@ -148,6 +148,9 @@ function BarLayoutBox({ model, bar, materials, onApply, onError }: { model: Cust
             : <>Dozvoljen razmak: od <b>{fmtR(range.min)}</b> do <b>{fmtR(range.max)} mm</b>{lufta === 'bez' && info.gapMin >= 0 ? ' (prečke bez nagiba ne mogu da se uvuku, pa je razmak 0)' : ''}.</>}
       </p>
       {vert && (
+        <Num label="Od poda (podignuto)" value={model.liftMm ?? 0} min={0} max={500} testId="layout-lift" onChange={(v) => onApply({ ...model, liftMm: v })} />
+      )}
+      {vert && (
         <label className="flex items-center gap-2 py-1.5 text-[13px] cursor-pointer" data-testid="layout-caps-row">
           <input type="checkbox" data-testid="layout-caps" checked={groupHasCaps(model, bar, materials)}
             onChange={(e) => { const r = setGroupCaps(model, bar, materials, e.target.checked); if ('error' in r) onError(r.error); else onApply(r.model); }} />

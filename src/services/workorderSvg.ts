@@ -6,7 +6,7 @@ import { localToWorld } from '../domain/gates/slidingAssembly';
 import { slidingDrawnItems, type Drawn } from './slidingWorkSvg';
 import { leafHeightOf } from '../domain/gates/slidingLayout';
 import { linearLocalPoly, partAngle, sheetPoly } from '../domain/models/custom';
-import { customPartsFor, isCustomModel } from '../domain/models/customRegistry';
+import { customLiftOf, customPartsFor, isCustomModel } from '../domain/models/customRegistry';
 import { sectionFace } from '../domain/models/materialShape';
 
 /**
@@ -151,7 +151,7 @@ export function schemaSvg(project: Project, keyOfItem: (index: number) => string
     // ručno nacrtan model: stvarni delovi sa crteža (ram, U profili, prečke), ne računska ispuna
     if (!art && isCustomModel(modelId)) {
       const mh = it.kind === 'fence' ? it.heightMm : leafHeightOf(it);
-      const lift = Math.min(Math.max(0, it.params.liftMm ?? 0), Math.max(0, mh - 100));
+      const lift = Math.min(Math.max(0, it.params.liftMm ?? customLiftOf(modelId)), Math.max(0, mh - 100));
       const yb = y + h - lift * s;
       for (const r of customPartsFor(modelId, li.clearWidth, mh - lift, '#000000', it.params.slats)) {
         const p = r.part;

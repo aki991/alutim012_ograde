@@ -5,7 +5,7 @@ import { MODEL_IMAGES } from '../../assets/models';
 import { FENCE_MODELS, panelArt, panelTiles, railArt, railBands, RAIL_POST_MM } from '../../domain/models/catalog';
 import type { FenceModelId } from '../../domain/models/types';
 import { TarabicaArt } from './TarabicaArt';
-import { customPartsFor } from '../../domain/models/customRegistry';
+import { customLiftOf, customPartsFor } from '../../domain/models/customRegistry';
 import { PartSvg } from '../designer/PartsSvg';
 
 export const GAP_TINT = '#cdd7d0';
@@ -142,7 +142,7 @@ export function InfillArt(props: InfillProps) {
   // ručno nacrtan model: delovi sa crteža, razvučeni na veličinu polja
   if (FENCE_MODELS[modelId].style === 'custom') {
     // razmak od poda: ispuna se podiže, a visina crteža se smanjuje za toliko
-    const up = Math.min(Math.max(0, lift ?? 0), Math.max(0, h - 100));
+    const up = Math.min(Math.max(0, lift ?? customLiftOf(modelId)), Math.max(0, h - 100));
     const hh = h - up;
     return (
       <g data-testid="custom-art" transform={`translate(${x} ${y + h - up}) scale(1,-1)`} style={{ pointerEvents: 'none' }}>

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { SEED_MATERIALS } from './fixtures/materials';
 import { builtinToCustom } from '../domain/models/fromBuiltin';
-import { registerCustomModels, scaledModel } from '../domain/models/customRegistry';
+import { customLiftOf, registerCustomModels, scaledModel } from '../domain/models/customRegistry';
 import { refillsVBars, vBarFill } from '../domain/models/gateRefill';
 import { vBarGroup, vLayoutInfo } from '../domain/models/vbars';
 import { FENCE_MODELS } from '../domain/models/catalog';
@@ -144,5 +144,14 @@ describe('ručno nacrtana kapija sa uspravnim letvicama (bez polaznog modela iz 
     const narrow = scaledModel(m, 300, 1400);
     expect(vBarGroup(narrow, bar(narrow), SEED_MATERIALS)!.bars.length).toBeLessThan(5);
     expect(cap).toBeDefined();
+  });
+});
+
+describe('razmak od poda zadat u modelu', () => {
+  it('model pamti koliko je ispuna podignuta od poda, bez vrednosti je 0', () => {
+    const m = gateModel(3000);
+    registerCustomModels([m, { ...m, id: 'cm_lift', liftMm: 60 }], SEED_MATERIALS);
+    expect(customLiftOf(m.id)).toBe(0);
+    expect(customLiftOf('cm_lift')).toBe(60);
   });
 });

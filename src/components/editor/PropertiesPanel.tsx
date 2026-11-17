@@ -1,5 +1,5 @@
 import { PartsPanel } from './PartsPanel';
-import { allFenceModels, customSlatLayout, isCustomModel } from '../../domain/models/customRegistry';
+import { allFenceModels, customLiftOf, customSlatLayout, isCustomModel } from '../../domain/models/customRegistry';
 import { gateLeafPoses } from '../../domain/geometry/gates';
 import { leafHeightOf } from '../../domain/gates/slidingLayout';
 import { AlertTriangle, ArrowLeft, ArrowRight, Copy, Trash2, Calculator, FileDown, Scissors, ClipboardList, Ruler } from 'lucide-react';
@@ -60,7 +60,7 @@ function SlatSettings({ id, modelId, widthMm, heightMm, params, gate, clearWidth
   const init = useRef<{ id: string; slats: FenceParams['slats']; lift: number | undefined; gC: number | null }>({ id, slats: params.slats, lift: params.liftMm, gC });
   if (init.current.id !== id) init.current = { id, slats: params.slats, lift: params.liftMm, gC };
   if (!isCustomModel(modelId)) return null;
-  const lift = params.liftMm ?? 0;
+  const lift = params.liftMm ?? customLiftOf(modelId);
   const lay = customSlatLayout(modelId, widthMm, heightMm - lift, params.slats);
   const half = Math.max(50, Math.round(widthMm / 2));
   const setSlat = (patch: NonNullable<FenceParams['slats']>) => st.patchItemParams(id, { slats: { ...params.slats, ...patch } }, 'slats');

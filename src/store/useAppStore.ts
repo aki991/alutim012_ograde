@@ -12,7 +12,7 @@ import { newItemFor } from '../domain/geometry/newItem';
 import { computeLayout } from '../domain/geometry/layout';
 import { removeStair, setStairGroup } from '../domain/geometry/stairOps';
 import { DEFAULT_MODEL_ID, FENCE_MODELS, TERRACE_NO_GATES, isTerraceModel, projectModelId } from '../domain/models/catalog';
-import { effectiveModelId, registerCustomModels, setHiddenModels } from '../domain/models/customRegistry';
+import { allFenceModels, effectiveModelId, registerCustomModels, setHiddenModels } from '../domain/models/customRegistry';
 import { presetTitle, slidingForModel, specFromPreset, type SlidingSpec } from '../domain/gates/slidingAssembly';
 import { defaultGateConfig, gateClearWidth, gateConfigFromGate, gateFieldsFromModel, GATE_TYPE_LABELS, postDimsOf, withModelPosts } from '../domain/gates/gateModels';
 import { postHalfSum } from '../domain/geometry/layout';
@@ -185,6 +185,14 @@ export const dropUnknownModels = (p: Project): Project => {
     }),
   };
 };
+
+/** model ograde izabran u ovoj sesiji (važi dok se prozor ne zatvori ili ne počne novi projekat) */
+const ACTIVE_MODEL_KEY = 'alutim.activeModel';
+const rememberActiveModel = (id: string | null): void => { try { if (id) sessionStorage.setItem(ACTIVE_MODEL_KEY, id); else sessionStorage.removeItem(ACTIVE_MODEL_KEY); } catch { /* bez sessionStorage-a */ } };
+const isListedModel = (id: string): boolean => allFenceModels().some((m) => m.id === id);
+/** prvi model sa stranice Modeli ograda */
+const firstListedModel = (): FenceModelId => (allFenceModels()[0]?.id ?? DEFAULT_MODEL_ID) as FenceModelId;
+const sessionModel = (): FenceModelId | null => { try { const v = sessionStorage.getItem(ACTIVE_MODEL_KEY); return v && isListedModel(v) ? (v as FenceModelId) : null; } catch { return null; } };
 
 const emptyEditor = (): EditorState => ({
   projectId: null, selection: null, multi: [], multiPosts: [], history: emptyHistory<Project>(), view: 'front', zoom: 1, activeModelId: DEFAULT_MODEL_ID, notice: null, slideTest: {},
@@ -426,8 +434,10 @@ export const useAppStore = create<AppState>((set, get) => {
       p.settings.pricing = { ...get().settings.pricing };
       set((s) => ({
         projects: [p, ...s.projects],
-        editor: { ...emptyEditor(), projectId: p.id, activeModelId: opts.modelId ?? s.editor.activeModelId },
+        editor: { ...emptyEditor(), projectId: p.id, activeModelId: opts.modelId ?? firstListedModel() },
       }));
+      // novi projekat počinje prvim modelom sa stranice Modeli ograda
+      rememberActiveModel(opts.modelId ?? null);
       rememberProject(p.id);
       return p.id;
     },
@@ -532,7 +542,7 @@ export const useAppStore = create<AppState>((set, get) => {
     },
     setView(view) { set((s) => ({ editor: { ...s.editor, view } })); },
     setZoom(zoom) { set((s) => ({ editor: { ...s.editor, zoom: Math.min(4, Math.max(0.1, zoom)) } })); },
-    setActiveModel(activeModelId) { set((s) => ({ editor: { ...s.editor, activeModelId } })); },
+    setActiveModel(activeModelId) { rememberActiveModel(activeModelId); set((s) => ({ editor: { ...s.editor, activeModelId } })); },
     setNotice(notice) { set((s) => ({ editor: { ...s.editor, notice } })); },
 
     addElement(spec, index) {
@@ -823,6 +833,12 @@ export const useAppStore = create<AppState>((set, get) => {
       const g = proj?.items[index];
       const cfg = proj && g && g.kind === 'gate' ? gateConfigFromGate(g, computeLayout(proj).items[index].clearWidth, version, postDimsOf(proj.posts[index], proj.posts[index + 1])) : null;
       const prev = DRAFT_PREV.get(projectId) ?? null;
+  // izabrani model koji nije na stranici Modeli ograda (obrisan, sakriv ili zamenjen) menja se: izabran u ovoj sesiji, inače prvi sa stranice
+  if (s.settings.customModels !== prev.settings.customModels || s.settings.hiddenModels !== prev.settings.hiddenModels || s.ready !== prev.ready) {
+    // posle osvežavanja stranice važi model izabran u ovoj sesiji
+    const next = (s.ready && !prev.ready ? sessionModel() : null) ?? (isListedModel(s.editor.activeModelId) ? s.editor.activeModelId : sessionModel() ?? firstListedModel());
+    if (next !== s.editor.activeModelId) useAppStore.setState({ editor: { ...s.editor, activeModelId: next } });
+  }
       DRAFT_PREV.delete(projectId);
       set((s) => ({ projects: s.projects.filter((x) => x.id !== projectId), editor: { ...emptyEditor(), projectId: prev && s.projects.some((x) => x.id === prev) ? prev : null, activeModelId: s.editor.activeModelId } }));
       return cfg;

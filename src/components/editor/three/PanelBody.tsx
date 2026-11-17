@@ -1,6 +1,6 @@
 import { isTubesModel } from '../../../domain/models/tubes';
 import { TubesWithRam } from './TubesPanel';
-import { customPartsFor } from '../../../domain/models/customRegistry';
+import { customLiftOf, customPartsFor } from '../../../domain/models/customRegistry';
 import { zExtent } from '../../../domain/models/custom';
 import { PartMesh } from '../../designer/Designer3D';
 import { materialKey } from '../../../domain/models/materialShape';
@@ -146,7 +146,7 @@ export function PanelBody(props: PanelProps) {
   // ručno nacrtan model: isti delovi kao na crtežu (profili izvučeni iz preseka), razvučeni na veličinu polja
   if (FENCE_MODELS[props.modelId].style === 'custom') {
     // razmak od poda: ispuna se podiže, a visina crteža se smanjuje za toliko
-    const up = Math.min(Math.max(0, props.params.liftMm ?? 0), Math.max(0, props.heightMm - 100));
+    const up = Math.min(Math.max(0, props.params.liftMm ?? customLiftOf(props.modelId)), Math.max(0, props.heightMm - 100));
     const resolved = customPartsFor(props.modelId, props.widthMm, props.heightMm - up, colorHex(props.color), props.params.slats);
     const zMid = props.centerZ ? zExtent(resolved)?.mid ?? 0 : 0;
     return (

@@ -85,6 +85,8 @@ export interface CustomModel {
   updatedAt: string;
   /** model nastao doradom modela iz kataloga (ID tog modela) */
   baseModelId?: string;
+  /** ograda od modela sa uspravnim letvicama: koliko je ispuna podignuta od poda u projektu (mm); u projektu se može promeniti po platnu */
+  liftMm?: number;
   /** samo vrsta „Kapija“: podešavanja kapije iz „Mere kapije“ (tip, pogon, mere i okovi), čuvaju se uz crtež */
   gate?: import('../gates/gateModels').GateConfig;
   /** model zamenjuje model iz kataloga („sačuvaj na istom tipu“): u izboru modela stoji umesto njega, a projekti ga koriste */

@@ -38,6 +38,9 @@ const HIDDEN = new Set<string>();
 export const setHiddenModels = (ids?: string[]): void => { HIDDEN.clear(); for (const i of ids ?? []) HIDDEN.add(i); };
 export const isHiddenModel = (id: string): boolean => HIDDEN.has(id);
 
+/** Razmak od poda koji model zadaje u crtanju (mm); 0 kad ga nema. */
+export const customLiftOf = (id: string): number => REG.get(id)?.liftMm ?? 0;
+
 export const customModelOf = (id: string): CustomModel | undefined => REG.get(id);
 export const isCustomModel = (id: string): boolean => REG.has(id);
 
