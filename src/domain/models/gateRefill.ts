@@ -1,6 +1,6 @@
 import { partBounds, type CustomModel, type CustomPart } from './custom';
 import { shapeLookup } from './guides';
-import { layoutVBars, vBarGroup, vLayoutInfo } from './vbars';
+import { capOn, layoutVBars, vBarGroup, vLayoutInfo } from './vbars';
 import type { Material } from './types';
 
 /**
@@ -10,11 +10,11 @@ import type { Material } from './types';
  */
 
 /**
- * Da li se letvice ovog modela preračunavaju za širinu polja i krila: svaki model nastao od modela iz kataloga (kao ograda ili kapija)
- * i svaka ručno nacrtana kapija. Ručno nacrtana ograda ostaje kako je nacrtana.
- * Da li crtež stvarno ima uspravne letvice proverava `slatGroupOf` / `refillVBars` (bez njih ništa ne menja).
+ * Da li se model pri promeni veličine polja ili krila računa po pravilima (mere uz ivice, broj i razmak letvica i prečki), a ne razvlači
+ * kao slika: svaki model osim modela za terase, bez obzira da li je nastao od modela iz kataloga, nacrtan ručno, kao ograda ili kao kapija.
+ * Šta na crtežu postoji (ram, nosači, niz prečki, uspravne letvice) prepoznaje sam crtež: bez takvih delova ništa se ne menja.
  */
-export const refillsVBars = (m: CustomModel): boolean => Boolean(m.baseModelId) || m.kind === 'gate';
+export const refillsVBars = (m: CustomModel): boolean => m.kind !== 'terrace';
 
 const norm = (a: number): number => ((a % 360) + 360) % 360;
 const isVertical = (p: CustomPart): boolean => norm(p.angleDeg) === 90 || norm(p.angleDeg) === 270;
@@ -79,7 +79,8 @@ export function slatIdsOf(model: CustomModel, materials: Material[]): Set<string
   if (!refillsVBars(model)) return new Set();
   const bar = slatGroupOf(model, materials);
   const g = bar && vBarGroup(model, bar, materials);
-  return new Set(g ? g.bars.map((b) => b.id) : []);
+  // čep na vrhu letvice prati svoju letvicu, pa se broji kao i ona
+  return new Set(g ? g.bars.flatMap((b) => [b.id, ...(capOn(model, b, materials) ? [capOn(model, b, materials)!.id] : [])]) : []);
 }
 
 /** Trenutni raspored letvica modela: broj, odstojanje prve i poslednje od ivica i razmak (null kad model nema uspravne letvice). */

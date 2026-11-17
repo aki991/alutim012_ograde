@@ -1,6 +1,8 @@
 import { settleModel as settle } from '../../domain/models/settle';
 import { fillHardware, removeParts } from '../../domain/models/terraceHardware';
 import { checkDrawing } from '../../domain/models/drawingCheck';
+import { checkSizes } from '../../domain/models/sizeCheck';
+import { SizeProbe } from '../../components/designer/SizeProbe';
 import { hingesAlongEdge, isHingeMaterial, restOnSurface } from '../../domain/models/surface';
 import { layerPart } from '../../domain/models/overlap';
 import { ALL_FRAME_SIDES, frameIds, isFramePart, modelWithFrame, modelWithoutFrame, modelWithRotatedFrame, resizeWithFrame } from '../../domain/models/frame';
@@ -355,6 +357,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
   const freeRef = useRef(false);
   freeRef.current = free;
   const [checkOpen, setCheckOpen] = useState(false);
+  const [probeOpen, setProbeOpen] = useState(false);
   const [grid, setGrid] = useState(5);
   const [rep, setRep] = useState({ count: 5, step: 100 });
   /** obaveštenje (napomena) zašto operacija nije izvršena */
@@ -424,7 +427,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
   const bom = useMemo(() => customBom(model, materials), [model, materials]);
   /** provera crteža (posle slobodnog crtanja ili na dugme); menja se uživo dok se problemi ispravljaju */
   const deferredModel = useDeferredValue(model);
-  const allProblems = useMemo(() => (free || view === 'mere' ? null : checkDrawing(deferredModel, materials)), [free, view, deferredModel, materials]);
+  const allProblems = useMemo(() => (free || view === 'mere' ? null : [...checkDrawing(deferredModel, materials), ...(model.kind === 'terrace' ? [] : checkSizes(deferredModel, materials))]), [free, view, deferredModel, materials, model.kind]);
   const acceptedSet = useMemo(() => new Set(model.acceptedWarnings ?? []), [model.acceptedWarnings]);
   const activeProblems = allProblems ? allProblems.filter((p) => !acceptedSet.has(p.key)) : null;
   const acceptedProblems = allProblems ? allProblems.filter((p) => acceptedSet.has(p.key)) : [];
@@ -749,7 +752,8 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
         </label>
         <button type="button" className={`btn btn-sm ${free ? 'btn-primary' : ''}`} data-testid="designer-free" aria-pressed={free} title="Slobodno crtanje: dozvoljeno je sve (preklapanje delova, proizvoljni uglovi, nejednaki razmaci). Pri povratku na normalno crtanje prikazuje se šta nije u redu."
           onClick={() => { if (free) { setFree(false); setCheckOpen(true); } else { setFree(true); setCheckOpen(false); } }}>{free ? 'Normalno crtanje' : 'Slobodno crtanje'}</button>
-        {!free && <button type="button" className={`btn btn-sm ${activeProblems?.length ? '!border-[#fda29b] !text-[#b42318]' : ''}`} data-testid="designer-check" aria-pressed={checkOpen} title="Upozorenja za crtež: preklapanja, krive cevi i nejednaki razmaci. Upozorenje koje ima smisla možete da prihvatite." onClick={() => setCheckOpen((o) => !o)}><AlertTriangle size={14} />Upozorenja ({activeProblems?.length ?? 0})</button>}
+        {!free && <button type="button" className={`btn btn-sm ${activeProblems?.length ? '!border-[#fda29b] !text-[#b42318]' : ''}`} data-testid="designer-check" aria-pressed={checkOpen} title="Upozorenja za crtež: preklapanja, krive cevi, nejednaki razmaci i problemi na drugim veličinama polja. Upozorenje koje ima smisla možete da prihvatite." onClick={() => setCheckOpen((o) => !o)}><AlertTriangle size={14} />Upozorenja ({activeProblems?.length ?? 0})</button>}
+        {!free && model.kind !== 'terrace' && <button type="button" className="btn btn-sm" data-testid="designer-probe" aria-pressed={probeOpen} title="Prikazuje isti model na nekoliko veličina polja (usko, uobičajeno, visoko, široko), po istim pravilima kao u projektu." onClick={() => setProbeOpen((o) => !o)}>Proba veličina</button>}
         <label className="flex items-center gap-1.5 text-[13px]" title="Ivice i krajevi dela koji crtate, pomerate ili lepite privlače se uz ivice susednih delova i tlo. Držite Alt da privremeno isključite."><input type="checkbox" checked={snapObjects} data-testid="designer-snap" onChange={(e) => setSnapObjects(e.target.checked)} />Privlačenje</label>
         <label className="flex items-center gap-1.5 text-[13px]" title="Profili se crtaju samo vodoravno ili uspravno"><input type="checkbox" checked={ortho} data-testid="designer-ortho" onChange={(e) => setOrtho(e.target.checked)} />Pod pravim uglom</label>
         <select className="input !w-auto !py-1.5" aria-label="Korak mreže" value={grid} onChange={(e) => setGrid(Number(e.target.value))}>
@@ -798,11 +802,12 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
           <button className="btn btn-sm" data-testid="designer-free-off" onClick={() => { setFree(false); setCheckOpen(true); }}>Vrati normalno crtanje</button>
         </div>
       )}
+      {probeOpen && !free && model.kind !== 'terrace' && <SizeProbe model={deferredModel} materials={materials} onClose={() => setProbeOpen(false)} />}
       {checkOpen && !free && activeProblems && (
         <div className={`px-3 py-2 border-b text-[13px] ${activeProblems.length ? 'bg-[#fef3f2] border-[#fecdca] text-[#b42318]' : 'bg-[#ecfdf3] border-[#abefc6] text-[#067647]'}`} data-testid="designer-problems">
           <div className="flex items-center gap-2">
             {activeProblems.length ? <AlertTriangle size={16} className="shrink-0" /> : null}
-            <b className="flex-1">{activeProblems.length ? `Provera crteža: ${activeProblems.length} ${activeProblems.length === 1 ? 'problem' : 'problema'}` : 'Provera crteža: sve je u redu — nema preklapanja, krivih cevi ni nejednakih razmaka.'}</b>
+            <b className="flex-1">{activeProblems.length ? `Provera crteža: ${activeProblems.length} ${activeProblems.length === 1 ? 'problem' : 'problema'}` : 'Provera crteža: sve je u redu — nema preklapanja, krivih cevi, nejednakih razmaka ni problema na drugim veličinama polja.'}</b>
             <button className="shrink-0 p-0.5 rounded hover:bg-black/5" aria-label="Zatvori proveru" data-testid="designer-problems-close" onClick={() => setCheckOpen(false)}><X size={15} /></button>
           </div>
           {activeProblems.length > 0 && (

@@ -8,7 +8,7 @@ import type { Material } from './types';
  * Posle „slobodnog crtanja“ (gde je dozvoljeno sve) i na zahtev. Upozorenje koje ima smisla radnik može da prihvati; prihvaćena
  * upozorenja (po ključu) čuvaju se uz model i više se ne prikazuju kao aktivna.
  */
-export type ProblemKind = 'overlap' | 'crooked' | 'gap';
+export type ProblemKind = 'overlap' | 'crooked' | 'gap' | 'size';
 export interface DrawingProblem {
   kind: ProblemKind;
   /** stabilan ključ upozorenja (vrsta + delovi): po njemu se pamti da je radnik upozorenje prihvatio */

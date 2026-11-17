@@ -84,8 +84,8 @@ describe('prečka u bočnim U profilima', () => {
     const tilted = applyGuides({ ...m, parts: m.parts.map((p) => (p.id === 'b' ? { ...p, tiltDeg: 28.73 } : p)) }, MATS);
     registerCustomModels([tilted], MATS);
     const spec = defaultSpec('cm_g' as FenceModelId).find((s) => s.materialId === KV80.id)!;
-    expect(spec.lengthMm).toBe('996+980*(W/1000-1)');
+    expect(spec.lengthMm).toBe('996+1*(W-1000)');
     expect(spec.note).toContain('28,7');
-    expect(customPartsFor('cm_g', 2000, 1000, '#000').find((r) => r.part.id === 'b')!.part.lengthMm).toBeCloseTo(1976, 6);
+    expect(customPartsFor('cm_g', 2000, 1000, '#000').find((r) => r.part.id === 'b')!.part.lengthMm).toBeCloseTo(1996, 6); // U profili ostaju uz ivice polja: prečka raste za razliku širina
   });
 });

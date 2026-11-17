@@ -59,7 +59,8 @@ describe('kapija iz modela „Bela — uske vertikalne letvice“ u projektu', (
   it('svi modeli se preračunavaju: kataloški, dorađeni i ručno nacrtani, ograde i kapije', () => {
     expect(refillsVBars(gateModel())).toBe(true);
     expect(refillsVBars(gateModel(3000, 'picket_brown'))).toBe(true);
-    expect(refillsVBars({ ...gateModel(), kind: 'fence', baseModelId: undefined })).toBe(false); // ručno nacrtana ograda ostaje kako je nacrtana
+    expect(refillsVBars({ ...gateModel(), kind: 'fence', baseModelId: undefined })).toBe(true); // i ručno nacrtana ograda
+    expect(refillsVBars({ ...gateModel(), kind: 'terrace', baseModelId: undefined })).toBe(false); // ograde za terase imaju svoja pravila
     expect(refillsVBars({ ...gateModel(), kind: 'fence' })).toBe(true);
     expect(refillsVBars({ ...gateModel(), baseModelId: undefined })).toBe(true);
   });

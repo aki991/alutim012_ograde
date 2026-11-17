@@ -4,7 +4,8 @@ import { changeModelAll } from '../domain/geometry/operations';
 import { FEATURES } from '../config/features';
 import { FENCE_MODEL_LIST, FENCE_MODELS } from '../domain/models/catalog';
 import { newCustomModel, scaleModel, type CustomModel } from '../domain/models/custom';
-import { allFenceModels, customPartsFor, isCustomModel, registerCustomModels } from '../domain/models/customRegistry';
+import { allFenceModels, customPartsFor, customSlatCount, isCustomModel, registerCustomModels } from '../domain/models/customRegistry';
+import { leafHeightOf } from '../domain/gates/slidingLayout';
 import { createFence, createGate, createProject } from '../domain/models/factories';
 import { defaultSpec } from '../domain/models/spec';
 import type { FenceModelId, Material } from '../domain/models/types';
@@ -49,7 +50,10 @@ describe('nacrtani model u projektu', () => {
     expect(scaleModel(MODEL, 1000, 1000)).toBe(MODEL);
     registerCustomModels([MODEL], MATS);
     const drawn = customPartsFor(ID, 2000, 1500, '#112233');
-    expect(drawn).toHaveLength(12);
+    // letvice se preračunavaju za širinu polja (jednak razmak), čep ide uz svaku letvicu, a dve spojne cevi ostaju
+    const slats = drawn.filter((r) => r.part.materialId === kv.id).length;
+    expect(slats).toBeGreaterThan(5);
+    expect(drawn).toHaveLength(2 * slats + 2);
     expect(drawn[0].hex).toBe('#112233');
     expect(customPartsFor('cm_nema', 1000, 1000, '#000')).toEqual([]);
   });
@@ -57,30 +61,36 @@ describe('nacrtani model u projektu', () => {
   it('specifikacija, kalkulacija i krojna lista računaju delove sa crteža', () => {
     registerCustomModels([MODEL], MATS);
     const spec = defaultSpec(ID);
-    expect(spec.map((s) => [s.materialId, s.qty, s.lengthMm])).toEqual([[kv.id, '5', '900*H/1000'], [cap.id, '5', undefined], [rail.id, '2', '1000*W/1000']]);
+    // letvice i čepovi: broj se računa za širinu polja (SLATS), dužina letvice prati visinu uz iste ivice
+    expect(spec.map((s) => [s.materialId, s.qty, s.lengthMm])).toEqual([[kv.id, 'SLATS', '900+1*(H-1000)'], [cap.id, 'SLATS', undefined], [rail.id, '2', '1000+1*(W-1000)']]);
 
     let p = createProject('t', [createFence({ modelId: ID, heightMm: 1000 })]);
     const clear = computeLayout(p).items[0].clearWidth;
     const bom = buildBom(p, MATS);
     const qty = (id: string) => bom.find((l) => l.materialId === id)?.geometricQty ?? 0;
-    expect(qty(kv.id)).toBeCloseTo(4.5, 6);
-    expect(qty(cap.id)).toBe(5);
+    // broj letvica se računa za širinu polja (jednak razmak), ne zadržava se broj sa crteža
+    const n = customSlatCount(ID, clear, 1000);
+    expect(n).toBeGreaterThanOrEqual(5);
+    expect(qty(kv.id)).toBeCloseTo(0.9 * n, 6);
+    expect(qty(cap.id)).toBe(n);
     expect(qty(rail.id)).toBeCloseTo((2 * clear) / 1000, 6);
 
     const cut = buildCutList(p, undefined, MATS);
-    expect(cut.find((r) => r.profile === kv.name)).toMatchObject({ lengthMm: 900, qty: 5 });
+    expect(cut.find((r) => r.profile === kv.name)).toMatchObject({ lengthMm: 900, qty: n });
     expect(cut.find((r) => r.profile === rail.name)).toMatchObject({ lengthMm: Math.round(clear), qty: 2 });
 
-    // viša ograda: uspravne letvice su duže, broj isti
+    // viša ograda: uspravne letvice su duže (uz iste ivice), broj isti
     p = { ...p, items: p.items.map((it) => (it.kind === 'fence' ? { ...it, heightMm: 1500 } : it)) };
-    expect(buildBom(p, MATS).find((l) => l.materialId === kv.id)?.geometricQty).toBeCloseTo(6.75, 6);
+    expect(buildBom(p, MATS).find((l) => l.materialId === kv.id)?.geometricQty).toBeCloseTo(1.4 * n, 6);
   });
 
   it('model se primenjuje na ogradu i kapiju postojećeg projekta', () => {
     registerCustomModels([MODEL], MATS);
     const p = changeModelAll(createProject('t', [createFence({ modelId: 'h_wide' }), createGate('pedestrian', { infillModelId: 'h_wide' })]), ID);
     expect(p.items.map((it) => (it.kind === 'fence' ? it.modelId : it.kind === 'gate' ? it.infillModelId : null))).toEqual([ID, ID]);
-    expect(buildBom(p, MATS).find((l) => l.materialId === cap.id)?.geometricQty).toBe(10);
+    // čepovi prate letvice ograde i kapije, a letvice se računaju za širinu svakog polja
+    const want = p.items.reduce((sum, it, i) => sum + (it.kind === 'opening' ? 0 : customSlatCount(ID, computeLayout(p).items[i].clearWidth, it.kind === 'gate' ? leafHeightOf(it) : it.heightMm)), 0);
+    expect(buildBom(p, MATS).find((l) => l.materialId === cap.id)?.geometricQty).toBe(want);
   });
 });
 

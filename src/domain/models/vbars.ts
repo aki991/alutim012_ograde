@@ -85,7 +85,7 @@ export function vLayoutInfo(model: CustomModel, bar: CustomPart, materials: Mate
 const isCapShape = (s: MatShape | null): boolean => !!s && s.type === 'piece' && s.solids.some((x) => x.prim === 'dome');
 
 /** čep koji stoji na vrhu letvice (komadni deo čepa sa sredinom ispod nje) */
-function capOn(model: CustomModel, bar: CustomPart, materials: Material[]): CustomPart | undefined {
+export function capOn(model: CustomModel, bar: CustomPart, materials: Material[]): CustomPart | undefined {
   const shapeOf = shapeLookupFor(materials);
   const b = partBounds(bar, shapeOf(bar) as Extract<MatShape, { type: 'linear' }>);
   const cx = (b.x0 + b.x1) / 2;
