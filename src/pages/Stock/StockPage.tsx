@@ -71,7 +71,7 @@ export default function StockPage() {
             <button className="btn btn-primary" data-testid="stock-add-btn" disabled={!valid} onClick={add}><Plus size={17} />Dodaj</button>
           </div>
         )}
-        <p className="text-xs text-muted mt-2">Cela šipka je {fmtNum(full, 0)} mm (menja se u Podešavanjima). Kraći komad je ostatak. Kad projekat pređe u „U izradi“, ostaci iz njegove krojne liste od {fmtNum(cutOptions(settings).minKeepMm ?? 500, 0)} mm i duži se sami dodaju ovde, a iskorišćeni ostaci iz magacina se skidaju sa stanja.</p>
+        <p className="text-xs text-muted mt-2">Cela šipka je {fmtNum(full, 0)} mm (menja se u Podešavanjima). Kraći komad je ostatak. Kad projekat pređe u „U izradi“ ili „Završeno“, ostaci iz njegove krojne liste od {fmtNum(cutOptions(settings).minKeepMm ?? 500, 0)} mm i duži se sami dodaju ovde, a iskorišćeni ostaci iz magacina se skidaju sa stanja. Ako se status vrati na „Nacrt“ ili „Ponuda“, to se povlači.</p>
       </section>
 
       <section className="card p-4">

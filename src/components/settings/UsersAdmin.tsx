@@ -1,48 +1,58 @@
-import { Eye, EyeOff, Loader2, Pencil, Trash2, UserPlus } from 'lucide-react';
+import { Eye, EyeOff, Link2, Loader2, Pencil, Trash2, UserPlus } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { useAuth } from '../../services/auth';
+import { displayLogin } from '../../services/loginName';
+import { changeAccount, fetchAccounts, ROLE_LABEL, type StaffRole, type TeamAccount } from '../../services/teamAccounts';
 import { ConfirmDialog, Modal } from '../ui/Modal';
 
-interface AppUser { id: string; login: string; fullName: string; role: string | null; createdAt: string; lastSignInAt: string | null }
-type Result = { ok: boolean; status: number; body: Record<string, unknown> };
+const ROLE_PILL: Record<TeamAccount['role'], string> = {
+  admin: 'bg-[#fde4e4] text-[#b4141b]',
+  manager: 'bg-[#fff4d6] text-[#8a5a00]',
+  worker: 'bg-slate-100 text-slate-700',
+};
 
-const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleString('sr-Latn-RS', { dateStyle: 'short', timeStyle: 'short' }) : '—');
-const errorOf = (r: Result, fallback: string) => (typeof r.body.error === 'string' ? r.body.error : fallback);
+const loginOf = (a: TeamAccount) => displayLogin(a.email) ?? '—';
 
-/** Korisnici aplikacije (samo administrator): spisak, pravljenje, izmena i brisanje naloga. Radi preko servera (api/users), jer to traži tajni ključ. */
+function RolePicker({ value, onChange, testId }: { value: StaffRole; onChange: (v: StaffRole) => void; testId: string }) {
+  return (
+    <label className="grid gap-1"><span className="label">Uloga</span>
+      <select className="input" value={value} onChange={(e) => onChange(e.target.value as StaffRole)} data-testid={testId}>
+        <option value="worker">Majstor</option>
+        <option value="manager">Šef</option>
+      </select>
+    </label>
+  );
+}
+
+/**
+ * Nalozi zaposlenih (šef i administrator). Isti nalozi i uloge kao u Stolariji: spisak dolazi iz
+ * field_team_list_accounts, a izmene idu kroz serversku funkciju field-team-accounts.
+ * Šef pri pravljenju naloga postavlja početnu lozinku; posle toga lozinku menja vlasnik naloga na svom profilu.
+ */
 export function UsersAdmin() {
   const auth = useAuth();
   const myId = auth.session?.user.id ?? null;
-  const [users, setUsers] = useState<AppUser[] | null>(null);
+  const [accounts, setAccounts] = useState<TeamAccount[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [login, setLogin] = useState('');
-  const [fullName, setFullName] = useState('');
+  const [mode, setMode] = useState<'create' | 'link'>('create');
+  const [identifier, setIdentifier] = useState('');
+  const [name, setName] = useState('');
   const [password, setPassword] = useState('');
+  const [role, setRole] = useState<StaffRole>('worker');
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
-  const [editing, setEditing] = useState<AppUser | null>(null);
-  const [deleting, setDeleting] = useState<AppUser | null>(null);
-
-  const call = useCallback(async (init?: RequestInit, search = ''): Promise<Result> => {
-    const token = await auth.getToken();
-    const res = await fetch(`/api/users${search}`, { ...init, headers: { 'content-type': 'application/json', authorization: `Bearer ${token ?? ''}` } });
-    let body: Record<string, unknown> = {};
-    try { body = (await res.json()) as Record<string, unknown>; } catch { /* odgovor nije JSON (npr. funkcija nije dostupna) */ }
-    return { ok: res.ok, status: res.status, body };
-  }, [auth]);
+  const [editing, setEditing] = useState<TeamAccount | null>(null);
+  const [deleting, setDeleting] = useState<TeamAccount | null>(null);
 
   const load = useCallback(async () => {
     setLoadError(null);
     try {
-      const r = await call();
-      // bez pokrenute serverske funkcije (npr. lokalno) stiže stranica aplikacije, a ne spisak
-      if (!r.ok || !Array.isArray(r.body.users)) { setLoadError(errorOf(r, 'Spisak korisnika trenutno nije dostupan. Proverite internet vezu i pokušajte ponovo.')); return; }
-      setUsers(r.body.users as AppUser[]);
-    } catch {
-      setLoadError('Nema veze sa serverom.');
+      setAccounts(await fetchAccounts());
+    } catch (e) {
+      setLoadError((e as Error).message);
     }
-  }, [call]);
+  }, []);
   useEffect(() => { void load(); }, [load]);
 
   const submit = async (e: FormEvent) => {
@@ -50,100 +60,118 @@ export function UsersAdmin() {
     if (busy) return;
     setBusy(true);
     setMessage(null);
+    const login = identifier.trim();
     try {
-      const r = await call({ method: 'POST', body: JSON.stringify({ login, fullName, password }) });
-      if (r.ok) {
-        setMessage({ ok: true, text: `Korisnik „${String(r.body.login ?? login)}" je napravljen. Prijavljuje se tim podacima.` });
-        setLogin(''); setFullName(''); setPassword(''); setShow(false);
-        await load();
+      if (mode === 'create') {
+        await changeAccount({ action: 'create', identifier: login, name: name.trim(), password, role });
+        setMessage({ ok: true, text: `Nalog „${login}" (${ROLE_LABEL[role]}) je napravljen. Prijavljuje se tim podacima u Ogradama i Stolariji.` });
       } else {
-        setMessage({ ok: false, text: errorOf(r, 'Korisnik nije napravljen.') });
+        await changeAccount({ action: 'link', identifier: login, role });
+        setMessage({ ok: true, text: `Postojeći nalog „${login}" je dobio ulogu: ${ROLE_LABEL[role]}.` });
       }
-    } catch {
-      setMessage({ ok: false, text: 'Nema veze sa serverom.' });
+      setIdentifier(''); setName(''); setPassword(''); setShow(false);
+      await load();
+    } catch (err) {
+      setMessage({ ok: false, text: (err as Error).message });
     } finally {
       setBusy(false);
     }
   };
 
-  const remove = async (u: AppUser) => {
+  const remove = async (a: TeamAccount) => {
     setDeleting(null);
     setMessage(null);
     try {
-      const r = await call({ method: 'DELETE' }, `?id=${encodeURIComponent(u.id)}`);
-      setMessage(r.ok ? { ok: true, text: `Korisnik „${u.login}" je obrisan.` } : { ok: false, text: errorOf(r, 'Korisnik nije obrisan.') });
-      if (r.ok) await load();
-    } catch {
-      setMessage({ ok: false, text: 'Nema veze sa serverom.' });
+      await changeAccount({ action: 'delete', id: a.id });
+      setMessage({ ok: true, text: `Nalog „${loginOf(a)}" je obrisan.` });
+      await load();
+    } catch (err) {
+      setMessage({ ok: false, text: (err as Error).message });
     }
   };
 
   return (
     <section className="card p-5 lg:col-span-2" data-testid="users-admin">
-      <h2 className="font-bold mb-1">Korisnici</h2>
-      <p className="text-sm text-muted mb-4">Samo administrator pravi i menja naloge. Korisnik se prijavljuje korisničkim imenom (ili e-mailom) i lozinkom koje ovde unesete; novi nalog nema ovlašćenja administratora.</p>
+      <h2 className="font-bold mb-1">Nalozi zaposlenih</h2>
+      <p className="text-sm text-muted mb-4">Isti nalozi i uloge važe u Ogradama i u Stolariji. Šef pravi naloge za šefove i majstore i postavlja im početnu lozinku; posle toga svako menja svoju lozinku na svom profilu (Podešavanja → Promeni lozinku).</p>
 
-      <form className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto] items-end" onSubmit={(e) => void submit(e)} data-testid="user-create-form" noValidate>
+      <div className="flex gap-1 mb-3" role="tablist">
+        <button type="button" role="tab" aria-selected={mode === 'create'} className={`btn btn-sm ${mode === 'create' ? 'btn-primary' : ''}`} data-testid="user-mode-create" onClick={() => setMode('create')}><UserPlus size={14} />Novi nalog</button>
+        <button type="button" role="tab" aria-selected={mode === 'link'} className={`btn btn-sm ${mode === 'link' ? 'btn-primary' : ''}`} data-testid="user-mode-link" onClick={() => setMode('link')}><Link2 size={14} />Postojeći nalog</button>
+      </div>
+
+      <form className={`grid gap-3 items-end ${mode === 'create' ? 'md:grid-cols-[1fr_1fr_1fr_150px_auto]' : 'md:grid-cols-[1fr_150px_auto]'}`} onSubmit={(e) => void submit(e)} data-testid="user-create-form" noValidate>
         <label className="grid gap-1"><span className="label">Korisničko ime ili e-mail</span>
-          <input className="input" value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="off" autoCapitalize="none" spellCheck={false} placeholder="npr. petar.petrovic" data-testid="user-new-login" />
+          <input className="input" value={identifier} onChange={(e) => setIdentifier(e.target.value)} autoComplete="off" autoCapitalize="none" spellCheck={false} placeholder="npr. petar.petrovic" data-testid="user-new-login" />
         </label>
-        <label className="grid gap-1"><span className="label">Ime i prezime (neobavezno)</span>
-          <input className="input" value={fullName} onChange={(e) => setFullName(e.target.value)} autoComplete="off" placeholder="npr. Petar Petrović" data-testid="user-new-name" />
-        </label>
-        <label className="grid gap-1"><span className="label">Lozinka (najmanje 8 znakova)</span>
-          <span className="relative block">
-            <input className="input !pr-10" type={show ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" data-testid="user-new-password" />
-            <button type="button" className="absolute right-1 top-1/2 -translate-y-1/2 p-2 text-slate-500 hover:text-ink rounded-md" aria-label={show ? 'Sakrij lozinku' : 'Prikaži lozinku'} tabIndex={-1} onClick={() => setShow((v) => !v)}>
-              {show ? <EyeOff size={17} /> : <Eye size={17} />}
-            </button>
-          </span>
-        </label>
-        <button type="submit" className="btn btn-primary" disabled={busy} data-testid="user-create">{busy ? <Loader2 size={17} className="animate-spin" /> : <UserPlus size={17} />}Napravi korisnika</button>
+        {mode === 'create' && (
+          <>
+            <label className="grid gap-1"><span className="label">Ime i prezime</span>
+              <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" placeholder="npr. Petar Petrović" data-testid="user-new-name" />
+            </label>
+            <label className="grid gap-1"><span className="label">Početna lozinka (najmanje 8 znakova)</span>
+              <span className="relative block">
+                <input className="input !pr-10" type={show ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" data-testid="user-new-password" />
+                <button type="button" className="absolute right-1 top-1/2 -translate-y-1/2 p-2 text-slate-500 hover:text-ink rounded-md" aria-label={show ? 'Sakrij lozinku' : 'Prikaži lozinku'} tabIndex={-1} onClick={() => setShow((v) => !v)}>
+                  {show ? <EyeOff size={17} /> : <Eye size={17} />}
+                </button>
+              </span>
+            </label>
+          </>
+        )}
+        <RolePicker value={role} onChange={setRole} testId="user-new-role" />
+        <button type="submit" className="btn btn-primary" disabled={busy} data-testid="user-create">
+          {busy ? <Loader2 size={17} className="animate-spin" /> : mode === 'create' ? <UserPlus size={17} /> : <Link2 size={17} />}
+          {mode === 'create' ? 'Napravi nalog' : 'Dodeli ulogu'}
+        </button>
       </form>
+      {mode === 'link' && <p className="text-[12px] text-muted mt-2">Za nalog koji već postoji (npr. napravljen ranije u Ogradama) a još nema ulogu u timu. Lozinka ostaje ista.</p>}
       {message && <p role={message.ok ? 'status' : 'alert'} className={`text-[13px] mt-3 rounded-md px-3 py-2 ${message.ok ? 'bg-[#ecfdf3] text-[#067647] border border-[#abefc6]' : 'bg-[#fef3f2] text-[#b42318] border border-[#fecdca]'}`} data-testid="user-message">{message.text}</p>}
 
       <div className="mt-5 overflow-x-auto">
         {loadError ? (
           <p className="text-sm text-[#b42318]" role="alert" data-testid="users-error">{loadError}</p>
-        ) : users === null ? (
-          <p className="text-sm text-muted" data-testid="users-loading">Učitavanje korisnika…</p>
+        ) : accounts === null ? (
+          <p className="text-sm text-muted" data-testid="users-loading">Učitavanje naloga…</p>
         ) : (
-          <table className="w-full min-w-[640px]" data-testid="users-table">
-            <thead><tr><th className="th">Prijava</th><th className="th">Ime i prezime</th><th className="th">Uloga</th><th className="th">Napravljen</th><th className="th">Poslednja prijava</th><th className="th text-right">Radnje</th></tr></thead>
+          <table className="w-full min-w-[560px]" data-testid="users-table">
+            <thead><tr><th className="th">Prijava</th><th className="th">Ime i prezime</th><th className="th">Uloga</th><th className="th text-right">Radnje</th></tr></thead>
             <tbody>
-              {users.map((u) => (
-                <tr key={u.id} data-testid="user-row">
-                  <td className="td font-medium">{u.login}{u.id === myId && <span className="ml-2 text-[11px] text-muted font-normal">(vi)</span>}</td>
-                  <td className="td">{u.fullName || '—'}</td>
-                  <td className="td">{u.role === 'admin' ? <span className="pill !py-0 !px-2 !text-[11px] bg-[#fde4e4] text-[#b4141b]">Administrator</span> : <span className="text-muted">—</span>}</td>
-                  <td className="td tabular-nums text-slate-600">{fmt(u.createdAt)}</td>
-                  <td className="td tabular-nums text-slate-600">{fmt(u.lastSignInAt)}</td>
-                  <td className="td">
-                    <span className="flex justify-end gap-1.5">
-                      <button className="btn btn-sm" aria-label={`Izmeni korisnika ${u.login}`} data-testid="user-edit" onClick={() => setEditing(u)}><Pencil size={14} />Izmeni</button>
-                      <button className="btn btn-sm btn-danger" aria-label={`Obriši korisnika ${u.login}`} data-testid="user-delete" disabled={u.id === myId} title={u.id === myId ? 'Sopstveni nalog ne možete obrisati' : undefined} onClick={() => setDeleting(u)}><Trash2 size={14} />Obriši</button>
-                    </span>
-                  </td>
-                </tr>
-              ))}
+              {accounts.map((a) => {
+                const self = a.id === myId;
+                // administratora menja samo administrator (baza to ionako proverava)
+                const locked = a.role === 'admin' && auth.role !== 'admin';
+                return (
+                  <tr key={a.id} data-testid="user-row">
+                    <td className="td font-medium">{loginOf(a)}{self && <span className="ml-2 text-[11px] text-muted font-normal">(vi)</span>}</td>
+                    <td className="td">{a.name || '—'}</td>
+                    <td className="td"><span className={`pill !py-0 !px-2 !text-[11px] ${ROLE_PILL[a.role]}`} data-testid="user-row-role">{ROLE_LABEL[a.role]}</span></td>
+                    <td className="td">
+                      <span className="flex justify-end gap-1.5">
+                        <button className="btn btn-sm" aria-label={`Izmeni nalog ${loginOf(a)}`} data-testid="user-edit" disabled={locked} onClick={() => setEditing(a)}><Pencil size={14} />Izmeni</button>
+                        <button className="btn btn-sm btn-danger" aria-label={`Obriši nalog ${loginOf(a)}`} data-testid="user-delete" disabled={self || a.role === 'admin'} title={self ? 'Sopstveni nalog ne možete obrisati' : undefined} onClick={() => setDeleting(a)}><Trash2 size={14} />Obriši</button>
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
       </div>
 
       {editing && (
-        <EditUser
-          user={editing}
-          self={editing.id === myId}
-          call={call}
+        <EditAccount
+          account={editing}
+          isAdmin={auth.role === 'admin'}
           onClose={() => setEditing(null)}
-          onSaved={async (text) => { setEditing(null); setMessage({ ok: true, text }); await load(); }}
+          onSaved={async (text) => { setEditing(null); setMessage({ ok: true, text }); await load(); if (editing.id === myId) await auth.refreshProfile(); }}
         />
       )}
       {deleting && (
         <ConfirmDialog
-          title="Brisanje korisnika" danger confirmLabel="Obriši"
-          message={<>Korisnik <b>{deleting.login}</b>{deleting.fullName ? ` (${deleting.fullName})` : ''} više neće moći da se prijavi. Podaci u njegovom pregledaču (projekti, kupci) ostaju tamo. Ovo se ne može poništiti.</>}
+          title="Brisanje naloga" danger confirmLabel="Obriši"
+          message={<>Nalog <b>{loginOf(deleting)}</b>{deleting.name ? ` (${deleting.name})` : ''} više neće moći da se prijavi ni u Ograde ni u Stolariju. Sačuvani poslovi ostaju. Ovo se ne može poništiti.</>}
           onCancel={() => setDeleting(null)} onConfirm={() => void remove(deleting)}
         />
       )}
@@ -151,33 +179,28 @@ export function UsersAdmin() {
   );
 }
 
-/** Izmena naloga: ime i prezime, korisničko ime/e-mail, nova lozinka (prazno = ne menja se) i uloga. */
-function EditUser({ user, self, call, onClose, onSaved }: {
-  user: AppUser; self: boolean; call: (init?: RequestInit, search?: string) => Promise<Result>; onClose: () => void; onSaved: (text: string) => void | Promise<void>;
+/** Izmena profila: ime i prezime i korisničko ime. Stvarnu e-mail adresu menja samo administrator (proverava server). */
+function EditAccount({ account, isAdmin, onClose, onSaved }: {
+  account: TeamAccount; isAdmin: boolean; onClose: () => void; onSaved: (text: string) => void | Promise<void>;
 }) {
-  const [login, setLogin] = useState(user.login);
-  const [fullName, setFullName] = useState(user.fullName);
-  const [password, setPassword] = useState('');
-  const [show, setShow] = useState(false);
-  const [admin, setAdmin] = useState(user.role === 'admin');
+  const original = loginOf(account);
+  const [login, setLogin] = useState(original);
+  const [name, setName] = useState(account.name);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const realEmail = !!account.email && !account.email.endsWith('@alutim012.local');
+  const loginLocked = realEmail && !isAdmin;
 
   const save = async () => {
-    const body: Record<string, unknown> = { id: user.id };
-    if (login.trim() && login.trim().toLowerCase() !== user.login.toLowerCase()) body.login = login.trim();
-    if (fullName.trim() !== user.fullName) body.fullName = fullName.trim();
-    if (password) body.password = password;
-    if (admin !== (user.role === 'admin')) body.role = admin ? 'admin' : 'user';
-    if (Object.keys(body).length === 1) { onClose(); return; }
+    const nextLogin = login.trim();
+    if (name.trim() === account.name && nextLogin.toLowerCase() === original.toLowerCase()) { onClose(); return; }
     setBusy(true);
     setError(null);
     try {
-      const r = await call({ method: 'PATCH', body: JSON.stringify(body) });
-      if (r.ok) await onSaved(`Izmene za korisnika „${login.trim() || user.login}" su sačuvane.${body.password ? ' Nova lozinka važi odmah.' : ''}`);
-      else setError(errorOf(r, 'Izmena nije sačuvana.'));
-    } catch {
-      setError('Nema veze sa serverom.');
+      await changeAccount({ action: 'update', id: account.id, name: name.trim(), ...(nextLogin.toLowerCase() !== original.toLowerCase() ? { identifier: nextLogin } : {}) });
+      await onSaved(`Izmene za nalog „${nextLogin || original}" su sačuvane.`);
+    } catch (e) {
+      setError((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -185,31 +208,19 @@ function EditUser({ user, self, call, onClose, onSaved }: {
 
   return (
     <Modal
-      title={`Izmena korisnika: ${user.login}`}
+      title={`Izmena naloga: ${original}`}
       onClose={onClose}
       footer={<><button className="btn" onClick={onClose}>Otkaži</button><button className="btn btn-primary" disabled={busy} data-testid="user-edit-save" onClick={() => void save()}>{busy ? <Loader2 size={16} className="animate-spin" /> : null}Sačuvaj</button></>}
     >
       <div className="grid gap-3" data-testid="user-edit-form" onKeyDown={(e) => { if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') { e.preventDefault(); void save(); } }}>
-        <label className="grid gap-1"><span className="label">Korisničko ime ili e-mail</span>
-          <input className="input" value={login} onChange={(e) => setLogin(e.target.value)} disabled={self} autoCapitalize="none" spellCheck={false} data-testid="user-edit-login" />
-          {self && <span className="text-[12px] text-muted">Sopstvenu prijavu ne možete menjati ovde.</span>}
-        </label>
         <label className="grid gap-1"><span className="label">Ime i prezime</span>
-          <input className="input" value={fullName} onChange={(e) => setFullName(e.target.value)} data-autofocus data-testid="user-edit-name" />
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} data-autofocus data-testid="user-edit-name" />
         </label>
-        <label className="grid gap-1"><span className="label">Nova lozinka (prazno = ostaje ista)</span>
-          <span className="relative block">
-            <input className="input !pr-10" type={show ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" placeholder="najmanje 8 znakova" data-testid="user-edit-password" />
-            <button type="button" className="absolute right-1 top-1/2 -translate-y-1/2 p-2 text-slate-500 hover:text-ink rounded-md" aria-label={show ? 'Sakrij lozinku' : 'Prikaži lozinku'} tabIndex={-1} onClick={() => setShow((v) => !v)}>
-              {show ? <EyeOff size={17} /> : <Eye size={17} />}
-            </button>
-          </span>
+        <label className="grid gap-1"><span className="label">Korisničko ime ili e-mail</span>
+          <input className="input" value={login} onChange={(e) => setLogin(e.target.value)} disabled={loginLocked} autoCapitalize="none" spellCheck={false} data-testid="user-edit-login" />
+          {loginLocked && <span className="text-[12px] text-muted">Stvarnu e-mail adresu za prijavu menja samo administrator.</span>}
         </label>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={admin} onChange={(e) => setAdmin(e.target.checked)} disabled={self} data-testid="user-edit-admin" />
-          Administrator (može da pravi, menja i briše korisnike)
-        </label>
-        {self && <span className="text-[12px] text-muted -mt-2">Sebi ne možete oduzeti ulogu administratora.</span>}
+        <p className="text-[12px] text-muted">Ulogu i lozinku ovde ne menjate: lozinku menja vlasnik naloga na svom profilu.</p>
         {error && <p role="alert" className="text-[13px] text-[#b42318] rounded-md bg-[#fef3f2] border border-[#fecdca] px-3 py-2" data-testid="user-edit-error">{error}</p>}
       </div>
     </Modal>

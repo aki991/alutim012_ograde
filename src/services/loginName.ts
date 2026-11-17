@@ -1,6 +1,6 @@
 /**
  * Prijava korisničkim imenom: Supabase Auth traži e-mail, pa se korisničko ime čuva kao „<ime>@alutim012.local".
- * Isto mapiranje radi i server (api/users.ts) pri pravljenju korisnika.
+ * Isto mapiranje radi i zajednička serverska funkcija field-team-accounts (Stolarija) pri pravljenju naloga.
  */
 export const LOGIN_DOMAIN = 'alutim012.local';
 

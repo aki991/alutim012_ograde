@@ -57,9 +57,9 @@ const wheelCx = (page: Page) => overlay(page).locator('[data-sliding-part="wheel
 test('Doradi klizne kapije: crtanje modela sa kliznim okovom, podešavanje točkića, okov iz cenovnika, model u projektu', async ({ page }) => {
   const errors = trackErrors(page);
   await page.goto('/modeli-kapija');
-  for (const id of ['klizna_sina_rucna', 'klizna_sina_motorna', 'samonoseca_rucna', 'samonoseca_motorna']) await expect(page.getByTestId(`basic-sliding-${id}`)).toBeVisible();
+  for (const id of ['sliding', 'sliding-self']) await expect(page.getByTestId(`basic-${id}`)).toBeVisible();
 
-  await page.getByTestId('rework-sliding-klizna_sina_motorna').click();
+  await page.getByTestId('rework-sliding-klizna_sina_rucna').click();
   await expect(page).toHaveURL(/\/modeli\/crtanje\/cm_/);
   await expect(page.getByTestId('model-designer')).toBeVisible();
   // sva podešavanja obične kapije: tip, Mere kapije, ram, mere, boja
@@ -154,9 +154,9 @@ test('klizna kapija od nule: tip kapije Klizna, delovi se postavljaju klikom', a
 test('osnovna klizna kapija se briše sa strane (konačno)', async ({ page }) => {
   const errors = trackErrors(page);
   await page.goto('/modeli-kapija');
-  await page.getByTestId('delete-basic-sliding-samonoseca_rucna').click();
+  await page.getByTestId('delete-basic-sliding-self').click();
   await page.getByRole('button', { name: 'Obriši', exact: true }).last().click();
-  await expect(page.getByTestId('basic-sliding-samonoseca_rucna')).toHaveCount(0);
+  await expect(page.getByTestId('basic-sliding-self')).toHaveCount(0);
   await expect(page.getByTestId('restore-basic-gates')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
@@ -291,7 +291,7 @@ test('Materijali i cene: dugme Izmeni menja sve mere preseka (C profil otvor 30 
 test('3D prikaz: klizna kapija se prikazuje kompletna (krilo + klizni okov), u crtanju modela i u projektu', async ({ page }) => {
   const errors = trackErrors(page);
   await page.goto('/modeli-kapija');
-  await page.getByTestId('rework-sliding-samonoseca_motorna').click();
+  await page.getByTestId('rework-sliding-samonoseca_rucna').click();
   await expect(page.getByTestId('designer-sliding-bar')).toBeVisible();
   await page.getByTestId('designer-view-3d').click();
   const d3 = page.getByTestId('designer-3d');

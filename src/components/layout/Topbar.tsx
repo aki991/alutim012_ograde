@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
 import { useAuth } from '../../services/auth';
+import { ROLE_LABEL } from '../../services/teamAccounts';
 import { useCloudStatus } from '../../services/cloudSync';
 import { initialsOf } from '../../utils/units';
 import { useFieldSpecs } from '../../hooks/useFieldSpecs';
@@ -99,7 +100,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
                   <div className="font-semibold text-[15px] leading-tight truncate" data-testid="user-name">{displayName}</div>
                   {auth.login && <div className="text-[12.5px] text-slate-600 truncate mt-0.5" data-testid="user-email" title={auth.login}>{auth.login}</div>}
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5">
-                    {auth.role && <span className="pill !py-0 !px-2 !text-[11px] bg-[#fde4e4] text-[#b4141b]" data-testid="user-role">{auth.role === 'admin' ? 'Administrator' : auth.role}</span>}
+                    {auth.role && <span className="pill !py-0 !px-2 !text-[11px] bg-[#fde4e4] text-[#b4141b]" data-testid="user-role">{ROLE_LABEL[auth.role]}</span>}
                     <span className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-semibold tracking-wide uppercase text-slate-500"><Building2 size={11} />{settings.companyName}</span>
                   </div>
                 </div>

@@ -1,36 +1,35 @@
-# Korisnici: prijava i pravljenje naloga
+# Korisnici: prijava, uloge i nalozi
 
-## Kako radi
+Ograde i Stolarija koriste **isti Supabase projekat, iste naloge i iste uloge**. Ograde nema svoj sistem uloga: sve što se promeni u jednoj aplikaciji važi i u drugoj.
 
-- **Prijava:** prvo polje prima **e-mail ili korisničko ime** (npr. `petar.petrovic`), pa lozinku.
-- **Korisničko ime** Supabase Auth ne poznaje (traži e-mail), pa se čuva kao e-mail sa izmišljenom adresom: `petar.petrovic@alutim012.local`. Aplikacija to radi sama pri prijavi i prikazu; korisnik i administrator vide samo `petar.petrovic`.
-- **Administrator** (uloga `admin`) u **Podešavanjima → Korisnici** vidi spisak naloga, pravi nove, menja ih i briše (korisničko ime ili e-mail, ime i prezime, lozinka od najmanje 8 znakova). Novi korisnik odmah može da se prijavi tim podacima.
-- **Ostali korisnici** nemaju ulogu (prazno): ne vide odeljak Korisnici.
-- Nalozi se prave na serveru (`api/users.ts`), jer to traži tajni `service_role` ključ koji ne sme u pregledač. Funkcija proverava da je pozivalac prijavljen i da ima ulogu `admin` (iz njegovog tokena), pa tek onda radi.
+## Uloge
 
-## Podešavanje (jednom)
+| Uloga | Gde se čuva | Šta može u Ogradama |
+| --- | --- | --- |
+| **Administrator** | `field_team_private.app_admins` (postavlja se samo u bazi) | sve što i šef; menja i stvarnu e-mail adresu naloga |
+| **Šef** | `public.field_team_members.role = 'manager'` | ekran **Podešavanja → Nalozi zaposlenih**: pravi naloge šefova i majstora i postavlja im početnu lozinku, menja ime i korisničko ime, briše naloge |
+| **Majstor** | `public.field_team_members.role = 'worker'` | radi u aplikaciji; ne vidi ekran naloga; ime mu menja šef |
 
-1. **Administrator u bazi.** U Supabase **SQL Editor** pokrenuti:
+Svako (šef i majstor) menja **svoju** lozinku u **Podešavanja → Firma i korisnik → Promeni lozinku** (traži trenutnu lozinku). Nova lozinka važi i u Stolariji. Lozinke se u bazi čuvaju samo kao heš, pa ih niko (ni administrator) ne može da vidi.
 
-   ```sql
-   update auth.users
-   set raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb) || '{"role": "admin"}'::jsonb
-   where email = 'andrejamilenkovic991@gmail.com';
+## Kako radi u kodu
 
-   -- provera: ko ima koju ulogu (ostali ostaju bez uloge)
-   select email, raw_app_meta_data ->> 'role' as uloga from auth.users order by created_at;
-   ```
+- Uloga i ime: RPC `field_team_my_profile` (`src/services/teamAccounts.ts`, `src/services/auth.tsx`). Poslednji profil se pamti na uređaju, pa uloga važi i bez interneta.
+- Spisak naloga: RPC `field_team_list_accounts`.
+- Pravljenje (`create`), dodela uloge postojećem nalogu (`link`), izmena profila (`update`) i brisanje (`delete`): Edge Function **`field-team-accounts`** iz repozitorijuma Stolarije (`supabase/functions/field-team-accounts`). Funkcija proverava ulogu pozivaoca u bazi pre svake izmene.
+- Promena sopstvene lozinke: isti postupak kao u Stolariji (provera trenutne lozinke zasebnom prijavom, pa `updateUser`).
+- Prijava: korisničko ime se pretvara u `<ime>@alutim012.local` (`src/services/loginName.ts`), isto kao u Stolariji.
 
-   Posle toga se administrator odjavi i ponovo prijavi, da nova uloga stigne u aplikaciju.
+Raniji sistem Ograda (`app_metadata.role` + serverska funkcija `api/users.ts`) je uklonjen.
 
-2. **Tajni ključ na Vercel-u.** Supabase → Project Settings → API → **service_role** (tajni) ključ. Na Vercel-u: Project → Settings → Environment Variables, dodati `SUPABASE_SERVICE_ROLE_KEY` (bez `VITE_` na početku, označiti kao **Sensitive**), za Production (i Preview). Zatim **Redeploy**. `VITE_SUPABASE_URL` se koristi i na serveru; ništa drugo se ne dodaje.
+## Podešavanje
 
-3. **Ne stavljati** `service_role` ključ u `.env.local` sa prefiksom `VITE_` niti ga slati ikome: ko ga ima, može sve u bazi.
+Tabele, RLS i funkcija postoje u bazi iz migracija Stolarije (`supabase/migrations/2026111*_team_*.sql` u repozitorijumu Stolarije) i objavljene funkcije `field-team-accounts`. Ograde u bazi ništa ne dodaje. Nalog bez reda u `field_team_members` može da se prijavi, ali nema ulogu; šef mu je dodeljuje kroz **Postojeći nalog**.
 
 ## Ograničenja
 
-- Lokalno (`npm run dev`) serverske funkcije ne rade, pa odeljak Korisnici prikazuje grešku; radi na Vercel-u (ili uz `vercel dev`).
-- **Izmena** (dugme „Izmeni"): ime i prezime, korisničko ime ili e-mail, nova lozinka (prazno = ostaje ista) i uloga administratora. **Brisanje** traži potvrdu. Zaštite: administrator ne može da obriše sebe, sebi oduzme ulogu ni promeni sopstvenu prijavu (lozinku može), a poslednji administrator se ne može obrisati ni degradirati.
-- Brisanjem naloga korisnik više ne može da se prijavi, ali projekti i kupci u njegovom pregledaču ostaju tamo.
+- Ekran naloga radi samo uz internet.
+- Administratora briše i menja samo administrator; sopstveni nalog se ne može obrisati.
+- Brisanjem naloga korisnik više ne može da se prijavi ni u jednu aplikaciju.
 - Korisničko ime: 3–32 znaka, mala slova, brojevi, tačka, crtica i donja crta.
-- Podaci (projekti, kupci, materijali, modeli ograda i kapija, šabloni, magacin, podešavanja) čuvaju se u Supabase tabelama `ograde_*` i zajednički su za sve prijavljene naloge; lokalna kopija u pregledaču omogućava rad bez interneta. Migracija: `supabase/migrations/202611160001_ograde_sync.sql` (pokrenuti jednom u SQL Editoru). Sinhronizacija: `src/services/cloudSync.ts`.
+- Podaci Ograda (projekti, kupci, materijali, modeli, magacin, podešavanja) su u tabelama `ograde_*` (`supabase/migrations/202611160001_ograde_sync.sql`, sinhronizacija `src/services/cloudSync.ts`).

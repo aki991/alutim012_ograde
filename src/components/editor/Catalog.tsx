@@ -9,17 +9,17 @@ import { postHalfSum } from '../../domain/geometry/layout';
 import { gateClearWidth, gateFieldsFromModel } from '../../domain/gates/gateModels';
 import { specFromPreset, type SlidingPresetId } from '../../domain/gates/slidingAssembly';
 import type { CustomModel } from '../../domain/models/custom';
-import type { FenceModelId, Gate, GateType, PostType, Project, SlidingTemplate } from '../../domain/models/types';
+import type { FenceModelId, Gate, GateType, PostType, Project } from '../../domain/models/types';
 import type { DragSource } from '../../hooks/useDragController';
 import { useAppStore, useCurrentProject, type NewElementSpec } from '../../store/useAppStore';
 import { FrontView, frontViewMetrics } from './FrontView';
 
 /** Sličica je isti crtež kao u 2D prikazu; za svetle (bele) ograde pozadina je siva kao u editoru da se vidi bela boja. */
-export function MiniThumb({ project, width = 150, grey = false }: { project: Project; width?: number; grey?: boolean }) {
+export function MiniThumb({ project, width = 150, height = 118, grey = false }: { project: Project; width?: number; height?: number; grey?: boolean }) {
   const m = frontViewMetrics(project, 1, false, true);
   return (
-    <div className={`rounded-lg overflow-hidden border border-line pointer-events-none ${grey ? 'bg-[#b3bac3]' : 'bg-white'}`} style={{ width, height: 118 }} aria-hidden="true">
-      <FrontView project={project} scale={width / m.vw} compact greyBackdrop={grey} className="!w-full !h-full" options={{ showDimensions: false, showGrid: false, showLabels: false }} />
+    <div className={`rounded-lg overflow-hidden border border-line pointer-events-none ${grey ? 'bg-[#b3bac3]' : 'bg-white'}`} style={{ width, height }} aria-hidden="true">
+      <FrontView project={project} scale={height === 118 ? width / m.vw : Math.min(width / m.vw, height / m.vh)} compact greyBackdrop={grey} className="!w-full !h-full" options={{ showDimensions: false, showGrid: false, showLabels: false }} />
     </div>
   );
 }
@@ -87,7 +87,7 @@ function PostCard({ type, subtitle, model, hasSelection, onApply }: { type: Post
 export type ThumbKind = 'fence' | 'stair' | 'opening' | 'corner' | 'concrete' | GateType;
 
 /** Sličica elementa izabranog modela (ista u katalogu i u prozoru „Dodaj element"), 150 × 118 px: isti crtež kao u 2D prikazu. */
-export function ElementThumb({ kind, model }: { kind: ThumbKind; model: FenceModelId }) {
+export function ElementThumb({ kind, model, size }: { kind: ThumbKind; model: FenceModelId; size?: { width: number; height: number } }) {
   const def = FENCE_MODELS[model];
   const grey = isLightColor(def.defaultColor);
   const mini = useMini(() => {
@@ -101,7 +101,7 @@ export function ElementThumb({ kind, model }: { kind: ThumbKind; model: FenceMod
     return createProject('m', [createGate(kind, { infillModelId: model })]);
   }, `t-${kind}-${model}`);
   if (kind === 'corner') return <CornerThumb grey={grey} />;
-  return <MiniThumb project={mini} grey={grey} />;
+  return <MiniThumb project={mini} grey={grey} {...size} />;
 }
 
 /** Sličica modela kapije: kapija iz modela između stubova, isti crtež kao u 2D prikazu. */
@@ -115,17 +115,17 @@ export function GateModelThumb({ model }: { model: CustomModel }) {
   return <MiniThumb project={mini} grey={isLightColor(model.color)} />;
 }
 
-/** Sličica klizne kapije (sklop iz polaznih mera varijante ili šablona), isti crtež kao u 2D prikazu. */
-export function SlidingThumb({ preset, template, model }: { preset?: SlidingPresetId; template?: SlidingTemplate; /** model ograde koji je krilo kapije (kao u projektu); bez njega se crta polazno krilo sklopa */ model?: FenceModelId }) {
+/** Sličica klizne kapije (sklop iz polaznih mera varijante), isti crtež kao u 2D prikazu. */
+export function SlidingThumb({ preset, model, size }: { preset: SlidingPresetId; size?: { width: number; height: number }; /** model ograde koji je krilo kapije (kao u projektu); bez njega se crta polazno krilo sklopa */ model?: FenceModelId }) {
   const mini = useMini(() => {
-    const d = preset ? specFromPreset(preset) : null;
+    const d = specFromPreset(preset);
     // kapija u projektu: krilo je izabrani model ograde, a sklop daje klizni okov (isto kao pri dodavanju)
-    const spec = d ? (model ? { ...d.spec, drawnLeaf: true, heightTotal: true } : d.spec) : template!.spec;
-    const g = createGate('sliding', { sliding: spec, heightMm: d ? d.frameHeight + d.spec.frameBottomY : template!.heightMm, opening: template?.opening ?? 'right', automation: spec.actuation === 'motor', ...(model ? { infillModelId: model } : {}), ...(template ? { color: template.color } : {}) });
+    const spec = model ? { ...d.spec, drawnLeaf: true, heightTotal: true } : d.spec;
+    const g = createGate('sliding', { sliding: spec, heightMm: d.frameHeight + d.spec.frameBottomY, opening: 'right', automation: spec.actuation === 'motor', ...(model ? { infillModelId: model } : {}) });
     const p = createProject('m', [g]);
-    return setOuterWidth(p, g.id, (d?.frameWidth ?? template!.frameWidth) + 2 * postHalfSum(p, 0));
-  }, preset ? `sl-${preset}-${model ?? ''}` : `sl-${template!.id}-${JSON.stringify([template!.spec, template!.frameWidth, template!.heightMm, template!.opening, template!.color])}`);
-  return <MiniThumb project={mini} grey={model ? isLightColor(FENCE_MODELS[model].defaultColor) : false} />;
+    return setOuterWidth(p, g.id, d.frameWidth + 2 * postHalfSum(p, 0));
+  }, `sl-${preset}-${model ?? ''}`);
+  return <MiniThumb project={mini} grey={model ? isLightColor(FENCE_MODELS[model].defaultColor) : false} {...size} />;
 }
 
 /** kapije sa krilima, redom kako se nude u katalogu (klizne su posebne kartice sa izborom tipa) */

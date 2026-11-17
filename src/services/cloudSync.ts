@@ -22,7 +22,7 @@ const emptyState = (): SyncState => ({ projects: {}, customers: {}, materials: {
 /* ---------- podešavanja: jedan red po ključu, a liste/rečnike delimo po stavkama (modeli, šabloni, magacin …) ---------- */
 
 /** liste objekata sa ID-em: svaka stavka je poseban red */
-export const ARRAY_KEYS = ['customModels', 'slidingTemplates', 'postTemplates', 'gateHardware', 'gateProfiles', 'stock'] as const;
+export const ARRAY_KEYS = ['customModels', 'postTemplates', 'gateHardware', 'gateProfiles', 'stock'] as const;
 /** rečnici: svaki ključ je poseban red */
 export const RECORD_KEYS = ['modelSpecs'] as const;
 

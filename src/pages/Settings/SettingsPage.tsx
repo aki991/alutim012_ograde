@@ -2,32 +2,40 @@ import { useEffect, useState } from 'react';
 import { NumberField, SegmentedField, TextField, ToggleField } from '../../components/forms/Fields';
 import { Page, PageHeader } from '../../components/ui/Common';
 import { UsersAdmin } from '../../components/settings/UsersAdmin';
+import { ChangePasswordButton } from '../../components/settings/ChangePassword';
 import { PostTemplatesSection } from '../../components/settings/PostTemplates';
 import { ConfirmDialog } from '../../components/ui/Modal';
 import { useAuth } from '../../services/auth';
+import { canManageAccounts, ROLE_LABEL } from '../../services/teamAccounts';
 import { saveNow } from '../../services/persistence';
 import { cutOptions } from '../../domain/pricing/cutting';
 import { useAppStore } from '../../store/useAppStore';
 
-/** Ime i prezime prijavljenog korisnika: čuva se u Supabase nalogu i prikazuje u meniju i na avataru. */
+/** Profil prijavljenog korisnika: ime i prezime, uloga (zajednička sa Stolarijom) i promena sopstvene lozinke. */
 function AccountName() {
   const auth = useAuth();
+  // majstor nema pravo izmene imena u zajedničkom profilu (kao u Stolariji); ime mu menja šef
+  const readOnly = auth.role === 'worker';
   const [name, setName] = useState(auth.name ?? '');
   const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [error, setError] = useState<string | null>(null);
   const save = async () => {
+    if (readOnly) return;
     setState('saving');
     const err = await auth.updateName(name);
+    setError(err);
     setState(err ? 'error' : 'saved');
   };
   return (
     <div className="py-1.5">
-      <div className="label mb-1">Ime i prezime ({auth.login})</div>
+      <div className="label mb-1">Ime i prezime ({auth.login}){auth.role && <span className="ml-2 pill !py-0 !px-2 !text-[11px] bg-[#fde4e4] text-[#b4141b]" data-testid="account-role">{ROLE_LABEL[auth.role]}</span>}</div>
       <div className="flex gap-2">
-        <input className="input" value={name} placeholder="npr. Andreja Milenković" data-testid="account-name" onChange={(e) => { setName(e.target.value); setState('idle'); }} onKeyDown={(e) => { if (e.key === 'Enter') void save(); }} />
-        <button className="btn" data-testid="account-name-save" disabled={state === 'saving' || name.trim() === (auth.name ?? '')} onClick={() => void save()}>{state === 'saving' ? 'Čuvanje…' : 'Sačuvaj'}</button>
+        <input className="input" value={name} readOnly={readOnly} title={readOnly ? 'Ime menja šef u Podešavanjima → Nalozi zaposlenih' : undefined} placeholder="npr. Andreja Milenković" data-testid="account-name" onChange={(e) => { setName(e.target.value); setState('idle'); }} onKeyDown={(e) => { if (e.key === 'Enter') void save(); }} />
+        {!readOnly && <button className="btn" data-testid="account-name-save" disabled={state === 'saving' || name.trim() === (auth.name ?? '')} onClick={() => void save()}>{state === 'saving' ? 'Čuvanje…' : 'Sačuvaj'}</button>}
       </div>
       {state === 'saved' && <div className="text-[12px] text-[#15803d] mt-1" role="status">Ime je sačuvano u nalogu.</div>}
-      {state === 'error' && <div className="text-[12px] text-[#b42318] mt-1" role="alert">Ime nije sačuvano. Pokušajte ponovo.</div>}
+      {state === 'error' && <div className="text-[12px] text-[#b42318] mt-1" role="alert">{error ?? 'Ime nije sačuvano. Pokušajte ponovo.'}</div>}
+      <ChangePasswordButton />
     </div>
   );
 }
@@ -77,7 +85,7 @@ export default function SettingsPage() {
           <ToggleField label="Štednja materijala" checked={cutOptions(settings).saveMaterial === true} onLabel="Uključena" offLabel="Isključena" testId="set-savematerial" onChange={(v) => update({ cutting: { ...cutOptions(settings), saveMaterial: v } })} />
           <p className="text-[12px] text-muted -mt-1 mb-2">Kad je uključena, komadi sa istim kosim uglom (npr. ram pod 45°) se raspoređuju tako da dele rez: jedan rez za dva komada, pa se manje materijala baca. Kad je isključena, svaki komad ima svoje rezove.</p>
           <NumberField label="Dužina nabavne šipke" testId="set-stock" value={cutOptions(settings).stockMm} range={{ min: 500, max: 20000 }} onCommit={(v) => update({ cutting: { ...cutOptions(settings), stockMm: v } })} hint="Dužina cele šipke kako stiže od dobavljača (najčešće 6000 mm)." />
-          <NumberField label="Najkraći ostatak za magacin" testId="set-minkeep" value={cutOptions(settings).minKeepMm ?? 500} range={{ min: 0, max: 20000 }} allowZero onCommit={(v) => update({ cutting: { ...cutOptions(settings), minKeepMm: v } })} hint="Kad projekat pređe u „U izradi“, ostaci cevi iz krojne liste ove dužine ili duži (mm) idu u magacin, npr. 500 ili 300. Kraći komadi su otpad." />
+          <NumberField label="Najkraći ostatak za magacin" testId="set-minkeep" value={cutOptions(settings).minKeepMm ?? 500} range={{ min: 0, max: 20000 }} allowZero onCommit={(v) => update({ cutting: { ...cutOptions(settings), minKeepMm: v } })} hint="Kad projekat pređe u „U izradi“ ili „Završeno“, ostaci cevi iz krojne liste ove dužine ili duži (mm) idu u magacin, npr. 500 ili 300. Kraći komadi su otpad." />
         </section>
         <section className="card p-5">
           <h2 className="font-bold mb-2">Napredne opcije</h2>
@@ -85,7 +93,7 @@ export default function SettingsPage() {
           <ToggleField label="Simulacija na fotografiji" checked={settings.photoSimEnabled !== false} onLabel="Uključena" offLabel="Isključena" onChange={(v) => update({ photoSimEnabled: v })} testId="set-photosim" />
         </section>
         <PostTemplatesSection />
-        {auth.enabled && !auth.guest && auth.role === 'admin' && <UsersAdmin />}
+        {auth.enabled && !auth.guest && canManageAccounts(auth.role) && <UsersAdmin />}
         <section className="card p-5 lg:col-span-2">
           <h2 className="font-bold mb-1">Podaci</h2>
           <div className="flex flex-wrap gap-2">

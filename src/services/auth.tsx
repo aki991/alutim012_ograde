@@ -2,6 +2,7 @@ import type { Session } from '@supabase/supabase-js';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { displayLogin, toLoginEmail } from './loginName';
 import { authEnabled, loginErrorMessage, supabase } from './supabase';
+import { changeAccount, effectiveRole, fetchMyProfile, readCachedProfile, writeCachedProfile, type TeamProfile, type TeamRole } from './teamAccounts';
 
 interface AuthState {
   /** prijava je uključena (Supabase je podešen) */
@@ -17,17 +18,21 @@ interface AuthState {
   login: string | null;
   /** pristupni token za pozive serverskih funkcija (samo administrator) */
   getToken: () => Promise<string | null>;
-  /** ime i prezime iz naloga (user_metadata.full_name); null ako nije zadato */
+  /** ime i prezime: iz zajedničkog profila tima (kao u Stolariji), inače iz naloga (user_metadata.full_name) */
   name: string | null;
-  /** uloga iz naloga (app_metadata.role), npr. admin */
-  role: string | null;
+  /** uloga iz zajedničke tabele sa Stolarijom (field_team_members / app_admins); null = nalog nema ulogu u timu */
+  role: TeamRole | null;
+  /** profil tima je učitan sa servera ili iz poslednje sačuvane kopije */
+  profileLoaded: boolean;
+  /** ponovo čita ulogu i ime sa servera */
+  refreshProfile: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<string | null>;
   signOut: () => Promise<void>;
   /** upisuje ime i prezime u nalog; vraća poruku o grešci ili null */
   updateName: (name: string) => Promise<string | null>;
 }
 
-const Ctx = createContext<AuthState>({ enabled: false, loading: false, guest: false, enterGuest: () => undefined, session: null, email: null, login: null, getToken: async () => null, name: null, role: null, signIn: async () => null, signOut: async () => undefined, updateName: async () => null });
+const Ctx = createContext<AuthState>({ enabled: false, loading: false, guest: false, enterGuest: () => undefined, session: null, email: null, login: null, getToken: async () => null, name: null, role: null, profileLoaded: false, refreshProfile: async () => undefined, signIn: async () => null, signOut: async () => undefined, updateName: async () => null });
 
 const GUEST_KEY = 'alutim-guest';
 const readGuest = (): boolean => { try { return sessionStorage.getItem(GUEST_KEY) === '1'; } catch { return false; } };
@@ -39,6 +44,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(authEnabled);
   // gost važi do zatvaranja prozora (sessionStorage), pa se pri sledećem pokretanju traži prijava
   const [guest, setGuest] = useState(readGuest);
+  const [profile, setProfile] = useState<TeamProfile | null>(null);
+  const [profileLoaded, setProfileLoaded] = useState(false);
+  const userId = session?.user.id ?? null;
+
+  const refreshProfile = useCallback(async () => {
+    if (!userId) return;
+    try {
+      const p = await fetchMyProfile(userId);
+      setProfile(p);
+      writeCachedProfile(p);
+    } catch {
+      /* bez interneta ostaje poslednja sačuvana uloga */
+    } finally {
+      setProfileLoaded(true);
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) { setProfile(null); setProfileLoaded(false); return; }
+    const cached = readCachedProfile(userId);
+    setProfile(cached);
+    setProfileLoaded(cached !== null);
+    void refreshProfile();
+  }, [userId, refreshProfile]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -63,6 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     writeGuest(false);
     setGuest(false);
+    writeCachedProfile(null);
     if (supabase && !guest) {
       try { await supabase.auth.signOut(); } catch { /* bez interneta se sesija ipak briše lokalno */ }
     }
@@ -71,19 +101,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const updateName = useCallback(async (name: string): Promise<string | null> => {
     if (!supabase) return 'Prijava nije podešena.';
+    // član tima: ime se menja preko zajedničke funkcije (upisuje ga i u Stolariju); to sme šef ili admin
+    if (profile && userId) {
+      try {
+        await changeAccount({ action: 'update', id: userId, name: name.trim() });
+        await refreshProfile();
+        const { data } = await supabase.auth.refreshSession();
+        if (data.session) setSession(data.session);
+        return null;
+      } catch (e) {
+        return (e as Error).message || 'Ime nije sačuvano. Pokušajte ponovo.';
+      }
+    }
     const { data, error } = await supabase.auth.updateUser({ data: { full_name: name.trim() } });
     if (error) return 'Ime nije sačuvano. Pokušajte ponovo.';
     if (data.user) setSession((cur) => (cur ? { ...cur, user: data.user } : cur));
     return null;
-  }, []);
+  }, [profile, userId, refreshProfile]);
 
   const getToken = useCallback(async (): Promise<string | null> => (supabase ? (await supabase.auth.getSession()).data.session?.access_token ?? null : null), []);
 
   const value = useMemo<AuthState>(() => {
     const meta = (session?.user.user_metadata ?? {}) as { full_name?: string; name?: string };
-    const role = (session?.user.app_metadata as { role?: string } | undefined)?.role ?? null;
-    return { enabled: authEnabled, loading, guest: guest && !session, enterGuest, session, email: session?.user.email ?? null, login: displayLogin(session?.user.email), getToken, name: (meta.full_name ?? meta.name ?? '').trim() || null, role, signIn, signOut, updateName };
-  }, [loading, guest, enterGuest, session, signIn, signOut, updateName, getToken]);
+    const p = session && profile?.id === session.user.id && profile.active ? profile : null;
+    const role = p ? effectiveRole(p) : null;
+    const name = (p?.name ?? meta.full_name ?? meta.name ?? '').trim() || null;
+    return { enabled: authEnabled, loading, guest: guest && !session, enterGuest, session, email: session?.user.email ?? null, login: displayLogin(session?.user.email), getToken, name, role, profileLoaded, refreshProfile, signIn, signOut, updateName };
+  }, [loading, guest, enterGuest, session, profile, profileLoaded, refreshProfile, signIn, signOut, updateName, getToken]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

@@ -7,23 +7,31 @@ import { ElementThumb, SlidingThumb } from '../../components/editor/Catalog';
 import { Page, PageHeader } from '../../components/ui/Common';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
 import { GATE_TYPE_LABELS } from '../../domain/gates/gateModels';
-import { presetTitle, SLIDING_PRESETS, type SlidingPresetId } from '../../domain/gates/slidingAssembly';
-import { DEFAULT_MODEL_ID, GATE_LABELS } from '../../domain/models/catalog';
+import { type SlidingPresetId } from '../../domain/gates/slidingAssembly';
+import { GATE_LABELS, projectModelId } from '../../domain/models/catalog';
+import { allFenceModels } from '../../domain/models/customRegistry';
 import type { CustomModel } from '../../domain/models/custom';
-import type { GateType, SlidingTemplate } from '../../domain/models/types';
+import type { GateType } from '../../domain/models/types';
 import { useAppStore, useListedProjects } from '../../store/useAppStore';
 import { uid } from '../../utils/id';
 
+/** Osnovne kapije redom: pešačka, jednokrilna, dvokrilna, klizna i samostojeća klizna (klizne sa izborom ručna / motorna). */
+type SlidingKind = { id: string; title: string; subtitle: string; preset: SlidingPresetId };
 const BASIC: { type: GateType; subtitle: string }[] = [
   { type: 'pedestrian', subtitle: 'Za prolaz ljudi' },
-  { type: 'sliding', subtitle: 'Otvara se klizanjem u stranu' },
-  { type: 'double', subtitle: 'Dva krila' },
   { type: 'single', subtitle: 'Jedno krilo' },
+  { type: 'double', subtitle: 'Dva krila' },
 ];
+const SLIDING: SlidingKind[] = [
+  { id: 'sliding', title: 'Klizna kapija', subtitle: 'Klizi po šini u podu', preset: 'klizna_sina_rucna' },
+  { id: 'sliding-self', title: 'Samostojeća klizna kapija', subtitle: 'Samonoseća, kolica i rep, bez šine', preset: 'samonoseca_rucna' },
+];
+/** velika sličica kao na stranici Modeli ograda (odnos 16:10) */
+const THUMB = { width: 330, height: 206 };
 
 /**
  * Modeli kapija: ručno nacrtani modeli vrste „Kapija“, isto kao modeli ograda (Koristi model, Otvori crtež, Obriši).
- * U crtežu postoji dugme „Mere kapije“ za podešavanja kapije. Osnovni tipovi kapija se takođe mogu obrisati i vratiti.
+ * U crtežu postoji dugme „Mere kapije“ za podešavanja kapije. Osnovne kapije se mogu obrisati sa ove strane.
  */
 export default function GateModelsPage() {
   const navigate = useNavigate();
@@ -37,25 +45,62 @@ export default function GateModelsPage() {
   const [del, setDel] = useState<CustomModel | null>(null);
   const [delBasic, setDelBasic] = useState<GateType | null>(null);
   const [choice, setChoice] = useState<CustomModel | null>(null);
-  const [delSlidePreset, setDelSlidePreset] = useState<SlidingPresetId | null>(null);
-  const templates = useAppStore((s) => s.settings.slidingTemplates) ?? [];
-  const [delTpl, setDelTpl] = useState<SlidingTemplate | null>(null);
-  const visibleSlidePresets = SLIDING_PRESETS.filter((p) => !hidden.includes(`gate:slide:${p.id}`));
+  const [delSliding, setDelSliding] = useState<SlidingKind | null>(null);
+  const [delAll, setDelAll] = useState(false);
+  // ograda na sličicama: model iz otvorenog projekta; bez projekta prvi model sa stranice Modeli ograda
+  const shownModel = (current && projectModelId(current.items)) || allFenceModels()[0].id;
   const rework = (p: SlidingPresetId) => navigate(`/modeli/crtanje/${useAppStore.getState().startSlidingDorada(p)}`);
-  const startSliding = (source: { preset: SlidingPresetId } | { template: string }) => { const id = useAppStore.getState().newProjectFromSliding(source); if (id) navigate(`/editor/${id}`); };
+  const startSliding = (source: { preset: SlidingPresetId }) => { const id = useAppStore.getState().newProjectFromSliding(source); if (id) navigate(`/editor/${id}`); };
 
   const usedBy = (modelId: string): string[] => projects.filter((p) => p.items.some((it) => it.kind === 'gate' && it.infillModelId === modelId)).map((p) => p.name);
   const startNew = (m: CustomModel) => { const id = useAppStore.getState().newProjectFromGateModel(m.id); if (id) navigate(`/editor/${id}`); };
   const addToOpen = (m: CustomModel) => { if (useAppStore.getState().addGateFromModel(m.id) && current) navigate(`/editor/${current.id}`); };
   const useModel = (m: CustomModel) => { if (current) setChoice(m); else startNew(m); };
-  const useBasic = (t: GateType) => navigate(`/editor/${useAppStore.getState().newProject({ modelId: DEFAULT_MODEL_ID, startGate: t, name: `Novi projekat — ${GATE_LABELS[t]}` })}`);
+  const useBasic = (t: GateType) => navigate(`/editor/${useAppStore.getState().newProject({ modelId: shownModel, startGate: t, name: `Novi projekat — ${GATE_LABELS[t]}` })}`);
 
   return (
     <Page>
       <PageHeader title="Modeli kapija" subtitle="Ručno nacrtani modeli kapija. U crtežu kapije dugme „Mere kapije“ otvara podešavanja kapije (mere, zazori, okovi) koja se čuvaju uz model."
         actions={<button className="btn btn-primary" data-testid="btn-create-gate-model" onClick={() => navigate(`/modeli/crtanje/${uid('cm')}`, { state: { kind: 'gate' } })}><PencilRuler size={17} />Napravi model</button>} />
+      <section className="mb-7" data-testid="basic-gates">
+        <h2 className="font-bold text-lg mb-3">Osnovne kapije</h2>
+        <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+          {BASIC.filter((b) => !hidden.includes(`gate:${b.type}`)).map((b) => (
+            <article key={b.type} className="card overflow-hidden flex flex-col" data-testid={`basic-gate-${b.type}`}>
+              <div className="relative aspect-[16/10] bg-[#eef2f6] overflow-hidden border-b border-line grid place-items-center"><ElementThumb kind={b.type} model={shownModel} size={THUMB} /></div>
+              <div className="p-4 flex-1 flex flex-col">
+                <h3 className="font-bold text-[17px]">{GATE_LABELS[b.type]}</h3>
+                <p className="text-sm text-muted mt-0.5">{b.subtitle}</p>
+                <div className="flex gap-2 mt-auto pt-4">
+                  <button className="btn flex-1 !px-2" data-testid={`rework-gate-${b.type}`} title="Otvara crtež kapije u crtanju, gde se menja svaki deo" onClick={() => navigate(`/modeli/crtanje/${useAppStore.getState().startGateDorada(b.type)}`)}><Wrench size={16} />Doradi</button>
+                  <button className="btn btn-primary flex-1 !px-2" onClick={() => useBasic(b.type)}>Koristi model</button>
+                  <button className="btn btn-danger shrink-0" data-testid={`delete-basic-${b.type}`} aria-label={`Obriši ${GATE_LABELS[b.type]}`} title="Obriši kapiju" onClick={() => setDelBasic(b.type)}><Trash2 size={16} /></button>
+                </div>
+              </div>
+            </article>
+          ))}
+          {/* klizne kapije kao sklop; ručna / motorna se bira u projektu, Doradi pravi nov model koji se menja deo po deo */}
+          {SLIDING.filter((k) => !hidden.includes(`gate:slide:${k.preset}`)).map((k) => (
+            <article key={k.id} className="card overflow-hidden flex flex-col" data-testid={`basic-${k.id}`}>
+              <div className="relative aspect-[16/10] bg-[#eef2f6] overflow-hidden border-b border-line grid place-items-center"><SlidingThumb preset={k.preset} model={shownModel} size={THUMB} /></div>
+              <div className="p-4 flex-1 flex flex-col">
+                <h3 className="font-bold text-[17px]">{k.title}</h3>
+                <p className="text-sm text-muted mt-0.5">{k.subtitle}</p>
+                <div className="flex gap-2 mt-auto pt-4">
+                  <button className="btn flex-1 !px-2" data-testid={`rework-sliding-${k.preset}`} title="Pravi nov model koji se menja deo po deo (okvir, prečke, šina, točkići, vođice, graničnici …)" onClick={() => rework(k.preset)}><Wrench size={16} />Doradi</button>
+                  <button className="btn btn-primary flex-1 !px-2" data-testid={`use-sliding-${k.preset}`} onClick={() => startSliding({ preset: k.preset })}>Koristi model</button>
+                  <button className="btn btn-danger shrink-0" data-testid={`delete-basic-${k.id}`} aria-label={`Obriši ${k.title}`} title="Obriši kapiju" onClick={() => setDelSliding(k)}><Trash2 size={16} /></button>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
       <section className="mb-7" data-testid="gate-models">
-        <h2 className="font-bold text-lg mb-3">Moji modeli kapija (ručno nacrtani)</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-bold text-lg">Moji modeli kapija</h2>
+          {models.length > 0 && <button className="btn btn-danger" data-testid="delete-all-gate-models" onClick={() => setDelAll(true)}><Trash2 size={16} />Obriši sve</button>}
+        </div>
         {models.length === 0 ? (
           <p className="text-sm text-muted card p-4" data-testid="gate-models-empty">Još nema modela kapija. Napravite ga dugmetom „Napravi model“ ili u „Mere kapije“ izaberite „Sačuvaj kao model“.</p>
         ) : (
@@ -78,79 +123,15 @@ export default function GateModelsPage() {
           </div>
         )}
       </section>
-      {/* šabloni klizne kapije (sačuvani u podešavanjima klizne kapije): ovde se koriste, jer se katalog u editoru ne puni modelima */}
-      {templates.length > 0 && (
-        <section className="mb-7" data-testid="sliding-templates">
-          <h2 className="font-bold text-lg mb-3">Moji šabloni klizne kapije</h2>
-          <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
-            {templates.map((t) => (
-              <article key={t.id} className="card overflow-hidden flex flex-col" data-testid="sliding-template-card">
-                <div className="bg-[#eef2f6] border-b border-line p-3 grid place-items-center"><SlidingThumb template={t} /></div>
-                <div className="p-4 flex-1 flex flex-col">
-                  <h3 className="font-bold text-[16px]" data-testid="sliding-template-name">{t.name}</h3>
-                  <p className="text-sm text-muted">Šablon · {presetTitle(t.spec.presetId)}</p>
-                  <div className="flex flex-wrap gap-2 mt-auto pt-3">
-                    {current && <button className="btn btn-primary w-full" data-testid="sliding-template-add" onClick={() => { if (useAppStore.getState().addSlidingGate({ template: t.id })) navigate(`/editor/${current.id}`); }}>Dodaj u otvoreni projekat</button>}
-                    <button className={`btn flex-1 ${current ? '' : 'btn-primary'}`} data-testid="sliding-template-new" onClick={() => startSliding({ template: t.id })}>Novi projekat</button>
-                    <button className="btn btn-danger shrink-0" data-testid="sliding-template-delete" aria-label={`Obriši šablon ${t.name}`} onClick={() => setDelTpl(t)}><Trash2 size={16} /></button>
-                  </div>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
-      )}
-      {delTpl && (
-        <ConfirmDialog title="Brisanje šablona" danger confirmLabel="Obriši"
-          message={<>Šablon <b>{delTpl.name}</b> se briše. Kapije koje su već napravljene po njemu ostaju iste.</>}
-          onCancel={() => setDelTpl(null)} onConfirm={() => { useAppStore.getState().removeSlidingTemplate(delTpl.id); setDelTpl(null); }} />
-      )}
-      <section data-testid="basic-gates">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-bold text-lg">Osnovne kapije</h2>
-          
-        </div>
-        <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
-          {BASIC.filter((b) => !hidden.includes(`gate:${b.type}`)).map((b) => (
-            <article key={b.type} className="card overflow-hidden flex flex-col" data-testid={`basic-gate-${b.type}`}>
-              <div className="bg-[#eef2f6] border-b border-line p-3 grid place-items-center"><ElementThumb kind={b.type} model={DEFAULT_MODEL_ID} /></div>
-              <div className="p-4 flex-1 flex flex-col">
-                <h3 className="font-bold text-[16px]">{GATE_LABELS[b.type]}</h3>
-                <p className="text-sm text-muted">{b.subtitle}</p>
-                <div className="flex flex-wrap gap-2 mt-auto pt-3">
-                  {/* dorada: crtež kapije u crtanju, gde se menja svaki deo (red iznad, da dugmad ostanu u istoj liniji kao kod ograda) */}
-                  <div className="w-full flex gap-2">
-                    <button className="btn flex-1" data-testid={`rework-gate-${b.type}`} title="Otvara crtež kapije u crtanju, gde se menja svaki deo" onClick={() => navigate(`/modeli/crtanje/${useAppStore.getState().startGateDorada(b.type)}`)}><Wrench size={16} />Doradi</button>
-                    <button className="btn btn-danger shrink-0" data-testid={`delete-basic-${b.type}`} aria-label={`Obriši ${GATE_LABELS[b.type]}`} title="Obriši kapiju" onClick={() => setDelBasic(b.type)}><Trash2 size={16} /></button>
-                  </div>
-                  <button className="btn btn-primary" onClick={() => useBasic(b.type)}>Koristi model</button>
-                </div>
-              </div>
-            </article>
-          ))}
-          {/* klizne kapije kao sklop: četiri polazne varijante; Doradi pravi nov model koji se menja deo po deo */}
-          {visibleSlidePresets.map((p) => (
-            <article key={p.id} className="card overflow-hidden flex flex-col" data-testid={`basic-sliding-${p.id}`}>
-              <div className="bg-[#eef2f6] border-b border-line p-3 grid place-items-center"><SlidingThumb preset={p.id} /></div>
-              <div className="p-4 flex-1 flex flex-col">
-                <h3 className="font-bold text-[16px]">{presetTitle(p.id)}</h3>
-                <p className="text-sm text-muted">{p.support === 'ground_rail' ? 'Krilo vozi po šini u tlu' : 'Krilo visi na repu i vozi na kolicima'}</p>
-                <div className="flex flex-wrap gap-2 mt-auto pt-3">
-                  <div className="w-full flex gap-2">
-                    <button className="btn flex-1" data-testid={`rework-sliding-${p.id}`} title="Pravi nov model koji se menja deo po deo (okvir, prečke, šina, točkići, vođice, graničnici …)" onClick={() => rework(p.id)}><Wrench size={16} />Doradi</button>
-                    <button className="btn btn-danger shrink-0" data-testid={`delete-basic-sliding-${p.id}`} aria-label={`Obriši ${presetTitle(p.id)}`} title="Obriši kapiju" onClick={() => setDelSlidePreset(p.id)}><Trash2 size={16} /></button>
-                  </div>
-                  <button className="btn btn-primary" data-testid={`use-sliding-${p.id}`} onClick={() => startSliding({ preset: p.id })}>Koristi model</button>
-                </div>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
-      {delSlidePreset && (
+      {delSliding && (
         <ConfirmDialog title="Brisanje osnovne kapije" danger confirmLabel="Obriši"
-          message={<><b>{presetTitle(delSlidePreset)}</b> se uklanja iz kataloga u editoru i sa ove strane. Projekti koji je koriste ostaju isti, a obrisanu možete vratiti dugmetom „Vrati obrisane osnovne kapije“.</>}
-          onCancel={() => setDelSlidePreset(null)} onConfirm={() => { useAppStore.getState().hideModel(`gate:slide:${delSlidePreset}`); setDelSlidePreset(null); }} />
+          message={<><b>{delSliding.title}</b> se uklanja iz kataloga u editoru i sa ove strane. Projekti koji je koriste ostaju isti.</>}
+          onCancel={() => setDelSliding(null)} onConfirm={() => { const st = useAppStore.getState(); st.hideModel(`gate:slide:${delSliding.preset}`); setDelSliding(null); }} />
+      )}
+      {delAll && (
+        <ConfirmDialog title="Brisanje svih modela kapija" danger confirmLabel="Obriši sve"
+          message={<>Svi vaši modeli kapija ({models.length}) se trajno brišu. Kapije u projektima koje ih koriste prelaze na podrazumevani model; mere ostaju. Crteži se ne mogu vratiti.</>}
+          onCancel={() => setDelAll(false)} onConfirm={() => { models.forEach((m) => useAppStore.getState().removeCustomModel(m.id)); setDelAll(false); }} />
       )}
       {choice && (
         <Modal title="Kako želite da koristite model?" onClose={() => setChoice(null)}>
@@ -169,7 +150,7 @@ export default function GateModelsPage() {
       )}
       {delBasic && (
         <ConfirmDialog title="Brisanje osnovne kapije" danger confirmLabel="Obriši"
-          message={<><b>{GATE_LABELS[delBasic]}</b> se uklanja iz kataloga u editoru i sa ove strane. Projekti koji je koriste ostaju isti, a obrisanu možete vratiti dugmetom „Vrati obrisane osnovne kapije“.</>}
+          message={<><b>{GATE_LABELS[delBasic]}</b> se uklanja iz kataloga u editoru i sa ove strane. Projekti koji je koriste ostaju isti.</>}
           onCancel={() => setDelBasic(null)} onConfirm={() => { useAppStore.getState().hideModel(`gate:${delBasic}`); setDelBasic(null); }} />
       )}
     </Page>

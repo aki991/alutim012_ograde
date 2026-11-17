@@ -21,11 +21,11 @@ import { cleanMaterialName } from '../domain/models/materialTitle';
 import { createFence, createGate, createProject, DEFAULT_FENCE_WIDTH_MM, nowIso } from '../domain/models/factories';
 import { emptyHistory, recordChange, redo as redoH, undo as undoH, type History } from '../domain/models/history';
 import type {
-  AppSettings, Customer, FenceModelId, FenceSection, Gate, GateType, LayoutItem, Material, Post, Project, SlidingTemplate,
+  AppSettings, Customer, FenceModelId, FenceSection, Gate, GateType, LayoutItem, Material, Post, Project,
 } from '../domain/models/types';
 import { migrateProject } from '../domain/validation/project';
 import { applyPostTemplate as applyPostTemplateTo } from '../domain/models/postTemplates';
-import { bookProjectStock } from '../domain/pricing/stockBooking';
+import { bookProjectStock, isStockStatus, unbookProjectStock } from '../domain/pricing/stockBooking';
 import { uid } from '../utils/id';
 
 export interface RemotePatch {
@@ -149,7 +149,7 @@ interface AppState {
   /** zatvara privremen projekat: vraća podešavanja kapije (sa zadatom verzijom) i briše projekat */
   finishGateDraft: (projectId: string, version: number) => import('../domain/gates/gateModels').GateConfig | null;
   /** klizna kapija kao sklop: dodaje varijantu (preset iz JSON-a) ili korisnički šablon na kraj niza; vraća ID kapije */
-  addSlidingGate: (source: { preset: import('../domain/gates/slidingAssembly').SlidingPresetId } | { template: string }) => string | null;
+  addSlidingGate: (source: { preset: import('../domain/gates/slidingAssembly').SlidingPresetId }) => string | null;
   /** izmena sklopa klizne kapije (oslonac, pogon, hod, pozicije …) */
   patchSliding: (itemId: string, patch: Partial<import('../domain/gates/slidingAssembly').SlidingSpec>, key?: string) => void;
   /** proba hoda (0–100 %): pomera samo pokretne delove na crtežu */
@@ -157,8 +157,6 @@ interface AppState {
   /** izbor jedne cevi repa (null = bez izbora) */
   setTailSel: (itemId: string, key: string | null) => void;
   /** čuva kliznu kapiju kao imenovan šablon (nezavisna kopija); vraća ID šablona */
-  saveSlidingTemplate: (itemId: string, name: string) => string | null;
-  removeSlidingTemplate: (id: string) => void;
   /** dodaje ili menja šablon stuba (Podešavanja → Šabloni stubova) */
   upsertPostTemplate: (t: import('../domain/models/types').PostTemplate) => void;
   removePostTemplate: (id: string) => void;
@@ -168,7 +166,7 @@ interface AppState {
   startSlidingDorada: (presetId: import('../domain/gates/slidingAssembly').SlidingPresetId) => string;
   /** izmena modela klizne kapije; projekti koji su ga već koristili imaju svoju kopiju i ne menjaju se */
   /** nov projekat sa kliznom kapijom iz polazne varijante ili iz modela */
-  newProjectFromSliding: (source: { preset: import('../domain/gates/slidingAssembly').SlidingPresetId } | { template: string }) => string | null;
+  newProjectFromSliding: (source: { preset: import('../domain/gates/slidingAssembly').SlidingPresetId }) => string | null;
 }
 
 /** Element čiji model više ne postoji (obrisan nacrtani model) prelazi na podrazumevani model, da se projekat i dalje otvara. */
@@ -747,22 +745,15 @@ export const useAppStore = create<AppState>((set, get) => {
     addSlidingGate(source) {
       const cur = currentProject();
       if (!cur) return null;
-      let spec: SlidingSpec; let frameWidth: number; let heightMm: number; let opening: Gate['opening'] = 'right'; let color: string | undefined;
-      if ('preset' in source) {
-        const d = specFromPreset(source.preset);
-        // krilo je izabrani model ograde (menja se kao kod ostalih kapija); sklop daje klizni okov
-        // visina kapije je ukupna visina od tla: visina krila + odstojanje donje ivice rama
-        spec = { ...d.spec, drawnLeaf: true, heightTotal: true }; frameWidth = d.frameWidth; heightMm = d.frameHeight + d.spec.frameBottomY;
-      } else {
-        const t = (get().settings.slidingTemplates ?? []).find((x) => x.id === source.template);
-        if (!t) return null;
-        // nezavisna kopija: kasnije izmene šablona ili ove kapije ne utiču jedna na drugu
-        spec = { ...(JSON.parse(JSON.stringify(t.spec)) as SlidingSpec), ...(t.spec.drawnLeaf ? { heightTotal: true } : {}) }; frameWidth = t.frameWidth; heightMm = t.heightMm; opening = t.opening; color = t.color;
-      }
+      // krilo je izabrani model ograde (menja se kao kod ostalih kapija); sklop daje klizni okov
+      // visina kapije je ukupna visina od tla: visina krila + odstojanje donje ivice rama
+      const d = specFromPreset(source.preset);
+      const spec: SlidingSpec = { ...d.spec, drawnLeaf: true, heightTotal: true };
+      const frameWidth = d.frameWidth; const heightMm = d.frameHeight + d.spec.frameBottomY; const opening: Gate['opening'] = 'right';
       const id = get().addElement({ kind: 'gate', gateType: 'sliding' });
       if (!id) return null;
       get().mutate((p) => {
-        const q = updateItem(p, id, { sliding: spec, heightMm, opening, automation: spec.actuation === 'motor', automationType: 'sliding_motor', ...(color ? { color } : {}) } as Partial<Gate>);
+        const q = updateItem(p, id, { sliding: spec, heightMm, opening, automation: spec.actuation === 'motor', automationType: 'sliding_motor' } as Partial<Gate>);
         return setOuterWidth(q, id, frameWidth + 2 * postHalfSum(q, indexOfItem(q, id)));
       });
       return id;
@@ -779,19 +770,6 @@ export const useAppStore = create<AppState>((set, get) => {
     },
     setSlideTest(itemId, pct) {
       set((s) => ({ editor: { ...s.editor, slideTest: { ...s.editor.slideTest, [itemId]: Math.max(0, Math.min(100, pct)) } } }));
-    },
-    saveSlidingTemplate(itemId, name) {
-      const cur = currentProject();
-      const index = cur ? cur.items.findIndex((i) => i.id === itemId) : -1;
-      const g = cur?.items[index];
-      if (!cur || !g || g.kind !== 'gate' || !g.sliding) return null;
-      const clear = computeLayout(cur).items[index].clearWidth;
-      const id = uid('slt');
-      const nm = name.trim() || g.sliding.name;
-      const spec = JSON.parse(JSON.stringify({ ...g.sliding, name: nm })) as SlidingSpec;
-      const t: SlidingTemplate = { id, name: nm, createdAt: new Date().toISOString(), spec, frameWidth: Math.round(clear), heightMm: g.heightMm, opening: g.opening, color: g.color };
-      set((s) => ({ settings: { ...s.settings, slidingTemplates: [...(s.settings.slidingTemplates ?? []), t] } }));
-      return id;
     },
     startSlidingDorada(presetId) {
       const id = uid('cm');
@@ -824,21 +802,12 @@ export const useAppStore = create<AppState>((set, get) => {
       if (!t || !postIds.length) return;
       get().mutate((p) => applyPostTemplateTo(p, postIds, t), null);
     },
-    removeSlidingTemplate(id) {
-      set((s) => ({ settings: { ...s.settings, slidingTemplates: (s.settings.slidingTemplates ?? []).filter((t) => t.id !== id) } }));
-    },
     finishGateDraft(projectId, version) {
       const proj = get().projects.find((x) => x.id === projectId);
       const index = proj ? proj.items.findIndex((i) => i.kind === 'gate') : -1;
       const g = proj?.items[index];
       const cfg = proj && g && g.kind === 'gate' ? gateConfigFromGate(g, computeLayout(proj).items[index].clearWidth, version, postDimsOf(proj.posts[index], proj.posts[index + 1])) : null;
       const prev = DRAFT_PREV.get(projectId) ?? null;
-  // izabrani model koji nije na stranici Modeli ograda (obrisan, sakriv ili zamenjen) menja se: izabran u ovoj sesiji, inače prvi sa stranice
-  if (s.settings.customModels !== prev.settings.customModels || s.settings.hiddenModels !== prev.settings.hiddenModels || s.ready !== prev.ready) {
-    // posle osvežavanja stranice važi model izabran u ovoj sesiji
-    const next = (s.ready && !prev.ready ? sessionModel() : null) ?? (isListedModel(s.editor.activeModelId) ? s.editor.activeModelId : sessionModel() ?? firstListedModel());
-    if (next !== s.editor.activeModelId) useAppStore.setState({ editor: { ...s.editor, activeModelId: next } });
-  }
       DRAFT_PREV.delete(projectId);
       set((s) => ({ projects: s.projects.filter((x) => x.id !== projectId), editor: { ...emptyEditor(), projectId: prev && s.projects.some((x) => x.id === prev) ? prev : null, activeModelId: s.editor.activeModelId } }));
       return cfg;
@@ -850,15 +819,32 @@ export const useAppStore = create<AppState>((set, get) => {
 useAppStore.subscribe((s, prev) => {
   if (s.settings.customModels !== prev.settings.customModels || s.materials !== prev.materials) registerCustomModels(s.settings.customModels, s.materials);
   if (s.settings.hiddenModels !== prev.settings.hiddenModels) setHiddenModels(s.settings.hiddenModels);
-  // projekat prešao u „U izradi“: materijal iz krojne liste se knjiži u magacin (jednom po projektu, i kad se status menja tamo-amo ili poništi)
+  // izabrani model koji nije na stranici Modeli ograda (obrisan, sakriv ili zamenjen) menja se: izabran u ovoj sesiji, inače prvi sa stranice
+  if (s.settings.customModels !== prev.settings.customModels || s.settings.hiddenModels !== prev.settings.hiddenModels || s.ready !== prev.ready) {
+    // posle osvežavanja stranice važi model izabran u ovoj sesiji
+    const next = (s.ready && !prev.ready ? sessionModel() : null) ?? (isListedModel(s.editor.activeModelId) ? s.editor.activeModelId : sessionModel() ?? firstListedModel());
+    if (next !== s.editor.activeModelId) useAppStore.setState({ editor: { ...s.editor, activeModelId: next } });
+  }
+  // magacin prati status projekta: „U izradi“ / „Završeno“ = materijal iz krojne liste je proknjižen (jednom), povratak na „Nacrt“ / „Ponuda“ ga povlači
   if (s.projects !== prev.projects) {
     const before = new Map(prev.projects.map((p) => [p.id, p.status]));
-    const booked = s.settings.stockBooked ?? [];
-    const toBook = s.projects.filter((p) => p.status === 'u_izradi' && !p.modelDraft && before.has(p.id) && before.get(p.id) !== 'u_izradi' && !booked.includes(p.id));
-    if (toBook.length) {
+    const changed = s.projects.filter((p) => !p.modelDraft && before.has(p.id) && isStockStatus(before.get(p.id)!) !== isStockStatus(p.status));
+    if (changed.length) {
       let settings = s.settings;
-      for (const p of toBook) settings = { ...settings, stock: bookProjectStock(p, settings, s.materials).stock, stockBooked: [...(settings.stockBooked ?? []), p.id] };
-      useAppStore.setState({ settings });
+      for (const p of changed) {
+        const bookings = { ...(settings.stockBookings ?? {}) };
+        const legacy = settings.stockBooked ?? [];
+        if (isStockStatus(p.status)) {
+          if (bookings[p.id] || legacy.includes(p.id)) continue;
+          const r = bookProjectStock(p, settings, s.materials);
+          settings = { ...settings, stock: r.stock, stockBookings: { ...bookings, [p.id]: r.record } };
+        } else {
+          const rec = bookings[p.id];
+          delete bookings[p.id];
+          settings = { ...settings, stock: rec ? unbookProjectStock(settings.stock ?? [], rec) : settings.stock, stockBookings: bookings, ...(legacy.includes(p.id) ? { stockBooked: legacy.filter((x) => x !== p.id) } : {}) };
+        }
+      }
+      if (settings !== s.settings) useAppStore.setState({ settings });
     }
   }
 });

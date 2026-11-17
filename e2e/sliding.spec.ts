@@ -155,26 +155,8 @@ test('promena oslonca i pogona menja samo pripadajuće delove; šablon je nezavi
   await page.getByTestId('sl-support-cantilever').click();
   await setNum(page, 'sl-travel', '2800');
 
-  // šablon: sačuvan pod imenom, ubacuje se iz kataloga kao nezavisna kopija
-  await page.getByTestId('sl-tpl-name').fill('Moja samonoseća 2800');
-  await page.getByTestId('sl-tpl-save').click();
-  await expect(page.getByTestId('sl-tpl-msg')).toContainText('Moja samonoseća 2800');
-  // šablon se koristi na stranici Modeli kapija (katalog u editoru nudi samo osnovne elemente)
-  const addTemplate = async () => {
-    await page.getByRole('link', { name: 'Modeli kapija' }).click();
-    await expect(page.getByTestId('sliding-template-card')).toHaveCount(1);
-    await page.getByTestId('sliding-template-add').click();
-    await expect(page).toHaveURL(/\/editor\/proj_/);
-  };
-  await addTemplate();
-  await expect(fv(page).locator('[data-testid="sliding-assembly"]')).toHaveCount(2);
-  await expect(page.getByTestId('sl-name')).toHaveValue('Moja samonoseća 2800');
-  await expect(page.getByTestId('sl-travel')).toHaveValue('2800');
-  await expect(page.getByTestId('sl-variant')).toHaveText('Samonoseća · motorna');
-  // izmena kopije ne menja šablon: nova kopija iz šablona ima staru vrednost
-  await setNum(page, 'sl-travel', '2500');
-  await addTemplate();
-  await expect(page.getByTestId('sl-travel')).toHaveValue('2800');
+  // šabloni klizne kapije više ne postoje
+  await expect(page.getByTestId('sl-template')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 

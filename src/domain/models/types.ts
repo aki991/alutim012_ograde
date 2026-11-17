@@ -241,21 +241,6 @@ export interface LouverSpec {
   support: string;
 }
 
-/** Sačuvana klizna kapija: nezavisna kopija sklopa koja se ubacuje u nov posao. */
-export interface SlidingTemplate {
-  id: string;
-  name: string;
-  createdAt: string;
-  spec: import('../gates/slidingAssembly').SlidingSpec;
-  /** širina rama (svetla širina elementa) i visina kapije od tla */
-  frameWidth: Mm;
-  heightMm: Mm;
-  opening: OpeningSide;
-  color: string;
-  /** polazna varijanta iz koje je model nastao (Doradi) */
-  basedOn?: string;
-}
-
 export interface Project {
   id: string;
   schemaVersion: number;
@@ -363,6 +348,13 @@ export interface Offcut {
   qty: number;
 }
 
+/** Knjiženje projekta u magacin: ostaci dodati na stanje i ostaci uzeti sa stanja. */
+export interface StockBookingRecord {
+  at: string;
+  added: Offcut[];
+  removed: Offcut[];
+}
+
 export interface AppSettings {
   /** pet boja za brzi izbor u svim poljima za boju (strana karta boja ih menja); bez vrednosti važe podrazumevane */
   favoriteColors?: string[];
@@ -377,7 +369,6 @@ export interface AppSettings {
   /** modeli iz kataloga (ograde i osnovne kapije) koje je korisnik obrisao; „Vrati obrisane modele“ ih vraća */
   hiddenModels?: string[];
   /** korisnički šabloni kliznih kapija (sklop sa merama, smerom i stanjem potvrde) */
-  slidingTemplates?: SlidingTemplate[];
   /** šabloni stubova (tip, presek, mere, montaža, boja, kape) za izbor u panelu stuba */
   postTemplates?: PostTemplate[];
   /** sopstveni okovi radionice (šarke, brave, kolica …) za izbor u merama kapije */
@@ -395,8 +386,10 @@ export interface AppSettings {
   };
   /** magacin: materijal na stanju (cele šipke i ostaci) */
   stock?: StockItem[];
-  /** projekti čiji je materijal iz krojne liste već proknjižen u magacin (pri prelasku u „U izradi“), da se ne knjiži dvaput */
+  /** stari spisak proknjiženih projekata (bez zapisa šta je knjiženo): ti projekti se ne knjiže ponovo, ali se ni ne mogu povući */
   stockBooked?: string[];
+  /** šta je koji projekat proknjižio u magacin (pri prelasku u „U izradi“ / „Završeno“); briše se kad se knjiženje povuče */
+  stockBookings?: Record<string, StockBookingRecord>;
   currency: string;
   currencyRateToEur: number;
   userName: string;

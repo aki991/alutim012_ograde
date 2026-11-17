@@ -311,7 +311,7 @@ test('modeli kapija: kartica ima Koristi model, Otvori crtež i Obriši; u crte�
   // osnovna kapija: brisanje je konačno (nema vraćanja obrisanih)
   await page.getByTestId('delete-basic-sliding').click();
   await page.getByRole('button', { name: 'Obriši', exact: true }).last().click();
-  await expect(page.getByTestId('basic-gate-sliding')).toHaveCount(0);
+  await expect(page.getByTestId('basic-sliding')).toHaveCount(0);
   await expect(page.getByTestId('restore-basic-gates')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
