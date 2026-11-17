@@ -1,5 +1,5 @@
 import { FEATURES } from '../../config/features';
-import { defaultModelId, FENCE_MODEL_LIST, FENCE_MODELS, setDefaultModelProvider, setGateFenceResolver, type FenceModelDef } from './catalog';
+import { defaultModelId, FENCE_MODEL_LIST, FENCE_MODELS, REMOVED_MODELS, setDefaultModelProvider, setGateFenceResolver, type FenceModelDef } from './catalog';
 import { miterEndsOf, partBounds, resolveParts, sheetAreaMm2, type CustomModel, type CustomPart, type ResolvedPart } from './custom';
 import { applyGuides, guidesOf, scaleWithGuides } from './guides';
 import { anchoredLengthFormula, anchoredModel } from './anchored';
@@ -63,8 +63,9 @@ export const allFenceModels = (keep?: string): FenceModelDef[] => {
     ? (terrace === undefined || Boolean(d.terrace) === terrace || d.id === keep)
     : (!d.terrace || d.id === keep));
   // samo modeli sa stranice „Modeli ograda“: obrisani modeli i kapije se ne nude (ni kad ih projekat još koristi); nov ručno nacrtan model se dodaje sam
-  const catalog = FENCE_MODEL_LIST.filter((d) => !HIDDEN.has(d.id)).map((d) => { const r = replacementOf(d.id); return r ? all[r.id] : d; });
-  return [...catalog, ...[...REG.values()].filter((m) => !m.replaces && m.kind !== 'gate').map((m) => all[m.id])].filter(sameFamily);
+  // obrisani originali iz kataloga (REMOVED_MODELS) ne postoje; njihovi dorađeni crteži su obični nacrtani modeli
+  const catalog = FENCE_MODEL_LIST.filter((d) => !HIDDEN.has(d.id) && !REMOVED_MODELS.has(d.id)).map((d) => { const r = replacementOf(d.id); return r ? all[r.id] : d; });
+  return [...catalog, ...[...REG.values()].filter((m) => (!m.replaces || REMOVED_MODELS.has(m.replaces)) && m.kind !== 'gate').map((m) => all[m.id])].filter(sameFamily);
 };
 
 /** Delovi nacrtanog modela razvučeni na polje zadate širine i visine, u boji elementa (hex ili RAL ključ). */
@@ -142,6 +143,44 @@ function roleLabel(kind: RoleKind, sides: Set<string>): string {
   }
 }
 
+/**
+ * Model sa ramom (rez 45°) se na drugoj meri ne razvlači srazmerno: ram zadržava debljinu, a platno unutar njega se razvlači po
+ * pravilima delova (resizeWithFrame). Formula dužine zato se izvodi iz samog crteža: isti model se nacrta na polju širem i višem
+ * za PROBE_MM, pa je dužina dela L + kW·(W − W0) + kH·(H − H0), tačno kao na crtežu (sve promene mera su linearne).
+ * Ranije su sve dužine rasle srazmerno (npr. cev 361·W/440), pa su cevi i U profili u krojnoj listi bili kraći od crteža.
+ */
+const PROBE_MM = 1000;
+const FRAME_PROBE = new WeakMap<CustomModel, { mats: Material[]; w: CustomModel | null; h: CustomModel | null }>();
+
+function frameProbe(m: CustomModel): { w: CustomModel | null; h: CustomModel | null } {
+  let c = FRAME_PROBE.get(m);
+  if (!c || c.mats !== MATERIALS) {
+    const at = (w: number, h: number): CustomModel | null => { try { return scaledModel(m, w, h); } catch { return null; } };
+    c = { mats: MATERIALS, w: at(m.widthMm + PROBE_MM, m.heightMm), h: at(m.widthMm, m.heightMm + PROBE_MM) };
+    FRAME_PROBE.set(m, c);
+  }
+  return c;
+}
+
+/** Dužina istog dela na probnom crtežu: po ID-u; deo koji je napravljen ponovo (ram, preračunat niz) traži se po materijalu, uglu i vrsti. */
+function probeLength(probe: CustomModel | null, p: CustomPart): number | null {
+  if (!probe) return null;
+  const same = probe.parts.find((q) => q.id === p.id);
+  if (same) return same.lengthMm;
+  const like = probe.parts.find((q) => q.materialId === p.materialId && Math.abs(q.angleDeg - p.angleDeg) < 1e-6 && q.rot === p.rot && !!q.cut45 === !!p.cut45 && !!q.guides === !!p.guides && (q.tiltDeg ?? 0) === (p.tiltDeg ?? 0));
+  return like ? like.lengthMm : null;
+}
+
+function framedLengthFormula(m: CustomModel, p: CustomPart): string | null {
+  const c = frameProbe(m);
+  const lw = probeLength(c.w, p); const lh = probeLength(c.h, p);
+  if (lw === null || lh === null) return null;
+  const k = (v: number) => Math.round(((v - p.lengthMm) / PROBE_MM) * 1000) / 1000;
+  const kW = k(lw); const kH = k(lh);
+  const term = (kk: number, dim: string, v0: number) => (Math.abs(kk) < 1e-3 ? '' : `${kk < 0 ? '-' : '+'}${Math.abs(kk)}*(${dim}-${v0})`);
+  return `${r1(p.lengthMm)}${term(kW, 'W', m.widthMm)}${term(kH, 'H', m.heightMm)}`;
+}
+
 /** ključ stavke specifikacije za deo (isti materijal, dužina, nagib, rez i uloga = jedna stavka) i podaci stavke */
 function specKey(m: CustomModel, p: CustomPart, guideIds: Set<string>) {
   const mat = MATERIALS.find((x) => x.id === p.materialId);
@@ -156,8 +195,10 @@ function specKey(m: CustomModel, p: CustomPart, guideIds: Set<string>) {
     // prečka u U profilima: dužina raste koliko se razmaknu ose bočnih profila (dubina ulaska u kanal ostaje ista)
     // model iz kataloga: bočni U profili ostaju uz ivice polja, pa se prečka produžava za razliku širina; ostali modeli razvlače razmak srazmerno
     const anchoredGuides = g && refillsVBars(m) && !m.parts.some(isFramePart);
-    lengthMm = anchoredGuides ? `${r1(p.lengthMm)}+1*(W-${m.widthMm})` : g ? `${r1(p.lengthMm)}+${r1(m.parts.find((x) => x.id === g[1].id)!.x - m.parts.find((x) => x.id === g[0].id)!.x)}*(W/${m.widthMm}-1)`
-      : (refillsVBars(m) && !m.parts.some(isFramePart) && anchoredLengthFormula(m, p, repeatOffIds(m, MATERIALS).has(p.id))) || (Math.abs(Math.cos(a)) >= Math.abs(Math.sin(a)) ? `${r1(p.lengthMm)}*W/${m.widthMm}` : `${r1(p.lengthMm)}*H/${m.heightMm}`);
+    // model sa ramom: dužina tačno kao na crtežu te mere (vidi framedLengthFormula)
+    const framed = m.parts.some(isFramePart) ? framedLengthFormula(m, p) : null;
+    lengthMm = framed ?? (anchoredGuides ?`${r1(p.lengthMm)}+1*(W-${m.widthMm})` : g ? `${r1(p.lengthMm)}+${r1(m.parts.find((x) => x.id === g[1].id)!.x - m.parts.find((x) => x.id === g[0].id)!.x)}*(W/${m.widthMm}-1)`
+      : (refillsVBars(m) && !m.parts.some(isFramePart) && anchoredLengthFormula(m, p, repeatOffIds(m, MATERIALS).has(p.id))) || (Math.abs(Math.cos(a)) >= Math.abs(Math.sin(a)) ? `${r1(p.lengthMm)}*W/${m.widthMm}` : `${r1(p.lengthMm)}*H/${m.heightMm}`));
     // deo rama: širina profila u ravni spoja (okretanje preseka) određuje koliko komadi mogu da dele kosi rez
     miterMm = p.cut45 && shape?.type === 'linear' ? sectionFace(shape.section, p.rot).face : undefined;
     const me = miterEndsOf(p);

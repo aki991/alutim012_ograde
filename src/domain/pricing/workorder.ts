@@ -1,4 +1,4 @@
-import { gateLeafPoses } from '../geometry/gates';
+import { gateLeafPoses, gateSpecWidth } from '../geometry/gates';
 import { isStair, stairGroupAt, stairGroupSummary } from '../geometry/stair';
 import { computeInfill } from '../geometry/infill';
 import { computeLayout, outerWidthMm } from '../geometry/layout';
@@ -131,10 +131,11 @@ export function buildWorkOrder(project: Project, specs: ModelSpecs | undefined, 
       isGate = it.kind === 'gate';
       const modelId = it.kind === 'fence' ? it.modelId : it.infillModelId;
       const li = layout.items[idx];
-      const geo = computeInfill(modelId, li.clearWidth, it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount);
-      const bars = geo.bars.filter((b) => b.tone === 'main').length;
-      // dvokrilna kapija: letvice oba krila (svako krilo ima svoju širinu)
-      const leafWs = it.kind === 'gate' && it.gateType === 'double' ? gateLeafPoses(it, li.clearStart, li.clearEnd, 0).map((q) => q.widthMm) : [li.clearWidth];
+      // dvokrilna kapija: letvice oba krila (svako krilo ima svoju širinu); kapija: širina i visina krila (kao u krojnoj listi),
+      // klizna kapija bez odstojanja od tla
+      const leafWs = it.kind === 'gate' && it.gateType === 'double' ? gateLeafPoses(it, li.clearStart, li.clearEnd, 0).map((q) => q.widthMm) : [it.kind === 'gate' ? gateSpecWidth(it, li.clearWidth) : li.clearWidth];
+      const leafH = it.kind === 'gate' ? leafHeightOf(it) : it.heightMm;
+      const bars = leafWs.reduce((n, w) => n + computeInfill(modelId, w, leafH, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount).bars.filter((b) => b.tone === 'main').length, 0);
       const slatCount = isCustomModel(modelId) ? leafWs.reduce((n, w) => n + customSlatCount(modelId, w, it.kind === 'gate' ? leafHeightOf(it) : it.heightMm, it.params.slats), 0) : 0;
       facts.push(
         ...(sliding ? [] : [{ label: 'Ukupna širina', value: `${Math.round(outerWidthMm(project, idx))} mm` }, { label: 'Visina', value: `${Math.round(it.heightMm)} mm` }]),

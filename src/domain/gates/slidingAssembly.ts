@@ -196,6 +196,9 @@ export const presetTitle = (id: string): string => {
 
 const num = (v: number | number[] | undefined, d: number): number => (typeof v === 'number' ? v : d);
 
+/** Nabavna dužina šine i C-profila (mm). Duži komad se seče iz cele šipke i nastavka (vidi krojnu listu), pa se spaja varenjem. */
+export const SLIDING_PROFILE_STOCK_MM = 6000;
+
 /** Polazni podaci varijante iz JSON-a (demo mere). Širina i visina rama vraćaju se posebno, jer pripadaju elementu projekta. */
 export function specFromPreset(id: SlidingPresetId): { spec: SlidingSpec; frameWidth: number; frameHeight: number } {
   const p = presetOf(id)!;
@@ -212,8 +215,9 @@ export function specFromPreset(id: SlidingPresetId): { spec: SlidingSpec; frameW
   // pozicije iz JSON-a koje se razlikuju od pravila računanja čuvaju se kao ručne (polazni primer ostaje tačno kao u prilogu)
   const given: Partial<Record<PosKey, number>> = {
     catch: num(f.catchX, 0), upperGuide: num(f.upperGuideX, NaN), stop: num(f.openingStopContactX, NaN),
-    railStart: num(f.railStartX, NaN), railLength: num(f.railLength, NaN), pinion: num(f.pinionX, NaN),
-    carrierLength: num(m.carrierProfileLength, NaN), tailBrace: num(m.tailBraceX, NaN), noseRoller: num(m.noseRollerCenterX, NaN), lowerCatch: num(f.lowerCatchX, NaN),
+    // šina i C-profil polaze od najviše jedne nabavne šipke (6 m); duži se zadaju ručno
+    railStart: num(f.railStartX, NaN), railLength: Math.min(SLIDING_PROFILE_STOCK_MM, num(f.railLength, NaN)), pinion: num(f.pinionX, NaN),
+    carrierLength: Math.min(SLIDING_PROFILE_STOCK_MM, num(m.carrierProfileLength, NaN)), tailBrace: num(m.tailBraceX, NaN), noseRoller: num(m.noseRollerCenterX, NaN), lowerCatch: num(f.lowerCatchX, NaN),
     rackStart: num(m.rackStartX, NaN), handle: num(m.handleX, NaN), latch: num(m.latchX, NaN), latchReceiver: num(f.latchReceiverX, NaN),
   };
   const wc = m.wheelCentersX; if (Array.isArray(wc)) { given.wheel1 = wc[0]; given.wheel2 = wc[1]; }
@@ -235,6 +239,14 @@ export function slidingForModel(id: SlidingPresetId, all: boolean): SlidingSpec 
 /** Pokretni gabarit: ram, a kod samonoseće i rep (kraj C-profila). */
 export const movingLength = (spec: SlidingSpec, W: number): number => (spec.support === 'cantilever' ? W + spec.tailLength : W);
 
+/** Podrazumevana dužina podne šine (vidi autoPositions). */
+function railAuto(W: number, travel: number): number {
+  const full = W + travel + 600;
+  // najkraća šina: od početka šine (−350) do drugog točkića u otvorenom položaju, uz rezervu 150 mm
+  const need = W - Math.round(W * 0.14) + travel + 150 + 350;
+  return full > SLIDING_PROFILE_STOCK_MM && need <= SLIDING_PROFILE_STOCK_MM ? SLIDING_PROFILE_STOCK_MM : full;
+}
+
 /** Računske (podrazumevane) pozicije iz osnovnih mera. Kupljeni okov (točkići, kolica, motor) ne razvlači se sa širinom. */
 export function autoPositions(spec: SlidingSpec, W: number): Record<PosKey, number> {
   const cant = spec.support === 'cantilever';
@@ -250,7 +262,8 @@ export function autoPositions(spec: SlidingSpec, W: number): Record<PosKey, numb
     wheel1: Math.round(W * 0.14),
     wheel2: W - Math.round(W * 0.14),
     railStart: -350,
-    railLength: W + spec.travel + 600,
+    // šina: W + hod + 600; kad je to malo duže od nabavne šipke (6 m), a točkići sa rezervom ostaju na šini i sa šinom od 6 m, uzima se 6 m
+    railLength: railAuto(W, spec.travel),
     // razmak kolica (970 mm) i odstojanje od rama zavise od kompleta: polazna vrednost iz primera
     carriage1: W + 200,
     carriage2: W + 1170,
@@ -588,6 +601,9 @@ export interface SlidingBomItem {
 }
 
 /** Stavke sastavnice iz istih komponenti i mera kao crtež; promena oslonca ili pogona menja samo pripadajuće stavke. */
+/** napomena za šinu / C-profil duži od nabavne šipke: cela šipka i nastavak */
+const longNote = (L: number): string => { const n = Math.floor(L / SLIDING_PROFILE_STOCK_MM); const rest = Math.round(L - n * SLIDING_PROFILE_STOCK_MM); return `duži od šipke (${SLIDING_PROFILE_STOCK_MM / 1000} m): ${n} cel${n === 1 ? 'a šipka' : 'e šipke'} od ${SLIDING_PROFILE_STOCK_MM} mm${rest > 0 ? ` + nastavak ${rest} mm` : ''}, spaja se varenjem`; };
+
 export function slidingBom(r: SlidingResult): SlidingBomItem[] {
   const s = r.spec; const W = r.W; const fh = r.frameHeight;
   const cant = s.support === 'cantilever';
@@ -612,11 +628,11 @@ export function slidingBom(r: SlidingResult): SlidingBomItem[] {
   };
   if (!cant) {
     const L = r.at('railLength');
-    push({ key: 'rail', name: 'Podna šina', qty: 1, unit: 'kom', shownMm: Math.round(L), cutMm: Math.round(cut('rail') ?? L), buyMm: null, totalM: Math.round(L / 10) / 100, make: 'kupovina', group: 'Oslonac i vođenje', confirm: L > 6000, note: L > 6000 ? 'duža od uobičajene šipke (6 m): nastavak ili nabavna dužina po dobavljaču' : 'ravan rez' });
+    push({ key: 'rail', name: 'Podna šina', qty: 1, unit: 'kom', shownMm: Math.round(L), cutMm: Math.round(cut('rail') ?? L), buyMm: null, totalM: Math.round(L / 10) / 100, make: 'kupovina', group: 'Oslonac i vođenje', confirm: false, note: L > SLIDING_PROFILE_STOCK_MM ? longNote(L) : 'ravan rez' });
     buy('wheels', `Donji točkić Ø${Math.round(s.wheelDiameter)} s nosačem`, Math.max(1, Math.round(D('wheel.count'))), 'kom', 'Oslonac i vođenje');
   } else {
     const L = r.at('carrierLength');
-    push({ key: 'carrier', name: 'Noseći C-profil', qty: 1, unit: 'kom', shownMm: Math.round(L), cutMm: Math.round(cut('carrier') ?? L), buyMm: null, totalM: Math.round(L / 10) / 100, make: 'kupovina', group: 'Oslonac i vođenje', confirm: false, note: 'kroz ram i rep' });
+    push({ key: 'carrier', name: 'Noseći C-profil', qty: 1, unit: 'kom', shownMm: Math.round(L), cutMm: Math.round(cut('carrier') ?? L), buyMm: null, totalM: Math.round(L / 10) / 100, make: 'kupovina', group: 'Oslonac i vođenje', confirm: false, note: L > SLIDING_PROFILE_STOCK_MM ? `kroz ram i rep · ${longNote(L)}` : 'kroz ram i rep' });
     for (const m of r.tail ?? []) {
       const deg = (n: number) => String(n).replace('.', ',');
       const endTxt = (e: number[]) => (e.length > 1 ? `V ${e.map(deg).join('° + ')}` : deg(e[0] ?? 90));

@@ -35,6 +35,8 @@ export interface CutRow {
   endShape?: [[number, number][], [number, number][]];
   /** širina profila u ravni reza (mm): za deljenje kosog reza (štednja materijala) */
   faceMm?: number;
+  /** šina / C-profil klizne kapije: komad duži od šipke se seče iz cele šipke i nastavka (spaja se varenjem) */
+  joinable?: boolean;
 }
 
 /**
@@ -58,7 +60,7 @@ export function buildCutList(project: Project, specs?: ModelSpecs, materials?: M
         if (b.cutMm === null || b.cutMm <= 0 || b.unit !== 'kom') continue;
         if (b.make !== 'izrada' && b.key !== 'rail' && b.key !== 'carrier') continue;
         const mat = b.materialId ? materials?.find((m) => m.id === b.materialId) : undefined;
-        rows.push({ element: name, index: li.index, part: b.name, profile: mat ? mat.name : b.materialText ? b.materialText : `${b.name} — nije definisano`, lengthMm: b.cutMm, qty: b.qty, ...(b.ends && hasAngledEnds(b.ends) ? { ends: b.ends, ...(b.endShape ? { endShape: b.endShape } : {}), ...(b.faceMm ? { faceMm: b.faceMm } : {}) } : {}), note: [b.note, b.shownMm !== null && b.shownMm !== b.cutMm ? `prikazano ${b.shownMm} mm` : ''].filter(Boolean).join(' · ') || undefined });
+        rows.push({ element: name, index: li.index, ...(b.key === 'rail' || b.key === 'carrier' ? { joinable: true } : {}), part: b.name, profile: mat ? mat.name : b.materialText ? b.materialText : `${b.name} — nije definisano`, lengthMm: b.cutMm, qty: b.qty, ...(b.ends && hasAngledEnds(b.ends) ? { ends: b.ends, ...(b.endShape ? { endShape: b.endShape } : {}), ...(b.faceMm ? { faceMm: b.faceMm } : {}) } : {}), note: [b.note, b.shownMm !== null && b.shownMm !== b.cutMm ? `prikazano ${b.shownMm} mm` : ''].filter(Boolean).join(' · ') || undefined });
       }
       if (!it.sliding.drawnLeaf) continue;
     }

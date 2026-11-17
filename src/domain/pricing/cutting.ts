@@ -219,7 +219,7 @@ interface RawGroup { profile: string; pieces: CutPiece[] }
 const posKey = (items: Project['items'], a: number, b: number): string => (a === b ? String(itemNumber(items, a)) : `${itemNumber(items, a)}–${itemNumber(items, b)}`);
 
 /** Svi šipkasti komadi projekta, grupisani po profilu, sa pozicijama (elementima) kojima pripadaju. */
-function collectPieces(project: Project, specs: ModelSpecs | undefined, materials: Material[], scope: PrintScope = 'all'): { groups: RawGroup[]; positions: CutPosition[] } {
+function collectPieces(project: Project, specs: ModelSpecs | undefined, materials: Material[], scope: PrintScope = 'all', stockMm = DEFAULT_STOCK_MM): { groups: RawGroup[]; positions: CutPosition[] } {
   const groups = new Map<string, CutPiece[]>();
   const positions = new Map<string, CutPosition>();
   const add = (profile: string, piece: CutPiece) => {
@@ -240,6 +240,15 @@ function collectPieces(project: Project, specs: ModelSpecs | undefined, material
   for (const c of buildCutList(project, specs, materials)) {
     if (c.glass || !inPrintScope(project.items[c.index], scope)) continue;
     const pos = elementPos(c.index);
+    // šina / C-profil duži od nabavne šipke: cele šipke + nastavak (ravni rezovi; spajaju se varenjem)
+    if (c.joinable && stockMm > 0 && c.lengthMm > stockMm) {
+      const full = Math.floor(c.lengthMm / stockMm); const rest = Math.round(c.lengthMm - full * stockMm);
+      for (let i = 0; i < c.qty; i++) {
+        for (let k = 0; k < full; k++) add(c.profile, { lengthMm: stockMm, pos, name: c.part, part: `${c.part} — cela šipka` });
+        if (rest > 0) add(c.profile, { lengthMm: rest, pos, name: c.part, part: `${c.part} — nastavak` });
+      }
+      continue;
+    }
     for (let i = 0; i < c.qty; i++) add(c.profile, { lengthMm: c.lengthMm, pos, name: c.part, part: c.miter ? `${c.part} (45°)` : c.ends ? `${c.part} (${endsLabel(c.ends)})` : c.part, ...(c.miter ? { miter: true } : {}), ...(c.ends ? { ends: c.ends, ...(c.endShape ? { endShape: c.endShape } : {}) } : {}), ...(c.faceMm ? { w: c.faceMm } : {}) });
   }
 
@@ -313,10 +322,14 @@ function collectPieces(project: Project, specs: ModelSpecs | undefined, material
   if (louver) {
     const guide = GUIDE_PROFILES[louver.spec.guideProfile];
     const fill = FILL_PROFILES[louver.spec.fillProfile];
+    const known = (id: string) => materials.some((m) => m.id === id);
+    const guideName = known(guide.materialId) ? materialName(materials, guide.materialId) : `Bočna vođica — ${guide.code}`;
+    const fillName = known(fill.materialId) ? materialName(materials, fill.materialId) : `Horizontalna letvica — ${fill.code}`;
     for (const panel of louver08Panels(project)) {
       const key = elementPos(panel.index);
-      for (let i = 0; i < 2; i++) add(`Bočna vođica — ${guide.code}`, { lengthMm: panel.guideLenMm, pos: key, part: 'Vođica' });
-      for (let i = 0; i < panel.count; i++) add(`Horizontalna letvica — ${fill.code}`, { lengthMm: panel.fillLenMm, pos: key, part: 'Letvica' });
+      // isti naziv profila kao u ostatku krojne liste (naziv iz cenovnika): vođice i letvice ograde i kapija istog modela se seku iz istih šipki
+      for (let i = 0; i < 2; i++) add(guideName, { lengthMm: panel.guideLenMm, pos: key, part: 'Vođica' });
+      for (let i = 0; i < panel.count; i++) add(fillName, { lengthMm: panel.fillLenMm, pos: key, part: 'Letvica' });
     }
   }
 
@@ -327,7 +340,7 @@ function collectPieces(project: Project, specs: ModelSpecs | undefined, material
 }
 
 export function buildCuttingList(project: Project, specs: ModelSpecs | undefined, materials: Material[], opts: CutOptions = { stockMm: DEFAULT_STOCK_MM, kerfMm: DEFAULT_KERF_MM }): CuttingList {
-  const { groups, positions } = collectPieces(project, specs, materials, opts.scope);
+  const { groups, positions } = collectPieces(project, specs, materials, opts.scope, opts.stockMm);
   // ostaci koje je poslovođa zadao za ovaj projekat, po profilu (nazivu materijala kao u krojnoj listi)
   const offcutsOf = new Map<string, number[]>();
   for (const o of project.offcuts ?? []) {

@@ -165,8 +165,15 @@ export const FENCE_MODEL_LIST = MODEL_LIST;
  */
 export const TERRACE_MODELS: readonly FenceModelId[] = MODEL_LIST.filter((m) => m.terrace).map((m) => m.id);
 export const isTerraceModel = (id: FenceModelId): boolean => Boolean((FENCE_MODELS[id] as FenceModelDef | undefined)?.terrace);
-/** Modeli dvorišnih ograda iz kataloga (bez ograda za terase): stranica „Modeli ograda“. */
-export const YARD_MODEL_LIST: readonly FenceModelDef[] = MODEL_LIST.filter((m) => !m.terrace);
+/**
+ * Originalni modeli dvorišnih ograda iz kataloga koje je korisnik obrisao (2026-11-17): ne postoje u aplikaciji — ne nude se ni na
+ * jednoj stranici, ne vraćaju se („Vrati obrisane modele“) i ne mogu se izabrati. Umesto njih postoje dorađeni crteži korisnika (nacrtani
+ * modeli sa `replaces`), koji su sada obični nacrtani modeli. Definicije ostaju samo u kodu, kao polazni crtež tih dorada i da stari
+ * projekti i fajlovi koji ih pominju ne pucaju (preko `effectiveModelId` vode na dorađen crtež).
+ */
+export const REMOVED_MODELS: ReadonlySet<string> = new Set(['h_narrow', 'h_boards', 'h_combo', 'panel_lines', 'picket_narrow', 'louver_light', 'louver_dark', 'picket_brown', 'h_white', 'v_framed', 'h_wide']);
+/** Modeli dvorišnih ograda iz kataloga (bez ograda za terase i bez obrisanih originala): stranica „Modeli ograda“. */
+export const YARD_MODEL_LIST: readonly FenceModelDef[] = MODEL_LIST.filter((m) => !m.terrace && !REMOVED_MODELS.has(m.id));
 export const TERRACE_MODEL_LIST: readonly FenceModelDef[] = MODEL_LIST.filter((m) => m.terrace);
 export const TERRACE_NO_GATES = 'Ograde za terase nemaju kapije.';
 

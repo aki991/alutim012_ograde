@@ -24,7 +24,7 @@ describe('klizne kapije: polazni parametri iz JSON priloga', () => {
     expect(res.at('catch')).toBe(f.catchX);
     if (p.support === 'ground_rail') {
       expect([res.at('wheel1'), res.at('wheel2')]).toEqual(m.wheelCentersX);
-      expect(res.at('railStart')).toBe(-350); expect(res.at('railLength')).toBe(6500);
+      expect(res.at('railStart')).toBe(-350); expect(res.at('railLength')).toBe(6000); // šina od jedne nabavne šipke (6 m), ne 6500 iz priloga
     } else {
       expect([res.at('carriage1'), res.at('carriage2')]).toEqual(f.carriageCentersX);
       expect(res.at('carrierLength')).toBe(4500); expect(res.spec.tailLength).toBe(1500);
@@ -146,7 +146,7 @@ describe('sastavnica', () => {
     const infill = items.find((i) => i.key === 'infill')!;
     expect(infill).toMatchObject({ qty: 12, shownMm: 2830, cutMm: null, confirm: true });
     const rail = items.find((i) => i.key === 'rail')!;
-    expect(rail).toMatchObject({ shownMm: 6500, cutMm: 6500, make: 'kupovina' });
+    expect(rail).toMatchObject({ shownMm: 6000, cutMm: 6000, make: 'kupovina' });
     // potvrđena krojna mera se koristi
     const { spec, frameWidth, frameHeight } = specFromPreset('klizna_sina_rucna');
     const withCut = slidingBom(resolveSliding({ ...spec, cuts: { infill: 2800 } }, frameWidth, H(frameHeight, spec))).find((i) => i.key === 'infill')!;

@@ -17,7 +17,11 @@ export const DORADA_HEIGHT_MM = 1500;
 const FRAME_MATERIAL = 'mat_alu_frame';
 const GLASS_MATERIAL = 'mat_glass';
 
-export function builtinToCustom(modelId: FenceModelId, materials: Material[], id: string, widthMm = DORADA_WIDTH_MM, heightMm = DORADA_HEIGHT_MM): CustomModel {
+/**
+ * `miterFrame`: ram od četiri dela sa rezom 45° (kao u krojnoj listi modela iz kataloga) — za skicu elementa u projektu. Dorada ostaje
+ * sa uspravnim delovima cele visine i vodoravnim između njih (njena krojna lista se pravi iz crteža, pa se slaže sa njim).
+ */
+export function builtinToCustom(modelId: FenceModelId, materials: Material[], id: string, widthMm = DORADA_WIDTH_MM, heightMm = DORADA_HEIGHT_MM, opts: { miterFrame?: boolean } = {}): CustomModel {
   const def = FENCE_MODELS[modelId];
   const W = widthMm; const H = heightMm;
   const d = def.defaults;
@@ -61,8 +65,14 @@ export function builtinToCustom(modelId: FenceModelId, materials: Material[], id
     const u = def.railMaterialId ?? 'mat_u_20x20';
     vertical(u, 0, 0, f, H); guides.push(parts[parts.length - 1].id);
     vertical(u, W - f, 0, f, H); guides.push(parts[parts.length - 1].id);
+  } else if (f > 0 && opts.miterFrame) {
+    // skica modela iz kataloga u projektu: ram kao u krojnoj listi (specifikacija modela seče ram pod 45°, spoljna mera W i H)
+    horizontal(FRAME_MATERIAL, 0, H - f, W, f, { cut45: true, miter: 'lo' });
+    horizontal(FRAME_MATERIAL, 0, 0, W, f, { cut45: true, miter: 'hi' });
+    vertical(FRAME_MATERIAL, 0, 0, f, H, { cut45: true, miter: 'hi' });
+    vertical(FRAME_MATERIAL, W - f, 0, f, H, { cut45: true, miter: 'lo' });
   } else if (f > 0) {
-    // ram oko ispune: uspravni delovi cele visine, vodoravni između njih
+    // ram oko ispune (dorada): uspravni delovi cele visine, vodoravni između njih
     vertical(FRAME_MATERIAL, 0, 0, f, H);
     vertical(FRAME_MATERIAL, W - f, 0, f, H);
     horizontal(FRAME_MATERIAL, f, 0, W - 2 * f, f);

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { computeLayout } from '../domain/geometry/layout';
 import { changeModelAll } from '../domain/geometry/operations';
 import { FEATURES } from '../config/features';
-import { FENCE_MODEL_LIST, FENCE_MODELS } from '../domain/models/catalog';
+import { FENCE_MODEL_LIST, FENCE_MODELS, REMOVED_MODELS } from '../domain/models/catalog';
 import { newCustomModel, scaleModel, type CustomModel } from '../domain/models/custom';
 import { allFenceModels, customPartsFor, customSlatCount, isCustomModel, registerCustomModels } from '../domain/models/customRegistry';
 import { leafHeightOf } from '../domain/gates/slidingLayout';
@@ -39,7 +39,9 @@ describe('nacrtani model u projektu', () => {
     expect(allFenceModels().map((m) => m.id)).toContain(ID);
     registerCustomModels([], MATS);
     expect(ID in FENCE_MODELS).toBe(false);
-    expect(allFenceModels()).toHaveLength(FENCE_MODEL_LIST.filter((m) => FEATURES.terraceFences || !m.terrace).length); // ograde za terase su sakrivene dok je prekidač isključen
+    // originalni modeli iz kataloga su obrisani (REMOVED_MODELS): ostaju samo modeli koji nisu obrisani (ograde za terase, ako su uključene)
+    expect(allFenceModels()).toHaveLength(FENCE_MODEL_LIST.filter((m) => !REMOVED_MODELS.has(m.id) && (FEATURES.terraceFences || !m.terrace)).length);
+    expect(allFenceModels().some((m) => REMOVED_MODELS.has(m.id))).toBe(false);
   });
 
   it('razvlačenje: dužine prate polje, preseci i broj delova ostaju isti', () => {

@@ -11,7 +11,7 @@ import {
 import { newItemFor } from '../domain/geometry/newItem';
 import { computeLayout } from '../domain/geometry/layout';
 import { removeStair, setStairGroup } from '../domain/geometry/stairOps';
-import { defaultModelId, FENCE_MODELS, TERRACE_NO_GATES, isTerraceModel, projectModelId } from '../domain/models/catalog';
+import { defaultModelId, FENCE_MODELS, REMOVED_MODELS, TERRACE_NO_GATES, isTerraceModel, projectModelId } from '../domain/models/catalog';
 import { allFenceModels, effectiveModelId, registerCustomModels, setHiddenModels } from '../domain/models/customRegistry';
 import { presetTitle, slidingForModel, specFromPreset, type SlidingSpec } from '../domain/gates/slidingAssembly';
 import { defaultGateConfig, gateClearWidth, gateConfigFromGate, gateFieldsFromModel, GATE_TYPE_LABELS, leafKeyOf, postDimsOf, withModelPosts } from '../domain/gates/gateModels';
@@ -26,6 +26,7 @@ import type {
 } from '../domain/models/types';
 import { migrateProject } from '../domain/validation/project';
 import { applyPostTemplate as applyPostTemplateTo } from '../domain/models/postTemplates';
+import { remapMissingMaterials } from '../domain/models/materialRemap';
 import { bookProjectStock, isStockStatus, unbookProjectStock } from '../domain/pricing/stockBooking';
 import { uid } from '../utils/id';
 
@@ -294,7 +295,7 @@ export const useAppStore = create<AppState>((set, get) => {
           try { localStorage.setItem(PROJECTS_WIPED_KEY, '1'); } catch { /* bez localStorage-a: preskače se */ }
           set({ ...s, ready: true });
         } else {
-          const settings = data.settings ?? seed.settings;
+          let settings = data.settings ?? seed.settings;
           let materials = data.materials.filter((m) => !isBuiltinMaterial(m));
           // jednokratno: materijali iz specifikacija modela koji još nisu u cenovniku dobijaju mesto u listi (okvirne cene)
           const BACKFILL_KEY = 'alutim.modelMaterialsV1';
@@ -350,6 +351,9 @@ export const useAppStore = create<AppState>((set, get) => {
               if (next) { materials = next; terraceAdded = true; } else localStorage.setItem(TERRACE_KEY, '1');
             }
           } catch { /* bez localStorage-a: preskače se */ }
+          // delovi nacrtanih modela sa obrisanim materijalom prelaze na isti materijal (ista šifra) iz cenovnika, npr. čep tarabice K100018
+          const remapped = remapMissingMaterials(settings.customModels, materials);
+          if (remapped) settings = { ...settings, customModels: remapped };
           // nacrtani modeli moraju biti u katalogu pre nego što se projekti učitaju
           registerCustomModels(settings.customModels, materials);
           setHiddenModels(settings.hiddenModels);
@@ -366,7 +370,7 @@ export const useAppStore = create<AppState>((set, get) => {
               localStorage.setItem(PROJECTS_WIPED_KEY, '1');
             } catch { /* neuspeh: pokušaće se opet pri sledećem pokretanju */ }
           }
-          if (backfilled || renamed || carriagesAdded || terraceAdded || railAdded) {
+          if (backfilled || renamed || carriagesAdded || terraceAdded || railAdded || remapped) {
             // autosave počinje tek posle init-a, pa se dodati materijali upisuju odmah; oznaka se postavlja tek kad je upis uspeo
             try {
               await saveAll({ projects: get().projects, customers: get().customers, materials, settings });
@@ -407,7 +411,8 @@ export const useAppStore = create<AppState>((set, get) => {
           const materials = mergeById(s.materials, patch.materials.upsert.filter((m) => !isBuiltinMaterial(m)), patch.materials.remove);
           if (materials !== s.materials) out.materials = materials;
         }
-        if (patch.settings) out.settings = patch.settings;
+        // i modeli iz baze: deo sa obrisanim materijalom prelazi na isti materijal iz cenovnika (izmena se zatim šalje u bazu)
+        if (patch.settings) { const fixedModels = remapMissingMaterials(patch.settings.customModels, out.materials ?? s.materials); out.settings = fixedModels ? { ...patch.settings, customModels: fixedModels } : patch.settings; }
         // modeli iz baze se registruju PRE provere projekata: inače bi projekat koji koristi nacrtani model (koji ovaj uređaj još nema) bio
         // vraćen na podrazumevani model, a prikaz bi pao na nepoznatom modelu i sinhronizacija bi stala sa greškom
         if (patch.settings || out.materials) registerCustomModels((out.settings ?? s.settings).customModels, out.materials ?? s.materials);
@@ -703,7 +708,8 @@ export const useAppStore = create<AppState>((set, get) => {
     removeCustomModel(id) {
       // brisanje dorađenog modela koji zamenjuje original: projekti se vraćaju na original iz kataloga
       const gone = (get().settings.customModels ?? []).find((m) => m.id === id);
-      if (gone?.replaces) get().restoreBuiltin(id);
+      // (dorađen crtež obrisanog originala iz kataloga se briše kao običan nacrtan model: original se ne vraća)
+      if (gone?.replaces && !REMOVED_MODELS.has(gone.replaces)) get().restoreBuiltin(id);
       const customModels = (get().settings.customModels ?? []).filter((m) => m.id !== id);
       // katalog se osvežava pre izmene projekata, da nijedan prikaz ne zatekne element sa nepostojećim modelom
       registerCustomModels(customModels, get().materials);

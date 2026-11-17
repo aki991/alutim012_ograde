@@ -203,14 +203,14 @@ export interface EvaluatedPart {
   error: string | null;
 }
 
-/** Računa sve uključene elemente specifikacije za jedno polje. Neispravna formula daje grešku i količinu 0. */
 /**
- * Specifikacija jednog elementa. Nacrtan model (ograda iz crtanja) je crtež jednog krila: kod dvokrilne kapije se računa za svako krilo
- * posebno, sa širinom tog krila (dužine prečki, broj letvica i prečki po krilu), pa se stavke oba krila sabiraju. Modeli iz kataloga imaju
- * formule za celu kapiju (DOUBLE, širine krila), pa se računaju jednom.
+ * Specifikacija jednog elementa. Kod dvokrilne kapije svako krilo je zasebno polje sa svojim ramom i ispunom: računa se za svako
+ * krilo posebno, sa širinom tog krila (dužine prečki, broj letvica i prečki po krilu), pa se stavke oba krila sabiraju. Tako i model
+ * iz kataloga dobija ram i letvice po krilu (ranije su vodoravni delovi išli preko cele kapije, kao da je jedno krilo).
+ * Neispravna formula daje grešku i količinu 0.
  */
 export function evaluateItemSpec(parts: SpecPart[], c: SpecContext): EvaluatedPart[] {
-  if (c.leafWidthsMm && c.leafWidthsMm.length > 1 && customModelOf(c.modelId)) {
+  if (c.leafWidthsMm && c.leafWidthsMm.length > 1) {
     return c.leafWidthsMm.flatMap((w) => evaluateSpec(parts, specVars({ ...c, widthMm: w, axisMm: w, leafWidthsMm: undefined, doubleGate: false })));
   }
   return evaluateSpec(parts, specVars(c));

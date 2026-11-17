@@ -6,7 +6,7 @@ import { SpecEditor } from '../../components/models/SpecEditor';
 import { ModelThumb, Page, PageHeader } from '../../components/ui/Common';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
 import { extraSpecKey } from '../../domain/models/spec';
-import { FENCE_MODELS, TERRACE_MODEL_LIST, YARD_MODEL_LIST, constructionOf } from '../../domain/models/catalog';
+import { FENCE_MODELS, REMOVED_MODELS, TERRACE_MODEL_LIST, YARD_MODEL_LIST, constructionOf } from '../../domain/models/catalog';
 import { CUSTOM_KIND_LABELS, type CustomModel } from '../../domain/models/custom';
 import type { FenceModelId } from '../../domain/models/types';
 import { useAppStore, useListedProjects } from '../../store/useAppStore';
@@ -65,7 +65,9 @@ export default function ModelsPage({ terrace = false }: { terrace?: boolean }) {
   );
 
   // ručno nacrtani modeli: za dvorišne ograde idu u istu mrežu kao ostali modeli (bez posebnog naslova), za terase u svoj odeljak
-  const customCards = customModels?.filter((m) => !m.replaces && m.kind === kind).map((m) => (
+  // nacrtani modeli i dorađeni crteži obrisanih originala iz kataloga (oni su sada obični nacrtani modeli)
+  const standalone = (m: CustomModel) => !m.replaces || REMOVED_MODELS.has(m.replaces);
+  const customCards = customModels?.filter((m) => standalone(m) && m.kind === kind).map((m) => (
       <article key={m.id} className="card overflow-hidden flex flex-col" data-testid="custom-model-card">
         <div className="relative aspect-[16/10] bg-[#eef2f6] overflow-hidden border-b border-line p-3"><CustomModelThumb model={m} materials={materials} /></div>
         <div className="p-4 flex-1 flex flex-col">
@@ -86,7 +88,7 @@ export default function ModelsPage({ terrace = false }: { terrace?: boolean }) {
       <PageHeader title={terrace ? 'Modeli ograda za terase' : 'Modeli ograda'}
         subtitle={terrace ? 'Ograde za terase, stepeništa i galerije: stubovi, rukohvat, prečke ili staklo. Nemaju veze sa dvorišnim ogradama i nemaju kapije. „Napravi model“ otvara crtanje ograda za terase sa materijalima za terase.' : undefined}
         actions={<><button className="btn btn-primary" data-testid={terrace ? 'btn-create-terrace-model' : 'btn-create-model'} onClick={() => navigate(terrace ? `${drawPath}/${uid('cm')}` : drawPath)}><PencilRuler size={17} />Napravi model</button></>} />
-      {terrace && !!customModels?.some((m) => !m.replaces && m.kind === kind) && (
+      {terrace && !!customModels?.some((m) => standalone(m) && m.kind === kind) && (
         <section className="mb-7" data-testid="custom-terrace-models">
           <h2 className="font-bold text-lg mb-3">Moje ograde za terase (ručno nacrtane)</h2>
           <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">

@@ -74,12 +74,14 @@ export function elementModel(project: Project, idx: number, materials: Material[
   const it = project.items[idx];
   if (!it || it.kind === 'opening') return null;
   try {
+    const li = layout.items[idx];
     if (it.kind === 'fence') {
+      // polje je svetli otvor između stubova (kao na crtežu i u krojnoj listi), ne mera osa–osa stubova
+      const w = Math.round(li?.clearWidth ?? it.widthMm);
       const src = customModelOf(it.modelId);
-      const model = src ? scaledModel(src, it.widthMm, it.heightMm, it.params.slats) : builtinToCustom(it.modelId as FenceModelId, materials, `sk_${idx}`, it.widthMm, it.heightMm);
+      const model = src ? scaledModel(src, w, it.heightMm, it.params.slats) : builtinToCustom(it.modelId as FenceModelId, materials, `sk_${idx}`, w, it.heightMm, { miterFrame: true });
       return { ...model, name: src?.name ?? model.name };
     }
-    const li = layout.items[idx];
     if (!it.infillModelId || !li) return null;
     let w = Math.round(li.clearWidth); let h = Math.round(leafHeightOf(it));
     // dvokrilna kapija: sklopni crtež je jedno krilo (levo), a oba krila su ista vrsta
@@ -90,7 +92,7 @@ export function elementModel(project: Project, idx: number, materials: Material[
       w = Math.round(res.W); h = Math.round(res.frameHeight);
     }
     const src = customModelOf(it.infillModelId);
-    const model = src ? scaledModel(src, w, h, it.params.slats) : builtinToCustom(it.infillModelId as FenceModelId, materials, `skg_${idx}`, w, h);
+    const model = src ? scaledModel(src, w, h, it.params.slats) : builtinToCustom(it.infillModelId as FenceModelId, materials, `skg_${idx}`, w, h, { miterFrame: true });
     return { ...model, name: src?.name ?? model.name, widthMm: w, heightMm: h };
   } catch { return null; }
 }
@@ -147,22 +149,24 @@ export async function projectSketchPages(project: Project, materials: Material[]
   const pages: SketchPage[] = [];
   const layout = computeLayout(project);
   const seen = new Map<string, { idx: number[]; model: CustomModel; at: number }>();
-  const list: { idx: number[]; model: CustomModel; label?: string }[] = [];
+  const list: { idx: number[]; model: CustomModel; label?: string; leaves?: number }[] = [];
   project.items.forEach((it, i) => {
     if (!inPrintScope(it, scope) || it.kind === 'opening') return;
     const model = elementModel(project, i, materials, layout);
     if (!model) return;
     if (it.kind === 'fence') {
-      const key = `${it.modelId}|${it.widthMm}|${it.heightMm}`;
+      // isti model i ista mera polja (svetli otvor, visina, raspored letvica) crtaju se jednom
+      const key = `${it.modelId}|${model.widthMm}|${model.heightMm}|${JSON.stringify(it.params.slats ?? null)}`;
       const ex = seen.get(key);
       if (ex) { ex.idx.push(i + 1); return; }
       const entry = { idx: [i + 1], model, at: list.length };
       seen.set(key, entry); list.push(entry);
-    } else list.push({ idx: [i + 1], model, label: itemLabel(project.items, i) });
+    } else list.push({ idx: [i + 1], model, label: itemLabel(project.items, i), leaves: it.gateType === 'double' ? (it.unequalLeaves ? 3 : 2) : 1 });
   });
   for (const e of list) {
     const title = e.label
-      ? `${e.label} — ${e.model.name || 'Model'}  ·  kapija ${e.model.widthMm} × ${e.model.heightMm} mm`
+      // dvokrilna kapija: skica je jedno (levo) krilo; kod jednakih krila važi za oba
+      ? `${e.label} — ${e.model.name || 'Model'}  ·  ${e.leaves === 2 ? 'krilo' : e.leaves === 3 ? 'levo krilo' : 'kapija'} ${e.model.widthMm} × ${e.model.heightMm} mm${e.leaves === 2 ? ' (2 krila)' : ''}`
       : `Element ${e.idx.join(', ')}${e.idx.length > 1 ? ` (${e.idx.length} kom)` : ''} — ${e.model.name || 'Model'}  ·  ${e.model.widthMm} × ${e.model.heightMm} mm`;
     const { svg, width, height } = await sketchSvgString(e.model, materials);
     const px = Math.min(3200, Math.round(width * Math.min(3, 3200 / width)));
