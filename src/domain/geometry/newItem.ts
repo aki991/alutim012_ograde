@@ -1,7 +1,7 @@
 import { uid } from '../../utils/id';
 import { STAIR_DEFAULT_RISE_MM, STAIR_TREAD_MM, STEP_RISE_MM, isStair } from './stair';
 import { FENCE_MODELS } from '../models/catalog';
-import { createCorner, createFence, createGate, createOpening } from '../models/factories';
+import { createCorner, createFence, createGate, createOpening, DEFAULT_FENCE_HEIGHT_MM, DEFAULT_FENCE_WIDTH_MM, DEFAULT_GATE_HEIGHT_MM } from '../models/factories';
 import type { FenceModelId, FenceParams, Finish, GateType, LayoutItem, Mm, Project } from '../models/types';
 import { outerWidthMm } from './layout';
 
@@ -55,9 +55,12 @@ export function newItemFor(project: Project, spec: NewItemSpec, activeModel: Fen
   const ref = referenceDims(project, selectedId);
   const same = ref && ref.modelId === model ? ref : null; // izgled se prenosi samo na isti model
   const lastGate = [...project.items].reverse().find((i) => i.kind === 'gate');
-  // kapija modela sa svojom početnom visinom kapije: visina poslednje kapije u projektu, inače početna; ograda i ostalo: kao ograda
-  const gateHeight = spec.kind === 'gate' && def.defaultGateHeightMm ? (lastGate && lastGate.infillModelId === model ? lastGate.heightMm : def.defaultGateHeightMm) : null;
-  const heightMm = gateHeight ?? ref?.heightMm ?? def.defaultSize?.heightMm ?? project.settings.defaultHeightMm;
+  // univerzalne početne mere: kapija 1600 mm (kao već postavljena kapija u projektu), platno kao postojeće platno, inače 1200 mm
+  // (modeli ograda za terase zadržavaju svoje mere)
+  const universal = !def.terrace;
+  const heightMm = spec.kind === 'gate' && universal
+    ? lastGate?.heightMm ?? DEFAULT_GATE_HEIGHT_MM
+    : ref?.heightMm ?? (universal ? DEFAULT_FENCE_HEIGHT_MM : def.defaultSize?.heightMm) ?? project.settings.defaultHeightMm;
   const look = same ? { params: same.params, color: same.color, ...(same.finish ? { finish: same.finish } : {}) } : {};
   if (spec.kind === 'fence' && spec.stair) {
     // stepenište: posle postojeće ograde (terase) silazi, na početku praznog projekta se penje; oko 280 mm gazišta po stepeniku
@@ -68,8 +71,9 @@ export function newItemFor(project: Project, spec: NewItemSpec, activeModel: Fen
   }
   if (spec.kind === 'fence') {
     const item = createFence({ modelId: model, heightMm, ...look, ...(same?.plinthMm ? { plinthMm: same.plinthMm } : {}) });
+    if (!ref && universal) return { item, outerWidthMm: DEFAULT_FENCE_WIDTH_MM, clearWidthMm: DEFAULT_FENCE_WIDTH_MM };
     if (!ref && def.defaultSize?.clearWidth) return { item, outerWidthMm: def.defaultSize.widthMm, clearWidthMm: def.defaultSize.widthMm };
-    return { item, outerWidthMm: ref?.outerWidthMm ?? def.defaultSize?.widthMm ?? item.widthMm };
+    return { item, outerWidthMm: ref?.outerWidthMm ?? (universal ? DEFAULT_FENCE_WIDTH_MM : def.defaultSize?.widthMm) ?? item.widthMm };
   }
   if (spec.kind === 'gate') {
     // ako sve kapije u projektu imaju svoje stubove, i nova ih ima

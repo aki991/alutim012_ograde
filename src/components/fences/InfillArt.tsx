@@ -77,6 +77,8 @@ interface InfillProps {
   lift?: number;
   /** tarabica: luk gornje ivice (mm) */
   arch?: number;
+  /** ručno nacrtan model sa uspravnim letvicama: ručno zadata odstojanja od ivica i razmak */
+  slats?: { leftMm?: number; rightMm?: number; gapMm?: number };
   /** tarabica: prepust levo i desno kad se razlikuje (krilo dvokrilne kapije nema prepust uz sredinu) */
   edgeOverhang?: [number, number];
   /** ram (okvir sa sve četiri strane, rez 45°) kod modela sa horizontalnim kvadratnim cevima */
@@ -139,10 +141,13 @@ export function InfillArt(props: InfillProps) {
   }
   // ručno nacrtan model: delovi sa crteža, razvučeni na veličinu polja
   if (FENCE_MODELS[modelId].style === 'custom') {
+    // razmak od poda: ispuna se podiže, a visina crteža se smanjuje za toliko
+    const up = Math.min(Math.max(0, lift ?? 0), Math.max(0, h - 100));
+    const hh = h - up;
     return (
-      <g data-testid="custom-art" transform={`translate(${x} ${y + h}) scale(1,-1)`} style={{ pointerEvents: 'none' }}>
-        <rect x={0} y={0} width={w} height={h} fill={GAP_TINT} fillOpacity="0.25" />
-        {customPartsFor(modelId, w, h, hex).map((r) => <PartSvg key={r.part.id} part={r.part} shape={r.shape} hex={r.hex} />)}
+      <g data-testid="custom-art" transform={`translate(${x} ${y + h - up}) scale(1,-1)`} style={{ pointerEvents: 'none' }}>
+        <rect x={0} y={0} width={w} height={hh} fill={GAP_TINT} fillOpacity="0.25" />
+        {customPartsFor(modelId, w, hh, hex, props.slats).map((r) => <PartSvg key={r.part.id} part={r.part} shape={r.shape} hex={r.hex} />)}
       </g>
     );
   }

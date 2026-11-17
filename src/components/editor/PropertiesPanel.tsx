@@ -1,14 +1,16 @@
 import { PartsPanel } from './PartsPanel';
-import { allFenceModels } from '../../domain/models/customRegistry';
+import { allFenceModels, customSlatLayout, isCustomModel } from '../../domain/models/customRegistry';
+import { gateLeafPoses } from '../../domain/geometry/gates';
+import { leafHeightOf } from '../../domain/gates/slidingLayout';
 import { AlertTriangle, ArrowLeft, ArrowRight, Copy, Trash2, Calculator, FileDown, Scissors, ClipboardList, Ruler } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { autoFillToFixedTotal, changeColor, changeFinish, isTotalLocked, setItemWidthLock, setTotalLock, indexOfItem, resetPostHeights, setAllColors, setAllFinishes, setAllGatesOwnPosts, setAllPlinths, removeItemPlinths, setItemPlinthHeight, setRl10Params, resetRl10Params, setTubesParams, resetTubesParams, setPlinthWidth, setAllHeights, setOuterWidth, updateItem, updatePost } from '../../domain/geometry/operations';
 import { computeInfill } from '../../domain/geometry/infill';
 import { MAX_TURN_DEG } from '../../domain/geometry/plan';
 import { cornerInfo } from '../../domain/geometry/corner';
 import { computeLayout, isSpacer, outerWidthMm, postHalfSum, totalStatus } from '../../domain/geometry/layout';
 import {
-  AUTOMATION_LABELS, FENCE_MODELS, HINGE_LABELS, LOCK_LABELS, MOUNTING_LABELS, POST_LABELS, POST_SIZES, isTerraceModel, maxRods, rodCountFor,
+  AUTOMATION_LABELS, FENCE_MODELS, HINGE_LABELS, LOCK_LABELS, MOUNTING_LABELS, POST_LABELS, POST_SIZES, isTerraceModel, maxRods, projectModelId, rodCountFor,
 } from '../../domain/models/catalog';
 import { MAX_FIELDS, STAIR_DEFAULT_RISE_MM, STAIR_MAX_DEG, STAIR_MIN_DEG, recommendedStairPosts, slopeOf, stairGroupAt } from '../../domain/geometry/stair';
 import { clearStair, makeStair, setStairGroup, stairOuterRunMm, type StairPatch } from '../../domain/geometry/stairOps';
@@ -29,7 +31,7 @@ import { templateFromPost } from '../../domain/models/postTemplates';
 import { uid } from '../../utils/id';
 import { GateDesignModal } from '../gates/GateDesignModal';
 import { SlidingPanel } from '../gates/SlidingPanel';
-import { resolveGate, SYSTEM_LABELS } from '../../domain/gates/design';
+import { resolveGate, setDim, SYSTEM_LABELS } from '../../domain/gates/design';
 
 function Section({ title, children, testId }: { title: string; children: React.ReactNode; testId?: string }) {
   return (
@@ -43,6 +45,51 @@ function Section({ title, children, testId }: { title: string; children: React.R
 function Banner({ tone, children }: { tone: 'red' | 'amber' | 'blue'; children: React.ReactNode }) {
   const c = { red: 'bg-[#fef3f2] text-[#b42318] border-[#fecdca]', amber: 'bg-[#fffaeb] text-[#93370d] border-[#fedf89]', blue: 'bg-primary-50 text-primary-600 border-red-200' }[tone];
   return <div role={tone === 'red' ? 'alert' : 'status'} className={`flex gap-2 items-start text-[13px] rounded-lg border px-3 py-2 my-2 ${c}`}><AlertTriangle size={15} className="mt-0.5 shrink-0" /><div>{children}</div></div>;
+}
+
+
+/**
+ * Razmaci ispune platna ili krila (ručno nacrtan model sa uspravnim letvicama): razmak od poda, odstojanje prve i poslednje letvice od
+ * stuba (kraja prečki), razmak između letvica i, kod dvokrilne kapije, razmak između krila. Prikazuju se trenutne vrednosti; „Vrati početne“
+ * vraća vrednosti kakve su bile kad je element izabran. Razmak se računa tako da letvice ravnomerno popune širinu (broj letvica se prilagođava).
+ */
+function SlatSettings({ id, modelId, widthMm, heightMm, params, gate, clearWidth }: { id: string; modelId: FenceModelId; widthMm: number; heightMm: number; params: FenceParams; gate?: Gate; clearWidth: number }) {
+  const [open, setOpen] = useState(false);
+  const st = useAppStore.getState();
+  const gC = gate && gate.gateType === 'double' && gate.design ? resolveGate(gate, clearWidth).values.gC?.v ?? null : null;
+  const init = useRef<{ id: string; slats: FenceParams['slats']; lift: number | undefined; gC: number | null }>({ id, slats: params.slats, lift: params.liftMm, gC });
+  if (init.current.id !== id) init.current = { id, slats: params.slats, lift: params.liftMm, gC };
+  if (!isCustomModel(modelId)) return null;
+  const lift = params.liftMm ?? 0;
+  const lay = customSlatLayout(modelId, widthMm, heightMm - lift, params.slats);
+  const half = Math.max(50, Math.round(widthMm / 2));
+  const setSlat = (patch: NonNullable<FenceParams['slats']>) => st.patchItemParams(id, { slats: { ...params.slats, ...patch } }, 'slats');
+  const reset = () => {
+    st.patchItemParams(id, { slats: init.current.slats, liftMm: init.current.lift });
+    if (gate?.design && init.current.gC !== null) st.patchItem(id, { design: setDim(gate.design, 'gC', init.current.gC) });
+  };
+  return (
+    <div className="mt-2 rounded-lg border border-line" data-testid="slat-settings">
+      <button className="w-full flex items-center justify-between px-3 py-2 text-[13.5px] font-semibold" aria-expanded={open} onClick={() => setOpen((o) => !o)} data-testid="slat-settings-toggle">
+        Raspored ispune i razmaci<span className="text-muted text-[12px] font-normal">{open ? 'Sakrij' : 'Prikaži'}</span>
+      </button>
+      {open && (
+        <div className="px-3 pb-2">
+          <NumberField label="Razmak od poda" testId="slat-floor" value={lift} range={{ min: 0, max: 500 }} onCommit={(v) => st.patchItemParams(id, { liftMm: v }, 'lift')} />
+          {lay && (
+            <>
+              <NumberField label="Od levog stuba do prve letvice" testId="slat-left" value={Math.round(lay.left * 10) / 10} range={{ min: 0, max: half }} onCommit={(v) => setSlat({ leftMm: v })} />
+              <NumberField label="Od poslednje letvice do desnog stuba" testId="slat-right" value={Math.round(lay.right * 10) / 10} range={{ min: 0, max: half }} onCommit={(v) => setSlat({ rightMm: v })} />
+              <NumberField label="Razmak između letvica" testId="slat-gap" value={Math.round(lay.gap * 10) / 10} range={{ min: 0, max: 300 }} onCommit={(v) => setSlat({ gapMm: v })}
+                hint={`Letvica: ${lay.count}. Razmak se podešava tako da letvice ravnomerno popune širinu.`} />
+            </>
+          )}
+          {gC !== null && <NumberField label="Razmak između krila" testId="slat-leaf-gap" value={gC} range={{ min: 0, max: 200 }} onCommit={(v) => gate?.design && st.patchItem(id, { design: setDim(gate.design, 'gC', v) }, 'gC')} />}
+          <button className="btn btn-sm mt-1" data-testid="slat-reset" onClick={reset}>Vrati početne vrednosti</button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /** Dubina i zidovi kvadratne cevi i U profila (važe za sva polja i kapije modela uskih letvica); visina cevi, razmak i širina U su gore. */
@@ -324,6 +371,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
         )}
         {isRl10Model(it.modelId) && <Rl10Parts params={it.params} />}
         {isTubesModel(it.modelId) && <TubesParts params={it.params} />}
+        <SlatSettings id={id} modelId={it.modelId} widthMm={li.clearWidth} heightMm={it.heightMm} params={it.params} clearWidth={li.clearWidth} />
         <PartsPanel project={project} params={it.params} />
         {isTerraceModel(it.modelId) && (() => {
           // stepenište: niz polja između stubova; prvi i poslednji stub su na krajevima, stubovi između se dodaju (preporuka: na svaki metar)
@@ -437,6 +485,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
         <NumberField label="Debljina rama" value={g.params.frameMm} range={LIMITS.frame} onCommit={(v) => st.patchItemParams(id, { frameMm: v }, 'frame')} />
         {FENCE_MODELS[g.infillModelId].style === 'tarabica' && <LiftField id={id} value={g.params.liftMm ?? TARABICA.defaultLiftMm} />}
         {FENCE_MODELS[g.infillModelId].style === 'tarabica' && <ArchField id={id} heightMm={g.heightMm} value={g.params.archMm ?? 0} />}
+        {g.gateType !== 'sliding' && <SlatSettings id={id} modelId={g.infillModelId} widthMm={gateLeafPoses(g, li.clearStart, li.clearEnd, 0)[0]?.widthMm ?? li.clearWidth} heightMm={leafHeightOf(g)} params={g.params} gate={g} clearWidth={li.clearWidth} />}
         <PartsPanel project={project} params={g.params} />
       </>
     );
@@ -537,6 +586,20 @@ function PostPanel({ project, id }: { project: Project; id: string }) {
           </div>
         </div>
       ) : null}
+      {lp.index === project.items.length && project.items.length > 0 && project.items[project.items.length - 1].kind !== 'opening' && (
+        <div data-testid="post-corner">
+          <div className="label pb-1">Ugao ograde</div>
+          <div className="flex gap-1.5 pb-1 flex-wrap">
+            {[-90, -45, 45, 90].map((a) => (
+              <button key={a} className="btn btn-sm" data-testid={`corner-${a}`} title="Dodaje novo platno posle ovog stuba, skrenuto za zadati ugao"
+                onClick={() => { const m = projectModelId(project.items); if (!m) return; st.addElement({ kind: 'fence', modelId: m }); st.patchPost(id, { turnDeg: a }); useAppStore.setState((x) => ({ editor: { ...x.editor, selection: { type: 'post', id }, multi: [] } })); }}>
+                {a > 0 ? '+' : ''}{a}°
+              </button>
+            ))}
+          </div>
+          <div className="text-[11.5px] text-muted pb-1.5">Nastavlja ogradu pod uglom posle ovog stuba (dodaje novo platno). Ugao se kasnije menja na stubu između dva platna.</div>
+        </div>
+      )}
       <div className="py-1.5" data-testid="post-template">
         <div className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.45fr)] items-center gap-x-3">
           <label className="label" htmlFor="post-template-select">Šablon stuba</label>

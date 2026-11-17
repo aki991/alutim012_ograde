@@ -267,7 +267,7 @@ describe('stubovi prate model ograde i kapije', () => {
     expect(p.posts[1]).toMatchObject({ color: 'RAL 9006', round: true }); // stub između dva elementa prati levi
     expect(p.posts[2].color).toBe('#604840'); // dekor drveta: stub u boji sa slike modela
     expect(p.posts[3]).toMatchObject({ color: colorHex('RAL 9016'), round: undefined });
-    expect(p.posts[3].heightMm).toBe(1600); // slika modela nema stub koji viri iznad polja
+    expect(p.posts[3].heightMm).toBe(1200); // slika modela nema stub koji viri iznad polja
   });
   it('uz kapiju stub prati model kapije (srebrni četvrtasti), ručno izmenjen stub se ne dira', () => {
     const base = createProject('s', [createFence({ modelId: 'h_narrow' }), createGate('sliding', { infillModelId: 'rail_inox' })]);

@@ -158,7 +158,7 @@ export function SlidingAssemblyArt({ gate, clearStart, clearEnd, clearWidth, flo
       {layer === 'all' && spec.drawnLeaf && !noLeaf && (
         // krilo iz modela (nacrtan model ili model ograde), podignuto od tla za odstojanje donje ivice rama; u probi hoda klizi sa okovom
         <g data-sliding-part="leaf" data-moving="true" transform={`translate(${X(t) - X(0)} 0)`}>
-          <InfillArt modelId={gate.infillModelId} x={Math.min(X(0), X(W))} y={Y(top)} w={W} h={res.frameHeight} frame={gate.params.frameMm} barSize={gate.params.barSizeMm} gap={gate.params.gapMm} lift={gate.params.liftMm} arch={gate.params.archMm} hex={hex} colorKey={gate.color} ram={ramInsets(gate.infillModelId, gate.params)} uid={`${gate.id}-sl`} />
+          <InfillArt modelId={gate.infillModelId} x={Math.min(X(0), X(W))} y={Y(top)} w={W} h={res.frameHeight} frame={gate.params.frameMm} barSize={gate.params.barSizeMm} gap={gate.params.gapMm} lift={gate.params.liftMm} slats={gate.params.slats} arch={gate.params.archMm} hex={hex} colorKey={gate.color} ram={ramInsets(gate.infillModelId, gate.params)} uid={`${gate.id}-sl`} />
         </g>
       )}
       {layer !== 'back' && <>{moving.map(draw)}{dims}</>}

@@ -245,7 +245,7 @@ describe('stubovi na podnožju, prazan otvor bez stubova, mere novog elementa', 
     expect(computeLayout(trailing).postCount).toBe(2);
     // skriveni stub nema širinu: otvor zauzima ceo zadati razmak i ne ulazi u sastavnicu stubova
     expect(computeLayout(alone).items[0].clearWidth).toBe(1500);
-    expect(qty(buildBom(trailing, SEED_MATERIALS), 'mat_ek_ktf10010020')).toBeCloseTo((2 * trailing.posts[0].heightMm) / 1000, 6);
+    expect(qty(buildBom(trailing, SEED_MATERIALS), 'mat_ek_ktf10010020')).toBeCloseTo((trailing.posts[0].heightMm + trailing.posts[1].heightMm) / 1000, 6);
   });
 
   it('novi element ima mere i izgled postojeće ograde (izabrane ili poslednje)', () => {
@@ -256,7 +256,7 @@ describe('stubovi na podnožju, prazan otvor bez stubova, mere novog elementa', 
     expect(a.item.kind === 'fence' && a.item.params).toMatchObject({ gapMm: 30, frameMm: 40, liftMm: 60 });
     expect(a.item.kind === 'fence' && a.item.plinthMm).toBe(300);
     const g = newItemFor(p, { kind: 'gate', gateType: 'pedestrian', modelId: 'picket_wide' }, 'picket_wide');
-    expect(g.item.heightMm).toBe(900);
+    expect(g.item.heightMm).toBe(1600); // kapija: univerzalna visina 1600 mm
     expect(g.outerWidthMm).toBe(g.item.widthMm); // širina kapije ostaje po vrsti kapije
     const o = newItemFor(p, { kind: 'opening' }, 'picket_wide');
     expect(o.item.heightMm).toBe(900);
@@ -265,10 +265,10 @@ describe('stubovi na podnožju, prazan otvor bez stubova, mere novog elementa', 
     p = { ...p, items: [...p.items, createFence({ modelId: 'picket_wide', widthMm: 2000, heightMm: 1100 })] };
     expect(newItemFor(p, { kind: 'fence', modelId: 'picket_wide' }, 'picket_wide', p.items[0].id).item.heightMm).toBe(900);
     expect(newItemFor(p, { kind: 'fence', modelId: 'picket_wide' }, 'picket_wide').item.heightMm).toBe(1100);
-    // prazan projekat: početna veličina modela 1000 × 1000
+    // prazan projekat: univerzalna početna veličina platna 1500 × 1200
     const empty = createProject('E');
     const f = newItemFor(empty, { kind: 'fence', modelId: 'picket_wide' }, 'picket_wide');
-    expect([f.item.heightMm, f.outerWidthMm]).toEqual([1000, 1000]);
+    expect([f.item.heightMm, f.outerWidthMm]).toEqual([1200, 1500]);
   });
 
   it('novi stub između ograda je isti kao postojeći (kape, širina, boja)', () => {

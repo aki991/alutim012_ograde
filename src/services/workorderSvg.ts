@@ -151,8 +151,9 @@ export function schemaSvg(project: Project, keyOfItem: (index: number) => string
     // ručno nacrtan model: stvarni delovi sa crteža (ram, U profili, prečke), ne računska ispuna
     if (!art && isCustomModel(modelId)) {
       const mh = it.kind === 'fence' ? it.heightMm : leafHeightOf(it);
-      const yb = y + h;
-      for (const r of customPartsFor(modelId, li.clearWidth, mh, '#000000')) {
+      const lift = Math.min(Math.max(0, it.params.liftMm ?? 0), Math.max(0, mh - 100));
+      const yb = y + h - lift * s;
+      for (const r of customPartsFor(modelId, li.clearWidth, mh - lift, '#000000', it.params.slats)) {
         const p = r.part;
         if (r.shape.type === 'piece') continue;
         const P = (lx: number, ly: number): string => `${(ix + lx * s).toFixed(1)},${(yb - ly * s).toFixed(1)}`;

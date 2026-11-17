@@ -33,12 +33,17 @@ export const DEFAULT_PRICING: PricingSettings = {
   currency: 'RSD',
 };
 
+/** Univerzalne početne mere novih elemenata: platno 1500 × 1200 mm, kapije visine 1600 mm (širina kapije zavisi od tipa) */
+export const DEFAULT_FENCE_WIDTH_MM = 1500;
+export const DEFAULT_FENCE_HEIGHT_MM = 1200;
+export const DEFAULT_GATE_HEIGHT_MM = 1600;
+
 export function defaultSettings(): ProjectSettings {
   return {
     totalMode: 'auto',
     fixedTotalMm: 11000,
     fillStrategy: 'proportional',
-    defaultHeightMm: 1600,
+    defaultHeightMm: DEFAULT_FENCE_HEIGHT_MM,
     defaultColor: 'RAL 7016',
     showDimensions: false,
     showGrid: true,
@@ -53,8 +58,8 @@ export function createFence(partial: Partial<FenceSection> = {}): FenceSection {
     kind: 'fence',
     id: uid('fence'),
     modelId,
-    widthMm: 2000,
-    heightMm: 1600,
+    widthMm: DEFAULT_FENCE_WIDTH_MM,
+    heightMm: DEFAULT_FENCE_HEIGHT_MM,
     color: FENCE_MODELS[modelId].defaultColor,
     materialId: FENCE_MODELS[modelId].materialId,
     ...partial,
@@ -69,7 +74,7 @@ export function createGate(gateType: GateType, partial: Partial<Gate> = {}): Gat
     id: uid('gate'),
     gateType,
     widthMm: GATE_DEFAULT_WIDTH[gateType],
-    heightMm: 1600,
+    heightMm: DEFAULT_GATE_HEIGHT_MM,
     color: FENCE_MODELS[infill].defaultColor,
     infillModelId: infill,
     opening: 'right',

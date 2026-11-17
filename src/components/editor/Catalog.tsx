@@ -2,7 +2,8 @@ import { allFenceModels } from '../../domain/models/customRegistry';
 import { Plus } from 'lucide-react';
 import { useMemo } from 'react';
 import { DEFAULT_MODEL_ID, FENCE_MODELS, GATE_LABELS, POST_LABELS, isLightColor, isTerraceModel, projectModelId } from '../../domain/models/catalog';
-import { createFence, createGate, createOpening, createProject } from '../../domain/models/factories';
+import { createFence, createGate, createOpening, createProject, DEFAULT_FENCE_HEIGHT_MM, DEFAULT_FENCE_WIDTH_MM, DEFAULT_GATE_HEIGHT_MM } from '../../domain/models/factories';
+import { GATE_DEFAULT_WIDTH } from '../../domain/models/catalog';
 import { applyPostType, setOuterWidth } from '../../domain/geometry/operations';
 import { postHalfSum } from '../../domain/geometry/layout';
 import { gateClearWidth, gateFieldsFromModel } from '../../domain/gates/gateModels';
@@ -23,10 +24,9 @@ export function MiniThumb({ project, width = 150, grey = false }: { project: Pro
   );
 }
 
-/** Uzorak polja ograde izabranog modela za sličice: veličina polja modela (tarabica: 6 tarabica), inače 1800 × 1200 mm. */
+/** Uzorak polja ograde za sličice: univerzalna početna mera platna (1500 × 1200 mm). */
 function sampleFence(model: FenceModelId) {
-  const size = FENCE_MODELS[model].defaultSize;
-  return createFence({ modelId: model, widthMm: size ? (size.clearWidth ? size.widthMm : size.widthMm - 100) : 1800, heightMm: size?.heightMm ?? 1200 });
+  return createFence({ modelId: model, widthMm: DEFAULT_FENCE_WIDTH_MM + 100, heightMm: DEFAULT_FENCE_HEIGHT_MM });
 }
 
 function useMini(build: () => Project, key: string): Project {
@@ -47,7 +47,7 @@ function CatalogCard({ title, subtitle, thumb, onAdd, onDragStart, testId, addLa
     >
       <div className="flex justify-center">{thumb}</div>
       <div className="mt-2 text-[13px] font-semibold leading-tight">{title}</div>
-      <div className="text-[11.5px] text-muted leading-snug min-h-[28px]">{subtitle}</div>
+      <div className="text-[11.5px] text-muted leading-snug min-h-[28px] whitespace-pre-line">{subtitle}</div>
       <div className="flex items-center gap-1.5 mt-auto pt-1.5">
         {choices
           ? choices.map((c) => <button key={c.testId} className="btn btn-sm btn-primary flex-1 min-w-0 !py-1.5 !px-1 justify-center" onClick={c.onAdd} data-testid={c.testId} title={`${title}: ${c.label}`}>{c.label}</button>)
@@ -78,7 +78,8 @@ function CornerThumb({ grey = false }: { grey?: boolean }) {
 function PostCard({ type, subtitle, model, hasSelection, onApply }: { type: PostType; subtitle: string; model: FenceModelId; hasSelection: boolean; onApply: () => void }) {
   const mini = useMini(() => {
     const p = applyPostType(createProject('m', [sampleFence(model)]), type);
-    return { ...p, posts: p.posts.map((x) => (x.type === 'concrete' || x.type === 'concrete_plinth' ? { ...x, widthMm: 220 } : x)) };
+    // stub je iste visine kao ograda (sličica ne prikazuje stub koji viri iznad polja)
+    return { ...p, posts: p.posts.map((x) => ({ ...x, heightMm: DEFAULT_FENCE_HEIGHT_MM, heightCustom: true, ...(x.type === 'concrete' || x.type === 'concrete_plinth' ? { widthMm: 220 } : {}) })) };
   }, `p-${type}-${model}`);
   return <CatalogCard testId={`cat-post-${type}`} title={POST_LABELS[type]} subtitle={subtitle} thumb={<MiniThumb project={mini} grey={isLightColor(FENCE_MODELS[model].defaultColor)} />} onAdd={onApply} addLabel={hasSelection ? 'Primeni na stub' : 'Primeni na sve'} />;
 }
@@ -171,14 +172,15 @@ export function Catalog({ onBeginDrag }: { onBeginDrag: (source: DragSource, e: 
         <label className="flex items-center gap-2 text-sm font-medium">
           Model ograde
           <select className="input !w-auto !py-1.5 min-w-[260px]" data-testid="catalog-model" value={model} onChange={(e) => changeModel(e.target.value as FenceModelId)}>
-            {allFenceModels(model).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            {(() => { const list = allFenceModels(model); return <>{list.some((m) => m.id === model) ? null : <option value={model} disabled>{def.name} (nije na stranici Modeli ograda)</option>}{list.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</>; })()}
           </select>
         </label>
       </div>
       <div className="space-y-3" data-testid="catalog-items">
         {/* prvi red: platno i kapije */}
         <div className="flex flex-wrap gap-3" data-testid="catalog-row-elements">
-          <CatalogCard testId="cat-fence" title="Platno" subtitle={def.name} thumb={<ElementThumb kind="fence" model={model} />} onAdd={() => addElement({ kind: 'fence', modelId: model })} onDragStart={startDrag({ kind: 'fence', modelId: model }, `Platno — ${def.name}`)} />
+          <CatalogCard testId="cat-fence" title="Platno" subtitle={`${def.name}${terrace ? '' : `
+${DEFAULT_FENCE_WIDTH_MM} × ${DEFAULT_FENCE_HEIGHT_MM} mm`}`} thumb={<ElementThumb kind="fence" model={model} />} onAdd={() => addElement({ kind: 'fence', modelId: model })} onDragStart={startDrag({ kind: 'fence', modelId: model }, `Platno — ${def.name}`)} />
           {terrace && (
             <CatalogCard testId="cat-stair" title="Stepenište" subtitle="Ograda koja prati stepenice" thumb={<ElementThumb kind="stair" model={model} />}
               onAdd={() => addElement({ kind: 'fence', modelId: model, stair: true })} onDragStart={startDrag({ kind: 'fence', modelId: model, stair: true }, 'Stepenište')} />
@@ -186,7 +188,8 @@ export function Catalog({ onBeginDrag }: { onBeginDrag: (source: DragSource, e: 
           {!terrace && GATE_CARDS.filter((g) => !hidden?.includes(`gate:${g.type}`)).map((g) => {
             const spec: NewElementSpec = { kind: 'gate', gateType: g.type, modelId: model };
             return (
-              <CatalogCard key={g.id} testId={`cat-gate-${g.id}`} title={g.title} subtitle={g.subtitle} thumb={<ElementThumb kind={g.type} model={model} />}
+              <CatalogCard key={g.id} testId={`cat-gate-${g.id}`} title={g.title} subtitle={`${g.subtitle}
+${GATE_DEFAULT_WIDTH[g.type]} × ${DEFAULT_GATE_HEIGHT_MM} mm`} thumb={<ElementThumb kind={g.type} model={model} />}
                 onAdd={() => addElement(spec)} onDragStart={startDrag(spec, g.title)} />
             );
           })}

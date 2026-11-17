@@ -3,6 +3,7 @@ import { FENCE_MODEL_LIST, FENCE_MODELS, type FenceModelDef } from './catalog';
 import { miterEndsOf, partBounds, resolveParts, sheetAreaMm2, type CustomModel, type CustomPart, type ResolvedPart } from './custom';
 import { applyGuides, guidesOf, scaleWithGuides } from './guides';
 import { isFramePart, resizeWithFrame } from './frame';
+import { refillsVBars, refillVBars, slatLayoutOf, type SlatOverride } from './gateRefill';
 import { materialShape, sectionFace, type MatShape } from './materialShape';
 import { screwCounts, screwMaterial } from './terraceHardware';
 import type { SpecPart } from './spec';
@@ -20,7 +21,7 @@ const defOf = (m: CustomModel): FenceModelDef => ({
   description: 'Ručno nacrtan model', infill: 'Prema crtežu', material: 'Prema crtežu',
   image: '', style: 'custom', defaultColor: m.color, defaults: { barSizeMm: 0, gapMm: 0, frameMm: 0 }, barLabel: '', gapLabel: '', hasBars: false,
   defaultSize: { widthMm: m.widthMm, heightMm: m.heightMm, clearWidth: true }, defaultGateHeightMm: m.heightMm, postExtraMm: 0,
-  materialId: m.parts[0]?.materialId ?? '', parts: { main: m.name },
+  materialId: m.parts?.[0]?.materialId ?? '', parts: { main: m.name },
   ...(m.kind === 'terrace' ? { terrace: true } : {}),
 });
 
@@ -57,8 +58,9 @@ export const allFenceModels = (keep?: string): FenceModelDef[] => {
   const sameFamily = (d: FenceModelDef | undefined): boolean => !!d && (FEATURES.terraceFences
     ? (terrace === undefined || Boolean(d.terrace) === terrace || d.id === keep)
     : (!d.terrace || d.id === keep));
-  const catalog = FENCE_MODEL_LIST.filter((d) => !HIDDEN.has(d.id) || d.id === keep).map((d) => { const r = replacementOf(d.id); return r ? all[r.id] : d; });
-  return [...catalog, ...[...REG.values()].filter((m) => !m.replaces && (m.kind !== 'gate' || m.id === keep)).map((m) => all[m.id])].filter(sameFamily);
+  // samo modeli sa stranice „Modeli ograda“: obrisani modeli i kapije se ne nude (ni kad ih projekat još koristi); nov ručno nacrtan model se dodaje sam
+  const catalog = FENCE_MODEL_LIST.filter((d) => !HIDDEN.has(d.id)).map((d) => { const r = replacementOf(d.id); return r ? all[r.id] : d; });
+  return [...catalog, ...[...REG.values()].filter((m) => !m.replaces && m.kind !== 'gate').map((m) => all[m.id])].filter(sameFamily);
 };
 
 /** Delovi nacrtanog modela razvučeni na polje zadate širine i visine, u boji elementa (hex ili RAL ključ). */
@@ -66,7 +68,13 @@ export const allFenceModels = (keep?: string): FenceModelDef[] => {
  * Model razvučen na polje druge veličine. Model sa ramom se ne razvlači ravnomerno (ram bi izgubio debljinu i ne bi legao uz bočne
  * U profile, a uglovi bi se razmakli): ram zadržava debljinu, a platno unutar njega se razvlači, kao pri izmeni mera u crtanju.
  */
-export function scaledModel(m: CustomModel, widthMm: number, heightMm: number): CustomModel {
+export function scaledModel(m: CustomModel, widthMm: number, heightMm: number, slats?: SlatOverride): CustomModel {
+  const out = stretchedModel(m, widthMm, heightMm);
+  // kapija iz modela: letvice se preračunavaju za stvarnu širinu krila (broj i jednak razmak), ne razvlače se kao slika
+  return refillsVBars(m) ? refillVBars(m, out, MATERIALS, slats) : out;
+}
+
+function stretchedModel(m: CustomModel, widthMm: number, heightMm: number): CustomModel {
   if (m.parts.some(isFramePart) && (Math.abs(m.widthMm - widthMm) > 1e-9 || Math.abs(m.heightMm - heightMm) > 1e-9)) {
     const r = resizeWithFrame(m, widthMm, heightMm, MATERIALS);
     if (!('error' in r)) return applyGuides(r, MATERIALS);
@@ -76,12 +84,12 @@ export function scaledModel(m: CustomModel, widthMm: number, heightMm: number): 
 
 const SCALED = new Map<string, { m: CustomModel; mats: Material[]; model: CustomModel }>();
 
-export function customPartsFor(modelId: string, widthMm: number, heightMm: number, color: string): ResolvedPart[] {
+export function customPartsFor(modelId: string, widthMm: number, heightMm: number, color: string, slats?: SlatOverride): ResolvedPart[] {
   const m = REG.get(modelId);
   if (!m) return [];
-  const key = `${modelId}|${widthMm}|${heightMm}`;
+  const key = `${modelId}|${widthMm}|${heightMm}|${slats ? `${slats.leftMm ?? ''}/${slats.rightMm ?? ''}/${slats.gapMm ?? ''}` : ''}`;
   let c = SCALED.get(key);
-  if (!c || c.m !== m || c.mats !== MATERIALS) { c = { m, mats: MATERIALS, model: scaledModel(m, widthMm, heightMm) }; if (SCALED.size > 200) SCALED.clear(); SCALED.set(key, c); }
+  if (!c || c.m !== m || c.mats !== MATERIALS) { c = { m, mats: MATERIALS, model: scaledModel(m, widthMm, heightMm, slats) }; if (SCALED.size > 200) SCALED.clear(); SCALED.set(key, c); }
   return resolveParts({ ...c.model, color }, MATERIALS);
 }
 
@@ -192,3 +200,13 @@ export function customSpec(m: CustomModel): SpecPart[] {
   }
   return spec;
 }
+
+/** Raspored uspravnih letvica modela na polju ili krilu zadate veličine (broj, odstojanja od ivica, razmak); null kad model nema takve letvice. */
+export function customSlatLayout(modelId: string, widthMm: number, heightMm: number, slats?: SlatOverride): { count: number; left: number; right: number; gap: number } | null {
+  const m = REG.get(modelId);
+  if (!m || !refillsVBars(m)) return null;
+  return slatLayoutOf(scaledModel(m, widthMm, heightMm, slats), MATERIALS);
+}
+
+// registar modela živi u modulu: pri razvojnoj izmeni ovog fajla (HMR) bi ostao prazan dok se modeli ne promene, pa se stranica ponovo učitava
+if (import.meta.hot) import.meta.hot.accept(() => window.location.reload());

@@ -145,10 +145,12 @@ function RailArtPanel({ url, rail, axisWidthMm, heightMm, rodCount }: { url: str
 export function PanelBody(props: PanelProps) {
   // ručno nacrtan model: isti delovi kao na crtežu (profili izvučeni iz preseka), razvučeni na veličinu polja
   if (FENCE_MODELS[props.modelId].style === 'custom') {
-    const resolved = customPartsFor(props.modelId, props.widthMm, props.heightMm, colorHex(props.color));
+    // razmak od poda: ispuna se podiže, a visina crteža se smanjuje za toliko
+    const up = Math.min(Math.max(0, props.params.liftMm ?? 0), Math.max(0, props.heightMm - 100));
+    const resolved = customPartsFor(props.modelId, props.widthMm, props.heightMm - up, colorHex(props.color), props.params.slats);
     const zMid = props.centerZ ? zExtent(resolved)?.mid ?? 0 : 0;
     return (
-      <group position={[-s(props.widthMm) / 2, 0, -s(zMid)]} scale={s(1)}>
+      <group position={[-s(props.widthMm) / 2, s(up), -s(zMid)]} scale={s(1)}>
         {resolved.map((r) => <PartMesh key={r.part.id} part={r.part} shape={r.shape} hex={r.hex} materialKey={r.material ? materialKey(r.material) : 'x'} selected={false} />)}
       </group>
     );

@@ -63,7 +63,7 @@ export function slidingDrawnItems(it: Gate, li: Pick<LaidOutItem, 'clearWidth'>,
   const model = spec.drawnLeaf ? customModelOf(it.infillModelId) : undefined;
   if (model) {
     // nazivi uloga iz razvučenog modela (ram se pri promeni mera pravi iznova, pa delovi rama imaju nove ID-ove)
-    const rps = customPartsFor(it.infillModelId, W, fh, it.color);
+    const rps = customPartsFor(it.infillModelId, W, fh, it.color, it.params.slats);
     const roles = customPartRoles({ ...model, widthMm: W, heightMm: fh, parts: rps.map((r) => r.part) });
     const left = Math.min(D(0), D(W));
     for (const r of rps) {

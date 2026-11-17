@@ -18,7 +18,7 @@ import { defaultGateConfig, gateClearWidth, gateConfigFromGate, gateFieldsFromMo
 import { postHalfSum } from '../domain/geometry/layout';
 import { builtinToCustom } from '../domain/models/fromBuiltin';
 import { cleanMaterialName } from '../domain/models/materialTitle';
-import { createFence, createGate, createProject, nowIso } from '../domain/models/factories';
+import { createFence, createGate, createProject, DEFAULT_FENCE_WIDTH_MM, nowIso } from '../domain/models/factories';
 import { emptyHistory, recordChange, redo as redoH, undo as undoH, type History } from '../domain/models/history';
 import type {
   AppSettings, Customer, FenceModelId, FenceSection, Gate, GateType, LayoutItem, Material, Post, Project, SlidingTemplate,
@@ -384,13 +384,6 @@ export const useAppStore = create<AppState>((set, get) => {
     applyRemote(patch) {
       set((s) => {
         const out: Partial<AppState> = {};
-        if (patch.projects) {
-          const up = patch.projects.upsert.filter((p) => !p.modelDraft).map(migrateProject).map(dropUnknownModels);
-          const projects = mergeById(s.projects, up, patch.projects.remove);
-          if (projects !== s.projects) out.projects = projects;
-          // otvoren projekat koji je obrisan u bazi se zatvara
-          if (s.editor.projectId && !projects.some((p) => p.id === s.editor.projectId)) out.editor = emptyEditor();
-        }
         if (patch.customers) {
           const customers = mergeById(s.customers, patch.customers.upsert, patch.customers.remove);
           if (customers !== s.customers) out.customers = customers;
@@ -400,6 +393,22 @@ export const useAppStore = create<AppState>((set, get) => {
           if (materials !== s.materials) out.materials = materials;
         }
         if (patch.settings) out.settings = patch.settings;
+        // modeli iz baze se registruju PRE provere projekata: inače bi projekat koji koristi nacrtani model (koji ovaj uređaj još nema) bio
+        // vraćen na podrazumevani model, a prikaz bi pao na nepoznatom modelu i sinhronizacija bi stala sa greškom
+        if (patch.settings || out.materials) registerCustomModels((out.settings ?? s.settings).customModels, out.materials ?? s.materials);
+        if (patch.projects) {
+          const up = patch.projects.upsert.filter((p) => !p.modelDraft).map(migrateProject);
+          const projects = mergeById(s.projects, up, patch.projects.remove);
+          if (projects !== s.projects) out.projects = projects;
+          // otvoren projekat koji je obrisan u bazi se zatvara
+          if (s.editor.projectId && !projects.some((p) => p.id === s.editor.projectId)) out.editor = emptyEditor();
+        }
+        // posle izmene modela: elementi (i izabrani model) čiji model više ne postoji prelaze na podrazumevani, da se ništa ne ruši
+        const base = out.projects ?? s.projects;
+        const fixed = base.map(dropUnknownModels);
+        if (fixed.some((p, i) => p !== base[i])) out.projects = fixed;
+        const ed = out.editor ?? s.editor;
+        if (!(ed.activeModelId in FENCE_MODELS)) out.editor = { ...ed, activeModelId: DEFAULT_MODEL_ID };
         return out;
       });
     },
@@ -410,7 +419,9 @@ export const useAppStore = create<AppState>((set, get) => {
       const items: LayoutItem[] = [];
       if (opts.modelId) items.push(createFence({ modelId: opts.modelId }));
       if (opts.startGate && !isTerraceModel(opts.modelId ?? DEFAULT_MODEL_ID)) items.push(createGate(opts.startGate, { infillModelId: opts.modelId ?? DEFAULT_MODEL_ID }));
-      const p = createProject(opts.name ?? 'Novi projekat', items, opts.customerId ?? null);
+      let p = createProject(opts.name ?? 'Novi projekat', items, opts.customerId ?? null);
+      // univerzalna početna mera platna: svetla širina 1500 mm (ograde za terase zadržavaju svoje mere)
+      if (opts.modelId && !isTerraceModel(opts.modelId)) p = setOuterWidth(p, items[0].id, DEFAULT_FENCE_WIDTH_MM + 2 * postHalfSum(p, 0));
       p.quoteNo = nextQuoteNo(get().projects);
       p.settings.pricing = { ...get().settings.pricing };
       set((s) => ({

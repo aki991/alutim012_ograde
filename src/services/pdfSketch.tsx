@@ -75,7 +75,7 @@ export function elementModel(project: Project, idx: number, materials: Material[
   try {
     if (it.kind === 'fence') {
       const src = customModelOf(it.modelId);
-      const model = src ? scaledModel(src, it.widthMm, it.heightMm) : builtinToCustom(it.modelId as FenceModelId, materials, `sk_${idx}`, it.widthMm, it.heightMm);
+      const model = src ? scaledModel(src, it.widthMm, it.heightMm, it.params.slats) : builtinToCustom(it.modelId as FenceModelId, materials, `sk_${idx}`, it.widthMm, it.heightMm);
       return { ...model, name: src?.name ?? model.name };
     }
     const li = layout.items[idx];
@@ -87,7 +87,7 @@ export function elementModel(project: Project, idx: number, materials: Material[
       w = Math.round(res.W); h = Math.round(res.frameHeight);
     }
     const src = customModelOf(it.infillModelId);
-    const model = src ? scaledModel(src, w, h) : builtinToCustom(it.infillModelId as FenceModelId, materials, `skg_${idx}`, w, h);
+    const model = src ? scaledModel(src, w, h, it.params.slats) : builtinToCustom(it.infillModelId as FenceModelId, materials, `skg_${idx}`, w, h);
     return { ...model, name: src?.name ?? model.name, widthMm: w, heightMm: h };
   } catch { return null; }
 }

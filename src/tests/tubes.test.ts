@@ -94,19 +94,19 @@ describe('uske horizontalne letvice: kvadratne cevi 30×20 u U profilima 20×20 
 });
 
 describe('uske horizontalne letvice: dodavanje u prazan projekat', () => {
-  it('ograda 600 mm visine sa svetlom širinom 400 mm, kapija 1400 mm, stubovi iste visine kao element', () => {
+  it('ograda 1200 mm visine sa svetlom širinom 1500 mm, kapija 1600 mm, stubovi iste visine kao element', () => {
     const p = createProject('t');
     useAppStore.setState((s) => ({ ready: true, projects: [p], editor: { ...s.editor, projectId: p.id, activeModelId: 'h_narrow' } }));
     const st = useAppStore.getState();
     st.addElement({ kind: 'fence', modelId: 'h_narrow' });
     let cur = useAppStore.getState().projects[0];
     const l = computeLayout(cur);
-    expect(cur.items[0].heightMm).toBe(600);
-    expect(Math.round(l.items[0].clearWidth)).toBe(400);
-    expect(cur.posts.map((x) => x.heightMm)).toEqual([600, 600]);
+    expect(cur.items[0].heightMm).toBe(1200);
+    expect(Math.round(l.items[0].clearWidth)).toBe(1500);
+    expect(cur.posts.map((x) => x.heightMm)).toEqual([1200, 1200]);
     useAppStore.getState().addElement({ kind: 'gate', gateType: 'single', modelId: 'h_narrow' });
     cur = useAppStore.getState().projects[0];
-    expect(cur.items[1].heightMm).toBe(1400);
-    expect(cur.posts.map((x) => x.heightMm)).toEqual([600, 1400, 1400]);
+    expect(cur.items[1].heightMm).toBe(1600);
+    expect(cur.posts.map((x) => x.heightMm)).toEqual([1200, 1600, 1600]);
   });
 });

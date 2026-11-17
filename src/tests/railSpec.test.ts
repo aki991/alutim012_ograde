@@ -44,7 +44,7 @@ describe('model 04: sastavnica i krojna lista', () => {
     expect(sheet.posts).toHaveLength(4);
     const bom = buildBom(p, SEED_MATERIALS);
     expect(bom.filter((l) => l.missingPrice)).toEqual([]);
-    expect(bom.find((l) => l.materialId === 'mat_pega_06')!.geometricQty).toBeCloseTo(4 * 1.6, 3);
+    expect(bom.find((l) => l.materialId === 'mat_pega_06')!.geometricQty).toBeCloseTo(4 * 1.2, 3);
     expect(bom.find((l) => l.materialId === 'mat_pega_eco_11')!.geometricQty).toBe(4); // po jedan na svakom stubu niza
     expect(bom.some((l) => l.materialId === 'mat_post_alu')).toBe(false);
     expect(buildCutList(p)).toEqual([]); // opšta krojna lista ne dupliraju model 04
