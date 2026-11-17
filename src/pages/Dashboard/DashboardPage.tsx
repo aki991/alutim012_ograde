@@ -2,20 +2,33 @@ import { ArrowRight, Calculator, FileText, FolderOpen, PencilRuler, Plus, Settin
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { PHOTOS } from '../../assets/photos';
+import { CustomModelThumb } from '../../components/designer/PartsSvg';
 import { ActionsMenu, ModelThumb, ProjectThumb, StatusPill } from '../../components/ui/Common';
 import { ConfirmDialog } from '../../components/ui/Modal';
+import type { FenceModelDef } from '../../domain/models/catalog';
+import { allFenceModels, customModelOf, effectiveModelId } from '../../domain/models/customRegistry';
 import { computePrice } from '../../domain/pricing/calc';
-import type { FenceModelId, GateType } from '../../domain/models/types';
+import type { Project } from '../../domain/models/types';
 import { useAppStore, useListedProjects } from '../../store/useAppStore';
 import { fmtDate, fmtMoney } from '../../utils/units';
 
-const POPULAR: { name: string; modelId: FenceModelId; photo: string | null; gate?: GateType }[] = [
-  { name: 'Crna — uske letvice', modelId: 'h_narrow', photo: null },
-  { name: 'Antracit — žaluzine', modelId: 'louver_dark', photo: null },
-  { name: 'Braon — zaobljeni vrhovi', modelId: 'picket_brown', photo: null },
-  { name: 'Panel sa srebrnim linijama', modelId: 'panel_lines', photo: null },
-  { name: 'Kapija sa lamelama', modelId: 'louver_dark', photo: 'kapija-lamele', gate: 'sliding' },
-];
+/** koliko modela se prikazuje u „Popularnim modelima“ */
+const POPULAR_COUNT = 5;
+
+/**
+ * Popularni modeli ograda: stvarni modeli sa stranice „Modeli ograda“ (katalog bez obrisanih, dorađeni umesto originala i ručno
+ * nacrtani). Prvi su oni koji se najviše koriste u projektima, a do pet se dopunjuju redom iz spiska modela.
+ */
+function popularModels(projects: Project[]): FenceModelDef[] {
+  const all = allFenceModels();
+  const used = new Map<string, number>();
+  for (const p of projects) for (const it of p.items) {
+    const id = it.kind === 'fence' ? it.modelId : it.kind === 'gate' ? it.infillModelId : undefined;
+    if (id) used.set(effectiveModelId(id), (used.get(effectiveModelId(id)) ?? 0) + 1);
+  }
+  // stabilno sortiranje: isti broj upotreba čuva redosled sa stranice modela
+  return all.map((m, i) => ({ m, i })).sort((a, b) => (used.get(b.m.id) ?? 0) - (used.get(a.m.id) ?? 0) || a.i - b.i).slice(0, POPULAR_COUNT).map((x) => x.m);
+}
 
 export default function DashboardPage() {
   const navigate = useNavigate();
@@ -42,6 +55,12 @@ export default function DashboardPage() {
     };
   }, [projects, customers, materials, period]);
 
+  // spisak se osvežava kad se modeli nacrtaju, dorade ili obrišu
+  const customModels = useAppStore((s) => s.settings.customModels);
+  const hiddenModels = useAppStore((s) => s.settings.hiddenModels);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const popular = useMemo(() => popularModels(projects), [projects, customModels, hiddenModels]);
+
   const recent = [...projects].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 4);
   const customerName = (id: string | null) => customers.find((c) => c.id === id)?.name ?? '—';
   const startNew = (opts?: Parameters<typeof newProject>[0]) => navigate(`/editor/${newProject(opts)}`);
@@ -61,8 +80,8 @@ export default function DashboardPage() {
         <img src={PHOTOS['horizontal-02'].full} alt="" className="absolute inset-0 w-full h-full object-cover object-[70%_40%]" />
         <div className="absolute inset-0 bg-gradient-to-r from-white via-white/92 to-white/10 sm:via-white/80" />
         <div className="relative p-6 sm:p-12 max-w-[720px]">
-          <h1 className="text-[34px] sm:text-[46px] leading-[1.08] font-extrabold tracking-tight">Projektujte ogradu<br />brzo i jednostavno</h1>
-          <p className="text-[15px] sm:text-lg text-slate-600 mt-4 max-w-[520px]">Unesite dimenzije, izaberite model i automatski dobijte crtež, obračun materijala i cenu.</p>
+          <h1 className="text-[34px] sm:text-[46px] leading-[1.08] font-extrabold tracking-tight">Novi projekat,<br />ponuda ili radni nalog</h1>
+          <p className="text-[15px] sm:text-lg text-slate-600 mt-4 max-w-[520px]">Izaberite kupca i model ograde, unesite mere i dobijate crtež, spisak materijala, cenu i krojnu listu.</p>
           <div className="flex flex-wrap gap-3 mt-7">
             <button className="btn btn-primary !px-6 !py-3.5 text-[15px]" data-testid="hero-new" onClick={() => startNew()}><Plus size={19} />Novi projekat</button>
             <button className="btn !px-6 !py-3.5 text-[15px] bg-white" data-testid="hero-projects" onClick={() => navigate('/projekti')}><FolderOpen size={19} />Pogledaj projekte</button>
@@ -90,14 +109,25 @@ export default function DashboardPage() {
           <h2 className="text-xl font-bold">Popularni modeli ograda</h2>
           <Link to="/modeli" className="text-sm font-medium text-primary inline-flex items-center gap-1">Pogledaj sve modele <ArrowRight size={14} /></Link>
         </div>
-        <div className={`grid gap-3 grid-cols-2 md:grid-cols-3 ${POPULAR.length === 5 ? 'xl:grid-cols-5' : 'xl:grid-cols-6'}`}>
-          {POPULAR.map((m) => (
-            <button key={m.name} data-testid="popular-model" className="text-left group" onClick={() => startNew({ modelId: m.modelId, name: m.name, startGate: m.gate })}>
-              <div className="relative aspect-[4/2.7] rounded-xl overflow-hidden border border-line bg-slate-100"><div className="absolute inset-0"><ModelThumb photo={m.photo} modelId={m.modelId} className="group-hover:scale-[1.03] transition-transform duration-300" /></div></div>
-              <div className="text-[13px] font-semibold mt-2">{m.name}</div>
-            </button>
-          ))}
-        </div>
+        {popular.length === 0 ? (
+          <p className="text-sm text-muted card p-4" data-testid="popular-empty">Nema modela ograda. Nacrtajte model na stranici „Modeli ograda“ (dugme „Napravi model“).</p>
+        ) : (
+          <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
+            {popular.map((m) => {
+              const drawn = customModelOf(m.id);
+              return (
+                <button key={m.id} data-testid="popular-model" className="text-left group" onClick={() => startNew({ modelId: m.id, name: m.name })}>
+                  <div className="relative aspect-[4/2.7] rounded-xl overflow-hidden border border-line bg-slate-100">
+                    <div className="absolute inset-0">
+                      {drawn ? <div className="w-full h-full bg-[#eef2f6] p-2"><CustomModelThumb model={drawn} materials={materials} /></div> : <ModelThumb modelId={m.id} className="group-hover:scale-[1.03] transition-transform duration-300" />}
+                    </div>
+                  </div>
+                  <div className="text-[13px] font-semibold mt-2">{m.name}</div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       <div className="grid gap-5 xl:grid-cols-[1.55fr_1fr]">
