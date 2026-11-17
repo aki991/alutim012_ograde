@@ -6,6 +6,7 @@ import { CalcModal } from '../../components/editor/CalcModal';
 import { EditorCanvas } from '../../components/editor/EditorCanvas';
 import { PropertiesPanel } from '../../components/editor/PropertiesPanel';
 import { Field, SelectField, TextField } from '../../components/forms/Fields';
+import { CustomerField } from '../../components/forms/CustomerField';
 import { Modal } from '../../components/ui/Modal';
 import { STATUS_LABELS, projectModelId } from '../../domain/models/catalog';
 import { newItemFor } from '../../domain/geometry/newItem';
@@ -146,8 +147,8 @@ function EditorWorkspace({ navigateAway }: { navigateAway: () => void }) {
       {editData && (
         <Modal title="Podaci o projektu / kupcu" onClose={() => setEditData(false)} footer={<button className="btn btn-primary" data-testid="project-edit-done" onClick={() => setEditData(false)}>Gotovo</button>}>
           <TextField label="Naziv projekta" value={project.name} testId="edit-name" onChange={(v) => useAppStore.getState().mutate((p) => ({ ...p, name: v, updatedAt: new Date().toISOString() }), 'name')} />
-          <SelectField label="Kupac" testId="edit-customer" value={project.customerId ?? ''} options={[{ value: '', label: '— nije izabran —' }, ...customers.map((c) => ({ value: c.id, label: c.name }))]}
-            onChange={(v) => useAppStore.getState().mutate((p) => ({ ...p, customerId: v || null, updatedAt: new Date().toISOString() }))} />
+          <CustomerField testId="edit-customer" value={project.customerId}
+            onChange={(v) => useAppStore.getState().mutate((p) => ({ ...p, customerId: v, updatedAt: new Date().toISOString() }))} />
           <SelectField label="Status" testId="edit-status" value={project.status} options={(Object.keys(STATUS_LABELS) as ProjectStatus[]).map((v) => ({ value: v, label: STATUS_LABELS[v] }))}
             onChange={(v) => useAppStore.getState().mutate((p) => ({ ...p, status: v, updatedAt: new Date().toISOString() }))} />
           <TextField label="Broj ponude" value={project.quoteNo} testId="edit-quote" onChange={(v) => useAppStore.getState().mutate((p) => ({ ...p, quoteNo: v, updatedAt: new Date().toISOString() }), 'quote')} />
@@ -163,8 +164,8 @@ function EditorWorkspace({ navigateAway }: { navigateAway: () => void }) {
             <section className="card p-4 min-w-0" data-testid="project-data">
               <div className="flex items-center justify-between mb-2"><h3 className="font-bold text-[15px]">Podaci o projektu / kupcu</h3>
                 <button className="text-sm text-primary font-medium inline-flex items-center gap-1 hover:underline" data-testid="project-edit" onClick={() => setEditData(true)}><Pencil size={13} />Uredi</button></div>
-              <SelectField label="Kupac" testId="project-customer" value={project.customerId ?? ''} options={[{ value: '', label: '— nije izabran —' }, ...customers.map((c) => ({ value: c.id, label: c.name }))]}
-                onChange={(v) => useAppStore.getState().mutate((p) => ({ ...p, customerId: v || null, updatedAt: new Date().toISOString() }))} />
+              <CustomerField testId="project-customer" value={project.customerId}
+                onChange={(v) => useAppStore.getState().mutate((p) => ({ ...p, customerId: v, updatedAt: new Date().toISOString() }))} />
               {customer && <div className="text-[12.5px] text-muted pb-1">{customer.address} · {customer.phone}</div>}
               <SelectField label="Status" testId="project-status" value={project.status} options={(Object.keys(STATUS_LABELS) as ProjectStatus[]).map((v) => ({ value: v, label: STATUS_LABELS[v] }))}
                 onChange={(v) => useAppStore.getState().mutate((p) => ({ ...p, status: v, updatedAt: new Date().toISOString() }))} />

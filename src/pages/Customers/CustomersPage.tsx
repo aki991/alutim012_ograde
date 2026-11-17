@@ -1,15 +1,12 @@
 import { Plus, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { TextField } from '../../components/forms/Fields';
+import { blankCustomer as blank, CustomerFormModal } from '../../components/forms/CustomerField';
 import { EmptyState, Page, PageHeader, StatusPill } from '../../components/ui/Common';
-import { ConfirmDialog, Modal } from '../../components/ui/Modal';
+import { ConfirmDialog } from '../../components/ui/Modal';
 import type { Customer } from '../../domain/models/types';
 import { useAppStore, useListedProjects } from '../../store/useAppStore';
-import { uid } from '../../utils/id';
 import { fmtDate } from '../../utils/units';
-
-const blank = (): Customer => ({ id: uid('cust'), name: '', phone: '', email: '', address: '', note: '' });
 
 export default function CustomersPage() {
   const customers = useAppStore((s) => s.customers);
@@ -25,8 +22,6 @@ export default function CustomersPage() {
     const t = q.trim().toLowerCase();
     return customers.filter((c) => !t || [c.name, c.phone, c.email, c.address].some((x) => x.toLowerCase().includes(t)));
   }, [customers, q]);
-  const emailOk = !form?.email || /^\S+@\S+\.\S+$/.test(form.email);
-  const valid = form && form.name.trim().length > 0 && emailOk;
   const linked = (id: string) => projects.filter((p) => p.customerId === id);
 
   return (
@@ -61,16 +56,7 @@ export default function CustomersPage() {
           )}
         </aside>
       </div>
-      {form && (
-        <Modal title={isNew ? 'Novi kupac' : 'Izmena kupca'} onClose={() => setForm(null)} footer={<><button className="btn" onClick={() => setForm(null)}>Otkaži</button><button className="btn btn-primary" disabled={!valid} data-testid="customer-save" onClick={() => { upsertCustomer({ ...form, name: form.name.trim() }); setForm(null); }}>Sačuvaj</button></>}>
-          <TextField label="Ime ili naziv firme" testId="customer-name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} />
-          <TextField label="Telefon" value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} />
-          <TextField label="Email" value={form.email} onChange={(v) => setForm({ ...form, email: v })} />
-          {!emailOk && <div role="alert" className="text-xs text-[#b42318] pb-1">Email adresa nije ispravna.</div>}
-          <TextField label="Adresa" value={form.address} onChange={(v) => setForm({ ...form, address: v })} />
-          <TextField label="Napomena" multiline value={form.note} onChange={(v) => setForm({ ...form, note: v })} />
-        </Modal>
-      )}
+      {form && <CustomerFormModal initial={form} isNew={isNew} onClose={() => setForm(null)} onSave={(c) => { upsertCustomer(c); setForm(null); }} />}
       {del && <ConfirmDialog title="Brisanje kupca" danger confirmLabel="Obriši" message={<>Obrisati kupca <b>{del.name}</b>? {linked(del.id).length > 0 ? `Povezani projekti (${linked(del.id).length}) ostaju, ali bez kupca.` : ''}</>} onCancel={() => setDel(null)} onConfirm={() => { removeCustomer(del.id); if (openId === del.id) setOpenId(null); setDel(null); }} />}
     </Page>
   );

@@ -42,7 +42,7 @@ export function insertItem(p: Project, item: LayoutItem, index: number): Project
   }
   const existing = p.items.find((it) => it.kind === 'fence' && !!FENCE_MODELS[it.modelId].rods)?.id;
   const template = p.posts[Math.min(at, p.posts.length - 1)] ?? createPost();
-  posts.splice(at, 0, createPost({ type: template.type === 'gate' ? 'aluminium' : template.type, widthMm: template.custom ? template.widthMm : Math.min(template.widthMm, 100), heightMm: template.heightMm, color: template.color, mounting: template.mounting, plinthMm: template.plinthMm, custom: template.custom, round: template.round, capTop: template.capTop, capBottom: template.capBottom }));
+  posts.splice(at, 0, createPost({ type: template.type === 'gate' ? 'aluminium' : template.type, widthMm: template.custom ? template.widthMm : Math.min(template.widthMm, 100), heightMm: template.heightMm, color: template.color, mounting: template.mounting, plinthMm: template.plinthMm, custom: template.custom, round: template.round, capTop: template.capTop, capBottom: template.capBottom, capTopMaterialId: template.capTopMaterialId, capBottomMaterialId: template.capBottomMaterialId }));
   return touch(applyPostRoles(syncRodCounts({ ...p, items, posts }, existing)));
 }
 
@@ -314,8 +314,21 @@ function keepClearWidths(before: Project, after: Project): Project {
 
 export function updatePost(p: Project, id: string, patch: Partial<Post>): Project {
   // samo promena ugla skretanja ne znači da je stub ručno prilagođen (automatika tipa i visine ostaje)
-  const turnOnly = Object.keys(patch).every((k) => k === 'turnDeg' || k === 'capTop' || k === 'capBottom');
+  const turnOnly = Object.keys(patch).every((k) => k === 'turnDeg' || k === 'capTop' || k === 'capBottom' || k === 'capTopMaterialId' || k === 'capBottomMaterialId');
   const posts = p.posts.map((x) => (x.id === id ? { ...withConcreteWidth(x, patch), ...patch, ...(turnOnly ? {} : { custom: true }), ...(patch.heightMm !== undefined ? { heightCustom: true } : {}) } : x));
+  return touch(keepClearWidths(p, applyPostRoles({ ...p, posts })));
+}
+
+/**
+ * „Osnovni stub“: stub se vraća kakav je bio pre prvog šablona (snimak u `basePost`). Stub bez snimka (šablon izabran pre ove
+ * mogućnosti) postaje automatski stub kakav se postavlja uz ogradu: metalni, uobičajene širine, visina i boja prate ogradu.
+ */
+export function restoreBasePosts(p: Project, ids: string[]): Project {
+  const posts = p.posts.map((x): Post => {
+    if (!ids.includes(x.id)) return x;
+    if (x.basePost) return { ...x.basePost, id: x.id, turnDeg: x.turnDeg };
+    return createPost({ id: x.id, turnDeg: x.turnDeg, heightMm: x.heightMm, color: x.color, finish: x.finish });
+  });
   return touch(keepClearWidths(p, applyPostRoles({ ...p, posts })));
 }
 

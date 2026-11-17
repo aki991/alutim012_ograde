@@ -5,7 +5,7 @@ import { gateLeafPoses } from '../../domain/geometry/gates';
 import { leafHeightOf } from '../../domain/gates/slidingLayout';
 import { AlertTriangle, ArrowLeft, ArrowRight, Copy, Trash2, Calculator, FileDown, Scissors, ClipboardList, Ruler } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
-import { autoFillToFixedTotal, changeColor, changeFinish, isTotalLocked, setItemWidthLock, setTotalLock, indexOfItem, resetPostHeights, setAllColors, setAllFinishes, setAllGatesOwnPosts, setAllPlinths, removeItemPlinths, setItemPlinthHeight, setRl10Params, resetRl10Params, setTubesParams, resetTubesParams, setPlinthWidth, setAllHeights, updateItem, updatePost } from '../../domain/geometry/operations';
+import { autoFillToFixedTotal, changeColor, changeFinish, isTotalLocked, setItemWidthLock, setTotalLock, indexOfItem, resetPostHeights, restoreBasePosts, setAllColors, setAllFinishes, setAllGatesOwnPosts, setAllPlinths, removeItemPlinths, setItemPlinthHeight, setRl10Params, resetRl10Params, setTubesParams, resetTubesParams, setPlinthWidth, setAllHeights, updateItem, updatePost } from '../../domain/geometry/operations';
 import { computeInfill } from '../../domain/geometry/infill';
 import { MAX_TURN_DEG } from '../../domain/geometry/plan';
 import { cornerInfo } from '../../domain/geometry/corner';
@@ -27,7 +27,7 @@ import { fmtMm, fmtMoney, fmtNum } from '../../utils/units';
 import { ColorField, NumberField, SegmentedField, SelectField, TextField, ToggleField } from '../forms/Fields';
 import { ConfirmDialog } from '../ui/Modal';
 import { PdfPreviewModal } from './PdfPreviewModal';
-import { templateFromPost } from '../../domain/models/postTemplates';
+import { capOptions, capPatch, templateFromPost, type CapSlot } from '../../domain/models/postTemplates';
 import { uid } from '../../utils/id';
 import { GateDesignModal } from '../gates/GateDesignModal';
 import { SlidingPanel } from '../gates/SlidingPanel';
@@ -538,6 +538,8 @@ let applyToAllPosts = true;
 
 /** Tipovi stuba koji se biraju ručno (stub kapije i dekorativni stub se ne nude; stub kapije se postavlja sam uz kapiju). */
 const MANUAL_POST_TYPES = ['aluminium', 'concrete', 'concrete_plinth'];
+/** vrednost u meniju „Šablon stuba“ koja vraća stub kakav je bio kad je ograda postavljena */
+const BASE_POST = '__base__';
 
 function PostPanel({ project, id }: { project: Project; id: string }) {
   const [allPosts, setAllPostsState] = useState(applyToAllPosts);
@@ -595,9 +597,15 @@ function PostPanel({ project, id }: { project: Project; id: string }) {
       <div className="py-1.5" data-testid="post-template">
         <div className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.45fr)] items-center gap-x-3">
           <label className="label" htmlFor="post-template-select">Šablon stuba</label>
-          <select id="post-template-select" className="input" data-testid="post-template-select" value={p.templateId && templates.some((t) => t.id === p.templateId) ? p.templateId : ''}
-            onChange={(e) => { if (e.target.value) { st.applyPostTemplate(e.target.value, targets); setTplMsg(null); } }}>
-            <option value="">{templates.length ? '— izaberite šablon —' : '— nema šablona —'}</option>
+          <select id="post-template-select" className="input" data-testid="post-template-select" value={p.templateId && templates.some((t) => t.id === p.templateId) ? p.templateId : p.templateId ? '' : BASE_POST}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === BASE_POST) st.mutate((pr) => restoreBasePosts(pr, targets.filter((tid) => { const q = pr.posts.find((x) => x.id === tid); return q && (q.templateId || q.basePost); })));
+              else if (v) st.applyPostTemplate(v, targets);
+              setTplMsg(null);
+            }}>
+            {p.templateId && !templates.some((t) => t.id === p.templateId) && <option value="">— šablon je obrisan —</option>}
+            <option value={BASE_POST}>Osnovni stub</option>
             {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
         </div>
@@ -625,6 +633,22 @@ function PostPanel({ project, id }: { project: Project; id: string }) {
       {/* betonski stub ima boju betona: izbor boje menjao bi boju aluminijumskog stuba koji nije ni postavljen */}
       {!targets.every((tid) => { const t = project.posts.find((x) => x.id === tid)?.type; return t === 'concrete' || t === 'concrete_plinth'; }) && <ColorField testId="post-color" value={p.color} onChange={(c) => applyPatch({ color: c })} finish={p.finish} onFinishChange={(f) => applyPatch({ finish: f })} />}
       <SelectField label="Montaža" value={p.mounting} options={Object.entries(MOUNTING_LABELS).map(([value, label]) => ({ value: value as typeof p.mounting, label }))} onChange={(v) => applyPatch({ mounting: v })} />
+      {(() => {
+        // kapa i dno stuba: samo materijali iz cenovnika koji dolaze u obzir za ovaj stub (vrsta dela i mera preseka); po stubu
+        if (p.type === 'concrete' || p.type === 'concrete_plinth' || p.type === 'decorative') return null;
+        const size = p.round ? `Ø${fmtNum(p.widthMm, 0)}` : `${fmtNum(p.widthMm, 0)}×${fmtNum(p.widthMm, 0)}`;
+        const top = capOptions(materials, p, 'top', p.capTopMaterialId);
+        const bottom = capOptions(materials, p, 'bottom', p.capBottomMaterialId);
+        const pick = (slot: CapSlot, v: string) => applyPatch(capPatch(materials, slot, v));
+        return (
+          <div data-testid="post-caps">
+            <SelectField label="Kapa (vrh)" testId="post-cap-top" value={p.capTopMaterialId ?? ''} options={top.options} onChange={(v) => pick('top', v)} />
+            {top.empty && <div className="text-[11.5px] text-muted pb-1">U cenovniku nema kape ni čepa za stub {size} mm.</div>}
+            <SelectField label="Dno (rozetna)" testId="post-cap-bottom" value={p.capBottomMaterialId ?? ''} options={bottom.options} onChange={(v) => pick('bottom', v)} />
+            {bottom.empty && <div className="text-[11.5px] text-muted pb-1">U cenovniku nema rozetne ni stope za stub {size} mm.</div>}
+          </div>
+        );
+      })()}
     </Section>
   );
 }

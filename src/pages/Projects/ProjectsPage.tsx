@@ -2,6 +2,7 @@ import { Download, FileUp, Search } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { SelectField, TextField } from '../../components/forms/Fields';
+import { CustomerField } from '../../components/forms/CustomerField';
 import { ActionsMenu, EmptyState, Page, PageHeader, ProjectThumb, StatusPill } from '../../components/ui/Common';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
 import { STATUS_LABELS } from '../../domain/models/catalog';
@@ -97,7 +98,7 @@ export default function ProjectsPage() {
       {editing && (
         <Modal title="Izmena projekta" onClose={() => setEditing(null)} footer={<button className="btn btn-primary" onClick={() => setEditing(null)}>Gotovo</button>}>
           <TextField label="Naziv" value={editing.name} onChange={(v) => { setEditing({ ...editing, name: v }); patchProject(editing.id, { name: v }); }} />
-          <SelectField label="Kupac" value={editing.customerId ?? ''} options={[{ value: '', label: '— nije izabran —' }, ...customers.map((c) => ({ value: c.id, label: c.name }))]} onChange={(v) => { setEditing({ ...editing, customerId: v || null }); patchProject(editing.id, { customerId: v || null }); }} />
+          <CustomerField value={editing.customerId} onChange={(v) => { setEditing({ ...editing, customerId: v }); patchProject(editing.id, { customerId: v }); }} />
           <SelectField label="Status" value={editing.status} options={(Object.keys(STATUS_LABELS) as ProjectStatus[]).map((s) => ({ value: s, label: STATUS_LABELS[s] }))} onChange={(v) => { setEditing({ ...editing, status: v }); patchProject(editing.id, { status: v }); }} />
           <TextField label="Napomena" multiline value={editing.notes} onChange={(v) => { setEditing({ ...editing, notes: v }); patchProject(editing.id, { notes: v }); }} />
         </Modal>

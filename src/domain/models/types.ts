@@ -157,10 +157,16 @@ export interface Post {
   /** Kapa na vrhu i u dnu stuba uz model „tarabica“ (katalog Ekoluka Key); bez izbora: ravna kapa gore, dole bez kape */
   capTop?: PostCap;
   capBottom?: PostCap;
+  /** kapa na vrhu stuba: materijal iz cenovnika (obračunava se po komadu) */
+  capTopMaterialId?: string;
+  /** dno stuba (rozetna, stopa …): materijal iz cenovnika (obračunava se po komadu) */
+  capBottomMaterialId?: string;
   /** materijal stuba iz cenovnika (presek); bez vrednosti obračunava se uobičajen stub prema tipu */
   materialId?: string;
   /** šablon stuba iz koga je stub napravljen (Podešavanja → Šabloni stubova) */
   templateId?: string;
+  /** stub kakav je bio pre prvog šablona (izbor „Osnovni stub“ ga vraća) */
+  basePost?: Omit<Post, 'id' | 'turnDeg' | 'basePost'>;
 }
 
 /** Šablon stuba: sačuvan tip, presek, mere, montaža, boja i kape; bira se za stub u projektu. */
@@ -178,11 +184,14 @@ export interface PostTemplate {
   round?: boolean;
   capTop?: PostCap;
   capBottom?: PostCap;
+  capTopMaterialId?: string;
+  capBottomMaterialId?: string;
   /** visina podnožja (samo „betonski stub sa podnožjem“) */
   plinthMm?: Mm;
 }
 
-export type PostCap = 'none' | 'flat' | 'pyramid' | 'rosette';
+/** oblik kape na crtežu: vrh ravna ili šiljata (pismo), dno rozetna ili stopa (ploča) */
+export type PostCap = 'none' | 'flat' | 'pyramid' | 'rosette' | 'plate';
 
 /** Koliko stub viri iznad najviše susedne ispune. */
 export const POST_EXTRA_MM = 200;

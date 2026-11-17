@@ -8,6 +8,7 @@ import { computeLayout, isSpacer } from '../../domain/geometry/layout';
 import { cornerInfo, isCorner } from '../../domain/geometry/corner';
 import { colorHex, GATE_LABELS, hasLightFence, leftPostShared, postDrawnByItems, rodCountFor } from '../../domain/models/catalog';
 import type { Post, Project } from '../../domain/models/types';
+import { postCapBottom, postCapTop } from '../../domain/models/postTemplates';
 import { fmtMm } from '../../utils/units';
 import { itemLabel } from '../../utils/labels';
 import { InfillArt, SvgDefs } from '../fences/InfillArt';
@@ -153,6 +154,36 @@ export function fitScale(project: Project, containerW: number, containerH: numbe
   return Math.min(0.5, Math.max(0.02, Math.min(sw, sh)));
 }
 
+/** Kapa na vrhu i rozetna / stopa u dnu metalnog stuba (prednji pogled): u boji stuba, malo tamnija, sa ivicom da se vidi na stubu. */
+function PostCapsArt({ post, x, d, top, groundY, fill }: { post: Post; x: number; d: number; top: number; groundY: number; fill: string }) {
+  const capT = postCapTop(post);
+  const capB = postCapBottom(post);
+  if (!capT && !capB) return null;
+  const edge = { stroke: '#000', strokeOpacity: 0.45, strokeWidth: 3, strokeLinejoin: 'round' as const };
+  const o = Math.max(4, d * 0.06); // prepust kape preko stuba
+  const band = Math.max(14, d * 0.16);
+  const l = x - d / 2 - o;
+  const r = x + d / 2 + o;
+  return (
+    <g data-testid="post-caps-art">
+      {capT === 'flat' && <><rect x={l} y={top - band} width={r - l} height={band} fill={fill} /><rect x={l} y={top - band} width={r - l} height={band} fill="none" {...edge} /></>}
+      {capT === 'pyramid' && (
+        <>
+          <rect x={l} y={top - band} width={r - l} height={band} fill={fill} />
+          <polygon points={`${l},${top - band} ${r},${top - band} ${x},${top - band - d * 0.38}`} fill={fill} />
+          <path d={`M${l} ${top} V${top - band} L${x} ${top - band - d * 0.38} L${r} ${top - band} V${top} Z M${l} ${top - band} H${r}`} fill="none" {...edge} />
+        </>
+      )}
+      {capB === 'rosette' && (() => {
+        const h = Math.max(18, d * 0.18); const ob = d * 0.22; const ot = Math.max(3, d * 0.04);
+        const pts = `${x - d / 2 - ob},${groundY} ${x + d / 2 + ob},${groundY} ${x + d / 2 + ot},${groundY - h} ${x - d / 2 - ot},${groundY - h}`;
+        return <><polygon points={pts} fill={fill} /><polygon points={pts} fill="none" {...edge} /></>;
+      })()}
+      {capB === 'plate' && <><rect x={x - d * 0.9} y={groundY - 12} width={d * 1.8} height={12} fill={fill} /><rect x={x - d * 0.9} y={groundY - 12} width={d * 1.8} height={12} fill="none" {...edge} /></>}
+    </g>
+  );
+}
+
 function PostArt({ post, x, groundY, hex, plinthMm = 0 }: { post: Post; x: number; groundY: number; hex: string; /** visina podnožja uz betonski stub: stub i podnožje se crtaju kao jedna livena celina (bez šava, ivica samo iznad podnožja) */ plinthMm?: number }) {
   const w = post.widthMm;
   const top = groundY - post.heightMm;
@@ -169,9 +200,10 @@ function PostArt({ post, x, groundY, hex, plinthMm = 0 }: { post: Post; x: numbe
       <g>
         <rect x={l} y={top} width={d} height={post.heightMm} rx={d / 2.6} fill={body} />
         <rect x={l} y={top} width={d} height={post.heightMm} rx={d / 2.6} fill="url(#shade-v)" />
-        <rect x={l - 4} y={top - 10} width={d + 8} height={26} rx="10" fill="#9aa3ad" />
-        <rect x={l - 14} y={groundY - 24} width={d + 28} height={24} rx="8" fill="#8f98a2" />
+        {!postCapTop(post) && <rect x={l - 4} y={top - 10} width={d + 8} height={26} rx="10" fill="#9aa3ad" />}
+        {!postCapBottom(post) && <rect x={l - 14} y={groundY - 24} width={d + 28} height={24} rx="8" fill="#8f98a2" />}
         <rect x={l} y={top} width={d} height={post.heightMm} rx={d / 2.6} fill="none" stroke="#000" strokeOpacity="0.3" strokeWidth="3" />
+        <PostCapsArt post={post} x={x} d={d} top={top} groundY={groundY} fill={body} />
       </g>
     );
   }
@@ -180,6 +212,7 @@ function PostArt({ post, x, groundY, hex, plinthMm = 0 }: { post: Post; x: numbe
     return (
       <g>
         <rect x={left} y={top} width={w} height={post.heightMm} fill={body} />
+        <PostCapsArt post={post} x={x} d={w} top={top} groundY={groundY} fill={body} />
       </g>
     );
   }

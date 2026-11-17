@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { computeLayout } from '../domain/geometry/layout';
 import { createFence, createGate, createProject } from '../domain/models/factories';
-import { applyPostTemplate, postMaterialLine, postPatchFromTemplate, postSizeFromMaterial, templateFromPost } from '../domain/models/postTemplates';
+import { applyPostTemplate, capShapeOf, postCapMaterials, postCapTop, postMaterialLine, postPatchFromTemplate, postSizeFromMaterial, templateFromPost } from '../domain/models/postTemplates';
+import { restoreBasePosts, updatePost } from '../domain/geometry/operations';
 import type { Material, PostTemplate } from '../domain/models/types';
 import { buildBom } from '../domain/pricing/calc';
 import { buildCuttingList } from '../domain/pricing/cutting';
@@ -74,6 +75,53 @@ describe('šabloni stubova', () => {
     const plan = list.profiles.find((x) => x.profile === tube.name);
     expect(plan?.pieceCount).toBe(3);
     expect(list.positions.map((x) => x.key)).toEqual(expect.arrayContaining(['S1', 'S2', 'S3']));
+  });
+
+  it('„Osnovni stub“ vraća stub kapije kakav je bio pre šablona', () => {
+    const p = createProject('K', [createFence({ widthMm: 2000 }), createGate('pedestrian', { widthMm: 1000 })]);
+    const i = p.posts.findIndex((x) => x.type === 'gate');
+    const before = p.posts[i];
+    const t1 = applyPostTemplate(p, [before.id], { ...TPL, type: 'concrete', widthMm: 250 });
+    const t2 = applyPostTemplate(t1, [before.id], TPL);
+    const back = restoreBasePosts(t2, [before.id]).posts[i];
+    expect(back).toMatchObject({ id: before.id, type: before.type, widthMm: before.widthMm, color: before.color, mounting: before.mounting, custom: false });
+    expect(back.templateId).toBeUndefined();
+    expect(back.materialId).toBeUndefined();
+    expect(back.basePost).toBeUndefined();
+  });
+
+  it('„Osnovni stub“ bez snimka postaje automatski stub', () => {
+    const p = createProject('K', [createFence({ widthMm: 2000 }), createGate('pedestrian', { widthMm: 1000 })]);
+    const i = p.posts.findIndex((x) => x.type === 'gate');
+    const old = { ...p, posts: p.posts.map((x, k) => (k === i ? { ...x, type: 'concrete' as const, widthMm: 250, custom: true, templateId: 'pt_x', materialId: tube.id } : x)) };
+    const back = restoreBasePosts(old, [p.posts[i].id]).posts[i];
+    expect(back).toMatchObject({ type: 'gate', widthMm: p.posts[i].widthMm, custom: false });
+    expect(back.templateId).toBeUndefined();
+  });
+
+  it('kapa i dno stuba iz cenovnika: nude se komadni delovi, obračun po stubu', () => {
+    const cap: Material = { id: 'm_cap', sku: 'K1', name: 'Kapa ravna 100×100 mm', category: 'okov', unit: 'kom', unitPrice: 200, wastePercent: 0, demo: false };
+    const rose: Material = { id: 'm_rose', sku: 'K2', name: 'Rozetna 100×100 mm', category: 'okov', unit: 'kom', unitPrice: 150, wastePercent: 0, demo: false };
+    const lock: Material = { id: 'm_lock', sku: 'B1', name: 'Brava za kapiju', category: 'okov', unit: 'kom', unitPrice: 900, wastePercent: 0, demo: false };
+    const cap80: Material = { ...cap, id: 'm_cap80', name: 'Kapa ravna 80×80 mm' };
+    const peak: Material = { ...cap, id: 'm_peak', name: 'Kapa pismo 100×100 mm' };
+    const slat: Material = { ...cap, id: 'm_slat', name: 'Čep tarabice pun 100×100 mm' };
+    const foot: Material = { ...cap, id: 'm_foot', name: 'Stopa stuba Ø40, spoljna prirubnica' };
+    const all = [lock, rose, cap, cap80, peak, slat, foot, tube];
+    // vrh: samo kape za presek stuba; dno: samo rozetne / stope za presek stuba
+    expect(postCapMaterials(all, { widthMm: 100 }, 'top').map((m) => m.id)).toEqual(['m_peak', 'm_cap']);
+    expect(postCapMaterials(all, { widthMm: 100 }, 'bottom').map((m) => m.id)).toEqual(['m_rose']);
+    expect(postCapMaterials(all, { widthMm: 80 }, 'top').map((m) => m.id)).toEqual(['m_cap80']);
+    expect(postCapMaterials(all, { widthMm: 40, round: true }, 'bottom').map((m) => m.id)).toEqual(['m_foot']);
+    expect(postCapMaterials(all, { widthMm: 120 }, 'top')).toEqual([]);
+    expect([capShapeOf(cap, 'top'), capShapeOf(peak, 'top'), capShapeOf(rose, 'bottom'), capShapeOf(foot, 'bottom')]).toEqual(['flat', 'pyramid', 'rosette', 'plate']);
+    expect(postCapTop({ capTop: 'flat' })).toBeNull();
+    const base = project();
+    const p = base.posts.reduce((q, x) => updatePost(q, x.id, { capTopMaterialId: cap.id, capBottomMaterialId: rose.id }), base);
+    expect(p.posts.every((x) => !x.custom)).toBe(true);
+    const bom = buildBom(p, [tube, cap, rose]);
+    expect(bom.find((l) => l.materialId === cap.id)?.geometricQty).toBe(3);
+    expect(bom.find((l) => l.materialId === rose.id)?.geometricQty).toBe(3);
   });
 
   it('betonski stub i stub bez materijala se obračunavaju kao do sada', () => {

@@ -178,7 +178,11 @@ export function buildBom(project: Project, materials: Material[], specs?: ModelS
   }
   const railPosts = new Set(hasCustomSpec('rail_black', specs) ? [] : project.posts.map((_, i) => i).filter((i) => [project.items[i - 1], project.items[i]].some((x) => x && isRail04(x))));
   project.posts.forEach((p, i) => {
-    if (railPosts.has(i) || layout.posts[i]?.hidden) return;
+    if (layout.posts[i]?.hidden) return;
+    // kapa na vrhu i dno stuba izabrani u panelu stuba (materijal iz cenovnika, po komadu)
+    if (p.capTopMaterialId && p.type !== 'concrete' && p.type !== 'concrete_plinth') add('Stubovi', p.capTopMaterialId, 1);
+    if (p.capBottomMaterialId && p.type !== 'concrete' && p.type !== 'concrete_plinth') add('Stubovi', p.capBottomMaterialId, 1);
+    if (railPosts.has(i)) return;
     // stubovi RL10 se obračunavaju u sastavnici modela (cev, lajsna, veza, stopa, sidra, nosači, završeci)
     if (isRl10Post(project.items, i) && !hasCustomSpec('rail_inox', specs)) return;
     // betonski stubovi se crtaju (na šta se kapija montira), ali ne ulaze u ponudu: aluminijumska radnja ih ne izvodi

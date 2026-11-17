@@ -2,7 +2,7 @@ import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { colorHex, MOUNTING_LABELS, normalizeColorKey, POST_LABELS } from '../../domain/models/catalog';
 import { materialShape } from '../../domain/models/materialShape';
-import { newPostTemplate, postSizeFromMaterial } from '../../domain/models/postTemplates';
+import { capOptions, capPatch, newPostTemplate, postSizeFromMaterial } from '../../domain/models/postTemplates';
 import type { MountingType, PostTemplate, PostType } from '../../domain/models/types';
 import { PLINTH_DEFAULT_MM } from '../../domain/models/types';
 import { LIMITS } from '../../domain/validation/limits';
@@ -58,6 +58,20 @@ export function PostTemplateForm({ initial, onSave, onClose }: { initial: PostTe
       <SelectField label="Montaža" testId="post-tpl-mounting" value={t.mounting} options={(Object.entries(MOUNTING_LABELS) as [MountingType, string][]).map(([value, label]) => ({ value, label }))} onChange={(v) => setT({ ...t, mounting: v })} />
       {!concrete && <ColorField testId="post-tpl-color" value={t.color} onChange={(c) => setT({ ...t, color: c })} finish={t.finish} onFinishChange={(f) => setT({ ...t, finish: f })} />}
       {!concrete && <ToggleField label="Okrugao stub" testId="post-tpl-round" checked={!!t.round} onChange={(v) => setT({ ...t, round: v || undefined })} />}
+      {t.type !== 'concrete' && t.type !== 'concrete_plinth' && t.type !== 'decorative' && (() => {
+        // kapa i dno: samo delovi iz cenovnika koji odgovaraju preseku stuba iz šablona
+        const size = t.round ? `Ø${t.widthMm}` : `${t.widthMm}×${t.widthMm}`;
+        const top = capOptions(materials, t, 'top', t.capTopMaterialId);
+        const bottom = capOptions(materials, t, 'bottom', t.capBottomMaterialId);
+        return (
+          <div data-testid="post-tpl-caps">
+            <SelectField label="Kapa (vrh)" testId="post-tpl-cap-top" value={t.capTopMaterialId ?? ''} options={top.options} onChange={(v) => setT({ ...t, ...capPatch(materials, 'top', v) })} />
+            {top.empty && <div className="text-[11.5px] text-muted pb-1">U cenovniku nema kape ni čepa za stub {size} mm.</div>}
+            <SelectField label="Dno (rozetna)" testId="post-tpl-cap-bottom" value={t.capBottomMaterialId ?? ''} options={bottom.options} onChange={(v) => setT({ ...t, ...capPatch(materials, 'bottom', v) })} />
+            {bottom.empty && <div className="text-[11.5px] text-muted pb-1">U cenovniku nema rozetne ni stope za stub {size} mm.</div>}
+          </div>
+        );
+      })()}
       <p className="text-[12px] text-muted mt-1">Šablon se bira u panelu stuba u projektu (izabran stub → „Šablon stuba“). Prazna visina znači da stub prati visinu ograde.</p>
     </Modal>
   );
