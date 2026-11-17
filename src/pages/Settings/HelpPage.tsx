@@ -1,4 +1,6 @@
-import { isValidElement, type ReactNode } from 'react';
+import { BookOpen } from 'lucide-react';
+import { isValidElement, useState, type ReactNode } from 'react';
+import { ManualDownloadButton, ManualViewer } from '../../components/help/ManualViewer';
 import { FEATURES } from '../../config/features';
 import { Page, PageHeader } from '../../components/ui/Common';
 
@@ -81,10 +83,9 @@ const TOPICS: Topic[] = [
   {
     title: 'Model i specifikacija',
     items: [
-      <>Na strani <b>Modeli ograda</b>, <b>Koristi model</b> primenjuje model, a <b>Specifikacija</b> otvara spisak elemenata modela koji ulaze u krojnu listu i cenu.</>,
+      <>Na strani <b>Modeli ograda</b>, <b>Koristi model</b> primenjuje model, a <b>Sastavnica</b> otvara spisak svega što ide uz polje ograde (delovi crteža i dodat materijal, npr. vijci); to ulazi u spisak materijala, krojnu listu i cenu.</>,
       <>Na kartici modela (strana <b>Modeli ograda</b>) pišu <b>vertikalni i horizontalni profili</b> od kojih se model pravi.</>,
       <>U specifikaciji dodajete i brišete elemente; količina i dužina reza su formule (+ − × / zagrade, ceil, floor, round, min, max, abs). Promenljive su navedene u prozoru, npr. N, W, H.</>,
-      <>Dok specifikacija modela 04 i 08 nije sačuvana, važi njihova detaljna sastavnica; čuvanjem se prelazi na obračun po polju. „Vrati podrazumevanu" briše izmenu.</>,
     ],
   },
   {
@@ -163,9 +164,9 @@ const TOPICS: Topic[] = [
   {
     title: 'Podešavanja i podaci',
     items: [
-      <>Prijava: u prvo polje se upisuje <b>e-mail ili korisničko ime</b>. Administrator u <b>Podešavanja → Korisnici</b> pravi naloge (korisničko ime ili e-mail, ime i prezime, lozinka od najmanje 8 znakova), vidi spisak, menja naloge (ime, prijava, nova lozinka, uloga) i briše ih; novi korisnik se odmah prijavljuje tim podacima i nema ovlašćenja administratora. Ne možete obrisati sebe ni poslednjeg administratora. Podešavanje servera: <code>docs/korisnici.md</code>.</>,
+      <>Prijava: u prvo polje se upisuje <b>e-mail ili korisničko ime</b>. Šef u <b>Podešavanja → Nalozi zaposlenih</b> pravi naloge (korisničko ime ili e-mail, ime i prezime, početna lozinka od najmanje 8 znakova, uloga šef ili majstor), menja ih i briše. Svoju lozinku svako menja sam: <b>Podešavanja → Firma i korisnik → Promeni lozinku</b>. Isti nalozi važe i u Stolariji.</>,
       <>Podrazumevana kalkulacija (zarada, popust, PDV, rad i montaža) važi samo za projekte koji se naprave posle izmene; postojeći projekti zadržavaju svoja podešavanja.</>,
-      <>Podaci (projekti, kupci, cenovnik, podešavanja) čuvaju se u IndexedDB bazi ovog pregledača. Nema servera ni naloga.</>,
+      <>Podaci (projekti, kupci, cenovnik, modeli, podešavanja) čuvaju se na uređaju i šalju u zajedničku bazu firme; bez interneta se radi normalno, a izmene se šalju kad se veza vrati.</>,
       <><b>Zvončić</b> u zaglavlju prikazuje specifikacije koje su radnici sa terena poslali iz aplikacije za stolare: broj nepročitanih na zvončiću, a klik na stavku otvara specifikaciju (PDF) sa dugmetom <b>Preuzmi PDF</b>. Proverava se na svakih minut dok je prozor otvoren. Detalji: <code>docs/specifikacije-sa-terena.md</code>.</>,
       <>Statistika na nadzornoj tabli računa se iz lokalno sačuvanih podataka; vrednost ponuda je zbir ukupnih iznosa sa PDV-om za projekte u statusu „Ponuda".</>,
     ],
@@ -173,9 +174,23 @@ const TOPICS: Topic[] = [
 ];
 
 export default function HelpPage() {
+  const [manual, setManual] = useState(false);
   return (
     <Page>
       <PageHeader title="Pomoć" subtitle="Podsetnik kako radi editor, crtanje, kalkulacija i podešavanja." />
+      {/* kompletno uputstvo za upotrebu: pregled u aplikaciji ili PDF za preuzimanje i štampu */}
+      <section className="card p-5 mb-5 flex flex-wrap items-center gap-4" data-testid="help-manual">
+        <span className="w-12 h-12 rounded-2xl grid place-items-center shrink-0 bg-primary-50 text-primary"><BookOpen size={24} /></span>
+        <span className="min-w-0 flex-1">
+          <b className="block text-[16px]">Uputstvo za upotrebu</b>
+          <span className="block text-sm text-muted">Kompletno uputstvo korak po korak: prijava, projekti, crtanje ograde i kapija, modeli, cene, magacin, krojna lista, radni nalog i skica.</span>
+        </span>
+        <span className="flex flex-wrap items-center gap-2">
+          <button className="btn btn-primary" data-testid="manual-open" onClick={() => setManual(true)}><BookOpen size={16} />Pregledaj uputstvo</button>
+          <ManualDownloadButton />
+        </span>
+      </section>
+      {manual && <ManualViewer onClose={() => setManual(false)} />}
       {/* sadržaj: klik vodi na poglavlje */}
       <nav className="card p-4 mb-5" aria-label="Sadržaj pomoći" data-testid="help-toc">
         <div className="text-[13px] font-semibold text-muted mb-2">Sadržaj</div>
