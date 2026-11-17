@@ -12,7 +12,7 @@ import { resetPostHeights } from '../../domain/geometry/operations';
 import { applyPostRoles } from '../../domain/models/factories';
 import { LIMITS } from '../../domain/validation/limits';
 import { postDimsOf } from '../../domain/gates/gateModels';
-import { evaluateSpec, specFor, specVars } from '../../domain/models/spec';
+import { evaluateItemSpec, specFor, type SpecContext } from '../../domain/models/spec';
 import { gateLeafPoses, gateSpecWidth } from '../../domain/geometry/gates';
 import { gateBomLines } from '../../domain/pricing/calc';
 import type { Gate, Material, Project } from '../../domain/models/types';
@@ -426,10 +426,10 @@ function ProductionTab({ project, index, g, materials, clearStart, clearEnd }: {
   const layout = computeLayout(project);
   const li = layout.items[index];
   const infill = useMemo(() => {
-    const vars = specVars({ modelId: g.infillModelId, slopeFactor: 1, widthMm: gateSpecWidth(g, li.clearWidth), heightMm: leafHeightOf(g), axisMm: li.axisEnd - li.axisStart, params: g.params, doubleGate: g.gateType === 'double', leafWidthsMm: g.gateType === 'double' ? gateLeafPoses(g, clearStart, clearEnd, 1).map((q) => q.widthMm) : undefined });
+    const specCtx: SpecContext = ({ modelId: g.infillModelId, slopeFactor: 1, widthMm: gateSpecWidth(g, li.clearWidth), heightMm: leafHeightOf(g), axisMm: li.axisEnd - li.axisStart, params: g.params, doubleGate: g.gateType === 'double', leafWidthsMm: g.gateType === 'double' ? gateLeafPoses(g, clearStart, clearEnd, 1).map((q) => q.widthMm) : undefined });
     // isti materijal u više delova specifikacije sabira se u jedan red; redovi bez količine se ne prikazuju
     const acc = new Map<string, { name: string; qty: number; unit: string; kgPerM?: number; meters: number }>();
-    for (const ev of evaluateSpec(specFor(g.infillModelId, useAppStore.getState().settings.modelSpecs), vars)) {
+    for (const ev of evaluateItemSpec(specFor(g.infillModelId, useAppStore.getState().settings.modelSpecs), specCtx)) {
       if (!(ev.materialQty > 1e-6)) continue;
       const m = materials.find((x) => x.id === ev.part.materialId);
       const key = m?.id ?? ev.part.name;

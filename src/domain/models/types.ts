@@ -30,7 +30,7 @@ export interface FenceParams {
   /** Samo tarabica: razmak od poda do donjeg kraja tarabica (mm); bez vrednosti važi podrazumevani */
   liftMm?: number;
   /** ručno nacrtan model sa uspravnim letvicama: ručno zadata odstojanja prve i poslednje letvice od ivica i razmak (mm); bez vrednosti važi crtež modela */
-  slats?: { leftMm?: number; rightMm?: number; gapMm?: number };
+  slats?: import('./gateRefill').SlatOverride;
   /** Samo tarabica: luk gornje ivice (mm) — za toliko su najniže tarabice (uz krajeve) kraće od najviše; 0 / bez vrednosti = ravno */
   archMm?: number;
   /** Samo model RL10 (inox prečke): mere delova (rukohvat, stub, veza, prsten, stopa, nosači, prečke); bez vrednosti važe podrazumevane */

@@ -7,7 +7,7 @@ import { ALL_FRAME_SIDES, frameIds, isFramePart, modelWithFrame, modelWithoutFra
 import { GateDesignModal } from '../../components/gates/GateDesignModal';
 import { SlidingAssemblyArt } from '../../components/gates/SlidingAssemblyArt';
 import { SlidingDesignerPanel, SlidingPartButtons } from '../../components/gates/SlidingDesignerPanel';
-import type { SlidingSpec } from '../../domain/gates/slidingAssembly';
+import { closingPostOffset, type SlidingSpec } from '../../domain/gates/slidingAssembly';
 import { placeSliding } from '../../domain/gates/slidingLayout';
 import { compPart, partDef } from '../../domain/gates/slidingParts';
 import { createGate } from '../../domain/models/factories';
@@ -26,7 +26,10 @@ import { MaterialPicker } from '../../components/designer/MaterialPicker';
 import { SketchSvg } from '../../components/designer/Sketch';
 import { downloadSketchPdf, downloadSketchSvg } from '../../services/pdfSketch';
 import { resolveParts, ShapeIcon } from '../../components/designer/PartsSvg';
+import { leafKey, leafSeed } from '../../domain/models/leafSeed';
+import { allFenceModels } from '../../domain/models/customRegistry';
 import { colorHex, FENCE_MODELS, normalizeColorKey } from '../../domain/models/catalog';
+import { GATE_POST_EXTRA_MM } from '../../domain/gates/design';
 import { ColorChartModal, normalizeFavorites } from '../../components/forms/ColorChartModal';
 import { CUSTOM_KIND_LABELS, customBom, newCustomModel, newTerraceModel, repeatPart, setPartsColor, type CustomModel, type CustomPart } from '../../domain/models/custom';
 import { groupHasCaps, layoutVBars, setGroupCaps, vBarGroup, vLayoutInfo } from '../../domain/models/vbars';
@@ -300,7 +303,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
   const saveAsNew = () => {
     const cur = modelRef.current;
     const newId = uid('cm');
-    const { replaces: _r, ...rest } = cur;
+    const { replaces: _r, gateDefault: _gd, ...rest } = cur;
     const copy: CustomModel = { ...rest, id: newId, name: `${cur.name.replace(/ — dorada$/, '')} — nov`, updatedAt: new Date().toISOString() };
     const st = useAppStore.getState();
     const list = (st.settings.customModels ?? []).map((m) => (m.id === cur.id && openedRef.current ? openedRef.current : m));
@@ -375,7 +378,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
    * Izmena crteža. Vraća false (i piše obaveštenje) kad bi izmena napravila preklapanje delova; tada se ništa ne menja.
    * Uklopljene prečke se posle izmene vraćaju unutar svojih U profila.
    */
-  const change = useCallback((fn: (m: CustomModel) => CustomModel, keep = true, norm = true): boolean => {
+  const change = useCallback((fn: (m: CustomModel) => CustomModel, keep = true, norm = true, check = true): boolean => {
     const cur = modelRef.current;
     const raw = fn(cur);
     if (raw === cur) return true;
@@ -383,7 +386,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
     const next = st.model;
     // crtež se pomerio ka početku koordinata: pogled ide za njim, pa deo ostaje na istom mestu na ekranu
     if (st.dx !== 0 || st.dy !== 0) setViewShift((v) => ({ dx: st.dx, dy: st.dy, n: v.n + 1 }));
-    const bad = freeRef.current ? null : checkNewOverlap(cur, next, materialsRef.current);
+    const bad = freeRef.current || !check ? null : checkNewOverlap(cur, next, materialsRef.current);
     if (bad) { setNotice(bad); return false; }
     if (keep) setHist((h) => ({ past: [...h.past.slice(-99), cur], future: [] }));
     const upd = { ...next, updatedAt: new Date().toISOString() };
@@ -437,6 +440,39 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
   const slGate = useMemo(() => (slSpec ? { ...createGate('sliding', { sliding: { ...slSpec, drawnLeaf: true }, heightMm: model.heightMm + slSpec.frameBottomY, opening: model.gate?.opening ?? 'right', color: model.color }), id: model.id } : null), [slSpec, model.heightMm, model.gate?.opening, model.color, model.id]);
   const slPlaced = useMemo(() => (slGate ? placeSliding(slGate, { clearStart: 0, clearEnd: model.widthMm, clearWidth: model.widthMm }) : null), [slGate, model.widthMm]);
   const slBounds = useMemo(() => (slPlaced && slSpec ? { x0: slPlaced.minX, y0: -slSpec.frameBottomY - 320, x1: slPlaced.maxX, y1: model.heightMm + 160 } : null), [slPlaced, slSpec, model.heightMm]);
+  // stubovi uz kapiju (obavezni): kapija se uvek crta između dva stuba. Mere (debljina, visina) su iz „Mere kapije“ ili se zadaju ovde;
+  // bez zadatih mera: širina 120 mm, visina = vrh kapije od poda + 50 mm (kao u projektu). Klizna kapija: stub zatvaranja je tamo gde su
+  // prihvatnik i zasun, stub vođice tamo gde je vođica (krilo prelazi preko stubova), kao u projektu.
+  const gateFloor = slSpec ? slSpec.frameBottomY : 0;
+  const posts = useMemo(() => {
+    if (model.kind !== 'gate') return null;
+    const total = model.heightMm + gateFloor;
+    const dim = [0, 1].map((k) => ({ w: model.gate?.posts?.[k]?.widthMm ?? 120, h: model.gate?.posts?.[k]?.heightMm ?? total + GATE_POST_EXTRA_MM }));
+    let center = [-dim[0].w / 2, model.widthMm + dim[1].w / 2];
+    if (slSpec && slPlaced) {
+      const left = model.gate?.opening === 'left';
+      const closeIdx = left ? 1 : 0;
+      const closeX = slPlaced.X(closingPostOffset(slSpec, dim[closeIdx].w));
+      const guideX = slPlaced.X(slPlaced.res.at('guidePost'));
+      center = closeIdx === 0 ? [closeX, guideX] : [guideX, closeX];
+    }
+    return dim.map((d, k) => ({ ...d, x: center[k] - d.w / 2 }));
+  }, [model.kind, model.heightMm, model.widthMm, model.gate?.posts, model.gate?.opening, gateFloor, slSpec, slPlaced]);
+  const postsArt = posts ? (
+    <g data-testid="designer-gate-posts" pointerEvents="none">
+      {posts.map((q, i) => (
+        <rect key={i} data-testid={`designer-post-${i ? 'right' : 'left'}`} x={q.x} y={gateFloor - q.h} width={q.w} height={q.h} fill={colorHex(model.color)} stroke="#1f2937" strokeWidth={1} vectorEffect="non-scaling-stroke" />
+      ))}
+    </g>
+  ) : null;
+  const postBounds = posts ? { x0: Math.min(...posts.map((q) => q.x)) - 100, y0: gateFloor - Math.max(posts[0].h, posts[1].h) - 100, x1: Math.max(...posts.map((q) => q.x + q.w), model.widthMm) + 100, y1: gateFloor + 100 } : null;
+  const dBounds = slBounds && postBounds ? { x0: Math.min(slBounds.x0, postBounds.x0), y0: Math.min(slBounds.y0, postBounds.y0), x1: Math.max(slBounds.x1, postBounds.x1), y1: Math.max(slBounds.y1, postBounds.y1) } : slBounds ?? postBounds;
+  /** debljina i visina stuba (levi / desni, gledano sa ulice): upisuje se uz model i prenosi na stubove u projektu */
+  const setPost = (k: 0 | 1, patch: { widthMm?: number; heightMm?: number }) => change((m) => {
+    const cur: [import('../../domain/gates/gateModels').GatePostDims, import('../../domain/gates/gateModels').GatePostDims] = [{ ...(m.gate?.posts?.[0] ?? {}) }, { ...(m.gate?.posts?.[1] ?? {}) }];
+    cur[k] = { ...cur[k], ...patch };
+    return m.gate ? { ...m, gate: { ...m.gate, posts: cur } } : m;
+  });
   const patchSliding = (p: Partial<SlidingSpec>) => change((m) => (m.gate?.sliding ? { ...m, gate: { ...m.gate, sliding: { ...m.gate.sliding, ...p } } } : m));
   const hwSelValid = hwSel && slSpec && partDef(hwSel) ? hwSel : null;
   const total = bom.reduce((s, l) => s + l.total, 0);
@@ -537,6 +573,21 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
   };
   /** briše ram dodat dugmetom „Dodaj ram“; mere modela se vraćaju na mere platna */
   /** nova širina / visina celog crteža; sa ramom se razvlači platno unutar njega (ram zadržava debljinu) */
+  /** krilo kapije se crta od izabranog modela ograde (kao „Doradi“ modela): zamenjuje trenutne delove, može da se poništi */
+  const seedLeaf = (fenceId: string) => {
+    const cur = modelRef.current;
+    const key = leafKey(fenceId, useAppStore.getState().settings.customModels);
+    const seed = leafSeed(key, useAppStore.getState().settings.customModels, materialsRef.current, uid('lp'), cur.widthMm, cur.heightMm);
+    if ('error' in seed) { setNotice(seed.error); return; }
+    // delovi ograde iz kataloga ne prolaze proveru preklapanja novog dela (uvedeni kao celina), pa se ona preskače
+    change((m) => ({ ...m, parts: seed.parts, color: seed.color, liftMm: seed.liftMm, barClearance: seed.barClearance, leafModelId: key, gateDefault: m.leafModelId === key ? m.gateDefault : undefined }), true, true, false);
+    // mere modela proizlaze iz crteža: ako je crtež izabrane ograde niži/uži od krila, vraća se na traženu veličinu krila
+    const got = modelRef.current;
+    if (Math.abs(got.heightMm - cur.heightMm) > 0.5 || Math.abs(got.widthMm - cur.widthMm) > 0.5) { const r = resizeWithFrame(modelRef.current, cur.widthMm, cur.heightMm, materialsRef.current); if (!('error' in r)) change(() => r); }
+    // delovi modela ograde koji nemaju materijal u cenovniku ne mogu da se nacrtaju kako treba
+    const missing = [...new Set(seed.parts.map((p) => p.materialId).filter((id) => !materialsRef.current.some((m) => m.id === id)))];
+    if (missing.length) setNotice(`Krilo je nacrtano, ali ${missing.length} materijala iz modela ograde nema u cenovniku (${missing.slice(0, 3).join(', ')}${missing.length > 3 ? ' …' : ''}). Ti delovi nisu pravi profili: zamenite ih materijalima iz cenovnika.`);
+  };
   const resizeTo = (w: number, h: number): boolean => {
     const next = resizeWithFrame(modelRef.current, w, h, materialsRef.current);
     if ('error' in next) { setNotice(next.error); return false; }
@@ -650,10 +701,32 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
             {(Object.keys(GATE_TYPE_LABELS) as GateType[]).map((t) => <option key={t} value={t}>{GATE_TYPE_LABELS[t]}</option>)}
           </select>
         )}
+        {model.kind === 'gate' && view !== 'mere' && (
+          <label className="flex items-center gap-1.5 text-[13px]" title="Krilo kapije se odmah crta od izabranog modela ograde (može da se poništi). Kapija se u editoru nudi uz tu ogradu.">Model ograde
+            <select className="input !w-auto !py-1.5" aria-label="Model ograde" data-testid="designer-leaf-model" value={model.leafModelId ?? ''} onChange={(e) => seedLeaf(e.target.value)}>
+              {!model.leafModelId && <option value="" disabled>— izaberite —</option>}
+              {(() => { const cms = settings.customModels; const seen = new Set<string>(); return allFenceModels().filter((m) => !m.terrace).map((m) => ({ key: leafKey(m.id, cms), name: m.name })).filter((o) => !seen.has(o.key) && !!seen.add(o.key)).map((o) => <option key={o.key} value={o.key}>{o.name}</option>); })()}
+            </select>
+          </label>
+        )}
+        {model.kind === 'gate' && view !== 'mere' && (
+          <button type="button" className={`btn btn-sm ${model.gateDefault ? 'btn-primary' : ''}`} data-testid="designer-gate-default" aria-pressed={!!model.gateDefault} disabled={!model.leafModelId}
+            title={model.leafModelId ? 'U editoru je ova kapija unapred izabrana kad se dodaje kapija ovog tipa uz izabranu ogradu' : 'Prvo izaberite model ograde'}
+            onClick={() => { const on = !modelRef.current.gateDefault; change((m) => ({ ...m, gateDefault: on || undefined }), false); const st = useAppStore.getState(); const list = st.settings.customModels ?? []; if (on) st.updateSettings({ customModels: list.map((x) => (x.id !== modelRef.current.id && x.kind === 'gate' && x.gate?.gateType === modelRef.current.gate?.gateType && x.leafModelId === modelRef.current.leafModelId && x.gate?.sliding?.support === modelRef.current.gate?.sliding?.support ? { ...x, gateDefault: undefined } : x)) }); }}>
+            {model.gateDefault ? 'Podrazumevana' : 'Koristi kao podrazumevanu'}
+          </button>
+        )}
         {view !== 'mere' && <>
         <Num label="Širina" value={model.widthMm} min={50} max={20000} testId="designer-width" onChange={(v) => resizeTo(Math.round(v), modelRef.current.heightMm)} />
         {/* klizna kapija: visina je ukupna visina od tla (do vrha krila), isto kao ograda i stubovi; crtež je krilo, podignuto od tla */}
         <Num label="Visina" value={model.heightMm + (slSpec?.frameBottomY ?? 0)} min={50 + (slSpec?.frameBottomY ?? 0)} max={6000} testId="designer-height" onChange={(v) => resizeTo(modelRef.current.widthMm, Math.round(v) - (modelRef.current.gate?.sliding?.frameBottomY ?? 0))} />
+        {posts && ([0, 1] as const).map((k) => (
+          <span key={k} className="inline-flex items-center gap-1.5" data-testid={`designer-post-fields-${k ? 'right' : 'left'}`}>
+            <span className="text-[12.5px] font-semibold">{k ? 'Desni' : 'Levi'} stub</span>
+            <Num label="Deb." value={posts[k].w} min={30} max={600} testId={`designer-post-w-${k}`} onChange={(v) => setPost(k, { widthMm: Math.round(v) })} />
+            <Num label="Vis." value={posts[k].h} min={200} max={6000} testId={`designer-post-h-${k}`} onChange={(v) => setPost(k, { heightMm: Math.round(v) })} />
+          </span>
+        ))}
         <label className="flex items-center gap-1.5 text-[13px]" title="Ukupna širina i visina crteža; mere modela proizlaze iz crteža"><input type="checkbox" checked={showDims} data-testid="designer-dims" onChange={(e) => setShowDims(e.target.checked)} />Kote</label>
         <button type="button" className="input !w-auto !py-1.5 inline-flex items-center gap-2" aria-label={`Boja: ${normalizeColorKey(model.color)}. Otvori kartu boja`} data-testid="designer-color" onClick={() => setChartOpen(true)}>
           <span className="w-5 h-5 rounded-full ring-1 ring-black/20" style={{ background: colorHex(model.color) }} />{normalizeColorKey(model.color)}
@@ -789,8 +862,8 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
           {view !== '3d' && view !== 'skica' && (
             <Designer2D model={model} parts={parts} active={active} selectedIds={selectedIds} ortho={ortho} gridMm={grid} snapObjects={snapObjects}
               onSelect={(ids) => { setSelectedIds(ids); if (ids.length) setHwSel(null); }} placing={placingParts} onPlace={placeClip} showDims={showDims} viewShift={viewShift} fitTick={fitTick} onMoveEnd={() => change((m) => ({ ...m }), false)}
-              groundY={slSpec ? slSpec.frameBottomY : 0} extraBounds={slBounds} onOverlayPick={(c, member) => { const k = compPart(c); if (k) { setHwSel(k); setSelectedIds([]); useAppStore.getState().setTailSel(model.id, k === 'tail' ? member ?? null : null); } }}
-              underlay={slGate ? (px) => <SlidingAssemblyArt gate={slGate} clearStart={0} clearEnd={model.widthMm} clearWidth={model.widthMm} floorY={slSpec!.frameBottomY} px={px} hex={colorHex(model.color)} noLeaf layer="back" testPct={0} onPartClick={() => undefined} highlight={hwSelValid ? partDef(hwSelValid)?.comps : undefined} /> : undefined}
+              groundY={slSpec ? slSpec.frameBottomY : 0} extraBounds={dBounds} onOverlayPick={(c, member) => { const k = compPart(c); if (k) { setHwSel(k); setSelectedIds([]); useAppStore.getState().setTailSel(model.id, k === 'tail' ? member ?? null : null); } }}
+              underlay={slGate || postsArt ? (px) => <>{postsArt}{slGate && <SlidingAssemblyArt gate={slGate} clearStart={0} clearEnd={model.widthMm} clearWidth={model.widthMm} floorY={slSpec!.frameBottomY} px={px} hex={colorHex(model.color)} noLeaf layer="back" testPct={0} onPartClick={() => undefined} highlight={hwSelValid ? partDef(hwSelValid)?.comps : undefined} />}</> : undefined}
               overlay={slGate ? (px) => <SlidingAssemblyArt gate={slGate} clearStart={0} clearEnd={model.widthMm} clearWidth={model.widthMm} floorY={slSpec!.frameBottomY} px={px} hex={colorHex(model.color)} noLeaf layer="front" testPct={0} onPartClick={() => undefined} highlight={hwSelValid ? partDef(hwSelValid)?.comps : undefined} /> : undefined}
               onAdd={(p0) => { const p1 = free ? p0 : restOnSurface(modelRef.current, p0, materialsRef.current); const p = layerRef.current === 'off' ? p1 : layerPart(modelRef.current, p1, layerRef.current, materialsRef.current); const next = { ...modelRef.current, parts: [...modelRef.current.parts, p] }; const fitted = !free && p.angleDeg === 0 ? attach(next, p.id, true) : null; if (change(() => fitted ?? next)) setSelectedId(p.id); }}
               onMoveStart={record}
@@ -799,7 +872,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
           {view !== '2d' && view !== 'skica' && (
             <div className={`min-h-0 ${view === 'split' ? 'border-t xl:border-t-0 xl:border-l border-line' : ''}`}>
               <Suspense fallback={<div className="h-full grid place-items-center text-muted text-sm">Učitavanje 3D prikaza…</div>}>
-                <Designer3D model={model} parts={parts} selectedId={selectedId ?? selectedIds[0] ?? null} sliding={slPlaced && slSpec ? { res: slPlaced.res, X: slPlaced.X, hex: colorHex(model.color), groundMm: slSpec.frameBottomY } : null} />
+                <Designer3D model={model} parts={parts} selectedId={selectedId ?? selectedIds[0] ?? null} sliding={slPlaced && slSpec ? { res: slPlaced.res, X: slPlaced.X, hex: colorHex(model.color), groundMm: slSpec.frameBottomY } : null} posts={posts} floorMm={gateFloor} postHex={colorHex(model.color)} />
               </Suspense>
             </div>
           )}

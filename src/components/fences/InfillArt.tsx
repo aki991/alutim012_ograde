@@ -78,7 +78,7 @@ interface InfillProps {
   /** tarabica: luk gornje ivice (mm) */
   arch?: number;
   /** ručno nacrtan model sa uspravnim letvicama: ručno zadata odstojanja od ivica i razmak */
-  slats?: { leftMm?: number; rightMm?: number; gapMm?: number };
+  slats?: import('../../domain/models/gateRefill').SlatOverride;
   /** tarabica: prepust levo i desno kad se razlikuje (krilo dvokrilne kapije nema prepust uz sredinu) */
   edgeOverhang?: [number, number];
   /** ram (okvir sa sve četiri strane, rez 45°) kod modela sa horizontalnim kvadratnim cevima */

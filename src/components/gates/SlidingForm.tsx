@@ -30,6 +30,8 @@ function Seg<T extends string>({ value, options, onChange, testId }: { value: T;
 }
 
 export interface SlidingFormProps {
+  /** umesto polja „Naziv varijante“ (u projektu: izbor modela kapije) */
+  nameSlot?: React.ReactNode;
   spec: SlidingSpec;
   /** svetla širina rama (spoljna širina krila) i visina kapije od tla */
   W: number;
@@ -51,7 +53,7 @@ export interface SlidingFormProps {
  * Sva podešavanja klizne kapije na jednom mestu: mere, proba hoda, provere, svaki deo sa svojim merama, pozicijom, materijalom i brojem
  * komada, i sastavnica. Koristi se u panelu kapije u projektu i u crtežu modela („Doradi“).
  */
-export function SlidingForm({ spec, W, H, opening, onSpec, onWidth, onHeight, onFrameBottom, onOpening, slideId, selectedPart, onSelectPart }: SlidingFormProps) {
+export function SlidingForm({ nameSlot, spec, W, H, opening, onSpec, onWidth, onHeight, onFrameBottom, onOpening, slideId, selectedPart, onSelectPart }: SlidingFormProps) {
   const st = useAppStore.getState();
   const materials = useAppStore((s) => s.materials);
   const pct = useAppStore((s) => s.editor.slideTest[slideId] ?? 0);
@@ -116,9 +118,11 @@ export function SlidingForm({ spec, W, H, opening, onSpec, onWidth, onHeight, on
         <div className="font-semibold" data-testid="sl-variant">{variantTitle(spec)}</div>
         <div className="text-muted">{spec.confirmed ? 'Mere potvrđene na terenu.' : 'Radni nacrt: ilustrativna geometrija — svetli otvor, okov, graničnike i montažne mere potvrditi za stvarni posao.'}</div>
       </div>
-      <label className="flex flex-col gap-1 text-[13px]">Naziv varijante
-        <input className="input !py-1" data-testid="sl-name" value={spec.name} onChange={(e) => onSpec({ name: e.target.value }, 'name')} />
-      </label>
+      {nameSlot ?? (
+        <label className="flex flex-col gap-1 text-[13px]">Naziv varijante
+          <input className="input !py-1" data-testid="sl-name" value={spec.name} onChange={(e) => onSpec({ name: e.target.value }, 'name')} />
+        </label>
+      )}
       <div className="grid gap-1 text-[13px]"><span>Oslonac</span>
         <Seg<SlidingSupport> testId="sl-support" value={spec.support} options={[['ground_rail', 'Na donjoj šini'], ['cantilever', 'Samonoseća']]} onChange={(v) => onSpec({ support: v })} />
       </div>

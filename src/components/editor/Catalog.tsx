@@ -1,12 +1,12 @@
 import { allFenceModels } from '../../domain/models/customRegistry';
 import { Plus } from 'lucide-react';
-import { useMemo } from 'react';
-import { DEFAULT_MODEL_ID, FENCE_MODELS, GATE_LABELS, POST_LABELS, isLightColor, isTerraceModel, projectModelId } from '../../domain/models/catalog';
+import { useMemo, useState } from 'react';
+import { defaultModelId, FENCE_MODELS, GATE_LABELS, POST_LABELS, isLightColor, isTerraceModel, projectModelId } from '../../domain/models/catalog';
 import { createFence, createGate, createOpening, createProject, DEFAULT_FENCE_HEIGHT_MM, DEFAULT_FENCE_WIDTH_MM, DEFAULT_GATE_HEIGHT_MM } from '../../domain/models/factories';
 import { GATE_DEFAULT_WIDTH } from '../../domain/models/catalog';
 import { applyPostType, setOuterWidth } from '../../domain/geometry/operations';
 import { postHalfSum } from '../../domain/geometry/layout';
-import { gateClearWidth, gateFieldsFromModel } from '../../domain/gates/gateModels';
+import { gateClearWidth, gateFieldsFromModel, gateModelsFor } from '../../domain/gates/gateModels';
 import { specFromPreset, type SlidingPresetId } from '../../domain/gates/slidingAssembly';
 import type { CustomModel } from '../../domain/models/custom';
 import type { FenceModelId, Gate, GateType, PostType, Project } from '../../domain/models/types';
@@ -34,10 +34,12 @@ function useMini(build: () => Project, key: string): Project {
   return useMemo(build, [key]);
 }
 
-function CatalogCard({ title, subtitle, thumb, onAdd, onDragStart, testId, addLabel = 'Dodaj', choices }: {
+function CatalogCard({ title, subtitle, thumb, onAdd, onDragStart, testId, addLabel = 'Dodaj', choices, selector }: {
   title: string; subtitle: string; thumb: React.ReactNode; onAdd?: () => void; onDragStart?: (e: React.PointerEvent) => void; testId: string; addLabel?: string;
   /** izbor tipa: umesto jednog dugmeta „Dodaj“ nekoliko dugmadi (npr. ručna / motorna), svako dodaje svoj tip */
   choices?: { label: string; onAdd: () => void; testId: string }[];
+  /** izbor između osnovne kapije i mojih modela kapija (samo kad ih ima za izabranu ogradu) */
+  selector?: { value: string; options: { value: string; label: string }[]; onChange: (v: string) => void };
 }) {
   return (
     <div
@@ -48,6 +50,11 @@ function CatalogCard({ title, subtitle, thumb, onAdd, onDragStart, testId, addLa
       <div className="flex justify-center">{thumb}</div>
       <div className="mt-2 text-[13px] font-semibold leading-tight">{title}</div>
       <div className="text-[11.5px] text-muted leading-snug min-h-[28px] whitespace-pre-line">{subtitle}</div>
+      {selector && (
+        <select className="input !py-1 !text-[12px] mt-1 w-full" aria-label={`Model kapije: ${title}`} data-testid={`${testId}-pick`} value={selector.value} onChange={(e) => selector.onChange(e.target.value)}>
+          {selector.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      )}
       <div className="flex items-center gap-1.5 mt-auto pt-1.5">
         {choices
           ? choices.map((c) => <button key={c.testId} className="btn btn-sm btn-primary flex-1 min-w-0 !py-1.5 !px-1 justify-center" onClick={c.onAdd} data-testid={c.testId} title={`${title}: ${c.label}`}>{c.label}</button>)
@@ -105,14 +112,14 @@ export function ElementThumb({ kind, model, size }: { kind: ThumbKind; model: Fe
 }
 
 /** Sličica modela kapije: kapija iz modela između stubova, isti crtež kao u 2D prikazu. */
-export function GateModelThumb({ model }: { model: CustomModel }) {
+export function GateModelThumb({ model, size }: { model: CustomModel; size?: { width: number; height: number } }) {
   const ok = model.id in FENCE_MODELS;
   const mini = useMini(() => {
-    const g = { ...createGate(model.gate?.gateType ?? 'pedestrian', { infillModelId: (ok ? model.id : DEFAULT_MODEL_ID) as FenceModelId }), ...(gateFieldsFromModel(model) as Partial<Gate>) } as Gate;
+    const g = { ...createGate(model.gate?.gateType ?? 'pedestrian', { infillModelId: (ok ? model.id : defaultModelId()) as FenceModelId }), ...(gateFieldsFromModel(model) as Partial<Gate>) } as Gate;
     const p = createProject('m', [g]);
     return setOuterWidth(p, g.id, gateClearWidth(model) + 2 * postHalfSum(p, 0));
   }, `gm-${model.id}-${model.updatedAt}`);
-  return <MiniThumb project={mini} grey={isLightColor(model.color)} />;
+  return <MiniThumb project={mini} grey={isLightColor(model.color)} {...size} />;
 }
 
 /** Sličica klizne kapije (sklop iz polaznih mera varijante), isti crtež kao u 2D prikazu. */
@@ -165,6 +172,16 @@ export function Catalog({ onBeginDrag }: { onBeginDrag: (source: DragSource, e: 
   };
   const applyPost = (type: PostType) => mutate((p) => applyPostType(p, type, selection?.type === 'post' ? selection.id : undefined));
   const visiblePreset = (id: SlidingPresetId) => !hidden?.includes(`gate:slide:${id}`);
+  // moji modeli kapija nacrtani od izabrane ograde: padajući meni uz osnovnu kapiju; podrazumevana je unapred izabrana
+  const customModels = useAppStore((s) => s.settings.customModels);
+  const [gatePick, setGatePick] = useState<Record<string, string>>({});
+  const gateSelector = (cardId: string, type: GateType, support?: 'ground_rail' | 'cantilever') => {
+    const mine = gateModelsFor(customModels, type, model, support);
+    if (!mine.length) return { chosen: null as string | null, selector: undefined };
+    const value = gatePick[cardId] ?? mine.find((m) => m.gateDefault)?.id ?? '';
+    const chosen = mine.some((m) => m.id === value) ? value : '';
+    return { chosen: chosen || null, selector: { value: chosen, options: [{ value: '', label: 'Osnovna kapija' }, ...mine.map((m) => ({ value: m.id, label: m.name }))], onChange: (v: string) => setGatePick((x) => ({ ...x, [cardId]: v })) } };
+  };
 
   return (
     <section className="card p-3" data-testid="catalog" aria-label="Katalog elemenata">
@@ -186,20 +203,24 @@ ${DEFAULT_FENCE_WIDTH_MM} × ${DEFAULT_FENCE_HEIGHT_MM} mm`}`} thumb={<ElementTh
               onAdd={() => addElement({ kind: 'fence', modelId: model, stair: true })} onDragStart={startDrag({ kind: 'fence', modelId: model, stair: true }, 'Stepenište')} />
           )}
           {!terrace && GATE_CARDS.filter((g) => !hidden?.includes(`gate:${g.type}`)).map((g) => {
-            const spec: NewElementSpec = { kind: 'gate', gateType: g.type, modelId: model };
+            const { chosen, selector } = gateSelector(g.id, g.type);
+            const spec: NewElementSpec = chosen ? { kind: 'gate', gateType: g.type, gateModelId: chosen } : { kind: 'gate', gateType: g.type, modelId: model };
             return (
-              <CatalogCard key={g.id} testId={`cat-gate-${g.id}`} title={g.title} subtitle={`${g.subtitle}
+              <CatalogCard key={g.id} testId={`cat-gate-${g.id}`} selector={selector} title={g.title} subtitle={`${g.subtitle}
 ${GATE_DEFAULT_WIDTH[g.type]} × ${DEFAULT_GATE_HEIGHT_MM} mm`} thumb={<ElementThumb kind={g.type} model={model} />}
                 onAdd={() => addElement(spec)} onDragStart={startDrag(spec, g.title)} />
             );
           })}
-          {!terrace && SLIDING_CARDS.filter((c) => visiblePreset(c.manual) || visiblePreset(c.motor)).map((c) => (
-            <CatalogCard key={c.id} testId={`cat-gate-${c.id}`} title={c.title} subtitle={c.subtitle} thumb={<SlidingThumb preset={c.thumb} model={model} />}
-              choices={[
+          {!terrace && SLIDING_CARDS.filter((c) => visiblePreset(c.manual) || visiblePreset(c.motor)).map((c) => {
+            const { chosen, selector } = gateSelector(c.id, 'sliding', c.id === 'sliding' ? 'ground_rail' : 'cantilever');
+            return (
+            <CatalogCard key={c.id} testId={`cat-gate-${c.id}`} selector={selector} title={c.title} subtitle={c.subtitle} thumb={<SlidingThumb preset={c.thumb} model={model} />}
+              choices={chosen ? [{ label: 'Dodaj', testId: `cat-sliding-${c.id}-model-add`, onAdd: () => useAppStore.getState().addGateFromModel(chosen) }] : [
                 ...(visiblePreset(c.manual) ? [{ label: 'Ručna', testId: `cat-sliding-${c.manual}-add`, onAdd: () => useAppStore.getState().addSlidingGate({ preset: c.manual }) }] : []),
                 ...(visiblePreset(c.motor) ? [{ label: 'Motorna', testId: `cat-sliding-${c.motor}-add`, onAdd: () => useAppStore.getState().addSlidingGate({ preset: c.motor }) }] : []),
               ]} />
-          ))}
+            );
+          })}
         </div>
         {/* drugi red: prazan prostor i stubovi */}
         <div className="flex flex-wrap gap-3" data-testid="catalog-row-posts">

@@ -1,3 +1,4 @@
+import { gateLeafPoses } from '../domain/geometry/gates';
 import { createElement } from 'react';
 import { SketchSvg } from '../components/designer/Sketch';
 import { CUSTOM_KIND_LABELS, type CustomModel } from '../domain/models/custom';
@@ -81,6 +82,8 @@ export function elementModel(project: Project, idx: number, materials: Material[
     const li = layout.items[idx];
     if (!it.infillModelId || !li) return null;
     let w = Math.round(li.clearWidth); let h = Math.round(leafHeightOf(it));
+    // dvokrilna kapija: sklopni crtež je jedno krilo (levo), a oba krila su ista vrsta
+    if (it.gateType === 'double') w = Math.round(gateLeafPoses(it, li.clearStart, li.clearEnd, 0)[0]?.widthMm ?? w);
     if (it.sliding) {
       if (!it.sliding.drawnLeaf) return null;
       const res = resolveSliding(it.sliding, li.clearWidth, slidingH(it));

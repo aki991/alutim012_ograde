@@ -1,5 +1,6 @@
+import { GateModelPicker } from '../gates/GateModelPicker';
 import { PartsPanel } from './PartsPanel';
-import { allFenceModels, customLiftOf, customSlatLayout, isCustomModel } from '../../domain/models/customRegistry';
+import { allFenceModels, customHBarLayout, customLiftOf, customRails, customSlatLayout, isCustomModel } from '../../domain/models/customRegistry';
 import { gateLeafPoses } from '../../domain/geometry/gates';
 import { leafHeightOf } from '../../domain/gates/slidingLayout';
 import { AlertTriangle, ArrowLeft, ArrowRight, Copy, Trash2, Calculator, FileDown, Scissors, ClipboardList, Ruler } from 'lucide-react';
@@ -49,9 +50,11 @@ function Banner({ tone, children }: { tone: 'red' | 'amber' | 'blue'; children: 
 
 
 /**
- * Razmaci ispune platna ili krila (ručno nacrtan model sa uspravnim letvicama): razmak od poda, odstojanje prve i poslednje letvice od
- * stuba (kraja prečki), razmak između letvica i, kod dvokrilne kapije, razmak između krila. Prikazuju se trenutne vrednosti; „Vrati početne“
- * vraća vrednosti kakve su bile kad je element izabran. Razmak se računa tako da letvice ravnomerno popune širinu (broj letvica se prilagođava).
+ * Raspored ispune platna ili krila (svaki tip ograde): razmak od poda; uspravne letvice (odstojanje prve i poslednje od stuba i razmak);
+ * vodoravne prečke koje se ponavljaju (odstojanje donje od dna, gornje od vrha i razmak); nosači (odstojanje od dna ili vrha ispune) i,
+ * kod dvokrilne kapije, razmak između krila. Prikazuju se samo mere koje model ima, sa trenutnim vrednostima; „Vrati početne“ vraća
+ * vrednosti kakve su bile kad je element izabran. Razmak letvica i prečki se računa tako da ravnomerno popune širinu ili visinu (broj se
+ * prilagođava), a zadat razmak je najmanji razmak.
  */
 function SlatSettings({ id, modelId, widthMm, heightMm, params, gate, clearWidth }: { id: string; modelId: FenceModelId; widthMm: number; heightMm: number; params: FenceParams; gate?: Gate; clearWidth: number }) {
   const [open, setOpen] = useState(false);
@@ -62,7 +65,12 @@ function SlatSettings({ id, modelId, widthMm, heightMm, params, gate, clearWidth
   if (!isCustomModel(modelId)) return null;
   const lift = params.liftMm ?? customLiftOf(modelId);
   const lay = customSlatLayout(modelId, widthMm, heightMm - lift, params.slats);
+  const hb = customHBarLayout(modelId, heightMm - lift, params.slats);
+  const rails = customRails(modelId, params.slats);
   const half = Math.max(50, Math.round(widthMm / 2));
+  const halfH = Math.max(50, Math.round((heightMm - lift) / 2));
+  const r1 = (v: number) => Math.round(v * 10) / 10;
+  const sub = (t: string) => <div className="text-[12px] font-semibold text-muted uppercase tracking-wide mt-2 mb-0.5">{t}</div>;
   const setSlat = (patch: NonNullable<FenceParams['slats']>) => st.patchItemParams(id, { slats: { ...params.slats, ...patch } }, 'slats');
   const reset = () => {
     st.patchItemParams(id, { slats: init.current.slats, liftMm: init.current.lift });
@@ -78,12 +86,32 @@ function SlatSettings({ id, modelId, widthMm, heightMm, params, gate, clearWidth
           <NumberField label="Razmak od poda" testId="slat-floor" value={lift} range={{ min: 0, max: 500 }} onCommit={(v) => st.patchItemParams(id, { liftMm: v }, 'lift')} />
           {lay && (
             <>
+              {sub('Uspravne letvice')}
               <NumberField label="Od levog stuba do prve letvice" testId="slat-left" value={Math.round(lay.left * 10) / 10} range={{ min: 0, max: half }} onCommit={(v) => setSlat({ leftMm: v })} />
               <NumberField label="Od poslednje letvice do desnog stuba" testId="slat-right" value={Math.round(lay.right * 10) / 10} range={{ min: 0, max: half }} onCommit={(v) => setSlat({ rightMm: v })} />
               <NumberField label="Razmak između letvica" testId="slat-gap" value={Math.round(lay.gap * 10) / 10} range={{ min: 0, max: 300 }} onCommit={(v) => setSlat({ gapMm: v })}
                 hint={`Letvica: ${lay.count}. Razmak se podešava tako da letvice ravnomerno popune širinu.`} />
             </>
           )}
+          {hb && (
+            <>
+              {sub('Vodoravne prečke')}
+              <NumberField label="Od dna ispune do donje prečke" testId="hbar-bottom" value={r1(hb.bottom)} range={{ min: 0, max: halfH }} onCommit={(v) => setSlat({ bottomMm: v })} />
+              <NumberField label="Od gornje prečke do vrha ispune" testId="hbar-top" value={r1(hb.top)} range={{ min: 0, max: halfH }} onCommit={(v) => setSlat({ topMm: v })} />
+              <NumberField label="Razmak između prečki" testId="hbar-gap" value={r1(hb.gap)} range={{ min: hb.gap < 0 ? -100 : 0, max: 400 }} onCommit={(v) => setSlat({ hGapMm: v })}
+                hint={`Prečki: ${hb.count}. Staje najviše prečki sa zadatim razmakom, a višak se ravnomerno deli na sve razmake.`} />
+            </>
+          )}
+          {rails.length > 0 && (
+            <>
+              {sub('Nosači')}
+              {rails.map((r) => (
+                <NumberField key={r.key} label={r.label} testId={`rail-${r.edge}-${r.key}`} value={r1(r.offsetMm)} range={{ min: 0, max: Math.max(0, Math.round(heightMm - lift - r.heightMm)) }}
+                  onCommit={(v) => setSlat({ rails: { ...params.slats?.rails, [r.key]: v } })} />
+              ))}
+            </>
+          )}
+          {gC !== null && sub('Krila')}
           {gC !== null && <NumberField label="Razmak između krila" testId="slat-leaf-gap" value={gC} range={{ min: 0, max: 200 }} onCommit={(v) => gate?.design && st.patchItem(id, { design: setDim(gate.design, 'gC', v) }, 'gC')} />}
           <button className="btn btn-sm mt-1" data-testid="slat-reset" onClick={reset}>Vrati početne vrednosti</button>
         </div>
@@ -449,6 +477,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
       <>
         <GateDesignEntry project={project} gate={g} />
         {common}
+        <GateModelPicker gate={g} />
         <ModelSelect value={g.infillModelId} onChange={(m) => st.setItemModel(id, m)} />
         <ColorField stacked value={g.color} testId="field-color" onChange={(c) => st.setItemColor(id, c)} finish={g.finish} onFinishChange={(f) => st.setItemFinish(id, f)} />
         <GateOwnPosts project={project} id={id} g={g} />

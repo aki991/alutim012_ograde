@@ -8,7 +8,7 @@ import { FENCE_MODELS, GATE_LABELS } from '../models/catalog';
 import type { Project } from '../models/types';
 import { itemLabel } from '../../utils/labels';
 import { Material } from '../models/types';
-import { evaluateSpec, hasCustomSpec, materialName, slatCutLengths, specFor, specVars, type ModelSpecs } from '../models/spec';
+import { evaluateItemSpec, hasCustomSpec, materialName, slatCutLengths, specFor, type ModelSpecs, type SpecContext } from '../models/spec';
 import { isLouver08 } from './louverSpec';
 import { isRail04 } from './railSpec';
 import { HW_ROLE_LABELS, missingHardware, resolveGate, systemOf, unknownHwLabel } from '../gates/design';
@@ -64,7 +64,7 @@ export function buildCutList(project: Project, specs?: ModelSpecs, materials?: M
     }
     const slope = itemSlope(li);
     const stairNote = slope.factor > 1 ? `stepenište: krajevi pod uglom ${Math.round(slope.deg)}°` : '';
-    const vars = specVars({ modelId, slopeFactor: slope.factor, widthMm: it.kind === 'gate' ? gateSpecWidth(it, li.clearWidth) : li.clearWidth, heightMm: it.kind === 'gate' ? leafHeightOf(it) : it.heightMm, axisMm: li.axisEnd - li.axisStart, params: it.params, doubleGate: it.kind === 'gate' && it.gateType === 'double', leafWidthsMm: it.kind === 'gate' && it.gateType === 'double' ? gateLeafPoses(it, li.clearStart, li.clearEnd, 1).map((q) => q.widthMm) : undefined });
+    const specCtx: SpecContext = ({ modelId, slopeFactor: slope.factor, widthMm: it.kind === 'gate' ? gateSpecWidth(it, li.clearWidth) : li.clearWidth, heightMm: it.kind === 'gate' ? leafHeightOf(it) : it.heightMm, axisMm: li.axisEnd - li.axisStart, params: it.params, doubleGate: it.kind === 'gate' && it.gateType === 'double', leafWidthsMm: it.kind === 'gate' && it.gateType === 'double' ? gateLeafPoses(it, li.clearStart, li.clearEnd, 1).map((q) => q.widthMm) : undefined });
     const geo = computeInfill(modelId, it.kind === 'gate' ? gateSpecWidth(it, li.clearWidth) : li.clearWidth, it.kind === 'gate' ? leafHeightOf(it) : it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount, it.params.liftMm, undefined, it.params.archMm);
     if (geo.glass) {
       rows.push({ element: name, index: li.index, glass: true, part: 'Staklo', profile: FENCE_MODELS[modelId].parts.main, lengthMm: Math.round(geo.glass.w), qty: 1, note: slope.factor > 1 ? `paralelogram: ${Math.round(geo.glass.w)} mm horizontalno × ${Math.round(geo.glass.h)} mm vertikalno, nagib ${Math.round(slope.deg)}°` : `${Math.round(geo.glass.w)} × ${Math.round(geo.glass.h)} mm` });
@@ -82,7 +82,7 @@ export function buildCutList(project: Project, specs?: ModelSpecs, materials?: M
         });
       }
     }
-    for (const ev of evaluateSpec(specFor(modelId, specs), vars)) {
+    for (const ev of evaluateItemSpec(specFor(modelId, specs), specCtx)) {
       if (ev.lengthMm === null) continue;
       const len = Math.round(ev.lengthMm);
       const qty = Math.round(ev.qty);
@@ -104,11 +104,12 @@ export function buildCutList(project: Project, specs?: ModelSpecs, materials?: M
         for (const l of slats) byLen.set(Math.round(l), (byLen.get(Math.round(l)) ?? 0) + 1);
         for (const [l, n] of [...byLen].sort((a, b) => b[0] - a[0])) {
           if (l <= 0) continue;
-          group.set(`${partName}|${l}`, { element: name, index: li.index, part: partName, profile, lengthMm: l, qty: n, note: [ev.part.note, 'luk: tarabice različitih dužina', stairNote].filter(Boolean).join(' · ') });
+          group.set(`${partName}|${ev.part.materialId}|${l}`, { element: name, index: li.index, part: partName, profile, lengthMm: l, qty: n, note: [ev.part.note, 'luk: tarabice različitih dužina', stairNote].filter(Boolean).join(' · ') });
         }
         continue;
       }
-      const key = `${partName}|${len}`;
+      // isti naziv i dužina ne spaja delove od različitih profila (npr. široke i uske prečke): materijal je deo ključa
+      const key = `${partName}|${ev.part.materialId}|${len}`;
       const cur = group.get(key);
       if (cur) cur.qty += qty;
       else group.set(key, { element: name, index: li.index, part: partName, profile, lengthMm: len, qty, miter, ...(cutEnds ?? {}), ...(faceMm ? { faceMm } : {}), note: [ev.part.note, miter && !/45/.test(ev.part.note ?? '') ? 'rez 45° na oba kraja' : '', stairNote].filter(Boolean).join(' · ') || undefined });

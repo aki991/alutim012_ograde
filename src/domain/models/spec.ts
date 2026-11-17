@@ -1,4 +1,4 @@
-import { customModelOf, customSpec } from './customRegistry';
+import { customLiftOf, customModelOf, customPatternCounts, customSlatCount, customSpec } from './customRegistry';
 import { tubeLengthMm, ramInsets } from './tubes';
 import { computeInfill, summarizeInfill } from '../geometry/infill';
 import { CALC_RULES } from '../pricing/rules';
@@ -52,6 +52,11 @@ export const SPEC_VARIABLES: { name: string; label: string }[] = [
   { name: 'PERIM', label: 'obim polja 2·W + 2·H (mm)' },
   { name: 'AREA', label: 'površina polja W·H (m²)' },
   { name: 'DOUBLE', label: '1 za dvokrilnu kapiju, inače 0' },
+  { name: 'SLATS', label: 'broj uspravnih letvica nacrtanog modela, preračunat za širinu polja (kod dvokrilne po krilu)' },
+  { name: 'HBAR0', label: 'broj vodoravnih prečki prve vrste nacrtanog modela, preračunat za visinu polja (kod dvokrilne za oba krila)' },
+  { name: 'HBAR1', label: 'broj vodoravnih prečki druge vrste (npr. uske uz široke), preračunat za visinu polja' },
+  { name: 'HBAR2', label: 'broj vodoravnih prečki treće vrste, preračunat za visinu polja' },
+  { name: 'HBAR3', label: 'broj vodoravnih prečki četvrte vrste, preračunat za visinu polja' },
   { name: 'TUBELEN', label: 'dužina kvadratne cevi: svetli otvor − 2·(zid U profila + zazor) (mm), samo model uskih letvica' },
   { name: 'RAMU', label: '1 ako polje ima ram od U profila, inače 0' },
   { name: 'RAMC', label: '1 ako polje ima ram od kvadratne cevi, inače 0' },
@@ -96,6 +101,13 @@ export function slatCutLengths(c: SpecContext): number[] | null {
   return leafGeometries(c).flatMap((g) => g.bars.filter((b) => b.tone === 'main').map((b) => b.h - capH));
 }
 
+function hbarVars(c: SpecContext): Record<string, number> {
+  // isto kao na crtežu: ispuna počinje iznad razmaka od poda, a odstojanja i razmak prečki mogu biti zadati ručno
+  const counts = customPatternCounts(c.modelId, c.heightMm - (c.params.liftMm ?? customLiftOf(c.modelId)), c.params.slats);
+  const leaves = c.leafWidthsMm?.length || 1;
+  return { HBAR0: (counts[0] ?? 0) * leaves, HBAR1: (counts[1] ?? 0) * leaves, HBAR2: (counts[2] ?? 0) * leaves, HBAR3: (counts[3] ?? 0) * leaves };
+}
+
 export function specVars(c: SpecContext): Record<string, number> {
   // stepenište: delovi duž polja (rukohvat, prečke) su dugi koliko kosa dužina; površina stakla ostaje horizontalna × vertikalna
   const f = c.slopeFactor && c.slopeFactor > 1 ? c.slopeFactor : 1;
@@ -112,6 +124,8 @@ export function specVars(c: SpecContext): Record<string, number> {
     GLASS: sum.glassAreaM2 / f,
     PERIM: 2 * c.widthMm * f + 2 * c.heightMm, AREA: (c.widthMm * c.heightMm) / 1_000_000,
     DOUBLE: c.doubleGate ? 1 : 0,
+    SLATS: (c.leafWidthsMm?.length ? c.leafWidthsMm : [c.widthMm]).reduce((n, w) => n + customSlatCount(c.modelId, w, c.heightMm, c.params.slats), 0),
+    ...hbarVars(c),
     TUBELEN: tubeLengthMm(Math.max(0, c.widthMm - 2 * ramInsets(c.modelId, c.params).side), c.params),
     RAMU: ramInsets(c.modelId, c.params).kind === 'u' ? 1 : 0, RAMC: ramInsets(c.modelId, c.params).kind === 'tube' ? 1 : 0,
     RAMT: ramInsets(c.modelId, c.params).top, RAMS: ramInsets(c.modelId, c.params).side,
@@ -206,6 +220,18 @@ export interface EvaluatedPart {
 }
 
 /** Računa sve uključene elemente specifikacije za jedno polje. Neispravna formula daje grešku i količinu 0. */
+/**
+ * Specifikacija jednog elementa. Nacrtan model (ograda iz crtanja) je crtež jednog krila: kod dvokrilne kapije se računa za svako krilo
+ * posebno, sa širinom tog krila (dužine prečki, broj letvica i prečki po krilu), pa se stavke oba krila sabiraju. Modeli iz kataloga imaju
+ * formule za celu kapiju (DOUBLE, širine krila), pa se računaju jednom.
+ */
+export function evaluateItemSpec(parts: SpecPart[], c: SpecContext): EvaluatedPart[] {
+  if (c.leafWidthsMm && c.leafWidthsMm.length > 1 && customModelOf(c.modelId)) {
+    return c.leafWidthsMm.flatMap((w) => evaluateSpec(parts, specVars({ ...c, widthMm: w, axisMm: w, leafWidthsMm: undefined, doubleGate: false })));
+  }
+  return evaluateSpec(parts, specVars(c));
+}
+
 export function evaluateSpec(parts: SpecPart[], vars: Record<string, number>): EvaluatedPart[] {
   return parts.filter((p) => p.enabled).map((part) => {
     try {

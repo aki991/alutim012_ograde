@@ -381,7 +381,17 @@ export function panelTiles(art: { aspect: number; vertical: boolean }, widthMm: 
   return art.vertical ? Math.max(1, Math.round(widthMm / (heightMm * art.aspect) + 0.25)) : 1;
 }
 
+/** ugrađeni polazni model, samo kad stranica Modeli ograda ne daje nijedan */
 export const DEFAULT_MODEL_ID: FenceModelId = 'h_narrow';
+
+let defaultModelProvider: (() => FenceModelId | undefined) | null = null;
+/** registar modela javlja prvi model sa stranice Modeli ograda (obrisani modeli se ne nude) */
+export const setDefaultModelProvider = (fn: (() => FenceModelId | undefined) | null): void => { defaultModelProvider = fn; };
+/**
+ * Model koji se koristi kad nije zadat nijedan (nov projekat, element bez modela, vraćanje obrisanog modela): UVEK prvi model sa stranice
+ * Modeli ograda, nikad model koji je obrisan sa te stranice. Tek ako stranica nema nijedan model, ugrađeni polazni model.
+ */
+export const defaultModelId = (): FenceModelId => defaultModelProvider?.() ?? DEFAULT_MODEL_ID;
 
 /** Model ograde koji projekat već ima (prvo polje ili kapija); null za projekat bez elemenata. Katalog i dodavanje nude taj model. */
 export function projectModelId(items: ReadonlyArray<{ kind: string; modelId?: FenceModelId; infillModelId?: FenceModelId }>): FenceModelId | null {

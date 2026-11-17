@@ -11,11 +11,12 @@ import {
 import { newItemFor } from '../domain/geometry/newItem';
 import { computeLayout } from '../domain/geometry/layout';
 import { removeStair, setStairGroup } from '../domain/geometry/stairOps';
-import { DEFAULT_MODEL_ID, FENCE_MODELS, TERRACE_NO_GATES, isTerraceModel, projectModelId } from '../domain/models/catalog';
+import { defaultModelId, FENCE_MODELS, TERRACE_NO_GATES, isTerraceModel, projectModelId } from '../domain/models/catalog';
 import { allFenceModels, effectiveModelId, registerCustomModels, setHiddenModels } from '../domain/models/customRegistry';
 import { presetTitle, slidingForModel, specFromPreset, type SlidingSpec } from '../domain/gates/slidingAssembly';
 import { defaultGateConfig, gateClearWidth, gateConfigFromGate, gateFieldsFromModel, GATE_TYPE_LABELS, postDimsOf, withModelPosts } from '../domain/gates/gateModels';
 import { postHalfSum } from '../domain/geometry/layout';
+import { leafKey, leafSeed } from '../domain/models/leafSeed';
 import { builtinToCustom } from '../domain/models/fromBuiltin';
 import { cleanMaterialName } from '../domain/models/materialTitle';
 import { createFence, createGate, createProject, DEFAULT_FENCE_WIDTH_MM, nowIso } from '../domain/models/factories';
@@ -42,7 +43,7 @@ export type EditorView = 'front' | 'top' | 'three' | 'split' | 'dims' | 'bom' | 
 
 export type NewElementSpec =
   | { kind: 'fence'; modelId: FenceModelId; /** polje stepeništa (samo ograde za terase) */ stair?: boolean }
-  | { kind: 'gate'; gateType: GateType; modelId?: FenceModelId; /** kapija između betonskih stubova */ concrete?: boolean }
+  | { kind: 'gate'; gateType: GateType; modelId?: FenceModelId; /** kapija između betonskih stubova */ concrete?: boolean; /** moj model kapije (ID) koji se postavlja umesto osnovne kapije */ gateModelId?: string }
   | { kind: 'opening' }
   | { kind: 'corner' };
 
@@ -138,10 +139,13 @@ interface AppState {
   /** modeli kapija = nacrtani modeli vrste „Kapija“ sa podešavanjima iz „Mere kapije“ */
   /** postavlja kapiju u otvorenom projektu prema modelu (ispuna, boja, visina, tip, mere, okovi); svetli otvor je onaj iz modela */
   applyGateModel: (itemId: string, modelId: string) => boolean;
+  /** vraća kapiju u projektu na običnu (osnovnu) kapiju istog tipa, uz istu ogradu */
+  applyBasicGate: (itemId: string) => void;
   /** dodaje kapiju iz modela na kraj niza u otvorenom projektu; vraća ID kapije */
-  addGateFromModel: (modelId: string) => string | null;
+  addGateFromModel: (modelId: string, index?: number) => string | null;
+  setGateModelDefault: (modelId: string, on: boolean) => void;
   /** dorada osnovne kapije: pravi crtež kapije od delova podrazumevanog modela kao nov model vrste „Kapija“ i vraća njegov ID */
-  startGateDorada: (gateType: GateType) => string;
+  startGateDorada: (gateType: GateType, fenceModelId?: string) => string;
   /** nov projekat sa jednom kapijom iz modela; vraća ID projekta */
   newProjectFromGateModel: (modelId: string) => string | null;
   /** privremen projekat sa kapijom iz modela, otvoren u „Mere kapije“ unutar crtanja modela; vraća ID projekta i kapije */
@@ -163,7 +167,7 @@ interface AppState {
   /** primenjuje šablon stuba na stubove aktivnog projekta (jedna izmena u istoriji) */
   applyPostTemplate: (templateId: string, postIds: string[]) => void;
   /** Doradi: nov model klizne kapije iz polazne varijante (nezavisna kopija koja se menja u crtežu modela) */
-  startSlidingDorada: (presetId: import('../domain/gates/slidingAssembly').SlidingPresetId) => string;
+  startSlidingDorada: (presetId: import('../domain/gates/slidingAssembly').SlidingPresetId, fenceModelId?: string) => string;
   /** izmena modela klizne kapije; projekti koji su ga već koristili imaju svoju kopiju i ne menjaju se */
   /** nov projekat sa kliznom kapijom iz polazne varijante ili iz modela */
   newProjectFromSliding: (source: { preset: import('../domain/gates/slidingAssembly').SlidingPresetId }) => string | null;
@@ -173,12 +177,12 @@ interface AppState {
 export const dropUnknownModels = (p: Project): Project => {
   const known = (id: string) => id in FENCE_MODELS;
   if (p.items.every((it) => it.kind === 'opening' || known(it.kind === 'fence' ? it.modelId : it.infillModelId))) return p;
-  const d = FENCE_MODELS[DEFAULT_MODEL_ID];
+  const d = FENCE_MODELS[defaultModelId()];
   return {
     ...p,
     items: p.items.map((it) => {
-      if (it.kind === 'fence' && !known(it.modelId)) return { ...it, modelId: DEFAULT_MODEL_ID, materialId: d.materialId, params: { ...d.defaults } };
-      if (it.kind === 'gate' && !known(it.infillModelId)) return { ...it, infillModelId: DEFAULT_MODEL_ID, params: { ...d.defaults } };
+      if (it.kind === 'fence' && !known(it.modelId)) return { ...it, modelId: defaultModelId(), materialId: d.materialId, params: { ...d.defaults } };
+      if (it.kind === 'gate' && !known(it.infillModelId)) return { ...it, infillModelId: defaultModelId(), params: { ...d.defaults } };
       return it;
     }),
   };
@@ -189,11 +193,11 @@ const ACTIVE_MODEL_KEY = 'alutim.activeModel';
 const rememberActiveModel = (id: string | null): void => { try { if (id) sessionStorage.setItem(ACTIVE_MODEL_KEY, id); else sessionStorage.removeItem(ACTIVE_MODEL_KEY); } catch { /* bez sessionStorage-a */ } };
 const isListedModel = (id: string): boolean => allFenceModels().some((m) => m.id === id);
 /** prvi model sa stranice Modeli ograda */
-const firstListedModel = (): FenceModelId => (allFenceModels()[0]?.id ?? DEFAULT_MODEL_ID) as FenceModelId;
+const firstListedModel = (): FenceModelId => (allFenceModels()[0]?.id ?? defaultModelId()) as FenceModelId;
 const sessionModel = (): FenceModelId | null => { try { const v = sessionStorage.getItem(ACTIVE_MODEL_KEY); return v && isListedModel(v) ? (v as FenceModelId) : null; } catch { return null; } };
 
 const emptyEditor = (): EditorState => ({
-  projectId: null, selection: null, multi: [], multiPosts: [], history: emptyHistory<Project>(), view: 'front', zoom: 1, activeModelId: DEFAULT_MODEL_ID, notice: null, slideTest: {},
+  projectId: null, selection: null, multi: [], multiPosts: [], history: emptyHistory<Project>(), view: 'front', zoom: 1, activeModelId: defaultModelId(), notice: null, slideTest: {},
 });
 
 /** Izbor više polja ostaje samo za elemente koji i dalje postoje; sa manje od dva izabrana nema višestrukog izbora. */
@@ -414,7 +418,7 @@ export const useAppStore = create<AppState>((set, get) => {
         const fixed = base.map(dropUnknownModels);
         if (fixed.some((p, i) => p !== base[i])) out.projects = fixed;
         const ed = out.editor ?? s.editor;
-        if (!(ed.activeModelId in FENCE_MODELS)) out.editor = { ...ed, activeModelId: DEFAULT_MODEL_ID };
+        if (!(ed.activeModelId in FENCE_MODELS)) out.editor = { ...ed, activeModelId: defaultModelId() };
         return out;
       });
     },
@@ -424,7 +428,7 @@ export const useAppStore = create<AppState>((set, get) => {
       if (opts.modelId) opts = { ...opts, modelId: effectiveModelId(opts.modelId) };
       const items: LayoutItem[] = [];
       if (opts.modelId) items.push(createFence({ modelId: opts.modelId }));
-      if (opts.startGate && !isTerraceModel(opts.modelId ?? DEFAULT_MODEL_ID)) items.push(createGate(opts.startGate, { infillModelId: opts.modelId ?? DEFAULT_MODEL_ID }));
+      if (opts.startGate && !isTerraceModel(opts.modelId ?? defaultModelId())) items.push(createGate(opts.startGate, { infillModelId: opts.modelId ?? defaultModelId() }));
       let p = createProject(opts.name ?? 'Novi projekat', items, opts.customerId ?? null);
       // univerzalna početna mera platna: svetla širina 1500 mm (ograde za terase zadržavaju svoje mere)
       if (opts.modelId && !isTerraceModel(opts.modelId)) p = setOuterWidth(p, items[0].id, DEFAULT_FENCE_WIDTH_MM + 2 * postHalfSum(p, 0));
@@ -546,6 +550,7 @@ export const useAppStore = create<AppState>((set, get) => {
     addElement(spec, index) {
       const cur = currentProject();
       if (!cur) return null;
+      if (spec.kind === 'gate' && spec.gateModelId) return get().addGateFromModel(spec.gateModelId, index);
       const modelId = projectModelId(cur.items) ?? get().editor.activeModelId; // projekat ima jedan model: novi element je istog modela
       if (spec.kind === 'gate' && isTerraceModel(spec.modelId ?? modelId)) { get().setNotice(TERRACE_NO_GATES); return null; }
       // novi element ima mere i izgled ograde koja je već u projektu (izabrano polje, inače poslednja ograda)
@@ -675,7 +680,7 @@ export const useAppStore = create<AppState>((set, get) => {
       set((s) => ({
         settings: { ...s.settings, customModels },
         projects: s.projects.map(dropUnknownModels),
-        editor: { ...s.editor, history: emptyHistory<Project>(), activeModelId: s.editor.activeModelId === id ? DEFAULT_MODEL_ID : s.editor.activeModelId },
+        editor: { ...s.editor, history: emptyHistory<Project>(), activeModelId: s.editor.activeModelId === id ? defaultModelId() : s.editor.activeModelId },
       }));
     },
     hideModel(id) {
@@ -691,24 +696,66 @@ export const useAppStore = create<AppState>((set, get) => {
       const m = (get().settings.customModels ?? []).find((x) => x.id === modelId);
       if (!m || !currentProject()) return false;
       get().mutate((p) => {
-        const q = updateItem(p, itemId, gateFieldsFromModel(m) as Partial<Gate>);
+        const g0 = p.items.find((x) => x.id === itemId);
+        // ograda i boja pre primene modela (ako kapija već ima model, ostaje prvobitno stanje): povratak na običnu kapiju ih vraća
+        const prev = g0 && g0.kind === 'gate' ? g0.design?.template?.prev ?? (g0.infillModelId in FENCE_MODELS && !(get().settings.customModels ?? []).some((x) => x.id === g0.infillModelId) ? { infillModelId: g0.infillModelId, color: g0.color } : undefined) : undefined;
+        const fields = gateFieldsFromModel(m);
+        const q = updateItem(p, itemId, { ...fields, infillModelId: m.id as FenceModelId, ...(fields.design && prev ? { design: { ...fields.design, template: { ...fields.design.template!, prev } } } : {}) } as Partial<Gate>);
         return withModelPosts(setOuterWidth(q, itemId, gateClearWidth(m) + 2 * postHalfSum(q, indexOfItem(q, itemId))), itemId, m.gate);
       });
       return true;
     },
-    addGateFromModel(modelId) {
+    applyBasicGate(itemId) {
+      const cur = currentProject();
+      const g = cur?.items.find((i) => i.id === itemId);
+      if (!cur || !g || g.kind !== 'gate') return;
+      const list = get().settings.customModels;
+      const isModel = (id: string) => (list ?? []).some((x) => x.id === id);
+      const usable = (id?: string): id is FenceModelId => !!id && id in FENCE_MODELS && !isModel(id);
+      // ograda koju je kapija imala pre modela; inače ograda ostalih elemenata projekta, pa izabrana ograda, pa prvi model sa stranice Modeli ograda
+      const prev = g.design?.template?.prev;
+      const other = cur.items.find((x) => x.id !== itemId && x.kind !== 'opening' && usable(x.kind === 'fence' ? x.modelId : x.infillModelId));
+      const otherModel = other && other.kind !== 'opening' ? (other.kind === 'fence' ? other.modelId : other.infillModelId) : undefined;
+      const active = get().editor.activeModelId;
+      const fence: FenceModelId = usable(prev?.infillModelId) ? prev!.infillModelId as FenceModelId : usable(otherModel) ? otherModel : usable(active) && isListedModel(active) ? active : defaultModelId();
+      const base = createGate(g.gateType, { infillModelId: fence, ...(prev?.color ? { color: prev.color } : {}) });
+      get().mutate((p) => {
+        let patch: Partial<Gate> = { infillModelId: base.infillModelId, color: base.color, heightMm: base.heightMm, opening: base.opening, swing: base.swing, lock: base.lock, hinge: base.hinge, automation: base.automation, automationType: base.automationType, unequalLeaves: false, leftLeafMm: 0, design: undefined, sliding: undefined, params: base.params };
+        let width: number | null = null;
+        if (g.gateType === 'sliding' && g.sliding) {
+          const id = `${g.sliding.support === 'cantilever' ? 'samonoseca' : 'klizna_sina'}_${g.sliding.actuation === 'motor' ? 'motorna' : 'rucna'}` as import('../domain/gates/slidingAssembly').SlidingPresetId;
+          const d = specFromPreset(id);
+          patch = { ...patch, sliding: { ...d.spec, drawnLeaf: true, heightTotal: true }, heightMm: d.frameHeight + d.spec.frameBottomY, automation: d.spec.actuation === 'motor', automationType: 'sliding_motor' };
+          width = d.frameWidth;
+        }
+        const q = updateItem(p, itemId, patch);
+        return width !== null ? setOuterWidth(q, itemId, width + 2 * postHalfSum(q, indexOfItem(q, itemId))) : q;
+      });
+    },
+    addGateFromModel(modelId, index) {
       const m = (get().settings.customModels ?? []).find((x) => x.id === modelId);
       if (!m || !currentProject()) return null;
-      const id = get().addElement({ kind: 'gate', gateType: m.gate?.gateType ?? 'pedestrian', modelId: m.id as FenceModelId });
+      const id = get().addElement({ kind: 'gate', gateType: m.gate?.gateType ?? 'pedestrian', modelId: m.id as FenceModelId }, index);
       if (!id) return null;
       get().applyGateModel(id, modelId);
       return id;
     },
-    startGateDorada(gateType) {
+    setGateModelDefault(modelId, on) {
+      const list = get().settings.customModels ?? [];
+      const m = list.find((x) => x.id === modelId);
+      if (!m) return;
+      // jedna podrazumevana kapija po tipu i ogradi: ostale istog tipa za istu ogradu gube oznaku
+      const customModels = list.map((x) => (x.id === modelId ? { ...x, gateDefault: on || undefined }
+        : on && x.kind === 'gate' && x.gate?.gateType === m.gate?.gateType && x.leafModelId === m.leafModelId && x.gate?.sliding?.support === m.gate?.sliding?.support ? { ...x, gateDefault: undefined } : x));
+      set((s) => ({ settings: { ...s.settings, customModels } }));
+    },
+    startGateDorada(gateType, fenceModelId) {
       const id = uid('cm');
       const wide = gateType === 'double' || gateType === 'sliding';
-      const base = builtinToCustom(DEFAULT_MODEL_ID, get().materials, id, wide ? 3000 : 1000, 1500);
-      const model = { ...base, name: GATE_TYPE_LABELS[gateType], kind: 'gate' as const, baseModelId: undefined, gate: { ...defaultGateConfig(gateType), clearWidthMm: wide ? 3000 : 1000 } };
+      const fence = fenceModelId ?? defaultModelId();
+      const seed = leafSeed(fence, get().settings.customModels, get().materials, id, wide ? 3000 : 1000, 1500);
+      const base = 'error' in seed ? builtinToCustom(defaultModelId(), get().materials, id, wide ? 3000 : 1000, 1500) : seed;
+      const model = { ...base, name: GATE_TYPE_LABELS[gateType], kind: 'gate' as const, baseModelId: undefined, leafModelId: 'error' in seed ? undefined : leafKey(fence, get().settings.customModels), gate: { ...defaultGateConfig(gateType), clearWidthMm: wide ? 3000 : 1000 } };
       const customModels = [...(get().settings.customModels ?? []), model];
       registerCustomModels(customModels, get().materials);
       set((s) => ({ settings: { ...s.settings, customModels } }));
@@ -771,12 +818,14 @@ export const useAppStore = create<AppState>((set, get) => {
     setSlideTest(itemId, pct) {
       set((s) => ({ editor: { ...s.editor, slideTest: { ...s.editor.slideTest, [itemId]: Math.max(0, Math.min(100, pct)) } } }));
     },
-    startSlidingDorada(presetId) {
+    startSlidingDorada(presetId, fenceModelId) {
       const id = uid('cm');
       const d = specFromPreset(presetId);
-      const base = builtinToCustom(DEFAULT_MODEL_ID, get().materials, id, d.frameWidth, d.frameHeight);
+      const fence = fenceModelId ?? defaultModelId();
+      const seed = leafSeed(fence, get().settings.customModels, get().materials, id, d.frameWidth, d.frameHeight);
+      const base = 'error' in seed ? builtinToCustom(defaultModelId(), get().materials, id, d.frameWidth, d.frameHeight) : seed;
       const sliding = slidingForModel(presetId, true);
-      const model = { ...base, name: presetTitle(presetId), kind: 'gate' as const, baseModelId: undefined, gate: { ...defaultGateConfig('sliding'), automation: sliding.actuation === 'motor', sliding } };
+      const model = { ...base, name: presetTitle(presetId), kind: 'gate' as const, baseModelId: undefined, leafModelId: 'error' in seed ? undefined : leafKey(fence, get().settings.customModels), gate: { ...defaultGateConfig('sliding'), automation: sliding.actuation === 'motor', sliding } };
       const customModels = [...(get().settings.customModels ?? []), model];
       registerCustomModels(customModels, get().materials);
       set((s) => ({ settings: { ...s.settings, customModels } }));

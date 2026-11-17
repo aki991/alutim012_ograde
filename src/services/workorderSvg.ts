@@ -1,3 +1,4 @@
+import { gateLeafPoses } from '../domain/geometry/gates';
 import { computeInfill } from '../domain/geometry/infill';
 import { computeLayout, isSpacer, outerWidthMm } from '../domain/geometry/layout';
 import type { Project } from '../domain/models/types';
@@ -153,10 +154,14 @@ export function schemaSvg(project: Project, keyOfItem: (index: number) => string
       const mh = it.kind === 'fence' ? it.heightMm : leafHeightOf(it);
       const lift = Math.min(Math.max(0, it.params.liftMm ?? customLiftOf(modelId)), Math.max(0, mh - 100));
       const yb = y + h - lift * s;
-      for (const r of customPartsFor(modelId, li.clearWidth, mh - lift, '#000000', it.params.slats)) {
+      // dvokrilna kapija: svako krilo se crta na svom mestu sa svojom širinom
+      const leaves = it.kind === 'gate' && it.gateType === 'double'
+        ? gateLeafPoses(it, li.clearStart, li.clearEnd, 0).map((q) => ({ off: (q.extendDir > 0 ? q.pivotX : q.pivotX - q.widthMm) - li.clearStart, w: q.widthMm }))
+        : [{ off: 0, w: li.clearWidth }];
+      for (const lf of leaves) for (const r of customPartsFor(modelId, lf.w, mh - lift, '#000000', it.params.slats)) {
         const p = r.part;
         if (r.shape.type === 'piece') continue;
-        const P = (lx: number, ly: number): string => `${(ix + lx * s).toFixed(1)},${(yb - ly * s).toFixed(1)}`;
+        const P = (lx: number, ly: number): string => `${(ix + (lf.off + lx) * s).toFixed(1)},${(yb - ly * s).toFixed(1)}`;
         let pts: string;
         if (r.shape.type === 'sheet' || p.heightMm) pts = sheetPoly(p).map(([x, y]) => P(x, y)).join(' ');
         else {

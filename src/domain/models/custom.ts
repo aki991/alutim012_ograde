@@ -89,6 +89,10 @@ export interface CustomModel {
   liftMm?: number;
   /** samo vrsta „Kapija“: podešavanja kapije iz „Mere kapije“ (tip, pogon, mere i okovi), čuvaju se uz crtež */
   gate?: import('../gates/gateModels').GateConfig;
+  /** samo kapija: model ograde iz kataloga od koga je nacrtano krilo (ID); po njemu se kapija nudi u editoru uz tu ogradu */
+  leafModelId?: string;
+  /** samo kapija: podrazumevana kapija ovog tipa za ogradu `leafModelId` (u editoru je unapred izabrana) */
+  gateDefault?: boolean;
   /** model zamenjuje model iz kataloga („sačuvaj na istom tipu“): u izboru modela stoji umesto njega, a projekti ga koriste */
   replaces?: string;
   /** upozorenja iz provere crteža koja je radnik prihvatio (ključevi); ne prikazuju se kao aktivna */

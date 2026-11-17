@@ -9,19 +9,12 @@ import type { Material } from './types';
  * razmak između njih računaju se ponovo za širinu krila, tako da letvice ravnomerno popune celo krilo, sa jednakim razmakom.
  */
 
-/** modeli ograda čije letvice se preračunavaju na kapiji iz modela (ostali modeli zasad ostaju kako su nacrtani) */
-export const REFILL_BASE_MODELS: ReadonlySet<string> = new Set(['picket_narrow']);
-
 /**
- * Da li se letvice ovog modela preračunavaju za širinu polja i krila: model nastao od „Bela — uske vertikalne letvice“ (i kao ograda i kao
- * kapija) i svaka ručno nacrtana kapija. Modeli nastali od drugih modela iz kataloga ostaju kako su nacrtani.
- * Da li crtež stvarno ima uspravne letvice proverava `refillVBars` (bez njih ništa ne menja).
+ * Da li se letvice ovog modela preračunavaju za širinu polja i krila: svaki model nastao od modela iz kataloga (kao ograda ili kapija)
+ * i svaka ručno nacrtana kapija. Ručno nacrtana ograda ostaje kako je nacrtana.
+ * Da li crtež stvarno ima uspravne letvice proverava `slatGroupOf` / `refillVBars` (bez njih ništa ne menja).
  */
-export function refillsVBars(m: CustomModel): boolean {
-  // model „Bela — uske vertikalne letvice“ (nacrtan kao zamena originala ili kao kapija) i svaka ručno nacrtana kapija
-  if (m.baseModelId) return REFILL_BASE_MODELS.has(m.baseModelId);
-  return m.kind === 'gate';
-}
+export const refillsVBars = (m: CustomModel): boolean => Boolean(m.baseModelId) || m.kind === 'gate';
 
 const norm = (a: number): number => ((a % 360) + 360) % 360;
 const isVertical = (p: CustomPart): boolean => norm(p.angleDeg) === 90 || norm(p.angleDeg) === 270;
@@ -52,7 +45,14 @@ export function vBarFill(space: number, bar: number, gap: number, left: number, 
  * ostaje kao na crtežu (najviše koliko i razmak), a broj letvica i tačan razmak se računaju za novu širinu (`vBarFill`).
  */
 /** ručno zadate mere letvica na polju ili krilu (mm); mera bez vrednosti ostaje kakva je na crtežu modela */
-export interface SlatOverride { leftMm?: number; rightMm?: number; gapMm?: number }
+export interface SlatOverride {
+  /** uspravne letvice: odstojanje prve od levog i poslednje od desnog kraja, željeni razmak */
+  leftMm?: number; rightMm?: number; gapMm?: number;
+  /** vodoravne prečke koje se ponavljaju: odstojanje donje od dna, gornje od vrha ispune i željeni razmak */
+  bottomMm?: number; topMm?: number; hGapMm?: number;
+  /** nosači (vodoravni delovi koji se ne ponavljaju): odstojanje od bliže ivice ispune (dno ili vrh), po ID prvog dela nosača */
+  rails?: Record<string, number>;
+}
 
 /** najveća grupa uspravnih letvica istog preseka (ram i U vođice nisu letvice); bar 3 letvice */
 function slatGroupOf(model: CustomModel, materials: Material[]): CustomPart | null {
@@ -72,6 +72,14 @@ function slatGroupOf(model: CustomModel, materials: Material[]): CustomPart | nu
     if (g.bars.length >= 3 && (!best || g.bars.length > best.n)) best = { bar: g.bars[0], n: g.bars.length };
   }
   return best ? best.bar : null;
+}
+
+/** ID-evi uspravnih letvica koje se preračunavaju za širinu krila (prazno kad model nema takve letvice ili se ne preračunava) */
+export function slatIdsOf(model: CustomModel, materials: Material[]): Set<string> {
+  if (!refillsVBars(model)) return new Set();
+  const bar = slatGroupOf(model, materials);
+  const g = bar && vBarGroup(model, bar, materials);
+  return new Set(g ? g.bars.map((b) => b.id) : []);
 }
 
 /** Trenutni raspored letvica modela: broj, odstojanje prve i poslednje od ivica i razmak (null kad model nema uspravne letvice). */
@@ -100,4 +108,184 @@ export function refillVBars(original: CustomModel, scaled: CustomModel, material
   if (f.count < 1) return scaled;
   const r = layoutVBars(scaled, sBar.id, materials, { count: f.count, top: f.left, bottom: f.right, gap: f.gap, auto: f.count === 1 ? 'bottom' : 'gap' });
   return 'error' in r ? scaled : r.model;
+}
+
+/**
+ * Slobodne vodoravne prečke složene jedna iznad druge sa jednakim razmakom (daske, letvice, lamele, naizmenične široke i uske
+ * letvice, segmenti panela sa linijama u razmacima): za novu visinu se računa broj prečki i jednak razmak između svih, kao za
+ * uspravne letvice po širini. Redosled debljina se ponavlja (npr. uska, široka, uska, široka), a prva i poslednja prečka ostaju
+ * iste vrste kao na crtežu. Nosači koji se ne ponavljaju (npr. dva nosača letvica) i ram ne ulaze u niz i ostaju vezani za svoju
+ * ivicu. Nagnute lamele koje se uvlače jedna u drugu (negativan razmak) ostaju uvučene za isto.
+ */
+export function planPattern(original: CustomModel, heightMm: number, materials: Material[], fill?: SlatOverride): PatternPlan | null {
+  const shapeOf = shapeLookup(materials);
+  const W0 = original.widthMm; const H0 = original.heightMm;
+  type Cand = { p: CustomPart; y0: number; y1: number; sig: string; edge: 'lo' | 'hi' | null };
+  const all: Cand[] = [];
+  for (const p of original.parts) {
+    if (p.heightMm || (norm(p.angleDeg) !== 0 && norm(p.angleDeg) !== 180)) continue;
+    const sh = shapeOf(p);
+    if (!sh || sh.type !== 'linear') continue;
+    const b = partBounds(p, sh);
+    if (b.x1 - b.x0 < 0.6 * W0) continue;
+    all.push({ p, y0: b.y0, y1: b.y1, edge: b.y0 <= 1 ? 'lo' : b.y1 >= H0 - 1 ? 'hi' : null, sig: `${p.materialId}|${p.rot}|${p.tiltDeg ?? 0}|${Math.round((b.y1 - b.y0) * 10)}|${Math.round(p.lengthMm)}` });
+  }
+  // deo uz ivicu je ram, osim ako liči na (bar dve) prečke u unutrašnjosti polja
+  const sigCount = new Map<string, number>();
+  for (const c of all) if (!c.edge && !c.p.cut45) sigCount.set(c.sig, (sigCount.get(c.sig) ?? 0) + 1);
+  const cands = all.filter((c) => !c.p.cut45 && (!c.edge || (sigCount.get(c.sig) ?? 0) >= 2));
+  const inPattern = new Set(cands.map((c) => c.p.id));
+  let lowFrame = 0; let topFrame = H0;
+  for (const c of all) {
+    if (inPattern.has(c.p.id) || !c.edge) continue;
+    if (c.edge === 'lo') lowFrame = Math.max(lowFrame, c.y1); else topFrame = Math.min(topFrame, c.y0);
+  }
+  const n = cands.length;
+  if (n < 3) return null;
+  cands.sort((a, b) => a.y0 - b.y0);
+  // razmak između susednih prečki mora da bude isti (sa odstupanjem 1,5 mm); prva ili poslednja prečka može biti pomerena zbog ivice
+  const gaps = cands.slice(1).map((c, i) => c.y0 - cands[i].y1);
+  const g = [...gaps].sort((a, b) => a - b)[Math.floor(gaps.length / 2)];
+  if (gaps.some((x, i) => Math.abs(x - g) > 1.5 && i !== 0 && i !== gaps.length - 1)) return null;
+  // najmanji niz od k vrsta prečki koji se ponavlja
+  let k = n;
+  for (let kk = 1; kk < n; kk++) if (cands.every((c, i) => c.sig === cands[i % kk].sig)) { k = kk; break; }
+  if (k >= n) return null;
+  const edge = (v: number) => Math.min(Math.max(0, v), Math.max(0, g));
+  // odstojanja od dna i vrha koja je radnik zadao važe tačno; ostala ostaju kao na crtežu (najviše koliko i razmak)
+  const e0 = fill?.bottomMm !== undefined ? Math.max(0, fill.bottomMm) : edge(cands[0].y0 - lowFrame);
+  const e1 = fill?.topMm !== undefined ? Math.max(0, fill.topMm) : edge(topFrame - cands[n - 1].y1);
+  const yBot = lowFrame; const yTop = topFrame + (heightMm - H0);
+  const room = yTop - yBot - e0 - e1;
+  const hOf = (t: number): number => cands[t % k].y1 - cands[t % k].y0;
+  // poslednja (gornja) prečka je one vrste kojom se crtež završava (npr. gore je uvek široka letvica, a dole uska).
+  // Razmak nikad nije manji od onog sa crteža: staje najviše prečki pri kojima je razmak bar toliki, a ostatak se ravnomerno deli
+  // na sve razmake. Nagnute lamele koje se uvlače jedna u drugu (negativan razmak) zadržavaju uvlačenje blisko onom sa crteža.
+  // željeni razmak: zadat ručno ili sa crteža
+  const gT = fill?.hGapMm !== undefined ? fill.hGapMm : g;
+  const okEnd = (t: number): boolean => cands[(t - 1) % k].sig === cands[n - 1].sig;
+  let best: { t: number; gap: number } | null = null;
+  for (let t = 1; t <= 400; t++) {
+    let sum = 0; for (let s = 0; s < t; s++) sum += hOf(s);
+    if (t === 1) { if (gT >= 0 && sum <= room && okEnd(t)) best = { t, gap: 0 }; continue; }
+    const gp = (room - sum) / (t - 1);
+    // uvučene lamele: bira se broj kod koga je uvlačenje najbliže onom sa crteža (najviše 15 mm veće)
+    if (gT < 0) { if (gp < gT - 15) break; if (okEnd(t) && (!best || Math.abs(gp - gT) < Math.abs(best.gap - gT))) best = { t, gap: gp }; continue; }
+    if (gp < gT - 1e-9) break;
+    if (okEnd(t)) best = { t, gap: gp };
+  }
+  if (!best) {
+    // ni najmanji niz ne staje sa razmakom sa crteža: uzima se najmanji broj prečki koji staje
+    for (let t = 2; t <= n; t++) {
+      let sum = 0; for (let s = 0; s < t; s++) sum += hOf(s);
+      if (okEnd(t) && room >= sum) { best = { t, gap: (room - sum) / (t - 1) }; break; }
+    }
+  }
+  if (!best) return null;
+  return { cands: cands.map((c) => ({ p: c.p, y0: c.y0, y1: c.y1 })), k, t: best.t, gap: best.gap, yBot, e0, e1, hOf };
+}
+
+/** broj prečki vrste j (0 … k−1) u nizu od t prečki */
+const countOfKind = (t: number, k: number, j: number): number => (t > j ? Math.floor((t - 1 - j) / k) + 1 : 0);
+
+/**
+ * Količine za specifikaciju: vrsta (0 … k−1) svakog dela koji pripada nizu (ID dela → vrsta) i broj prečki svake vrste u nizu za
+ * visinu `heightMm`. null kad model nema niz prečki koji se preračunava.
+ */
+export function patternCounts(original: CustomModel, heightMm: number, materials: Material[], fill?: SlatOverride): { kinds: Map<string, number>; counts: number[] } | null {
+  const plan = planPattern(original, heightMm, materials, fill);
+  if (!plan) return null;
+  return { kinds: new Map(plan.cands.map((c, i) => [c.p.id, i % plan.k])), counts: Array.from({ length: plan.k }, (_, j) => countOfKind(plan.t, plan.k, j)) };
+}
+
+export interface PatternPlan { cands: { p: CustomPart; y0: number; y1: number }[]; k: number; t: number; gap: number; yBot: number; e0: number; e1: number; hOf: (t: number) => number }
+
+export function refillPattern(original: CustomModel, scaled: CustomModel, materials: Material[], fill?: SlatOverride): CustomModel {
+  const plan = planPattern(original, scaled.heightMm, materials, fill);
+  if (!plan) return scaled;
+  const { cands, k, hOf } = plan;
+  const n = cands.length;
+  const best = { t: plan.t, gap: plan.gap };
+  const yBot = plan.yBot; const e0 = plan.e0;
+  const byId = new Map(scaled.parts.map((p) => [p.id, p]));
+  const made: CustomPart[] = [];
+  let y0 = yBot + e0;
+  for (let t = 0; t < best.t; t++) {
+    // prečke sa crteža zadržavaju svoja svojstva (npr. druga boja jedne daske); dodate prečke nastavljaju poslednji niz
+    const c = t < n ? cands[t] : cands[n - k + ((t - n) % k)];
+    const src = byId.get(c.p.id);
+    if (src) made.push({ ...src, id: t < n ? c.p.id : `${c.p.id}_r${t}`, y: c.p.y + (y0 - c.y0) });
+    y0 += hOf(t) + best.gap;
+  }
+  const drop = new Set(cands.map((c) => c.p.id));
+  const parts: CustomPart[] = [];
+  let inserted = false;
+  for (const p of scaled.parts) {
+    if (!drop.has(p.id)) { parts.push(p); continue; }
+    if (!inserted) { parts.push(...made); inserted = true; }
+  }
+  return { ...scaled, parts };
+}
+
+/* ---------- nosači ---------- */
+
+export interface RailGroup {
+  /** ID prvog dela nosača (ključ za ručno zadato odstojanje) */
+  key: string;
+  /** delovi nosača: delovi koji se dodiruju po visini (npr. U vođica i prečka uz nju) pomeraju se zajedno */
+  ids: string[];
+  /** ivica za koju je nosač vezan i odstojanje od nje na crtežu (mm) */
+  edge: 'bottom' | 'top';
+  offsetMm: number;
+  /** visina nosača (mm) */
+  heightMm: number;
+}
+
+/**
+ * Nosači modela: vodoravni delovi preko (skoro) cele širine koji nisu ram uz ivicu i ne pripadaju nizu prečki koje se ponavljaju.
+ * Nosač ispod sredine je vezan za dno, iznad sredine za vrh (kao pri promeni veličine polja).
+ */
+export function railGroups(original: CustomModel, materials: Material[]): RailGroup[] {
+  const shapeOf = shapeLookup(materials);
+  const W0 = original.widthMm; const H0 = original.heightMm;
+  const inPattern = new Set(planPattern(original, H0, materials)?.cands.map((c) => c.p.id) ?? []);
+  const items: { id: string; y0: number; y1: number }[] = [];
+  for (const p of original.parts) {
+    if (inPattern.has(p.id) || p.cut45 || p.heightMm || (norm(p.angleDeg) !== 0 && norm(p.angleDeg) !== 180)) continue;
+    const sh = shapeOf(p);
+    if (!sh || sh.type !== 'linear') continue;
+    const b = partBounds(p, sh);
+    if (b.x1 - b.x0 < 0.6 * W0 || b.y0 <= 1 || b.y1 >= H0 - 1) continue;
+    items.push({ id: p.id, y0: b.y0, y1: b.y1 });
+  }
+  items.sort((a, b) => a.y0 - b.y0);
+  const groups: { ids: string[]; y0: number; y1: number }[] = [];
+  for (const it of items) {
+    const last = groups[groups.length - 1];
+    if (last && it.y0 <= last.y1 + 1) { last.ids.push(it.id); last.y1 = Math.max(last.y1, it.y1); }
+    else groups.push({ ids: [it.id], y0: it.y0, y1: it.y1 });
+  }
+  return groups.map((g) => {
+    const bottom = (g.y0 + g.y1) / 2 < H0 / 2;
+    return { key: g.ids[0], ids: g.ids, edge: bottom ? 'bottom' : 'top', offsetMm: bottom ? g.y0 : H0 - g.y1, heightMm: g.y1 - g.y0 };
+  });
+}
+
+/** Nosači pomereni na ručno zadato odstojanje od svoje ivice (dno ili vrh ispune); ostali ostaju gde jesu. */
+export function applyRails(original: CustomModel, model: CustomModel, materials: Material[], rails: Record<string, number> | undefined): CustomModel {
+  if (!rails || !Object.keys(rails).length) return model;
+  const shapeOf = shapeLookup(materials);
+  const shift = new Map<string, number>();
+  for (const g of railGroups(original, materials)) {
+    const v = rails[g.key];
+    if (v === undefined || !Number.isFinite(v)) continue;
+    const bs = g.ids.map((id) => model.parts.find((p) => p.id === id)).flatMap((p) => { const sh = p && shapeOf(p); return p && sh ? [partBounds(p, sh)] : []; });
+    if (!bs.length) continue;
+    const y0 = Math.min(...bs.map((b) => b.y0)); const y1 = Math.max(...bs.map((b) => b.y1));
+    const want = Math.max(0, Math.min(v, model.heightMm - (y1 - y0)));
+    const d = g.edge === 'bottom' ? want - y0 : model.heightMm - want - y1;
+    for (const id of g.ids) shift.set(id, d);
+  }
+  if (!shift.size) return model;
+  return { ...model, parts: model.parts.map((p) => (shift.has(p.id) ? { ...p, y: p.y + shift.get(p.id)! } : p)) };
 }

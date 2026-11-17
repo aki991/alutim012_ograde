@@ -1,12 +1,10 @@
 import { PencilRuler, Trash2, Wrench } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CustomModelThumb } from '../../components/designer/PartsSvg';
-import { SlidingModelThumb } from '../../components/designer/SlidingModelThumb';
-import { ElementThumb, SlidingThumb } from '../../components/editor/Catalog';
+import { ElementThumb, GateModelThumb, SlidingThumb } from '../../components/editor/Catalog';
 import { Page, PageHeader } from '../../components/ui/Common';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
-import { GATE_TYPE_LABELS } from '../../domain/gates/gateModels';
+import { GATE_TYPE_LABELS, leafKeyOf } from '../../domain/gates/gateModels';
 import { type SlidingPresetId } from '../../domain/gates/slidingAssembly';
 import { GATE_LABELS, projectModelId } from '../../domain/models/catalog';
 import { allFenceModels } from '../../domain/models/customRegistry';
@@ -36,7 +34,6 @@ const THUMB = { width: 330, height: 206 };
 export default function GateModelsPage() {
   const navigate = useNavigate();
   const customModels = useAppStore((s) => s.settings.customModels);
-  const materials = useAppStore((s) => s.materials);
   const hidden = useAppStore((s) => s.settings.hiddenModels) ?? [];
   const projects = useListedProjects();
   const currentId = useAppStore((s) => s.editor.projectId);
@@ -49,7 +46,8 @@ export default function GateModelsPage() {
   const [delAll, setDelAll] = useState(false);
   // ograda na sličicama: model iz otvorenog projekta; bez projekta prvi model sa stranice Modeli ograda
   const shownModel = (current && projectModelId(current.items)) || allFenceModels()[0].id;
-  const rework = (p: SlidingPresetId) => navigate(`/modeli/crtanje/${useAppStore.getState().startSlidingDorada(p)}`);
+  const doradaModel = leafKeyOf(shownModel, customModels);
+  const rework = (p: SlidingPresetId) => navigate(`/modeli/crtanje/${useAppStore.getState().startSlidingDorada(p, doradaModel)}`);
   const startSliding = (source: { preset: SlidingPresetId }) => { const id = useAppStore.getState().newProjectFromSliding(source); if (id) navigate(`/editor/${id}`); };
 
   const usedBy = (modelId: string): string[] => projects.filter((p) => p.items.some((it) => it.kind === 'gate' && it.infillModelId === modelId)).map((p) => p.name);
@@ -72,7 +70,7 @@ export default function GateModelsPage() {
                 <h3 className="font-bold text-[17px]">{GATE_LABELS[b.type]}</h3>
                 <p className="text-sm text-muted mt-0.5">{b.subtitle}</p>
                 <div className="flex gap-2 mt-auto pt-4">
-                  <button className="btn flex-1 !px-2" data-testid={`rework-gate-${b.type}`} title="Otvara crtež kapije u crtanju, gde se menja svaki deo" onClick={() => navigate(`/modeli/crtanje/${useAppStore.getState().startGateDorada(b.type)}`)}><Wrench size={16} />Doradi</button>
+                  <button className="btn flex-1 !px-2" data-testid={`rework-gate-${b.type}`} title="Otvara crtež kapije u crtanju, gde se menja svaki deo" onClick={() => navigate(`/modeli/crtanje/${useAppStore.getState().startGateDorada(b.type, doradaModel)}`)}><Wrench size={16} />Doradi</button>
                   <button className="btn btn-primary flex-1 !px-2" onClick={() => useBasic(b.type)}>Koristi model</button>
                   <button className="btn btn-danger shrink-0" data-testid={`delete-basic-${b.type}`} aria-label={`Obriši ${GATE_LABELS[b.type]}`} title="Obriši kapiju" onClick={() => setDelBasic(b.type)}><Trash2 size={16} /></button>
                 </div>
@@ -107,11 +105,11 @@ export default function GateModelsPage() {
           <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
             {models.map((m) => (
               <article key={m.id} className="card overflow-hidden flex flex-col" data-testid="gate-model-card">
-                <div className="relative aspect-[16/10] bg-[#eef2f6] overflow-hidden border-b border-line p-3">{m.gate?.gateType === 'sliding' && m.gate.sliding ? <SlidingModelThumb model={m} materials={materials} /> : <CustomModelThumb model={m} materials={materials} />}</div>
+                <div className="relative aspect-[16/10] bg-[#eef2f6] overflow-hidden border-b border-line p-3"><div className="h-full grid place-items-center"><GateModelThumb model={m} size={THUMB} /></div></div>
                 <div className="p-4 flex-1 flex flex-col">
                   <h3 className="font-bold text-[17px]" data-testid="gate-model-name">{m.name || 'Model bez naziva'}</h3>
                   <p className="text-sm text-muted mt-0.5">Kapija · {m.widthMm} × {m.heightMm + (m.gate?.gateType === 'sliding' ? m.gate.sliding?.frameBottomY ?? 0 : 0)} mm · {m.parts.length} delova</p>
-                  <p className="text-[12.5px] text-muted">{GATE_TYPE_LABELS[m.gate?.gateType ?? 'pedestrian']} · mere kapije v{m.gate?.version ?? 1}</p>
+                  <p className="text-[12.5px] text-muted">{GATE_TYPE_LABELS[m.gate?.gateType ?? 'pedestrian']} · mere kapije v{m.gate?.version ?? 1}{m.gateDefault ? ' · podrazumevana' : ''}</p>
                   <div className="flex flex-wrap gap-2 mt-auto pt-4">
                     <button className="btn btn-primary" data-testid="use-gate-model" disabled={m.parts.length === 0} onClick={() => useModel(m)}>Koristi model</button>
                     <button className="btn" data-testid="open-gate-model" onClick={() => navigate(`/modeli/crtanje/${m.id}`)}><PencilRuler size={16} />Otvori crtež</button>

@@ -108,7 +108,7 @@ export function PartMesh({ part, shape, hex, materialKey, selected }: { part: Cu
 }
 
 /** 3D prikaz nacrtanog modela: profili su izvučeni iz svog poprečnog preseka, komadni delovi su sklopljeni iz jednostavnih tela. */
-export default function Designer3D({ model, parts, selectedId, sliding }: { model: CustomModel; parts: ResolvedPart[]; selectedId: string | null; sliding?: SlidingOverlay3D | null }) {
+export default function Designer3D({ model, parts, selectedId, sliding, posts, floorMm = 0, postHex = '#4b5563' }: { model: CustomModel; parts: ResolvedPart[]; selectedId: string | null; sliding?: SlidingOverlay3D | null; /** stubovi uz kapiju: leva ivica, debljina i visina (mm) */ posts?: { x: number; w: number; h: number }[] | null; /** tlo ispod donje ivice crteža (mm) */ floorMm?: number; /** boja stubova (boja kapije) */ postHex?: string }) {
   const ground = sliding ? sliding.groundMm / 1000 : 0;
   const W = model.widthMm / 1000; const H = model.heightMm / 1000;
   const dist = Math.max(W, H) * 1.5 + 0.8;
@@ -130,6 +130,12 @@ export default function Designer3D({ model, parts, selectedId, sliding }: { mode
         </mesh>
         <group scale={0.001}>
           {parts.map((r) => <PartMesh key={r.part.id} part={r.part} shape={r.shape} hex={r.hex} materialKey={r.material ? materialKey(r.material) : 'x'} selected={r.part.id === selectedId} />)}
+          {posts?.map((q, i) => (
+            <mesh key={i} position={[q.x + q.w / 2, q.h / 2 - floorMm, zMid]} castShadow data-testid={`designer-3d-post-${i}`}>
+              <boxGeometry args={[q.w, q.h, q.w]} />
+              <meshStandardMaterial color={postHex} roughness={0.7} />
+            </mesh>
+          ))}
           {/* klizni okov: tlo je ispod krila za odstojanje donje ivice rama */}
           {sliding && (
             <group position={[0, -sliding.groundMm, 0]}>

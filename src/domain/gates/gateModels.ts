@@ -112,3 +112,18 @@ export function gateFieldsFromModel(m: CustomModel): Partial<Gate> {
 
 /** svetli otvor koji model postavlja na novoj kapiji */
 export const gateClearWidth = (m: CustomModel): Mm => m.gate?.clearWidthMm ?? m.widthMm;
+
+/** model ograde iz kataloga na koji se odnosi izbor u editoru: kapija iz modela i dorađen model ograde vode na svoj osnovni model */
+export function leafKeyOf(modelId: string, list: readonly CustomModel[] | undefined): string {
+  const cm = list?.find((m) => m.id === modelId);
+  if (cm?.kind === 'gate') return cm.leafModelId ?? modelId;
+  return cm?.replaces ?? modelId;
+}
+
+/** moje kapije zadatog tipa nacrtane od modela ograde `fenceModelId` (podrazumevana prva); `support` samo za klizne (na šini / samonoseća) */
+export function gateModelsFor(list: readonly CustomModel[] | undefined, gateType: GateType, fenceModelId: string, support?: 'ground_rail' | 'cantilever'): CustomModel[] {
+  const key = leafKeyOf(fenceModelId, list);
+  return (list ?? [])
+    .filter((m) => m.kind === 'gate' && !m.replaces && m.parts.length > 0 && m.gate?.gateType === gateType && m.leafModelId === key && (!support || m.gate?.sliding?.support === support))
+    .sort((a, b) => Number(!!b.gateDefault) - Number(!!a.gateDefault));
+}

@@ -1,9 +1,10 @@
 import { FEATURES } from '../../config/features';
-import { FENCE_MODEL_LIST, FENCE_MODELS, type FenceModelDef } from './catalog';
+import { FENCE_MODEL_LIST, FENCE_MODELS, setDefaultModelProvider, type FenceModelDef } from './catalog';
 import { miterEndsOf, partBounds, resolveParts, sheetAreaMm2, type CustomModel, type CustomPart, type ResolvedPart } from './custom';
 import { applyGuides, guidesOf, scaleWithGuides } from './guides';
+import { anchoredLengthFormula, anchoredModel } from './anchored';
 import { isFramePart, resizeWithFrame } from './frame';
-import { refillsVBars, refillVBars, slatLayoutOf, type SlatOverride } from './gateRefill';
+import { applyRails, planPattern, railGroups, refillsVBars, patternCounts, refillPattern, refillVBars, slatIdsOf, slatLayoutOf, type SlatOverride } from './gateRefill';
 import { materialShape, sectionFace, type MatShape } from './materialShape';
 import { screwCounts, screwMaterial } from './terraceHardware';
 import type { SpecPart } from './spec';
@@ -72,9 +73,13 @@ export const allFenceModels = (keep?: string): FenceModelDef[] => {
  * U profile, a uglovi bi se razmakli): ram zadržava debljinu, a platno unutar njega se razvlači, kao pri izmeni mera u crtanju.
  */
 export function scaledModel(m: CustomModel, widthMm: number, heightMm: number, slats?: SlatOverride): CustomModel {
-  const out = stretchedModel(m, widthMm, heightMm);
-  // kapija iz modela: letvice se preračunavaju za stvarnu širinu krila (broj i jednak razmak), ne razvlače se kao slika
-  return refillsVBars(m) ? refillVBars(m, out, MATERIALS, slats) : out;
+  if (!refillsVBars(m)) return stretchedModel(m, widthMm, heightMm);
+  // model iz kataloga i kapija iz modela: mere ostaju vezane za ivice polja (ram, nosači), a broj i razmak letvica i prečki se
+  // preračunavaju za stvarnu širinu i visinu, ne razvlače se kao slika
+  const base = m.parts.some(isFramePart) ? stretchedModel(m, widthMm, heightMm) : anchoredModel(m, widthMm, heightMm, MATERIALS);
+  // nosači na ručno zadatom odstojanju, pa letvice (po širini) i prečke (po visini)
+  const out = applyGuides(applyRails(m, base, MATERIALS, slats?.rails), MATERIALS);
+  return applyGuides(refillPattern(m, refillVBars(m, out, MATERIALS, slats), MATERIALS, slats), MATERIALS);
 }
 
 function stretchedModel(m: CustomModel, widthMm: number, heightMm: number): CustomModel {
@@ -90,7 +95,7 @@ const SCALED = new Map<string, { m: CustomModel; mats: Material[]; model: Custom
 export function customPartsFor(modelId: string, widthMm: number, heightMm: number, color: string, slats?: SlatOverride): ResolvedPart[] {
   const m = REG.get(modelId);
   if (!m) return [];
-  const key = `${modelId}|${widthMm}|${heightMm}|${slats ? `${slats.leftMm ?? ''}/${slats.rightMm ?? ''}/${slats.gapMm ?? ''}` : ''}`;
+  const key = `${modelId}|${widthMm}|${heightMm}|${slats ? JSON.stringify(slats) : ''}`;
   let c = SCALED.get(key);
   if (!c || c.m !== m || c.mats !== MATERIALS) { c = { m, mats: MATERIALS, model: scaledModel(m, widthMm, heightMm, slats) }; if (SCALED.size > 200) SCALED.clear(); SCALED.set(key, c); }
   return resolveParts({ ...c.model, color }, MATERIALS);
@@ -149,8 +154,10 @@ function specKey(m: CustomModel, p: CustomPart, guideIds: Set<string>) {
     const a = (p.angleDeg * Math.PI) / 180;
     const g = guidesOf(m, p, MATERIALS);
     // prečka u U profilima: dužina raste koliko se razmaknu ose bočnih profila (dubina ulaska u kanal ostaje ista)
-    lengthMm = g ? `${r1(p.lengthMm)}+${r1(m.parts.find((x) => x.id === g[1].id)!.x - m.parts.find((x) => x.id === g[0].id)!.x)}*(W/${m.widthMm}-1)`
-      : Math.abs(Math.cos(a)) >= Math.abs(Math.sin(a)) ? `${r1(p.lengthMm)}*W/${m.widthMm}` : `${r1(p.lengthMm)}*H/${m.heightMm}`;
+    // model iz kataloga: bočni U profili ostaju uz ivice polja, pa se prečka produžava za razliku širina; ostali modeli razvlače razmak srazmerno
+    const anchoredGuides = g && refillsVBars(m) && !m.parts.some(isFramePart);
+    lengthMm = anchoredGuides ? `${r1(p.lengthMm)}+1*(W-${m.widthMm})` : g ? `${r1(p.lengthMm)}+${r1(m.parts.find((x) => x.id === g[1].id)!.x - m.parts.find((x) => x.id === g[0].id)!.x)}*(W/${m.widthMm}-1)`
+      : (refillsVBars(m) && !m.parts.some(isFramePart) && anchoredLengthFormula(m, p)) || (Math.abs(Math.cos(a)) >= Math.abs(Math.sin(a)) ? `${r1(p.lengthMm)}*W/${m.widthMm}` : `${r1(p.lengthMm)}*H/${m.heightMm}`);
     // deo rama: širina profila u ravni spoja (okretanje preseka) određuje koliko komadi mogu da dele kosi rez
     miterMm = p.cut45 && shape?.type === 'linear' ? sectionFace(shape.section, p.rot).face : undefined;
     const me = miterEndsOf(p);
@@ -178,8 +185,19 @@ export function customSpec(m: CustomModel): SpecPart[] {
   const rows = new Map<string, SpecPart & { n: number; area: number }>();
   const roles = customPartRoles(m);
   const guideIds = new Set(m.parts.flatMap((p) => p.guides ?? []));
+  // uspravne letvice se preračunavaju za širinu polja ili krila (SLATS): broj letvica u specifikaciji prati stvaran broj, ne broj sa crteža
+  const slatIds = slatIdsOf(m, MATERIALS);
+  const slatsIn = new Map<string, number>();
+  // vodoravne prečke koje se ponavljaju: broj prečki se računa za visinu polja (HBAR0, HBAR1 … po vrsti prečke)
+  const pat = refillsVBars(m) ? patternCounts(m, m.heightMm, MATERIALS) : null;
+  const patKinds = new Map<string, { kinds: Set<number>; n: number }>();
   for (const p of m.parts) {
-    const { key, lengthMm, group, miterMm, miterEnds, mat } = specKey(m, p, guideIds);
+    const sk = specKey(m, p, guideIds);
+    const { lengthMm, group, miterMm, miterEnds, mat } = sk;
+    // prečke iste vrste u nizu čine jednu stavku (dužina im se razlikuje samo u zaokruživanju)
+    const key = pat && pat.counts.length <= 4 && pat.kinds.has(p.id) ? `${p.materialId}|PAT${pat.kinds.get(p.id)}` : sk.key;
+    if (slatIds.has(p.id)) slatsIn.set(key, (slatsIn.get(key) ?? 0) + 1);
+    if (pat && pat.counts.length <= 4 && pat.kinds.has(p.id)) { const e = patKinds.get(key) ?? { kinds: new Set<number>(), n: 0 }; e.kinds.add(pat.kinds.get(p.id)!); e.n += 1; patKinds.set(key, e); }
     const name = mat?.name ?? 'Deo sa crteža (materijal obrisan)';
     const role = lengthMm ? roles.get(p.id) : undefined;
     const cutAngle = p.cutStartDeg ?? p.cutEndDeg;
@@ -193,8 +211,8 @@ export function customSpec(m: CustomModel): SpecPart[] {
   }
   const spec: SpecPart[] = [...rows.entries()].map(([key, { n, area, ...part }]) => ({
     ...part,
-    qty: key.endsWith('|m2') ? `${Math.round(area * 10000) / 10000}*W/${m.widthMm}*H/${m.heightMm}` : String(n),
-    note: key.endsWith('|m2') ? 'površina (m²) prati širinu i visinu polja' : part.note ?? (part.lengthMm ? 'dužina sa crteža, prati veličinu polja' : undefined),
+    qty: key.endsWith('|m2') ? `${Math.round(area * 10000) / 10000}*W/${m.widthMm}*H/${m.heightMm}` : slatsIn.has(key) ? (n > slatsIn.get(key)! ? `SLATS+${n - slatsIn.get(key)!}` : 'SLATS') : patKinds.has(key) ? [...patKinds.get(key)!.kinds].sort().map((j) => `HBAR${j}`).join('+') + (n > patKinds.get(key)!.n ? `+${n - patKinds.get(key)!.n}` : '') : String(n),
+    note: key.endsWith('|m2') ? 'površina (m²) prati širinu i visinu polja' : slatsIn.has(key) ? 'uspravne letvice: broj se računa za širinu polja (jednak razmak), dužina prati visinu' : patKinds.has(key) ? 'vodoravne prečke: broj se računa za visinu polja (jednak razmak), dužina prati širinu' : part.note ?? (part.lengthMm ? 'dužina sa crteža, prati veličinu polja' : undefined),
   }));
   // zavrtnji uz okov (prsten prečke, veza stub–rukohvat, flanša): po komadu okova na crtežu
   for (const [sku, n] of screwCounts(m.parts, MATERIALS, m.hw)) {
@@ -204,12 +222,50 @@ export function customSpec(m: CustomModel): SpecPart[] {
   return spec;
 }
 
+/** Broj uspravnih letvica modela na polju ili krilu zadate veličine: preračunat za širinu; kad se ne preračunava, broj sa crteža. */
+export function customSlatCount(modelId: string, widthMm: number, heightMm: number, slats?: SlatOverride): number {
+  const m = REG.get(modelId);
+  if (!m) return 0;
+  return customSlatLayout(modelId, widthMm, heightMm, slats)?.count ?? slatIdsOf(m, MATERIALS).size;
+}
+
+/** Broj vodoravnih prečki svake vrste (HBAR0, HBAR1 …) koje model ima na polju zadate visine; prazno kad model nema takav niz. */
+export function customPatternCounts(modelId: string, heightMm: number, slats?: SlatOverride): number[] {
+  const m = REG.get(modelId);
+  return (m && refillsVBars(m) && patternCounts(m, heightMm, MATERIALS, slats)?.counts) || [];
+}
+
+/** Raspored vodoravnih prečki koje se ponavljaju na ispuni zadate visine (broj, odstojanje od dna i vrha, razmak); null kad ih model nema. */
+export function customHBarLayout(modelId: string, heightMm: number, slats?: SlatOverride): { count: number; bottom: number; top: number; gap: number } | null {
+  const m = REG.get(modelId);
+  if (!m || !refillsVBars(m)) return null;
+  const plan = planPattern(m, heightMm, MATERIALS, slats);
+  return plan ? { count: plan.t, bottom: plan.e0, top: plan.e1, gap: plan.gap } : null;
+}
+
+/** Nosači modela sa trenutnim odstojanjem od svoje ivice (ručno zadato ili sa crteža) i nazivom za prikaz. */
+export function customRails(modelId: string, slats?: SlatOverride): { key: string; label: string; edge: 'bottom' | 'top'; offsetMm: number; heightMm: number }[] {
+  const m = REG.get(modelId);
+  if (!m || !refillsVBars(m)) return [];
+  const groups = railGroups(m, MATERIALS);
+  const nb = groups.filter((g) => g.edge === 'bottom').length; const nt = groups.length - nb;
+  let ib = 0; let it = 0;
+  return groups.map((g) => {
+    const label = g.edge === 'bottom'
+      ? (nb > 1 ? `Nosač ${++ib} odozdo: od dna ispune` : 'Donji nosač: od dna ispune')
+      : (nt > 1 ? `Nosač ${nt - it++} odozgo: od vrha ispune` : 'Gornji nosač: od vrha ispune');
+    return { key: g.key, label, edge: g.edge, offsetMm: slats?.rails?.[g.key] ?? g.offsetMm, heightMm: g.heightMm };
+  });
+}
+
 /** Raspored uspravnih letvica modela na polju ili krilu zadate veličine (broj, odstojanja od ivica, razmak); null kad model nema takve letvice. */
 export function customSlatLayout(modelId: string, widthMm: number, heightMm: number, slats?: SlatOverride): { count: number; left: number; right: number; gap: number } | null {
   const m = REG.get(modelId);
   if (!m || !refillsVBars(m)) return null;
   return slatLayoutOf(scaledModel(m, widthMm, heightMm, slats), MATERIALS);
 }
+
+setDefaultModelProvider(() => allFenceModels()[0]?.id as FenceModelId | undefined);
 
 // registar modela živi u modulu: pri razvojnoj izmeni ovog fajla (HMR) bi ostao prazan dok se modeli ne promene, pa se stranica ponovo učitava
 if (import.meta.hot) import.meta.hot.accept(() => window.location.reload());

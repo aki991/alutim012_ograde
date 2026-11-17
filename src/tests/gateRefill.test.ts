@@ -56,13 +56,11 @@ describe('broj i razmak letvica za širinu krila', () => {
 });
 
 describe('kapija iz modela „Bela — uske vertikalne letvice“ u projektu', () => {
-  it('samo taj model se preračunava; ostali modeli i ograde ostaju kako su nacrtani', () => {
+  it('svi modeli se preračunavaju: kataloški, dorađeni i ručno nacrtani, ograde i kapije', () => {
     expect(refillsVBars(gateModel())).toBe(true);
-    expect(refillsVBars(gateModel(3000, 'picket_brown'))).toBe(false);
-    expect(refillsVBars({ ...gateModel(), kind: 'fence', baseModelId: undefined })).toBe(false);
-    // ograda nastala od istog modela (zamena originala) se preračunava i kao ograda
+    expect(refillsVBars(gateModel(3000, 'picket_brown'))).toBe(true);
+    expect(refillsVBars({ ...gateModel(), kind: 'fence', baseModelId: undefined })).toBe(false); // ručno nacrtana ograda ostaje kako je nacrtana
     expect(refillsVBars({ ...gateModel(), kind: 'fence' })).toBe(true);
-    // ručno nacrtana kapija (bez polaznog modela)
     expect(refillsVBars({ ...gateModel(), baseModelId: undefined })).toBe(true);
   });
 
@@ -111,11 +109,11 @@ describe('kapija iz modela „Bela — uske vertikalne letvice“ u projektu', (
     for (const r of rails) expect(r.lengthMm).toBeGreaterThan(2000);
   });
 
-  it('model sa drugim letvicama (Braon) se i dalje samo razvlači', () => {
+  it('model Braon se takođe preračunava: uže krilo ima manje letvica', () => {
     const m = gateModel(3000, 'picket_brown');
     registerCustomModels([m], SEED_MATERIALS);
-    const n = m.parts.length;
-    expect(scaledModel(m, 1200, m.heightMm).parts).toHaveLength(n);
+    const count = (x: CustomModel) => { const bar = x.parts.find((p) => p.angleDeg === 90 && (vBarGroup(x, p, SEED_MATERIALS)?.bars.length ?? 0) >= 3)!; return vBarGroup(x, bar, SEED_MATERIALS)!.bars.length; };
+    expect(count(scaledModel(m, 1200, m.heightMm))).toBeLessThan(count(m));
   });
 });
 

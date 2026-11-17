@@ -5,6 +5,7 @@ import { leafHeightOf, slidingH } from '../../domain/gates/slidingLayout';
 import type { Gate, Project } from '../../domain/models/types';
 import { useAppStore } from '../../store/useAppStore';
 import { SlidingForm } from './SlidingForm';
+import { GateModelPicker } from './GateModelPicker';
 import refRailManual from '../../assets/gates/klizna_sina_rucna.svg?url';
 import refRailMotor from '../../assets/gates/klizna_sina_motorna.svg?url';
 import refCantManual from '../../assets/gates/samonoseca_rucna.svg?url';
@@ -25,7 +26,7 @@ export function SlidingPanel({ project, gate }: { project: Project; gate: Gate }
 
   return (
     <div className="space-y-2" data-testid="sliding-panel">
-      <SlidingForm
+      <SlidingForm nameSlot={<GateModelPicker gate={gate} />}
         spec={spec} W={li.clearWidth} H={slidingH(gate)} opening={gate.opening} slideId={gate.id} selectedPart={part} onSelectPart={setPart}
         onSpec={(p, key) => st.patchSliding(gate.id, p, key)}
         onWidth={(v) => st.setWidth(gate.id, v + 2 * half, `w:${gate.id}`)}

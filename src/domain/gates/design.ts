@@ -206,7 +206,7 @@ export interface GateDesign {
   drive?: { model?: string; doc?: string; risk?: 'nije' | 'u_toku' | 'uradjena' };
   /** konfiguracioni dokument dobavljača (naziv / broj) */
   configDoc?: string;
-  template?: { id: string; name: string; version: number };
+  template?: { id: string; name: string; version: number; /** ograda i boja kapije pre primene modela: povratak na običnu kapiju vraća njih */ prev?: { infillModelId: string; color: string } };
   notes?: string;
 }
 

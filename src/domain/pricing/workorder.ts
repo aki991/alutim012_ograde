@@ -1,3 +1,4 @@
+import { gateLeafPoses } from '../geometry/gates';
 import { isStair, stairGroupAt, stairGroupSummary } from '../geometry/stair';
 import { computeInfill } from '../geometry/infill';
 import { computeLayout, outerWidthMm } from '../geometry/layout';
@@ -6,7 +7,8 @@ import type { ModelSpecs } from '../models/spec';
 import type { Material, Project } from '../models/types';
 import { indexOfNumber, itemLabel, itemNumber } from '../../utils/labels';
 import { buildBom } from './calc';
-import { isCustomModel } from '../models/customRegistry';
+import { customSlatCount, isCustomModel } from '../models/customRegistry';
+import { leafHeightOf } from '../gates/slidingLayout';
 import { resolveSliding, variantTitle } from '../gates/slidingAssembly';
 import { slidingH } from '../gates/slidingLayout';
 import { buildCuttingList, inPrintScope, scopedProject, type CutOptions, type CuttingList, type CutPosition } from './cutting';
@@ -131,10 +133,15 @@ export function buildWorkOrder(project: Project, specs: ModelSpecs | undefined, 
       const li = layout.items[idx];
       const geo = computeInfill(modelId, li.clearWidth, it.heightMm, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount, it.params.liftMm, undefined, it.params.archMm);
       const bars = geo.bars.filter((b) => b.tone === 'main').length;
+      // dvokrilna kapija: letvice oba krila (svako krilo ima svoju širinu)
+      const leafWs = it.kind === 'gate' && it.gateType === 'double' ? gateLeafPoses(it, li.clearStart, li.clearEnd, 0).map((q) => q.widthMm) : [li.clearWidth];
+      const slatCount = isCustomModel(modelId) ? leafWs.reduce((n, w) => n + customSlatCount(modelId, w, it.kind === 'gate' ? leafHeightOf(it) : it.heightMm, it.params.slats), 0) : 0;
       facts.push(
         ...(sliding ? [] : [{ label: 'Ukupna širina', value: `${Math.round(outerWidthMm(project, idx))} mm` }, { label: 'Visina', value: `${Math.round(it.heightMm)} mm` }]),
         { label: 'Boja', value: colorLabel(it.color, it.finish) },
         ...(bars > 0 && !isCustomModel(modelId) ? [{ label: 'Profila ispune', value: String(bars) }] : []),
+        // nacrtan model: broj uspravnih letvica preračunat za stvarnu širinu krila (isti kao na crtežu i u krojnoj listi)
+        ...(isCustomModel(modelId) && slatCount > 0 ? [{ label: 'Letvica', value: String(slatCount) }] : []),
         ...(isStair(it) ? [{ label: 'Stepenište', value: stairGroupSummary(stairGroupAt(project.items, idx)!) }] : []),
       );
       if (it.kind === 'gate' && sliding) {

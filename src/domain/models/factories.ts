@@ -1,7 +1,7 @@
 import { isSpacer, itemPlinthMm } from '../geometry/layout';
 import { GATE_POST_EXTRA_MM, gateBottomGapMm } from '../gates/design';
 import { uid } from '../../utils/id';
-import { DEFAULT_MODEL_ID, FENCE_MODELS, GATE_DEFAULT_WIDTH, postStyleFor } from './catalog';
+import { defaultModelId, FENCE_MODELS, GATE_DEFAULT_WIDTH, postStyleFor } from './catalog';
 import {
   CORNER_GAP_MM,
   POST_EXTRA_CONCRETE_MM,
@@ -53,7 +53,7 @@ export function defaultSettings(): ProjectSettings {
 }
 
 export function createFence(partial: Partial<FenceSection> = {}): FenceSection {
-  const modelId: FenceModelId = partial.modelId ?? DEFAULT_MODEL_ID;
+  const modelId: FenceModelId = partial.modelId ?? defaultModelId();
   return {
     kind: 'fence',
     id: uid('fence'),
@@ -68,7 +68,7 @@ export function createFence(partial: Partial<FenceSection> = {}): FenceSection {
 }
 
 export function createGate(gateType: GateType, partial: Partial<Gate> = {}): Gate {
-  const infill: FenceModelId = partial.infillModelId ?? DEFAULT_MODEL_ID;
+  const infill: FenceModelId = partial.infillModelId ?? defaultModelId();
   return {
     kind: 'gate',
     id: uid('gate'),
