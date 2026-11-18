@@ -238,8 +238,9 @@ describe('okovi koji uz kapiju moraju da postoje', () => {
     const p = createProject('t', [g]);
     const bom = buildBom(p, SEED_MATERIALS);
     const hinge = bom.find((l) => /Šarka — nepoznata oznaka/.test(l.name));
-    expect(hinge).toMatchObject({ purchaseQty: 2, missingPrice: true });
+    // podrazumevana visina kapije je preko 1500 mm: 3 šarke po krilu
+    expect(hinge).toMatchObject({ purchaseQty: 3, missingPrice: true });
     expect(bom.some((l) => /Brava i prihvatnik — nepoznata oznaka/.test(l.name))).toBe(true);
-    expect(buildHardwareList(p).filter((r) => /nepoznata oznaka/.test(r.item)).map((r) => r.qty)).toEqual([2, 1, 1]);
+    expect(buildHardwareList(p).filter((r) => /nepoznata oznaka/.test(r.item)).map((r) => r.qty)).toEqual([3, 1, 1]);
   });
 });

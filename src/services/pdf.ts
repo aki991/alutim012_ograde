@@ -7,7 +7,7 @@ import { buildLouver08Sheet } from '../domain/pricing/louverSpec';
 import { buildRail04Sheet } from '../domain/pricing/railSpec';
 import { computeLayout, isSpacer, outerWidthMm } from '../domain/geometry/layout';
 import { itemLabel, itemNumber } from '../utils/labels';
-import { fmtDate, fmtMoney, fmtNum } from '../utils/units';
+import { fmtDate, fmtMoney, fmtNum, toCurrency } from '../utils/units';
 import { buildMaterialList, materialListRows, materialQtyText } from '../domain/pricing/materialList';
 import { downloadBlob, downloadCsv, frontViewPng, safeFilename, topViewPng } from './exports';
 import { BRAND_RED, docHeader, loadHeaderLogos } from './pdfHeader';
@@ -113,7 +113,7 @@ export async function buildQuotePdfBlob(project: Project, customer: Customer | n
           headerRows: 1, dontBreakRows: true, widths: [52, '*', 24, 44, 52, 56],
           body: [
             [th('Šifra'), th('Naziv'), th('JM'), th('Količ.', 'right'), th(`Cena (${cur})`, 'right'), th(`Ukupno (${cur})`, 'right')],
-            ...bom.map((l) => [td(l.sku, 'left', { fontSize: 7.5 }), td(l.name), td(l.unit), td(fmtNum(l.purchaseQty, l.unit === 'kom' ? 0 : 2), 'right'), td(fmtNum(l.unitPriceNet, 2), 'right'), td(fmtNum(l.total, 0), 'right')]),
+            ...bom.map((l) => [td(l.sku, 'left', { fontSize: 7.5 }), td(l.name), td(l.unit), td(fmtNum(l.purchaseQty, l.unit === 'kom' ? 0 : 2), 'right'), td(fmtNum(toCurrency(l.unitPriceNet, cur, rate), 2), 'right'), td(fmtNum(toCurrency(l.total, cur, rate), cur === 'EUR' ? 2 : 0), 'right')]),
           ],
         },
         layout: tableLayout,
@@ -314,12 +314,12 @@ export async function buildMaterialsPdfBlob(materials: Material[], settings: App
     footer: (page: number, pages: number) => ({ text: `${settings.companyName} · ${page} / ${pages}`, alignment: 'center', fontSize: 8, color: MUTED }),
     content: [
       { text: 'Cenovnik materijala', fontSize: 16, bold: true },
-      { text: `${settings.companyName} · ${fmtDate(new Date().toISOString())} · ${materials.length} materijala · cene neto (${settings.currency}) po jedinici`, color: MUTED, margin: [0, 2, 0, 10] },
+      { text: `${settings.companyName} · ${fmtDate(new Date().toISOString())} · ${materials.length} materijala · cene neto (RSD) po jedinici`, color: MUTED, margin: [0, 2, 0, 10] },
       {
         table: {
           headerRows: 1,
           widths: [80, '*', 70, 40, 85, 55],
-          body: [[head('Šifra'), head('Naziv'), head('Kategorija'), head('Jedinica'), head(`Cena (${settings.currency}, neto)`, 'right'), head('Otpad %', 'right')], ...body],
+          body: [[head('Šifra'), head('Naziv'), head('Kategorija'), head('Jedinica'), head('Cena (RSD, neto)', 'right'), head('Otpad %', 'right')], ...body],
         },
         layout: { hLineWidth: () => 0.4, vLineWidth: () => 0.4, hLineColor: () => '#cbd5e1', vLineColor: () => '#cbd5e1' },
       },

@@ -77,7 +77,7 @@ export function createGate(gateType: GateType, partial: Partial<Gate> = {}): Gat
     heightMm: DEFAULT_GATE_HEIGHT_MM,
     color: FENCE_MODELS[infill].defaultColor,
     infillModelId: infill,
-    opening: 'right',
+    opening: gateType === 'double' ? 'left' : 'right', // dvokrilna: strana aktivnog krila (gledano sa ulice)
     swing: 'inward',
     lock: 'standard',
     hinge: 'standard',

@@ -106,3 +106,50 @@ export function slidingSpaceStatus(g: Gate, clearWidthMm: Mm): { known: boolean;
   if (avail === undefined || avail === null) return { known: false, ok: true, neededMm: clearWidthMm, availableMm: null };
   return { known: true, ok: avail >= clearWidthMm, neededMm: clearWidthMm, availableMm: avail };
 }
+
+/* ---------- dvokrilna kapija: aktivno i pasivno krilo ---------- */
+
+/** Način otvaranja dvokrile kapije u prikazu: samo aktivno krilo ili oba (prvo aktivno, pa se podiže zasun, pa pasivno). */
+export type DoubleOpenMode = 'active' | 'both';
+
+/** deo hoda (0–1) u kome se otvara aktivno krilo, podiže zasun i otvara pasivno krilo kad se otvaraju oba krila */
+const BOTH_ACTIVE_END = 0.45;
+const BOTH_BOLT_END = 0.55;
+
+/**
+ * Otvorenost delova za napredak `t` (0–1). Aktivno krilo: samo ono. Oba krila: aktivno, zatim zasun gore, zatim pasivno krilo;
+ * unazad (zatvaranje) ide obrnutim redom: pasivno, zasun dole, aktivno. `bolt` je 0 spušten (u prihvatu), 1 podignut.
+ */
+export function doubleOpenState(t: number, mode: DoubleOpenMode): { active: number; passive: number; bolt: number } {
+  const o = clamp01(t);
+  if (mode === 'active') return { active: o, passive: 0, bolt: 0 };
+  return {
+    active: clamp01(o / BOTH_ACTIVE_END),
+    bolt: clamp01((o - BOTH_ACTIVE_END) / (BOTH_BOLT_END - BOTH_ACTIVE_END)),
+    passive: clamp01((o - BOTH_BOLT_END) / (1 - BOTH_BOLT_END)),
+  };
+}
+
+/** Aktivno krilo: 0 = levo, 1 = desno, gledano sa ulice. Strana se čuva u `opening` (kod dvokrilne to nije strana šarki). */
+export const activeLeafIndex = (g: Pick<Gate, 'opening'> & { design?: { activeLeaf?: 'left' | 'right' } }): 0 | 1 => ((g.design?.activeLeaf ?? g.opening) === 'left' ? 0 : 1);
+
+/** Krila dvokrilne kapije u odnosu na levo lice stuba (levo, desno): iz mera kapije, a bez njih iz širina krila. */
+export function doubleLeafBoxes(g: Gate, clear: Mm): { x: Mm; w: Mm; hinge: 'left' | 'right' }[] {
+  // mere kapije imaju prednost samo kad zadaju širinu bar jednog krila; inače važe „Različita krila“ (podela jednakih ili zadatih širina)
+  const r = g.design ? resolveGate(g, clear).values : null;
+  const boxes = r && (r.WL?.v != null || r.WR?.v != null) ? swingLeafBoxes(g, clear) : null;
+  if (boxes) return boxes;
+  const [lw, rw] = doubleLeafWidths(g, clear);
+  return [{ x: 0, w: lw, hinge: 'left' }, { x: clear - rw, w: rw, hinge: 'right' }];
+}
+
+/** visina ose brave od donje ivice krila (mm): iz mera kapije, inače nešto iznad sredine */
+export function lockHeightMm(g: Gate, clear: Mm, leafHeightMm: Mm): Mm {
+  const v = g.design ? resolveGate(g, clear).values.lockH?.v ?? null : null;
+  return v !== null ? Math.min(Math.max(v, 0), leafHeightMm) : Math.min(1000, leafHeightMm * 0.55);
+}
+
+/** dužina vertikalnog podnog zasuna (mm) */
+export const floorBoltLengthMm = (leafHeightMm: Mm): Mm => Math.round(Math.min(800, leafHeightMm * 0.45));
+/** odstojanje ose zasuna od unutrašnje ivice pasivnog krila (mm) */
+export const BOLT_INSET_MM = 55;

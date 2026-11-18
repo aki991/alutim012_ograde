@@ -818,6 +818,13 @@ function Scene3DInner({ project, drag, onBeginDrag, registerTarget, targetKey, o
             <button className="btn btn-sm ml-auto" data-testid="gates-open-all" onClick={() => view.setAll(gates.map((g) => g.item.id), 1)}>Otvori sve</button>
             <button className="btn btn-sm" data-testid="gates-close-all" onClick={() => view.setAll(gates.map((g) => g.item.id), 0)}>Zatvori sve</button>
           </div>
+          {selectedGate.item.gateType === 'double' && (
+            <div className="flex flex-wrap gap-1.5 mt-1.5" data-testid="double-open-modes" role="group" aria-label="Način otvaranja dvokrilne kapije">
+              <button className="btn btn-sm" data-testid="double-closed" onClick={() => view.openDouble(selectedGate.item.id, 'closed')}>Zatvoreno</button>
+              <button className="btn btn-sm" data-testid="double-active" onClick={() => view.openDouble(selectedGate.item.id, 'active')}>Otvori aktivno krilo</button>
+              <button className="btn btn-sm" data-testid="double-both" onClick={() => view.openDouble(selectedGate.item.id, 'both')}>Otvori oba krila</button>
+            </div>
+          )}
           {space && selectedGate.item.gateType === 'sliding' && (
             <p className={`text-[12px] mt-1.5 ${space.known && !space.ok ? 'text-[#b42318]' : 'text-[#93370d]'}`} role="status" data-testid="sliding-warning">
               {!space.known ? `Prostor za povlačenje nije zadat; potrebno je približno ${fmtMm(space.neededMm)} pored otvora.`

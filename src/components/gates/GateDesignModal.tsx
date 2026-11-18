@@ -13,6 +13,7 @@ import { applyPostRoles } from '../../domain/models/factories';
 import { LIMITS } from '../../domain/validation/limits';
 import { postDimsOf } from '../../domain/gates/gateModels';
 import { evaluateItemSpec, specFor, type SpecContext } from '../../domain/models/spec';
+import { gateHingeQty } from '../../domain/gates/hingeRule';
 import { gateLeafPoses, gateSpecWidth } from '../../domain/geometry/gates';
 import { gateBomLines } from '../../domain/pricing/calc';
 import type { Gate, Material, Project } from '../../domain/models/types';
@@ -98,7 +99,7 @@ export function GateDesignModal({ projectId, itemId, onClose, embedded, inline }
             {TABS.map((t) => <button key={t.id} role="tab" aria-selected={tab === t.id} data-testid={`gd-tab-${t.id}`} className={`px-3 py-1.5 text-[13px] font-semibold border-b-2 -mb-px ${tab === t.id ? 'border-primary text-primary' : 'border-transparent text-muted'}`} onClick={() => setTab(t.id)}>{t.label}</button>)}
           </div>
           {tab === 'mere' && <DimsTab project={project} index={index} g={g} design={design} res={res} update={update} patchGate={patchGate} clearWidth={li.clearWidth} />}
-          {tab === 'delovi' && <PartsTab g={g} design={design} update={update} materials={materials} sys={sys} />}
+          {tab === 'delovi' && <PartsTab clearWidth={li.clearWidth} g={g} design={design} update={update} materials={materials} sys={sys} />}
           {tab === 'izrada' && <ProductionTab project={project} index={index} g={g} materials={materials} clearStart={li.clearStart} clearEnd={li.clearEnd} />}
           {tab === 'stubovi' && <PostsTab project={project} index={index} g={g} />}
         </div>
@@ -350,13 +351,13 @@ const HW_ROLES_BY_SYS: Record<string, HwRole[]> = {
   rail: ['wheel', 'rail', 'guide', 'receiver', 'stopper', 'lock', 'motor', 'other'],
 };
 
-function PartsTab({ g, design, update, materials, sys }: { g: Gate; design: GateDesign; update: Update; materials: Material[]; sys: ReturnType<typeof systemOf> }) {
+function PartsTab({ g, design, update, materials, sys, clearWidth }: { clearWidth: number; g: Gate; design: GateDesign; update: Update; materials: Material[]; sys: ReturnType<typeof systemOf> }) {
   const upsertMaterial = useAppStore((s) => s.upsertMaterial);
   const [role, setRole] = useState<HwRole>(HW_ROLES_BY_SYS[sys][0]);
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
   const [supplier, setSupplier] = useState('');
-  const missing = missingHardware({ ...g, design }, sys);
+  const missing = missingHardware({ ...g, design }, sys, gateHingeQty(g, clearWidth));
   const patchHw = (id: string, p: Partial<GateHardware>) => update((d) => ({ ...d, hardware: d.hardware.map((h) => (h.id === id ? { ...h, ...p } : h)) }));
   const num = (v: number | null) => (v === null ? undefined : v);
   // okov se pravi ručno; čim se napravi, upisuje se i u „Materijali i cene“ (cena 0 dok se ne upiše), pa je tamo vidljiv i za sledeće poslove
@@ -366,7 +367,7 @@ function PartsTab({ g, design, update, materials, sys }: { g: Gate; design: Gate
     const existing = materials.find((m) => m.category === 'okov' && m.name.trim().toLowerCase() === nm.toLowerCase());
     const mat: Material = existing ?? { id: uid('mat_okov'), sku: code.trim() || `OKOV-${uid('').slice(-5).toUpperCase()}`, name: nm, category: 'okov', unit: 'kom', unitPrice: 0, wastePercent: 0, demo: false };
     if (!existing) upsertMaterial(mat);
-    const qty = requiredHardware(g, sys).find((r) => r.role === role)?.qty ?? 1;
+    const qty = requiredHardware(g, sys, gateHingeQty(g, clearWidth)).find((r) => r.role === role)?.qty ?? 1;
     update((d) => ({ ...d, hardware: [...d.hardware, { id: uid('hw'), role, name: mat.name, code: code.trim() || undefined, supplier: supplier.trim() || undefined, status: 'radionica', qty, materialId: mat.id }] }));
     setName(''); setCode(''); setSupplier('');
   };

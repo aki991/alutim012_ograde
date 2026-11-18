@@ -52,41 +52,38 @@ describe('preklapanje prečki', () => {
 describe('razmak u minus (nagnute prečke se uvlače jedna u drugu)', () => {
   const tiltedStart = (deg: number): CustomModel => { const b = start(); return applyGuides({ ...b, parts: b.parts.map((p) => (p.id === 'b' ? { ...p, tiltDeg: deg } : p)) }, MATS); };
 
-  it('najmanji razmak: uspravno 0, pod 28,73° oko −38,1 mm (80 × 20)', () => {
+  it('najmanji razmak: uspravno 0, pod 28,73° presek dozvoljava −38,1 mm, ali za cev 80 × 20 je najviše −15 mm', () => {
     const flat = start();
     expect(barLayoutInfo(flat, bar(flat), MATS)!.gapMin).toBe(0);
     const t = tiltedStart(28.73);
     const info = barLayoutInfo(t, bar(t), MATS)!;
     // korak = min(80 / cos φ, 20 / sin φ) = 41,62; vidljiva visina = 80 cos φ + 20 sin φ = 79,72
     expect(info.h).toBeCloseTo(79.72, 1);
-    expect(info.gapMin).toBeGreaterThan(-38.2);
-    expect(info.gapMin).toBeLessThan(-38.0);
+    expect(info.gapMin).toBe(-15);
   });
 
-  it('na najmanjem razmaku se prečke dodiruju, malo dalje u minus već prodiru jedna u drugu', () => {
+  it('na najmanjem razmaku (−15 mm) se prečke ne preklapaju', () => {
     const t = tiltedStart(28.73);
     const gMin = barLayoutInfo(t, bar(t), MATS)!.gapMin;
     const ok = run(t, { count: 4, top: 50, bottom: 0, gap: gMin, auto: 'bottom', lufta: 'bez' });
     if ('error' in ok) throw new Error(ok.error);
     expect(findOverlaps(ok.model, MATS)).toEqual([]);
-    const b = bars(ok.model).sort((p, q) => q.y - p.y);
-    const moved = { ...ok.model, parts: ok.model.parts.map((p) => (p.id === b[1].id ? { ...p, y: p.y + 0.3 } : p)) };
-    expect(findOverlaps(moved, MATS).length).toBeGreaterThan(0);
-    expect(checkNewOverlap(ok.model, moved, MATS)).not.toBeNull();
+    // presek bi dozvolio da se prečke uvuku do −38,1 mm, ali se razmak ograničava na −15 mm
+    expect(gMin).toBe(-15);
   });
 
   it('više prečki staje zahvaljujući negativnom razmaku', () => {
     const t = tiltedStart(28.7);
-    // 20 prečki visine 79,7 u 1000 mm: razmak (1000 − 40 − 20 × 79,7) / 19 ≈ −34,8 (uspravno bi staje najviše 12)
-    const r = run(t, { count: 20, top: 20, bottom: 20, gap: 0, auto: 'gap', lufta: 'bez' });
+    // 14 prečki visine 79,7 u 1000 mm: razmak (1000 − 40 − 14 × 79,7) / 13 ≈ −12 (uspravno bi stalo najviše 12)
+    const r = run(t, { count: 14, top: 20, bottom: 20, gap: 0, auto: 'gap', lufta: 'bez' });
     if ('error' in r) throw new Error(r.error);
     expect(r.values.gap).toBeLessThan(0);
     expect(r.values.gap).toBeGreaterThanOrEqual(barLayoutInfo(t, bar(t), MATS)!.gapMin);
-    expect(bars(r.model)).toHaveLength(20);
+    expect(bars(r.model)).toHaveLength(14);
     expect(findOverlaps(r.model, MATS)).toEqual([]);
-    // 25 prečki bi tražile razmak ispod najmanjeg: ne staju
+    // 25 prečki bi tražile razmak ispod −15 mm: ne staju
     const e = run(t, { count: 25, top: 20, bottom: 20, gap: 0, auto: 'gap', lufta: 'bez' }) as { error: string };
-    expect(e.error).toMatch(/ne staju.*sa najmanjim mogućim razmakom -38,1/);
+    expect(e.error).toMatch(/ne staju.*sa najmanjim mogućim razmakom -15/);
     // uspravne prečke: isti broj ne staje (razmak bi bio negativan)
     expect(run(start(), { count: 20, top: 20, bottom: 20, gap: 0, auto: 'gap' })).toHaveProperty('error');
   });
@@ -94,7 +91,9 @@ describe('razmak u minus (nagnute prečke se uvlače jedna u drugu)', () => {
   it('zadat razmak ispod najmanjeg se odbija sa objašnjenjem', () => {
     const t = tiltedStart(28.73);
     const e = run(t, { count: 4, top: 50, bottom: 0, gap: -45, auto: 'bottom', lufta: 'bez' }) as { error: string };
-    expect(e.error).toMatch(/razmak -45 mm nije moguć.*pri nagibu od 28,73°.*-38,15 mm.*prodrla/);
+    expect(e.error).toMatch(/razmak -45 mm nije moguć.*najmanji razmak -15 mm.*najviše 15 mm/);
+    const e2 = run(t, { count: 4, top: 50, bottom: 0, gap: -16, auto: 'bottom', lufta: 'bez' }) as { error: string };
+    expect(e2.error).toMatch(/razmak -16 mm nije moguć/);
     const flat = run(start(), { count: 4, top: 50, bottom: 0, gap: -5, auto: 'bottom', lufta: 'bez' }) as { error: string };
     expect(flat.error).toMatch(/najmanji razmak je 0 mm/);
   });
@@ -119,7 +118,7 @@ describe('tip ograde: sa luftom / bez lufta', () => {
     const t = tilted();
     const pos = run(t, { count: 4, top: 50, bottom: 0, gap: 10, auto: 'bottom', lufta: 'bez' }) as { error: string };
     expect(pos.error).toMatch(/bez lufta razmak ne može biti veći od 0 mm/);
-    const ok = run(t, { count: 4, top: 50, bottom: 0, gap: -20, auto: 'bottom', lufta: 'bez' });
+    const ok = run(t, { count: 4, top: 50, bottom: 0, gap: -10, auto: 'bottom', lufta: 'bez' });
     expect('error' in ok).toBe(false);
     if (!('error' in ok)) expect(bars(ok.model).every((p) => p.lufta === 'bez')).toBe(true);
   });
@@ -151,7 +150,7 @@ describe('tip ograde: sa luftom / bez lufta', () => {
 
   it('tip se pamti na prečkama i prepoznaje se kod starih crteža po znaku razmaka', () => {
     const t = tilted();
-    const r = run(t, { count: 4, top: 50, bottom: 0, gap: -20, auto: 'bottom', lufta: 'bez' });
+    const r = run(t, { count: 4, top: 50, bottom: 0, gap: -10, auto: 'bottom', lufta: 'bez' });
     if ('error' in r) throw new Error(r.error);
     expect(barLayoutInfo(r.model, bars(r.model)[0], MATS)!.lufta).toBe('bez');
     const old = { ...r.model, parts: r.model.parts.map((p) => ({ ...p, lufta: undefined })) };

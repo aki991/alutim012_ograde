@@ -35,7 +35,7 @@ export function restOnSurface(model: Pick<CustomModel, 'parts'>, part: CustomPar
 
 /**
  * Šarke duž jedne ivice kapije: ravnomerno od gornje do donje (gornja i donja na 150 mm od ivice), sa osom na ivici crteža.
- * Šarka leži na ramu ili krilu, pa su celom širinom unutar mera crteža.
+ * Šarka ima osovinu na ivici, a listove na ramu krila i na stubu (list na stubu izlazi iz mera crteža).
  */
 export function hingesAlongEdge(model: CustomModel, material: Material, side: 'left' | 'right', count: number, materials: Material[]): CustomPart[] {
   const sh = materialShape(material);
@@ -43,11 +43,11 @@ export function hingesAlongEdge(model: CustomModel, material: Material, side: 'l
   const cb = contentBounds(model, (p) => { const mm = materials.find((q) => q.id === p.materialId); return mm ? materialShape(mm) : null; });
   if (!cb) return [];
   const { x0, y0, x1, y1 } = cb;
-  // šarka je široka koliko i njeni listovi; centar je toliko unutar ivice da cela stoji u merama crteža
-  const half = 41; const top = 150;
+  // osovina šarke je na samoj ivici krila: jedan list leži na ramu krila, a drugi na stubu
+  const top = 150;
   const H = y1 - y0;
   const ys = hingePositions(H, Math.max(1, count), null, Math.min(top, H / 4));
-  const x = side === 'left' ? x0 + half : x1 - half;
+  const x = side === 'left' ? x0 : x1;
   const out: CustomPart[] = [];
   for (const mmFromTop of ys) {
     const yc = y1 - mmFromTop;

@@ -33,6 +33,11 @@ import { leafKey, leafSeed } from '../../domain/models/leafSeed';
 import { allFenceModels } from '../../domain/models/customRegistry';
 import { colorHex, FENCE_MODELS, normalizeColorKey } from '../../domain/models/catalog';
 import { GATE_POST_EXTRA_MM } from '../../domain/gates/design';
+import { extraSpecKey } from '../../domain/models/spec';
+import { autoGateSpec, pairRoleOf, pairWidth, type PairLayout } from '../../domain/models/pairHardware';
+import { hingeCountFor } from '../../domain/gates/hingeRule';
+import { pickFromModel, resizePair, withPairHardware, withSingleHardware } from '../../domain/models/doubleGateSeed';
+
 import { ColorChartModal, normalizeFavorites } from '../../components/forms/ColorChartModal';
 import { CUSTOM_KIND_LABELS, customBom, newCustomModel, newTerraceModel, repeatPart, setPartsColor, type CustomModel, type CustomPart } from '../../domain/models/custom';
 import { groupHasCaps, layoutVBars, setGroupCaps, vBarGroup, vLayoutInfo } from '../../domain/models/vbars';
@@ -292,25 +297,33 @@ export default function ModelDesignerPage({ terrace = false }: { terrace?: boole
   return id ? <Designer key={id} id={id} terrace={terrace} /> : null;
 }
 
+/** ID-evi crteža koji su trenutno otvoreni */
+const OPEN_DESIGNERS = new Set<string>();
+
 function Designer({ id, terrace }: { id: string; terrace: boolean }) {
   const allMaterials = useAppStore((s) => s.materials);
   const settings = useAppStore((s) => s.settings);
   const location = useLocation();
-  const locState = location.state as { dorada?: boolean; kind?: CustomModel['kind'] } | null;
+  const locState = location.state as { dorada?: boolean; readOnly?: boolean; kind?: CustomModel['kind'] } | null;
+  /** osnovna kapija: crtež se samo gleda; za izmene se kapija sačuva kao nov tip kapije */
+  const readOnly = Boolean(locState?.readOnly);
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
   const [model, setModel] = useState<CustomModel>(() => useAppStore.getState().settings.customModels?.find((m) => m.id === id)
     ?? (terrace || locState?.kind === 'terrace' ? newTerraceModel(id)
-      : locState?.kind === 'gate' ? { ...newCustomModel(id), kind: 'gate', name: 'Nova kapija', widthMm: 1000, heightMm: 1500, gate: defaultGateConfig() } : newCustomModel(id)));
+      : locState?.kind === 'gate' ? { ...newCustomModel(id), kind: 'gate', draft: true, name: 'Nova kapija', widthMm: 1000, heightMm: 1500, gate: defaultGateConfig() } : newCustomModel(id)));
   /** model kakav je bio kad je otvoren: „Sačuvaj kao nov model“ ga vraća na to stanje, a izmene idu u nov model */
   const openedRef = useRef<CustomModel | null>(useAppStore.getState().settings.customModels?.find((m) => m.id === id) ?? null);
   const navigateTo = useNavigate();
   const saveAsNew = () => {
     const cur = modelRef.current;
     const newId = uid('cm');
-    const { replaces: _r, gateDefault: _gd, ...rest } = cur;
+    const { replaces: _r, gateDefault: _gd, draft: _dr, ...rest } = cur;
     const copy: CustomModel = { ...rest, id: newId, name: `${cur.name.replace(/ — dorada$/, '')} — nov`, updatedAt: new Date().toISOString() };
     const st = useAppStore.getState();
     const list = (st.settings.customModels ?? []).map((m) => (m.id === cur.id && openedRef.current ? openedRef.current : m));
-    st.updateSettings({ customModels: [...list, copy] });
+    const auto = autoGateSpec(copy, materialsRef.current);
+    st.updateSettings({ customModels: [...list, copy], ...(auto?.length ? { modelSpecs: { ...st.settings.modelSpecs, [extraSpecKey(newId)]: auto } } : {}) });
     navigateTo(`${cur.kind === 'terrace' ? '/modeli-terasa/crtanje' : '/modeli/crtanje'}/${newId}`, { replace: true });
   };
   /** ograda za terasu: paleta nudi samo materijale za terase (dvorišne ograde i kapije ih ne nude) */
@@ -386,6 +399,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
     const cur = modelRef.current;
     const raw = fn(cur);
     if (raw === cur) return true;
+    if (readOnlyRef.current) { setNotice('Osnovna kapija se ne menja. Kliknite „Sačuvaj kao nov tip kapije“, pa menjajte svoj tip.'); return false; }
     const st = settle(raw, materialsRef.current, norm, freeRef.current);
     const next = st.model;
     // crtež se pomerio ka početku koordinata: pogled ide za njim, pa deo ostaje na istom mestu na ekranu
@@ -402,6 +416,18 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
   const undo = useCallback(() => setHist((h) => { if (!h.past.length) return h; setModel(h.past[h.past.length - 1]); setFitTick((t) => t + 1); return { past: h.past.slice(0, -1), future: [modelRef.current, ...h.future] }; }), []);
   const redo = useCallback(() => setHist((h) => { if (!h.future.length) return h; setModel(h.future[0]); setFitTick((t) => t + 1); return { past: [...h.past, modelRef.current], future: h.future.slice(1) }; }), []);
 
+  // kapija koja nije sačuvana dugmetom „Sačuvaj tip kapije“ se briše kad se crtanje zatvori (odmah posle otvaranja se ne računa: razvojni režim ponovo montira stranicu)
+  useEffect(() => {
+    OPEN_DESIGNERS.add(id);
+    return () => {
+      OPEN_DESIGNERS.delete(id);
+      setTimeout(() => {
+        if (OPEN_DESIGNERS.has(id)) return;
+        const st = useAppStore.getState();
+        if ((st.settings.customModels ?? []).find((x) => x.id === id)?.draft) st.removeCustomModel(id);
+      }, 150);
+    };
+  }, [id]);
   // čuvanje: model se upisuje u podešavanja čim ima bar jedan deo (ili je već sačuvan), pa se izmene ne gube
   useEffect(() => {
     const st = useAppStore.getState();
@@ -448,6 +474,18 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
   // bez zadatih mera: širina 120 mm, visina = vrh kapije od poda + 50 mm (kao u projektu). Klizna kapija: stub zatvaranja je tamo gde su
   // prihvatnik i zasun, stub vođice tamo gde je vođica (krilo prelazi preko stubova), kao u projektu.
   const gateFloor = slSpec ? slSpec.frameBottomY : 0;
+  // dvokrilna kapija nacrtana kao dva odvojena krila u jednom crtežu: levo i desno krilo, svako sa svojim ramom, ispunom i okovom
+  const pair: PairLayout | null = model.kind === 'gate' && model.gate?.gateType === 'double' ? model.gate.leaves ?? null : null;
+  const activeSide: 'left' | 'right' = model.gate?.opening === 'right' ? 'right' : 'left';
+  // Doradi dvokrile kapije: okov kog nema u cenovniku nije mogao da se postavi; poruka se prikazuje jednom
+  useEffect(() => {
+    try {
+      const k = `dorada.missing.${model.id}`; const v = sessionStorage.getItem(k);
+      if (v) { sessionStorage.removeItem(k); setNotice(`U cenovniku nema okova: ${v}. Dodajte ih u Materijale (npr. naziv sa rečima „prihvatnik brave“, „podni zasun“, „podni prihvat“), pa ih postavite na crtež.`); }
+    } catch { /* bez sessionStorage-a */ }
+  }, [model.id]);
+
+
   const posts = useMemo(() => {
     if (model.kind !== 'gate') return null;
     const total = model.heightMm + gateFloor;
@@ -462,6 +500,36 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
     }
     return dim.map((d, k) => ({ ...d, x: center[k] - d.w / 2 }));
   }, [model.kind, model.heightMm, model.widthMm, model.gate?.posts, model.gate?.opening, gateFloor, slSpec, slPlaced]);
+  /** dvokrilna kapija: nazivi krila (aktivno, pasivno) sa širinama i natpisi uz svaki deo okova, da se vidi šta je šta */
+  const hwLabels = pair ?? (model.kind === 'gate' && model.gate?.hwDrawn ? { leftMm: model.widthMm, rightMm: 0, gapMm: 0 } : null);
+  const pairArt = hwLabels ? (px: number) => {
+    const rightX0 = hwLabels.leftMm + hwLabels.gapMm;
+    const fs = 13 * px;
+    const mid = pairWidth(hwLabels) / 2;
+    const halo = { stroke: '#ffffff', strokeWidth: 3.5 * px, paintOrder: 'stroke' as const };
+    const NAME: Record<string, string> = { hinge: 'šarka', lock: 'brava, cilindar i kvaka', strike: 'prihvatnik brave', bolt: 'vertikalni podni zasun', catch: 'podni prihvat zasuna' };
+    const rise: Record<string, number> = { hinge: 45, lock: 250, strike: 60, bolt: 520, catch: 30 };
+    const leaves = pair ? [{ x0: 0, w: pair.leftMm, side: 'left' as const }, { x0: rightX0, w: pair.rightMm, side: 'right' as const }] : [];
+    return (
+      <g data-testid="designer-pair-labels" pointerEvents="none" fontFamily="system-ui, sans-serif" fontSize={fs} fontWeight={700}>
+        {leaves.map((lf) => (
+          <text key={lf.side} x={lf.x0 + lf.w / 2} y={-(model.heightMm + 80 + 6 * px)} textAnchor="middle" fill={lf.side === activeSide ? '#b42318' : '#334155'} {...halo}>
+            {lf.side === activeSide ? 'AKTIVNO KRILO' : 'PASIVNO KRILO'} · {lf.w} mm
+          </text>
+        ))}
+        {model.parts.map((p) => {
+          const r = pairRoleOf(materials.find((m) => m.id === p.materialId));
+          if (!r) return null;
+          const hingeInner = r === 'hinge';
+          const toRight = pair ? (hingeInner ? p.x < mid : p.x >= mid) : p.x < mid;
+          const x = p.x + (toRight ? 60 : -60);
+          const lbl = r === 'bolt' ? `${NAME[r]}` : NAME[r];
+          const y = -(p.y + rise[r]);
+          return <text key={p.id} x={x} y={y} textAnchor={toRight ? 'start' : 'end'} fill="#0f172a" {...halo}>{lbl}</text>;
+        })}
+      </g>
+    );
+  } : null;
   const postsArt = posts ? (
     <g data-testid="designer-gate-posts" pointerEvents="none">
       {posts.map((q, i) => (
@@ -592,10 +660,28 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
     const missing = [...new Set(seed.parts.map((p) => p.materialId).filter((id) => !materialsRef.current.some((m) => m.id === id)))];
     if (missing.length) setNotice(`Krilo je nacrtano, ali ${missing.length} materijala iz modela ograde nema u cenovniku (${missing.slice(0, 3).join(', ')}${missing.length > 3 ? ' …' : ''}). Ti delovi nisu pravi profili: zamenite ih materijalima iz cenovnika.`);
   };
+  /** nove mere krila (i visine) dvokrilne kapije: krila se razvlače posebno, a okov para se postavlja iznova na ivice */
+  const setPair = (n: { leftMm: number; rightMm: number }, heightMm?: number): void => {
+    const cur = modelRef.current; const lay = cur.gate?.leaves;
+    if (!lay) return;
+    const res = resizePair(cur, lay, { ...n, heightMm }, cur.gate?.opening === 'right' ? 'right' : 'left', materialsRef.current);
+    if ('error' in res) { setNotice(res.error); return; }
+    change(() => ({ ...res.model, gate: cur.gate ? { ...cur.gate, leaves: res.layout, clearWidthMm: pairWidth(res.layout), unequalLeaves: res.layout.leftMm !== res.layout.rightMm, leftLeafMm: res.layout.leftMm } : cur.gate }));
+  };
+  /** zamena aktivnog krila: brava i kvaka idu na novo aktivno, a prihvatnik brave, zasun i podni prihvat na novo pasivno krilo; širine krila ostaju */
+  const setActiveSide = (side: 'left' | 'right'): void => {
+    const cur = modelRef.current; const lay = cur.gate?.leaves;
+    if (!lay || !cur.gate) return;
+    const next = withPairHardware(cur, lay, side, pickFromModel(cur, materialsRef.current), materialsRef.current);
+    change(() => ({ ...next, gate: { ...cur.gate!, opening: side, design: { ...cur.gate!.design, activeLeaf: side } } }));
+  };
   const resizeTo = (w: number, h: number): boolean => {
     const next = resizeWithFrame(modelRef.current, w, h, materialsRef.current);
     if ('error' in next) { setNotice(next.error); return false; }
-    return change(() => next);
+    // pešačka / jednokrilna sa nacrtanim okovom: broj šarki zavisi od mera krila, pa se okov postavlja iznova
+    const cur = modelRef.current;
+    const out = cur.gate?.hwDrawn ? withSingleHardware(next, cur.gate.opening === 'left' ? 'left' : 'right', pickFromModel(cur, materialsRef.current), materialsRef.current) : next;
+    return change(() => out);
   };
   /** šarke duž jedne ivice kapije; leže na ramu ili krilu */
   const addHinges = (materialId: string) => {
@@ -692,7 +778,10 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
       <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-line bg-white">
         <Link to={model.kind === 'gate' ? '/modeli-kapija' : isTerrace ? '/modeli-terasa' : '/modeli'} className="btn btn-sm" data-testid="designer-back"><ArrowLeft size={15} />{model.kind === 'gate' ? 'Modeli kapija' : isTerrace ? 'Modeli ograda za terase' : 'Modeli'}</Link>
         <input className="input !w-56 !py-1.5 font-semibold" aria-label="Naziv modela" data-testid="designer-name" value={model.name} onChange={(e) => change((m) => ({ ...m, name: e.target.value }), false)} />
-        {model.parts.length > 0 && <button className="btn btn-sm" data-testid="designer-save-new" title="Izmene se čuvaju kao nov model, a model u koji ste ušli ostaje kakav je bio kad ste ga otvorili" onClick={saveAsNew}><Copy size={14} />Sačuvaj kao nov model</button>}
+        {model.kind === 'gate' && model.parts.length > 0 && (model.draft
+          ? (!readOnly && <button className="btn btn-sm btn-primary" data-testid="designer-save-gate" title="Tip kapije se dodaje u „Moji tipovi kapija“ tek kad ga sačuvate" onClick={() => { const cur = modelRef.current; const auto = autoGateSpec(cur, materialsRef.current); if (auto?.length) { const st = useAppStore.getState(); const k = extraSpecKey(cur.id); if (!st.settings.modelSpecs?.[k]?.length) st.updateSettings({ modelSpecs: { ...st.settings.modelSpecs, [k]: auto } }); } change((m) => ({ ...m, draft: undefined }), false); }}>Sačuvaj tip kapije</button>)
+          : <span className="text-[12.5px] font-semibold text-[#067647]" data-testid="designer-gate-saved">Tip kapije je sačuvan</span>)}
+        {model.parts.length > 0 && <button className={`btn btn-sm ${readOnly ? 'btn-primary' : ''}`} data-testid="designer-save-new" title="Izmene se čuvaju kao nov model, a model u koji ste ušli ostaje kakav je bio kad ste ga otvorili" onClick={saveAsNew}><Copy size={14} />{model.kind === 'gate' ? 'Sačuvaj kao nov tip kapije' : 'Sačuvaj kao nov model'}</button>}
         {/* ograda za terasu ostaje ograda za terasu (posebna stranica i materijali); ograda i kapija se mogu menjati jedna u drugu */}
         {isTerrace && <span className="pill !text-[12.5px] bg-[#eff8ff] text-[#175cd3]" data-testid="designer-kind-terrace">Ograda za terasu</span>}
         {/* u prikazu „Mere kapije“ alati crtanja se sklanjaju: mere se menjaju samo u tom prikazu, pa crtež i podešavanja ne mogu da se razilaze */}
@@ -721,9 +810,19 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
           </button>
         )}
         {view !== 'mere' && <>
-        <Num label="Širina" value={model.widthMm} min={50} max={20000} testId="designer-width" onChange={(v) => resizeTo(Math.round(v), modelRef.current.heightMm)} />
+        {pair ? (
+          <>
+            <Num label="Levo krilo" value={pair.leftMm} min={200} max={20000} testId="designer-width-left" onChange={(v) => setPair({ leftMm: Math.round(v), rightMm: pair.rightMm })} />
+            <Num label="Desno krilo" value={pair.rightMm} min={200} max={20000} testId="designer-width-right" onChange={(v) => setPair({ leftMm: pair.leftMm, rightMm: Math.round(v) })} />
+            <span className="text-[12.5px] text-muted" data-testid="designer-pair-total">Otvor {pairWidth(pair)} mm</span>
+            <div className="inline-flex rounded-lg border border-line overflow-hidden" role="radiogroup" aria-label="Aktivno krilo (sa ulice)">
+              <span className="px-2 py-1.5 text-[12.5px] font-semibold bg-slate-50">Aktivno krilo</span>
+              {(['left', 'right'] as const).map((sd) => <button key={sd} type="button" role="radio" aria-checked={activeSide === sd} data-testid={`designer-active-${sd}`} className={`px-3 py-1.5 text-[13px] font-semibold ${activeSide === sd ? 'bg-brand-black text-white' : 'bg-white hover:bg-slate-50'}`} onClick={() => setActiveSide(sd)}>{sd === 'left' ? 'Levo' : 'Desno'}</button>)}
+            </div>
+          </>
+        ) : <Num label="Širina" value={model.widthMm} min={50} max={20000} testId="designer-width" onChange={(v) => resizeTo(Math.round(v), modelRef.current.heightMm)} />}
         {/* klizna kapija: visina je ukupna visina od tla (do vrha krila), isto kao ograda i stubovi; crtež je krilo, podignuto od tla */}
-        <Num label="Visina" value={model.heightMm + (slSpec?.frameBottomY ?? 0)} min={50 + (slSpec?.frameBottomY ?? 0)} max={6000} testId="designer-height" onChange={(v) => resizeTo(modelRef.current.widthMm, Math.round(v) - (modelRef.current.gate?.sliding?.frameBottomY ?? 0))} />
+        <Num label="Visina" value={model.heightMm + (slSpec?.frameBottomY ?? 0)} min={50 + (slSpec?.frameBottomY ?? 0)} max={6000} testId="designer-height" onChange={(v) => (pair ? setPair({ leftMm: pair.leftMm, rightMm: pair.rightMm }, Math.round(v)) : resizeTo(modelRef.current.widthMm, Math.round(v) - (modelRef.current.gate?.sliding?.frameBottomY ?? 0)))} />
         {posts && ([0, 1] as const).map((k) => (
           <span key={k} className="inline-flex items-center gap-1.5" data-testid={`designer-post-fields-${k ? 'right' : 'left'}`}>
             <span className="text-[12.5px] font-semibold">{k ? 'Desni' : 'Levi'} stub</span>
@@ -736,7 +835,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
           <span className="w-5 h-5 rounded-full ring-1 ring-black/20" style={{ background: colorHex(model.color) }} />{normalizeColorKey(model.color)}
         </button>
         {chartOpen && <ColorChartModal value={normalizeColorKey(model.color)} favorites={settings.favoriteColors ?? []} onPick={(k) => change((m) => ({ ...m, color: k }))} onFavorites={(list) => useAppStore.getState().updateSettings({ favoriteColors: list })} onClose={() => setChartOpen(false)} />}
-        {model.kind === 'gate' && !slSpec && <button className="btn btn-sm" data-testid="designer-add-hinges" title="Dodaje šarke duž jedne ivice kapije" onClick={() => setHingeAsk({ side: model.gate?.opening ?? 'right', count: 2 })}>Dodaj šarke</button>}
+        {model.kind === 'gate' && !slSpec && <button className="btn btn-sm" data-testid="designer-add-hinges" title="Dodaje šarke duž jedne ivice kapije" onClick={() => setHingeAsk({ side: model.gate?.opening ?? 'right', count: hingeCountFor(pair ? pair.leftMm : model.widthMm, model.heightMm) })}>Dodaj šarke</button>}
         {isTerrace && <button className="btn btn-sm" data-testid="designer-terrace-measures" title="Mere okova: visina veze stub–rukohvat, podizanje stuba zbog flanše, visina kape, rastojanje prečke od stuba, zavrtnji" onClick={() => setMeasuresOpen(true)}>Mere ograde</button>}
         {isTerrace && measuresOpen && <TerraceMeasuresModal model={model} onChange={(fn) => change(fn)} onClose={() => setMeasuresOpen(false)} />}
         {isTerrace && <button className="btn btn-sm btn-primary" data-testid="designer-fill-hw" title="Svakom stubu, rukohvatu i prečki dodaje odgovarajući okov (flanše, veze, prstenove, kapice) na pravo mesto; šta ne treba, odkvačite uz izabran deo" onClick={() => { const before = modelRef.current; const next = fillHardware(before, materialsRef.current); if (next === before) setNotice('Nema šta da se doda: svi delovi već imaju okov ili u cenovniku nema odgovarajućeg okova. Crtajte stubove, rukohvat i prečke, pa kliknite ovo dugme.'); else change(() => next); }}>Dopuni okov</button>}
@@ -836,6 +935,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
           )}
         </div>
       )}
+      {readOnly && <div className="px-3 py-2 bg-[#eff8ff] border-b border-[#b2ddff] text-[13px] text-[#175cd3]" data-testid="designer-readonly">Osnovna kapija: crtež se samo gleda. Da biste nešto promenili, kliknite <b>Sačuvaj kao nov tip kapije</b> pa menjajte svoj tip.</div>}
       {notice && (
         <div className="flex items-start gap-2 px-3 py-2 bg-[#fef3f2] border-b border-[#fecdca] text-[13px] text-[#b42318]" role="alert" data-testid="designer-notice">
           <AlertTriangle size={16} className="mt-0.5 shrink-0" />
@@ -870,7 +970,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
               onSelect={(ids) => { setSelectedIds(ids); if (ids.length) setHwSel(null); }} placing={placingParts} onPlace={placeClip} showDims={showDims} viewShift={viewShift} fitTick={fitTick} onMoveEnd={() => change((m) => ({ ...m }), false)}
               groundY={slSpec ? slSpec.frameBottomY : 0} extraBounds={dBounds} onOverlayPick={(c, member) => { const k = compPart(c); if (k) { setHwSel(k); setSelectedIds([]); useAppStore.getState().setTailSel(model.id, k === 'tail' ? member ?? null : null); } }}
               underlay={slGate || postsArt ? (px) => <>{postsArt}{slGate && <SlidingAssemblyArt gate={slGate} clearStart={0} clearEnd={model.widthMm} clearWidth={model.widthMm} floorY={slSpec!.frameBottomY} px={px} hex={colorHex(model.color)} noLeaf layer="back" testPct={0} onPartClick={() => undefined} highlight={hwSelValid ? partDef(hwSelValid)?.comps : undefined} />}</> : undefined}
-              overlay={slGate ? (px) => <SlidingAssemblyArt gate={slGate} clearStart={0} clearEnd={model.widthMm} clearWidth={model.widthMm} floorY={slSpec!.frameBottomY} px={px} hex={colorHex(model.color)} noLeaf layer="front" testPct={0} onPartClick={() => undefined} highlight={hwSelValid ? partDef(hwSelValid)?.comps : undefined} /> : undefined}
+              overlay={slGate ? (px) => <SlidingAssemblyArt gate={slGate} clearStart={0} clearEnd={model.widthMm} clearWidth={model.widthMm} floorY={slSpec!.frameBottomY} px={px} hex={colorHex(model.color)} noLeaf layer="front" testPct={0} onPartClick={() => undefined} highlight={hwSelValid ? partDef(hwSelValid)?.comps : undefined} /> : pairArt ?? undefined}
               onAdd={(p0) => { const p1 = free ? p0 : restOnSurface(modelRef.current, p0, materialsRef.current); const p = layerRef.current === 'off' ? p1 : layerPart(modelRef.current, p1, layerRef.current, materialsRef.current); const next = { ...modelRef.current, parts: [...modelRef.current.parts, p] }; const fitted = !free && p.angleDeg === 0 ? attach(next, p.id, true) : null; if (change(() => fitted ?? next)) setSelectedId(p.id); }}
               onMoveStart={record}
               onMove={(moves) => { const at = new Map(moves.map((v) => [v.id, v])); change((m) => ({ ...m, parts: m.parts.map((p) => { const v = at.get(p.id); return v ? { ...p, x: v.x, y: v.y } : p; }) }), false, false); }} />

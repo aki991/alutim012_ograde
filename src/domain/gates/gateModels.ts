@@ -19,6 +19,10 @@ export interface GateConfig {
   version: number;
   /** svetli otvor između stubova */
   clearWidthMm?: Mm;
+  /** dvokrilna kapija nacrtana kao dva odvojena krila u jednom crtežu: širine krila i srednji zazor (mm); bez vrednosti je crtež jedno krilo */
+  leaves?: { leftMm: Mm; rightMm: Mm; gapMm: Mm };
+  /** pešačka / jednokrilna kapija sa nacrtanim okovom (šarke, brava): u projektu okov crta program, pa se nacrtani okov ne uzima iz modela */
+  hwDrawn?: boolean;
   /** visina kapije iz „Mere kapije“ (crtež modela se prilagođava) */
   heightMm?: Mm;
   opening: OpeningSide;
@@ -43,7 +47,7 @@ const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
 /** podešavanja kapije za novi model (bez mera): pešačka kapija, ručna */
 export function defaultGateConfig(gateType: GateType = 'pedestrian'): GateConfig {
   const g = { gateType, kind: 'gate' as const };
-  return { gateType, version: 1, opening: 'right', swing: 'inward', lock: 'standard', hinge: 'standard', automation: false, automationType: 'sliding_motor', unequalLeaves: false, leftLeafMm: 0, design: emptyDesign(systemOf(g as Gate)), ...(gateType === 'sliding' ? { sliding: slidingForModel('klizna_sina_rucna', false) } : {}) };
+  return { gateType, version: 1, opening: gateType === 'double' ? 'left' : 'right', swing: 'inward', lock: 'standard', hinge: 'standard', automation: false, automationType: 'sliding_motor', unequalLeaves: false, leftLeafMm: 0, design: emptyDesign(systemOf(g as Gate)), ...(gateType === 'sliding' ? { sliding: slidingForModel('klizna_sina_rucna', false) } : {}) };
 }
 
 /** podešavanja iz kapije u projektu (nov model ili prepravka: `version` je verzija koja se upisuje) */
@@ -124,6 +128,6 @@ export function leafKeyOf(modelId: string, list: readonly CustomModel[] | undefi
 export function gateModelsFor(list: readonly CustomModel[] | undefined, gateType: GateType, fenceModelId: string, support?: 'ground_rail' | 'cantilever'): CustomModel[] {
   const key = leafKeyOf(fenceModelId, list);
   return (list ?? [])
-    .filter((m) => m.kind === 'gate' && !m.replaces && m.parts.length > 0 && m.gate?.gateType === gateType && m.leafModelId === key && (!support || m.gate?.sliding?.support === support))
+    .filter((m) => m.kind === 'gate' && !m.replaces && !m.draft && m.parts.length > 0 && m.gate?.gateType === gateType && m.leafModelId === key && (!support || m.gate?.sliding?.support === support))
     .sort((a, b) => Number(!!b.gateDefault) - Number(!!a.gateDefault));
 }

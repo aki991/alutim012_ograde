@@ -66,7 +66,7 @@ export function minVerticalPitch(section: Section, deg: number): number {
   return best;
 }
 
-interface Box { id: string; corners: [number, number][]; axes: [number, number][]; z0: number; z1: number; name: string; dir: [number, number]; ox: number; oy: number; len: number; z: number; hull: Pt[] }
+interface Box { zp: boolean; id: string; corners: [number, number][]; axes: [number, number][]; z0: number; z1: number; name: string; dir: [number, number]; ox: number; oy: number; len: number; z: number; hull: Pt[] }
 
 function boxOf(p: CustomPart, materials: Map<string, Material>): Box | null {
   const m = materials.get(p.materialId);
@@ -90,7 +90,7 @@ function boxOf(p: CustomPart, materials: Map<string, Material>): Box | null {
   if (slanted) {
     for (let i = 0; i < 4; i++) { const [x1, y1] = corners[i]; const [x2, y2] = corners[(i + 1) % 4]; const d = Math.hypot(x2 - x1, y2 - y1) || 1; axes.push([-(y2 - y1) / d, (x2 - x1) / d]); }
   }
-  return { id: p.id, corners, axes, z0: p.z + e.v0, z1: p.z + e.v1, name: m?.name ?? 'deo', dir: [c, s], ox: p.x, oy: p.y, len: p.lengthMm, z: p.z, hull: sectionHull(shape.section, partAngle(p)) };
+  return { zp: shape.group === 'z', id: p.id, corners, axes, z0: p.z + e.v0, z1: p.z + e.v1, name: m?.name ?? 'deo', dir: [c, s], ox: p.x, oy: p.y, len: p.lengthMm, z: p.z, hull: sectionHull(shape.section, partAngle(p)) };
 }
 
 const range = (b: Box, ax: [number, number]): [number, number] => {
@@ -111,6 +111,12 @@ function overlaps(a: Box, b: Box): boolean {
     const pb = b.ox * nA[0] + b.oy * nA[1];
     const A = hull(a.hull.map(([u, v]) => [pa + u, a.z + v] as Pt));
     const B = hull(b.hull.map(([u, v]) => [pb + sgn * u, b.z + v] as Pt));
+    // dva Z profila se uvlače jedan u drugi: preklapanje po visini do 20 mm je dozvoljeno (razmak bez lufta do −20 mm)
+    if (a.zp && b.zp) {
+      const ua = A.map((q) => q[0]); const ub = B.map((q) => q[0]);
+      const ru = Math.min(Math.max(...ua), Math.max(...ub)) - Math.max(Math.min(...ua), Math.min(...ub));
+      if (ru <= 20 + EPS) return false;
+    }
     // dodir sa prodorom do EPS (zaokruživanje položaja na hiljaditi deo mm) nije preklapanje: prag je površina trake EPS × dubina
     const span = (P: Pt[]) => Math.max(...P.map((q) => q[1])) - Math.min(...P.map((q) => q[1]));
     return intersectionArea(A, B) > Math.max(0.05, EPS * Math.min(span(A), span(B)));

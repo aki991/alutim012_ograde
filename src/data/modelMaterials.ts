@@ -108,6 +108,10 @@ const RAW_MODEL_MATERIALS: Material[] = [
   m('mat_lock_standard', 'DEMO-BR-ST', 'Brava standardna sa kvakom', 'okov', 'kom', 3800, 0),
   m('mat_lock_cylinder', 'DEMO-BR-SC', 'Sigurnosna brava sa cilindrom', 'okov', 'kom', 6400, 0),
   m('mat_lock_electric', 'DEMO-BR-EL', 'Elektro-brava', 'okov', 'kom', 11800, 0),
+  // dvokrilna kapija: prihvatnik brave (pasivno krilo), vertikalni podni zasun i podni prihvat zasuna sa graničnikom
+  m('mat_strike_plate', 'DEMO-PB-001', 'Prihvatnik brave', 'okov', 'kom', 650, 0),
+  m('mat_floor_bolt', 'DEMO-ZS-001', 'Vertikalni podni zasun (rigla)', 'okov', 'kom', 1900, 0),
+  m('mat_floor_catch', 'DEMO-PP-001', 'Podni prihvat zasuna sa graničnikom', 'okov', 'kom', 950, 0),
   m('mat_wheel', 'DEMO-TK-001', 'Točkić za kliznu kapiju', 'okov', 'kom', 2400, 0),
   m('mat_motor_sliding', 'DEMO-AU-KL', 'Automatika za kliznu kapiju', 'automatika', 'kom', 78000, 0),
   m('mat_motor_swing', 'DEMO-AU-KR', 'Automatika sa krakom', 'automatika', 'kom', 62000, 0),

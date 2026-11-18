@@ -1,5 +1,6 @@
 import { createElement } from 'react';
 import { GateSketchSvg } from '../components/gates/GateSketch';
+import { gateHingeQty } from '../domain/gates/hingeRule';
 import { DIM_BY_KEY, dimsFor, emptyDesign, fmt, HW_ROLE_LABELS, missingHardware, HW_STATUS_LABELS, ORIGIN_LABELS, resolveGate, STATUS_LABELS, SYSTEM_LABELS, systemOf, VIEW_LABEL } from '../domain/gates/design';
 import { computeLayout } from '../domain/geometry/layout';
 import { FENCE_MODELS } from '../domain/models/catalog';
@@ -24,7 +25,7 @@ export async function buildGatePdfBlob(project: Project, itemId: string, _materi
   const sys = systemOf(gate);
   const g: Gate = { ...gate, design: gate.design ?? emptyDesign(sys) };
   const res = resolveGate(g, li.clearWidth);
-  const miss = missingHardware(g, sys);
+  const miss = missingHardware(g, sys, gateHingeQty(g, li.clearWidth));
   const { renderToStaticMarkup } = await import('react-dom/server');
   const svg = renderToStaticMarkup(createElement(GateSketchSvg, { gate: g, res, width: 900, postHs: [project.posts[index]?.heightMm, project.posts[index + 1]?.heightMm], postWs: [project.posts[index]?.widthMm, project.posts[index + 1]?.widthMm] })).replace('width="100%"', 'width="900"');
   const m = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(svg);

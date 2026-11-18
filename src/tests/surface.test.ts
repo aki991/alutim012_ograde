@@ -23,9 +23,9 @@ describe('komadni delovi (brave, šarke) na kapiji', () => {
     const front = frontSurfaceAt(base, 10, 401, mats);
     expect(front).not.toBeNull();
     const placed = restOnSurface(base, lock, mats);
-    expect(placed.z).toBeGreaterThan(front!);
-    // zadnja strana brave (z − 22) je na prednjoj ravni profila
-    expect(placed.z - 22).toBeCloseTo(front!, 0);
+    expect(placed.z).toBeGreaterThanOrEqual(front!);
+    // zadnja strana brave (rozeta počinje na z = 0) je na prednjoj ravni profila
+    expect(placed.z).toBeCloseTo(front!, 0);
     // bez profila ispod ostaje na z = 0
     expect(restOnSurface(base, piece('l3', 'lock', 600, 400), mats).z).toBe(0);
   });
@@ -37,7 +37,7 @@ describe('komadni delovi (brave, šarke) na kapiji', () => {
     expect(made).toHaveLength(3);
     const sh = materialShape(hinge);
     const bounds = made.map((p) => partBounds(p, sh));
-    for (const b of bounds) { expect(b.x0).toBeGreaterThanOrEqual(-15 - 1e-6); expect(b.y1).toBeLessThanOrEqual(1510 + 1e-6); expect(b.y0).toBeGreaterThanOrEqual(-10 - 1e-6); }
+    for (const b of bounds) { expect(b.x0).toBeGreaterThanOrEqual(-80 - 1e-6); expect(b.y1).toBeLessThanOrEqual(1510 + 1e-6); expect(b.y0).toBeGreaterThanOrEqual(-10 - 1e-6); }
     // srednja je po sredini između gornje i donje
     const ys = made.map((p) => p.y).sort((a, b) => a - b);
     expect(ys[1] - ys[0]).toBeCloseTo(ys[2] - ys[1], 1);

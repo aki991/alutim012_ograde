@@ -44,7 +44,7 @@ export default function ProductionPage() {
   const csv = () => {
     const bom = buildBom(project, materials, specs);
     downloadCsv([
-      ['Grupa', 'Šifra', 'Naziv', 'Jedinica', 'Geometrijska količina', 'Nabavna količina', 'Cena/JM (neto)', 'Ukupno'],
+      ['Grupa', 'Šifra', 'Naziv', 'Jedinica', 'Geometrijska količina', 'Nabavna količina', 'Cena/JM (neto, RSD)', 'Ukupno (RSD)'],
       ...bom.map((l) => [l.group, l.sku, l.name, l.unit, l.geometricQty.toFixed(3), l.purchaseQty.toFixed(3), l.unitPriceNet.toFixed(2), l.total.toFixed(2)]),
     ], `materijal_${safeFilename(project.name)}.csv`);
   };

@@ -101,3 +101,85 @@ describe('izbačeni model i ugrađeni materijali', () => {
     expect(m.items[0].kind === 'fence' && m.items[0].modelId).toBe('rail_inox');
   });
 });
+
+describe('Z profil se postavlja pod nagibom −45°', () => {
+  it('vodoravni Z profil dobija nagib preseka −45°, ostali profili ne', async () => {
+    const mk = (id: string, sku: string, name: string): Material => ({ id, sku, name, category: 'profil', unit: 'm', unitPrice: 100, wastePercent: 3, demo: false });
+    const z = mk('mz', 'KZ000001', 'Z profil za ogradu - mali, sirovo (Ekoluka Key)');
+    const sz = materialShape(z);
+    expect(partFromDrag(z.id, sz, 100, 50, 1100, 50, true, 'z1')).toMatchObject({ angleDeg: 0, tiltDeg: -45 });
+    expect(partFromDrag(z.id, sz, 100, 900, 100, 100, true, 'z2')?.tiltDeg).toBeUndefined(); // uspravan se ne naginje
+    const kv = mk('mk', 'KV25202', 'Kvadratna cev 30x30x2');
+    expect(partFromDrag(kv.id, materialShape(kv), 100, 50, 1100, 50, true, 'k1')?.tiltDeg).toBeUndefined();
+  });
+});
+
+describe('Z profil: mere preseka se menjaju', () => {
+  const mk = (over: Partial<Material> = {}): Material => ({ id: 'mz', sku: 'KZ000001', name: 'Z profil za ogradu - mali, sirovo (Ekoluka Key)', category: 'profil', unit: 'm', unitPrice: 100, wastePercent: 3, demo: false, ...over } as Material);
+  it('širina i visina su polja mera, a presek prati zadate mere', async () => {
+    const { materialDimFields } = await import('../domain/models/materialShape');
+    const base = materialShape(mk());
+    expect(materialDimFields(mk()).map((f) => f.key)).toEqual(['width', 'height']);
+    expect(base.type === 'linear' && Math.round(base.section.w * 10) / 10).toBe(93.3);
+    const big = materialShape(mk({ dims: { width: 120, height: 70 } }));
+    expect(big.type === 'linear' && Math.round(big.section.w * 10) / 10).toBe(120);
+    expect(big.type === 'linear' && Math.round(big.section.h * 10) / 10).toBe(70);
+  });
+  it('veliki Z profil (KZ000002) takođe', async () => {
+    const { materialDimFields } = await import('../domain/models/materialShape');
+    const z2 = mk({ sku: 'KZ000002', name: 'Z profil za ogradu - veliki' });
+    expect(materialDimFields(z2).map((f) => f.value)).toEqual([99.6, 56.8]);
+    const s = materialShape(mk({ sku: 'KZ000002', dims: { width: 110 } }));
+    expect(s.type === 'linear' && Math.round(s.section.w)).toBe(110);
+  });
+});
+
+describe('Z profili bez lufta: razmak do −20 mm', () => {
+  const z = { id: 'mz', sku: 'KZ000001', name: 'Z profil za ogradu - mali, sirovo (Ekoluka Key)', category: 'profil', unit: 'm', unitPrice: 100, wastePercent: 3, demo: false } as Material;
+  it('najmanji razmak Z profila je tačno −20 mm', async () => {
+    const { minGap, gapLimitOf } = await import('../domain/models/guides');
+    const sh = materialShape(z);
+    if (sh.type !== 'linear') throw new Error('Z profil mora da bude profil');
+    const face = sectionFace(sh.section, 0).face;
+    expect(minGap(sh.section, 0, face, gapLimitOf(sh))).toBe(-20);
+    // bez Z oznake važi računanje iz omotača preseka (nikad pozitivno)
+    expect(minGap(sh.section, 0, face)).toBeLessThanOrEqual(0);
+  });
+  it('uvlačenje dva Z profila do 20 mm nije preklapanje, više od toga jeste', async () => {
+    const { findOverlaps } = await import('../domain/models/overlap');
+    const sh = materialShape(z);
+    if (sh.type !== 'linear') throw new Error('Z profil mora da bude profil');
+    const face = sectionFace(sh.section, 0).face;
+    const part = (id: string, y: number) => ({ id, materialId: z.id, x: 0, y, lengthMm: 500, angleDeg: 0, rot: 0, z: 0 });
+    const at = (gap: number) => findOverlaps({ parts: [part('a', 0), part('b', face + gap)] }, [z]).length;
+    expect(at(-15)).toBe(0);
+    expect(at(5 - face)).toBeGreaterThan(0); // gotovo jedan preko drugog
+  });
+});
+
+describe('Z profil: kopija sa drugom šifrom zadržava oblik', () => {
+  it('kopija velikog Z profila (šifra KZ000002-K) ostaje veliki Z profil', async () => {
+    const { materialDimFields } = await import('../domain/models/materialShape');
+    const copy = { id: 'mc', sku: 'KZ000002-K', name: 'Z profil za ogradu - veliki (kopija)', category: 'profil', unit: 'm', unitPrice: 4.07, wastePercent: 3, demo: false } as Material;
+    expect(materialDimFields(copy).map((f) => f.value)).toEqual([99.6, 56.8]);
+    const small = { ...copy, sku: 'KZ000001-K', name: 'Z profil za ogradu - mali (kopija)' } as Material;
+    expect(materialDimFields(small).map((f) => f.value)).toEqual([93.3, 55.5]);
+    const sized = { ...copy, dims: { width: 120 } } as Material;
+    expect(materialDimFields(sized).map((f) => f.value)).toEqual([120, 56.8]);
+  });
+});
+
+describe('cev 80×20 u bočnim U profilima: razmak bez lufta najviše do −15 mm', () => {
+  it('ograničenje je −15 mm samo za kvadratnu cev 80×20', async () => {
+    const { minGap, gapLimitOf } = await import('../domain/models/guides');
+    const mk = (name: string): Material => ({ id: 'm', sku: 'KV', name, category: 'profil', unit: 'm', unitPrice: 1, wastePercent: 3, demo: false } as Material);
+    const tube = materialShape(mk('Kvadratna cev 80x20x1'));
+    if (tube.type !== 'linear') throw new Error('cev');
+    expect(gapLimitOf(tube)).toEqual({ mm: 15, exact: false });
+    const face = sectionFace(tube.section, -28.73).face;
+    expect(minGap(tube.section, -28.73, face, gapLimitOf(tube))).toBeGreaterThanOrEqual(-15);
+    expect(minGap(tube.section, -28.73, face)).toBeLessThan(-15); // bez ograničenja presek dozvoljava više
+    const other = materialShape(mk('Kvadratna cev 60x40x2'));
+    expect(gapLimitOf(other)).toBeUndefined();
+  });
+});

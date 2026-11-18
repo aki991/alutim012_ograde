@@ -2,6 +2,7 @@ import { partBounds, type CustomModel, type CustomPart } from './custom';
 import { checkDrawing, type DrawingProblem } from './drawingCheck';
 import { scaledModel } from './customRegistry';
 import { materialShape } from './materialShape';
+import { bodyParts } from './pairHardware';
 import type { Material } from './types';
 
 /**
@@ -17,6 +18,14 @@ const keyOf = (kind: string, size: [number, number], extra: string): string => `
 
 export function checkSizes(model: CustomModel, materials: Material[], sizes: readonly [number, number][] = PROBE_SIZES): DrawingProblem[] {
   if (model.kind === 'terrace' || !model.parts.length) return [];
+  // dvokrilna kapija iz dva krila: svako krilo se proverava posebno (ceo crtež se ne razvlači na druge mere kao jedno polje)
+  const lv = model.gate?.leaves;
+  if (lv) {
+    const { left, right } = bodyParts(model.parts, materials, lv);
+    const sub = (parts: CustomPart[], dx: number, w: number): CustomModel => ({ ...model, gate: undefined, widthMm: w, parts: parts.map((p) => ({ ...p, x: p.x - dx })) });
+    const all = [...checkSizes(sub(left, 0, lv.leftMm), materials, sizes), ...checkSizes(sub(right, lv.leftMm + lv.gapMm, lv.rightMm), materials, sizes)];
+    return all.filter((p, i) => all.findIndex((q) => q.key === p.key) === i);
+  }
   const byId = new Map(materials.map((m) => [m.id, m]));
   const shapeOf = (p: CustomPart) => { const m = byId.get(p.materialId); return m ? materialShape(m) : null; };
   const nameOf = (p: CustomPart): string => byId.get(p.materialId)?.name ?? 'deo';

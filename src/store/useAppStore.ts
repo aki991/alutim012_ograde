@@ -17,6 +17,8 @@ import { presetTitle, slidingForModel, specFromPreset, type SlidingSpec } from '
 import { defaultGateConfig, gateClearWidth, gateConfigFromGate, gateFieldsFromModel, GATE_TYPE_LABELS, leafKeyOf, postDimsOf, withModelPosts } from '../domain/gates/gateModels';
 import { postHalfSum } from '../domain/geometry/layout';
 import { leafKey, leafSeed } from '../domain/models/leafSeed';
+import { doubleGateSeed, singleGateSeed } from '../domain/models/doubleGateSeed';
+import { pairWidth } from '../domain/models/pairHardware';
 import { builtinToCustom } from '../domain/models/fromBuiltin';
 import { cleanMaterialName } from '../domain/models/materialTitle';
 import { createFence, createGate, createProject, DEFAULT_FENCE_WIDTH_MM, nowIso } from '../domain/models/factories';
@@ -140,7 +142,8 @@ interface AppState {
   restoreBuiltin: (customId: string) => void;
   /** sakriva model iz kataloga (brisanje): projekti koji ga koriste rade i dalje */
   hideModel: (id: string) => void;
-  restoreHiddenModels: () => void;
+  /** vraća sakrivene modele; sa `prefix` samo one čiji ID počinje njime (npr. „gate:“ za osnovne kapije) */
+  restoreHiddenModels: (prefix?: string) => void;
   /** modeli kapija = nacrtani modeli vrste „Kapija“ sa podešavanjima iz „Mere kapije“ */
   /** postavlja kapiju u otvorenom projektu prema modelu (ispuna, boja, visina, tip, mere, okovi); svetli otvor je onaj iz modela */
   applyGateModel: (itemId: string, modelId: string) => boolean;
@@ -306,6 +309,16 @@ export const useAppStore = create<AppState>((set, get) => {
               backfilled = true;
             }
           } catch { /* bez localStorage-a: preskače se */ }
+          // jednokratno: okov dvokrilne kapije (prihvatnik brave, podni zasun, podni prihvat) dodaje se u cenovnik samo ako ga nema; ostalo se ne vraća
+          const PAIR_KEY = 'alutim.pairHardwareV1';
+          try {
+            if (localStorage.getItem(PAIR_KEY) !== '1') {
+              const ids = new Set(['mat_strike_plate', 'mat_floor_bolt', 'mat_floor_catch']);
+              const add = missingModelMaterials(materials).filter((x) => ids.has(x.id));
+              if (add.length) { materials = [...materials, ...add]; backfilled = true; }
+              localStorage.setItem(PAIR_KEY, '1');
+            }
+          } catch { /* bez localStorage-a: preskače se */ }
           // jednokratno: nazivi materijala iz uvoza postaju „vrsta pa dimenzije“ (npr. Kvadratna cev 60×40×3, U profil 60×28)
           const NAMES_KEY = 'alutim.materialNamesV2'; // V2: izbacuje i oznake boje (RAL)
           let renamed = false;
@@ -354,6 +367,8 @@ export const useAppStore = create<AppState>((set, get) => {
           // delovi nacrtanih modela sa obrisanim materijalom prelaze na isti materijal (ista šifra) iz cenovnika, npr. čep tarabice K100018
           const remapped = remapMissingMaterials(settings.customModels, materials);
           if (remapped) settings = { ...settings, customModels: remapped };
+          // kapije koje nikad nisu sačuvane (zatvoreno crtanje, osvežena stranica) se ne zadržavaju
+          if (settings.customModels?.some((m) => m.draft)) settings = { ...settings, customModels: settings.customModels.filter((m) => !m.draft) };
           // nacrtani modeli moraju biti u katalogu pre nego što se projekti učitaju
           registerCustomModels(settings.customModels, materials);
           setHiddenModels(settings.hiddenModels);
@@ -724,9 +739,10 @@ export const useAppStore = create<AppState>((set, get) => {
       setHiddenModels(hidden);
       set((s) => ({ settings: { ...s.settings, hiddenModels: hidden } }));
     },
-    restoreHiddenModels() {
-      setHiddenModels([]);
-      set((s) => ({ settings: { ...s.settings, hiddenModels: [] } }));
+    restoreHiddenModels(prefix) {
+      const hidden = prefix ? (get().settings.hiddenModels ?? []).filter((id) => !id.startsWith(prefix)) : [];
+      setHiddenModels(hidden);
+      set((s) => ({ settings: { ...s.settings, hiddenModels: hidden } }));
     },
     applyGateModel(itemId, modelId) {
       const m = (get().settings.customModels ?? []).find((x) => x.id === modelId);
@@ -799,9 +815,35 @@ export const useAppStore = create<AppState>((set, get) => {
       const id = uid('cm');
       const wide = gateType === 'double' || gateType === 'sliding';
       const fence = fenceModelId ?? defaultModelId();
+      // dvokrilna: dva odvojena krila u jednom crtežu sa svim okovom (šarke, brava, prihvatnik, podni zasun i prihvat)
+      if (gateType === 'double') {
+        const pair = doubleGateSeed(fence, get().settings.customModels, get().materials, id, 3000, 1500);
+        if (!('error' in pair)) {
+          const gate = { ...defaultGateConfig('double'), clearWidthMm: pairWidth(pair.layout), leaves: pair.layout, unequalLeaves: false, leftLeafMm: 0, opening: 'left' as const, design: { ...defaultGateConfig('double').design, activeLeaf: 'left' as const } };
+          const model = { ...pair.model, draft: true, name: GATE_TYPE_LABELS.double, kind: 'gate' as const, baseModelId: undefined, leafModelId: leafKey(fence, get().settings.customModels), gate };
+          if (pair.missing.length) { try { sessionStorage.setItem(`dorada.missing.${id}`, pair.missing.join(', ')); } catch { /* bez sessionStorage-a */ } }
+          const customModels = [...(get().settings.customModels ?? []), model];
+          registerCustomModels(customModels, get().materials);
+          set((s) => ({ settings: { ...s.settings, customModels } }));
+          return id;
+        }
+      }
+      // pešačka i jednokrilna: šarke i brava su nacrtani na crtežu
+      if (gateType === 'pedestrian' || gateType === 'single') {
+        const one = singleGateSeed(fence, get().settings.customModels, get().materials, id, 1000, 1500);
+        if (!('error' in one)) {
+          if (one.missing.length) { try { sessionStorage.setItem(`dorada.missing.${id}`, one.missing.join(', ')); } catch { /* bez sessionStorage-a */ } }
+          const gate = { ...defaultGateConfig(gateType), clearWidthMm: 1000, hwDrawn: true };
+          const model = { ...one.model, draft: true, name: GATE_TYPE_LABELS[gateType], kind: 'gate' as const, baseModelId: undefined, leafModelId: leafKey(fence, get().settings.customModels), gate };
+          const customModels = [...(get().settings.customModels ?? []), model];
+          registerCustomModels(customModels, get().materials);
+          set((s) => ({ settings: { ...s.settings, customModels } }));
+          return id;
+        }
+      }
       const seed = leafSeed(fence, get().settings.customModels, get().materials, id, wide ? 3000 : 1000, 1500);
       const base = 'error' in seed ? builtinToCustom(defaultModelId(), get().materials, id, wide ? 3000 : 1000, 1500) : seed;
-      const model = { ...base, name: GATE_TYPE_LABELS[gateType], kind: 'gate' as const, baseModelId: undefined, leafModelId: 'error' in seed ? undefined : leafKey(fence, get().settings.customModels), gate: { ...defaultGateConfig(gateType), clearWidthMm: wide ? 3000 : 1000 } };
+      const model = { ...base, draft: true, name: GATE_TYPE_LABELS[gateType], kind: 'gate' as const, baseModelId: undefined, leafModelId: 'error' in seed ? undefined : leafKey(fence, get().settings.customModels), gate: { ...defaultGateConfig(gateType), clearWidthMm: wide ? 3000 : 1000 } };
       const customModels = [...(get().settings.customModels ?? []), model];
       registerCustomModels(customModels, get().materials);
       set((s) => ({ settings: { ...s.settings, customModels } }));
@@ -871,7 +913,7 @@ export const useAppStore = create<AppState>((set, get) => {
       const seed = leafSeed(fence, get().settings.customModels, get().materials, id, d.frameWidth, d.frameHeight);
       const base = 'error' in seed ? builtinToCustom(defaultModelId(), get().materials, id, d.frameWidth, d.frameHeight) : seed;
       const sliding = slidingForModel(presetId, true);
-      const model = { ...base, name: presetTitle(presetId), kind: 'gate' as const, baseModelId: undefined, leafModelId: 'error' in seed ? undefined : leafKey(fence, get().settings.customModels), gate: { ...defaultGateConfig('sliding'), automation: sliding.actuation === 'motor', sliding } };
+      const model = { ...base, draft: true, name: presetTitle(presetId), kind: 'gate' as const, baseModelId: undefined, leafModelId: 'error' in seed ? undefined : leafKey(fence, get().settings.customModels), gate: { ...defaultGateConfig('sliding'), automation: sliding.actuation === 'motor', sliding } };
       const customModels = [...(get().settings.customModels ?? []), model];
       registerCustomModels(customModels, get().materials);
       set((s) => ({ settings: { ...s.settings, customModels } }));

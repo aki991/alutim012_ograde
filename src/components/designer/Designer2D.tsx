@@ -59,7 +59,16 @@ interface Props {
 const snap = (v: number, g: number): number => Math.round(v / g) * g;
 
 /** Deo koji nastaje povlačenjem od (sx, sy) do (ex, ey); null ako je povlačenje prekratko. */
+/** Z profil se uvek postavlja pod nagibom od −45° (tako ulazi u bočne cevi), pa se ugao ne unosi ručno. */
+export const Z_PROFILE_TILT_DEG = -45;
+
 export function partFromDrag(materialId: string, shape: MatShape, sx: number, sy: number, ex: number, ey: number, ortho: boolean, id: string): CustomPart | null {
+  const part = partFromDragRaw(materialId, shape, sx, sy, ex, ey, ortho, id);
+  if (part && shape.type === 'linear' && shape.group === 'z' && part.angleDeg % 180 === 0 && part.tiltDeg === undefined) return { ...part, tiltDeg: Z_PROFILE_TILT_DEG };
+  return part;
+}
+
+function partFromDragRaw(materialId: string, shape: MatShape, sx: number, sy: number, ex: number, ey: number, ortho: boolean, id: string): CustomPart | null {
   const base = { id, materialId, rot: 0, z: 0 };
   if (shape.type === 'piece') return { ...base, x: ex, y: ey, lengthMm: 0, angleDeg: 0 };
   const dx = ex - sx; const dy = ey - sy;

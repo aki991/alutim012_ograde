@@ -2,8 +2,9 @@ import type { Gate } from '../../domain/models/types';
 import { InfillArt } from '../fences/InfillArt';
 import { SlidingAssemblyArt } from './SlidingAssemblyArt';
 import { ramInsets } from '../../domain/models/tubes';
+import { hingeCountFor } from '../../domain/gates/hingeRule';
 import { hingePositions, resolveGate } from '../../domain/gates/design';
-import { swingLeafBoxes } from '../../domain/geometry/gates';
+import { activeLeafIndex, BOLT_INSET_MM, doubleLeafBoxes, floorBoltLengthMm, lockHeightMm, swingLeafBoxes } from '../../domain/geometry/gates';
 
 interface Props {
   gate: Gate;
@@ -39,15 +40,27 @@ function Hinges({ x, y, w, h, side, gate, clearX, clear }: { x: number; y: numbe
   const r = gate?.design && clear !== undefined ? resolveGate(gate, clear).values : null;
   const val = (k: string) => r?.[k]?.v ?? null;
   const axis = val('hingeAxis');
-  const hx = axis !== null && clearX !== undefined && clear !== undefined ? (side === 'left' ? clearX + axis : clearX + clear - axis) - 19 : side === 'left' ? x - 8 : x + w - 30;
-  const nH = Math.max(1, Math.round(val('hingeCount') ?? 2));
+  // osovina šarke je na ivici krila na strani šarki (ili na meri ose iz mera kapije)
+  const cx = axis !== null && clearX !== undefined && clear !== undefined ? (side === 'left' ? clearX + axis : clearX + clear - axis) : side === 'left' ? x : x + w;
+  const nH = Math.max(1, Math.round(val('hingeCount') ?? hingeCountFor(w, h)));
   const spacing = val('hingeSpacing'); const top = val('hingeTop');
   const cys = r && (spacing !== null || top !== null)
     ? hingePositions(h, nH, spacing, top).map((mm) => y + mm)
     : [0.12, 0.88].map((t) => y + h * t);
+  const metal = '#8d97a3';
   return (
-    <g fill="#9aa4b0" stroke="#1b1f24" strokeWidth="3">
-      {cys.map((cy, i) => <rect key={i} x={hx} y={cy - 45} width={38} height={90} rx="6" />)}
+    <g fill={metal} stroke="#1b1f24" strokeWidth="3">
+      {cys.map((cy, i) => (
+        <g key={i}>
+          {/* listovi: jedan na krilu, drugi na stubu */}
+          <rect x={cx - 50} y={cy - 30} width={40} height={60} rx="3" />
+          <rect x={cx + 10} y={cy - 30} width={40} height={60} rx="3" />
+          {/* osovina u tri članka */}
+          {[-45, -15, 15].map((dy) => <rect key={dy} x={cx - 10} y={cy + dy - 14} width={20} height={28} rx="4" />)}
+          {/* zavrtnji */}
+          {[-40, 40].flatMap((dx) => [-18, 18].map((dy) => <circle key={`${dx}${dy}`} cx={cx + dx} cy={cy + dy} r="4" fill="#2b3036" stroke="none" />))}
+        </g>
+      ))}
     </g>
   );
 }
@@ -113,37 +126,40 @@ export function GateArt({ gate, x, y, w, h, hex, px, realistic, showDims }: Prop
   // donji zazor iz mera kapije podiže krilo od poda
   const gB = gate.design ? resolveGate(gate, w).values.gB?.v ?? 0 : 0;
   const yl = y - gB;
-  if (gate.gateType === 'double' && boxes) {
-    const [bl, br] = boxes;
-    return (
-      <g>
-        <Leaf gate={gate} x={x + bl.x} y={yl} w={bl.w} h={h} hex={hex} uid={`${gate.id}-l`} withHandle={false} handleSide="right" />
-        <Leaf gate={gate} x={x + br.x} y={yl} w={br.w} h={h} hex={hex} uid={`${gate.id}-r`} withHandle={false} handleSide="left" />
-        {!realistic && <SwingMark x={x + bl.x} y={yl} w={bl.w} h={h} hingeSide="left" px={px} />}
-        {!realistic && <SwingMark x={x + br.x} y={yl} w={br.w} h={h} hingeSide="right" px={px} />}
-        <Hinges x={x + bl.x} y={yl} w={bl.w} h={h} side="left" gate={gate} clearX={x} clear={w} />
-        <Hinges x={x + br.x} y={yl} w={br.w} h={h} side="right" gate={gate} clearX={x} clear={w} />
-        <rect x={x + bl.x + bl.w - 30} y={lockAt(yl) - 40} width={80} height={80} rx="14" fill="#c3cbd5" stroke="#6b7380" strokeWidth="3" />
-        {gate.automation && <rect x={x + w / 2 - 60} y={yl - 70} width={120} height={50} rx="10" fill="#1b1f24" />}
-      </g>
-    );
-  }
-
   if (gate.gateType === 'double') {
-    const total = w;
-    const gapC = 20;
-    const leftW = gate.unequalLeaves && gate.leftLeafMm > 0 ? Math.min(Math.max(gate.leftLeafMm, 300), total - 300 - gapC) : (total - gapC) / 2;
-    const rightW = total - gapC - leftW;
+    // aktivno krilo nosi bravu i kvaku uz unutrašnju ivicu; pasivno ima prihvatnik brave i podni zasun uz ivicu na kojoj se krila sastaju
+    const bx = doubleLeafBoxes(gate, w);
+    const act = activeLeafIndex(gate);
+    const A = bx[act]; const P = bx[1 - act];
+    const fr = gate.params.frameMm;
+    const lockCy = yl + h - lockHeightMm(gate, w, h);
+    const innerP = act === 0 ? x + P.x : x + P.x + P.w; // unutrašnja ivica pasivnog krila
+    const dirIn = act === 0 ? 1 : -1; // od ivice ka sredini pasivnog krila
+    const boltX = innerP + dirIn * BOLT_INSET_MM;
+    const floorY = y + h;
+    const boltLen = floorBoltLengthMm(h);
+    const boltTop = floorY - boltLen;
     return (
       <g>
-        <Leaf gate={gate} x={x} y={y} w={leftW} h={h} hex={hex} uid={`${gate.id}-l`} withHandle={false} handleSide="right" />
-        <Leaf gate={gate} x={x + leftW + gapC} y={y} w={rightW} h={h} hex={hex} uid={`${gate.id}-r`} withHandle={false} handleSide="left" />
-        {!realistic && <SwingMark x={x} y={y} w={leftW} h={h} hingeSide="left" px={px} />}
-        {!realistic && <SwingMark x={x + leftW + gapC} y={y} w={rightW} h={h} hingeSide="right" px={px} />}
-        <Hinges x={x} y={y} w={leftW} h={h} side="left" />
-        <Hinges x={x + leftW + gapC} y={y} w={rightW} h={h} side="right" />
-        <rect x={x + leftW - 30} y={y + h * 0.5 - 40} width={80} height={80} rx="14" fill="#c3cbd5" stroke="#6b7380" strokeWidth="3" />
-        {gate.automation && <rect x={x + w / 2 - 60} y={y - 70} width={120} height={50} rx="10" fill="#1b1f24" />}
+        <Leaf gate={gate} x={x + bx[0].x} y={yl} w={bx[0].w} h={h} hex={hex} uid={`${gate.id}-l`} withHandle={act === 0} handleSide="right" cy={lockCy} />
+        <Leaf gate={gate} x={x + bx[1].x} y={yl} w={bx[1].w} h={h} hex={hex} uid={`${gate.id}-r`} withHandle={act === 1} handleSide="left" cy={lockCy} />
+        {!realistic && <SwingMark x={x + bx[0].x} y={yl} w={bx[0].w} h={h} hingeSide="left" px={px} />}
+        {!realistic && <SwingMark x={x + bx[1].x} y={yl} w={bx[1].w} h={h} hingeSide="right" px={px} />}
+        <Hinges x={x + bx[0].x} y={yl} w={bx[0].w} h={h} side="left" gate={gate} clearX={x} clear={w} />
+        <Hinges x={x + bx[1].x} y={yl} w={bx[1].w} h={h} side="right" gate={gate} clearX={x} clear={w} />
+        {/* prihvatnik brave na pasivnom krilu, u visini brave */}
+        <rect data-testid="gate-strike" x={innerP + dirIn * (fr / 2) - 13} y={lockCy - 70} width={26} height={140} rx="6" fill="#c3cbd5" stroke="#6b7380" strokeWidth="3" />
+        {/* podni zasun: nadgradna šipka sa dvorišne strane pasivnog krila, uz ivicu spoja; spuštena u podni prihvat */}
+        <g data-testid="gate-floor-bolt">
+          <rect x={boltX - 8} y={boltTop} width={16} height={boltLen + 26} rx="4" fill="#d8dee6" stroke="#434b55" strokeWidth="3" />
+          {[0.12, 0.72].map((t) => <rect key={t} x={boltX - 24} y={boltTop + boltLen * t} width={48} height={44} rx="6" fill="#9aa4b0" stroke="#1b1f24" strokeWidth="3" />)}
+          <rect x={boltX + 8} y={boltTop + 30} width={44} height={14} rx="5" fill="#2b3036" />
+          <rect data-testid="gate-floor-catch" x={boltX - 30} y={floorY - 6} width={60} height={34} rx="4" fill="#59616b" stroke="#2b3036" strokeWidth="3" />
+          <rect x={boltX - 10} y={floorY - 6} width={20} height={14} fill="#1b1f24" />
+        </g>
+        {gate.automation && <rect x={x + w / 2 - 60} y={yl - 70} width={120} height={50} rx="10" fill="#1b1f24" />}
+        {!realistic && <text x={x + A.x + A.w / 2} y={yl + 70} textAnchor="middle" fontSize={64} fontWeight={700} fill="#f8fafc" fillOpacity="0.9">aktivno</text>}
+        {!realistic && <text x={x + P.x + P.w / 2} y={yl + 70} textAnchor="middle" fontSize={64} fontWeight={700} fill="#f8fafc" fillOpacity="0.9">pasivno</text>}
       </g>
     );
   }

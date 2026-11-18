@@ -6,6 +6,7 @@ import { anchoredLengthFormula, anchoredModel } from './anchored';
 import { isFramePart, resizeWithFrame } from './frame';
 import { repeatOffIds, applyRails, planPattern, railGroups, refillsVBars, patternCounts, refillPattern, refillVBars, slatIdsOf, slatLayoutOf, type SlatOverride } from './gateRefill';
 import { materialShape, sectionFace, type MatShape } from './materialShape';
+import { leafOfPair } from './pairHardware';
 import { screwCounts, screwMaterial } from './terraceHardware';
 import type { SpecPart } from './spec';
 import type { FenceModelId, Material } from './types';
@@ -31,7 +32,8 @@ export function registerCustomModels(models: CustomModel[] | undefined, material
   for (const id of REG.keys()) delete all[id];
   REG.clear();
   MATERIALS = materials;
-  for (const m of models ?? []) { REG.set(m.id, m); all[m.id] = defOf(m); }
+  // dvokrilna kapija nacrtana kao dva krila: u projektu važi crtež jednog krila (okov kapije crta projekat)
+  for (const m of models ?? []) { const r = m.gate?.leaves || m.gate?.hwDrawn ? leafOfPair(m, materials) : m; REG.set(m.id, r); all[m.id] = defOf(r); }
 }
 
 /** modeli iz kataloga koje je korisnik obrisao: ne nude se za izbor, ali projekti koji ih koriste i dalje rade */

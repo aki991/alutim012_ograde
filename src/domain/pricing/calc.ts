@@ -9,6 +9,7 @@ import { CALC_RULES } from './rules';
 import { evaluateItemSpec, hasCustomSpec, specFor, type ModelSpecs, type SpecContext } from '../models/spec';
 import { buildLouver08Sheet, FILL_PROFILES, GUIDE_PROFILES, isLouver08, louverSpecOf } from './louverSpec';
 import { buildRail04Sheet, isRail04, RAIL04 } from './railSpec';
+import { gateHingeQty } from '../gates/hingeRule';
 import { missingHardware, resolveGate, systemOf, unknownHwLabel, type HwRole } from '../gates/design';
 import { gateCutRows } from '../gates/production';
 import { resolveSliding, slidingBom, type SlidingBomItem } from '../gates/slidingAssembly';
@@ -63,7 +64,7 @@ export function gateBomLines(g: Gate, clearWidthMm: number, materials: Material[
     out.push({ group: HW_GROUP[h.role], materialId: h.materialId ?? `gate-hw:${h.name}`, qty: h.qty, label: h.materialId ? undefined : `${h.name}${h.code ? ` (${h.code})` : ' (bez fabričke šifre)'}` });
   }
   // okov koji radnik nije upisao: red sa nepoznatom oznakom (bez cene), da se vidi da uz kapiju ide
-  for (const r of missingHardware(g, systemOf(g))) out.push({ group: HW_GROUP[r.role], materialId: `gate-unknown:${r.role}`, qty: r.qty, label: unknownHwLabel(r.role) });
+  for (const r of missingHardware(g, systemOf(g), gateHingeQty(g, clearWidthMm))) out.push({ group: HW_GROUP[r.role], materialId: `gate-unknown:${r.role}`, qty: r.qty, label: unknownHwLabel(r.role) });
   // isti materijal u istoj grupi (npr. stubovi rama oba krila) je jedan red
   const merged = new Map<string, (typeof out)[number]>();
   for (const l of out) {

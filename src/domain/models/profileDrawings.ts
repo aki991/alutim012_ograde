@@ -20,7 +20,7 @@ export type ProfileSpec =
   /** šuplja zakošena letvica: širina donje ivice, visina, debljina zida, pomeraj gornje ivice ulevo */
   | { kind: 'slant'; width: number; height: number; wall: number; offset: number }
   /** složeniji profili (U za masku, maskica, U za 2 maske, Z profili) */
-  | { kind: 'shape'; name: ShapeName };
+  | { kind: 'shape'; name: ShapeName; /** samo Z profili: izmenjena širina i visina preseka (mm) */ width?: number; height?: number };
 
 const TUBES: [string, number, number, number][] = [
   ['KV000001', 60, 60, 2], ['KV000002', 60, 60, 2.7], ['KV000003', 60, 40, 2.4], ['KV000004', 60, 40, 3], ['KV000005', 80, 80, 1.8],
@@ -87,10 +87,17 @@ export function specDimFields(s: ProfileSpec): DimField[] {
       return [{ key: 'width', label: 'Širina', value: s.width }, { key: 'up', label: 'Visina iznad srednje veze', value: s.up }, { key: 'down', label: 'Visina ispod srednje veze', value: s.down }, { key: 't', label: 'Debljina zida', value: s.t, wall: true }];
     case 'slant':
       return [{ key: 'width', label: 'Širina donje ivice', value: s.width }, { key: 'height', label: 'Visina', value: s.height }, { key: 'wall', label: 'Debljina zida', value: s.wall, wall: true }, { key: 'offset', label: 'Pomeraj gornje ivice', value: s.offset }];
+    case 'shape': {
+      const z = Z_DEFAULT_SIZE[s.name];
+      return z ? [{ key: 'width', label: 'Širina', value: s.width ?? z.w }, { key: 'height', label: 'Visina', value: s.height ?? z.h }] : [];
+    }
     default:
       return [];
   }
 }
+
+/** Z profili: širina i visina preseka sa crteža u cenovniku (mm); mere se mogu menjati, oblik se srazmerno razvlači, debljina zida ostaje. */
+export const Z_DEFAULT_SIZE: Partial<Record<ShapeName, { w: number; h: number }>> = { zmali: { w: 93.3, h: 55.5 }, zveliki: { w: 99.6, h: 56.8 } };
 
 /** Otvor C profila: zadat ili pola širine, u granicama u kojima ivice otvora ostaju (najmanje dva zida sa svake strane). */
 export const cSlot = (s: { a: number; c: number; slot?: number }): number => Math.max(2, Math.min(s.slot ?? s.a * 0.5, s.a - 4 * s.c));
@@ -104,6 +111,7 @@ export function withDims(s: ProfileSpec, dims: Record<string, number> | undefine
     case 'c': return { ...s, a: pos('a') ?? s.a, b: pos('b') ?? s.b, slot: pos('slot') ?? s.slot };
     case 'h': return { ...s, width: pos('width') ?? s.width, up: pos('up') ?? s.up, down: pos('down') ?? s.down };
     case 'slant': return { ...s, width: pos('width') ?? s.width, height: pos('height') ?? s.height, offset: typeof dims.offset === 'number' ? dims.offset : s.offset };
+    case 'shape': return Z_DEFAULT_SIZE[s.name] ? { ...s, width: pos('width') ?? s.width, height: pos('height') ?? s.height } : s;
     default: return s;
   }
 }
@@ -151,7 +159,7 @@ const rectPath = (x: number, y: number, w: number, h: number): string => pathOf(
 const fmt = (n: number): string => String(Math.round(n * 100) / 100).replace('.', ',');
 const mm = (n: number): string => `${fmt(n)} mm`;
 
-function shapeGeometry(name: ShapeName): ProfileGeometry {
+function shapeGeometry(name: ShapeName, size?: { width?: number; height?: number }): ProfileGeometry {
   const note = 'Šematski prikaz: oblik je očitan sa crteža u cenovniku, bez sitnih zadebljanja i kanala.';
   if (name === 'mask') {
     // U profil za masku 30 × 25,8 × 1,2: leva stranica, dno, desna uspravna veza i gornja polica sa desne strane
@@ -190,27 +198,30 @@ function shapeGeometry(name: ShapeName): ProfileGeometry {
   if (name === 'zveliki') {
     // Z profil za ogradu — veliki: šuplji, dve kose ruke i srednja komora sa dva rebra
     const wall = 1.2;
-    const outer: Pt[] = [[0, 0], [19.5, 18.6], [79.2, 18.6], [99.6, 37.9], [99.6, 56.8], [80.7, 37.9], [20.7, 37.9], [0, 18.6]];
+    const W = size?.width ?? 99.6; const H = size?.height ?? 56.8; const sx = W / 99.6; const sy = H / 56.8;
+    const sc = (pts: Pt[]): Pt[] => pts.map(([x, y]) => [x * sx, y * sy] as Pt);
+    const outer = sc([[0, 0], [19.5, 18.6], [79.2, 18.6], [99.6, 37.9], [99.6, 56.8], [80.7, 37.9], [20.7, 37.9], [0, 18.6]]);
     const inner = insetConvex(outer, wall);
     return {
-      path: `${pathOf(outer)}${pathOf(inner)}${rectPath(34.5, 18.6, wall, 19.3)}${rectPath(65.1, 18.6, wall, 19.3)}`, fillRule: 'evenodd', w: 99.6, h: 56.8, note,
-      dims: [{ from: [0, 0], to: [99.6, 0], gap: -7, label: '100' }, { from: [99.6, 0], to: [99.6, 56.8], gap: 7, label: '57' }, { from: [99.6, 18.6], to: [99.6, 56.8], gap: 17, label: '38,5' }],
-      facts: [{ label: 'Širina', value: mm(100) }, { label: 'Visina', value: mm(57) }, { label: 'Visina od srednje komore', value: mm(38.5) }],
+      path: `${pathOf(outer)}${pathOf(inner)}${rectPath(34.5 * sx, 18.6 * sy, wall, 19.3 * sy)}${rectPath(65.1 * sx, 18.6 * sy, wall, 19.3 * sy)}`, fillRule: 'evenodd', w: W, h: H, note,
+      dims: [{ from: [0, 0], to: [W, 0], gap: -7, label: fmt(W) }, { from: [W, 0], to: [W, H], gap: 7, label: fmt(H) }, { from: [W, 18.6 * sy], to: [W, H], gap: 17, label: fmt(H - 18.6 * sy) }],
+      facts: [{ label: 'Širina', value: mm(W) }, { label: 'Visina', value: mm(H) }, { label: 'Visina od srednje komore', value: mm(H - 18.6 * sy) }],
     };
   }
   // zmali: Z profil za ogradu — mali: dve vodoravne ruke povezane kosom šupljom vezom
   const wall = 1;
-  const outer: Pt[] = [[0, 0], [24.2, 0], [72.5, 48.1], [93.3, 48.1], [93.3, 55.5], [69.4, 55.5], [21.1, 8.1], [0, 8.1]];
+  const W = size?.width ?? 93.3; const H = size?.height ?? 55.5; const sx = W / 93.3; const sy = H / 55.5;
+  const outer: Pt[] = ([[0, 0], [24.2, 0], [72.5, 48.1], [93.3, 48.1], [93.3, 55.5], [69.4, 55.5], [21.1, 8.1], [0, 8.1]] as Pt[]).map(([x, y]) => [x * sx, y * sy] as Pt);
   const inner = insetConvex(outer, wall);
   return {
-    path: `${pathOf(outer)}${pathOf(inner)}`, fillRule: 'evenodd', w: 93.3, h: 55.5, note: `${note} Samo širina je jasno čitljiva na crtežu u cenovniku.`,
-    dims: [{ from: [0, 0], to: [93.5, 0], gap: -7, label: '93,5' }],
-    facts: [{ label: 'Širina', value: mm(93.5) }],
+    path: `${pathOf(outer)}${pathOf(inner)}`, fillRule: 'evenodd', w: W, h: H, note: `${note} Samo širina je jasno čitljiva na crtežu u cenovniku.`,
+    dims: [{ from: [0, 0], to: [W, 0], gap: -7, label: fmt(W) }, { from: [W, 0], to: [W, H], gap: 7, label: fmt(H) }],
+    facts: [{ label: 'Širina', value: mm(W) }, { label: 'Visina', value: mm(H) }],
   };
 }
 
 export function profileGeometry(spec: ProfileSpec): ProfileGeometry {
-  if (spec.kind === 'shape') return shapeGeometry(spec.name);
+  if (spec.kind === 'shape') return shapeGeometry(spec.name, spec);
   if (spec.kind === 'u') {
     const { a, b, c } = spec;
     const pts: Pt[] = [[0, 0], [0, b], [a, b], [a, 0], [a - c, 0], [a - c, b - c], [c, b - c], [c, 0]];

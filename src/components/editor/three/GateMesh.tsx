@@ -5,11 +5,12 @@ import { Suspense, useLayoutEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import type { LaidOutItem } from '../../../domain/geometry/layout';
 import { resolveGate } from '../../../domain/gates/design';
-import { gateLeafPoses, mmToScene as s, slidingSpaceStatus } from '../../../domain/geometry/gates';
+import { activeLeafIndex, BOLT_INSET_MM, doubleOpenState, floorBoltLengthMm, gateLeafPoses, lockHeightMm, mmToScene as s, slidingSpaceStatus } from '../../../domain/geometry/gates';
 import type { Gate } from '../../../domain/models/types';
 import { colorHex } from '../../../domain/models/catalog';
 import { dimOf } from '../../../domain/gates/slidingParts';
 import { leafHeightOf, placeSliding } from '../../../domain/gates/slidingLayout';
+import { hingeCountFor } from '../../../domain/gates/hingeRule';
 import { SlidingParts3D } from '../../gates/SlidingParts3D';
 import { useViewStore } from '../../../store/useViewStore';
 import { GlbBoundary, GlbLeaf } from './GlbLeaf';
@@ -21,6 +22,10 @@ import { boxGeometry, darkMaterial, steelMaterial } from './materials';
 /** delovi krila koji dolaze iz modela (ne iz sklopa): u 3D se ne crtaju iz sklopa */
 const LEAF_COMPONENTS = ['frame', 'channels', 'infill'];
 
+/** podizanje zasuna pasivnog krila (scena, 1 = 1 m) */
+const BOLT_LIFT = 0.13;
+/** položaji šarki po visini krila (od dna, 0–1): 2 šarke na krajevima, 3 sa srednjom */
+const hingeFractions = (n: number): number[] => (n >= 3 ? [0.14, 0.5, 0.86] : [0.14, 0.86]);
 const SLIDE_Z_MIN = 0.075; // klizno krilo ide iza ograde (sa strane dvorišta, −Z), da ne prolazi kroz susedne elemente
 const ease = (o: number) => o * o * (3 - 2 * o);
 
@@ -83,7 +88,24 @@ export function GateMesh({ gate, li, showZones, postWidthMm = 0 }: { gate: Gate;
   const closed = useMemo(() => gateLeafPoses(gate, li.clearStart, li.clearEnd, 0), [gate, li.clearStart, li.clearEnd]);
   const outer = useRef<(THREE.Group | null)[]>([]);
   const inner = useRef<(THREE.Group | null)[]>([]);
+  const bolt = useRef<THREE.Group | null>(null);
+  const isDouble = gate.gateType === 'double';
+  const activeIdx = activeLeafIndex(gate);
   const apply = (open: number) => {
+    const st = useViewStore.getState();
+    if (isDouble) {
+      // dvokrilna: aktivno i pasivno krilo se otvaraju svako za sebe (aktivno, pa zasun, pa pasivno); zasun je na pasivnom krilu
+      const ds = doubleOpenState(open, st.doubleMode[gate.id] ?? 'both');
+      const full = gateLeafPoses(gate, li.clearStart, li.clearEnd, 1);
+      full.forEach((p, k) => {
+        const o = outer.current[k];
+        const n = inner.current[k];
+        if (o) { o.position.x = s(p.pivotX); o.position.z = 0; }
+        if (n) n.rotation.y = p.rotationY * ease(k === activeIdx ? ds.active : ds.passive);
+      });
+      if (bolt.current) bolt.current.position.y = ease(ds.bolt) * BOLT_LIFT;
+      return;
+    }
     const poses = gateLeafPoses(gate, li.clearStart, li.clearEnd, ease(open));
     poses.forEach((p, k) => {
       const o = outer.current[k];
@@ -94,10 +116,27 @@ export function GateMesh({ gate, li, showZones, postWidthMm = 0 }: { gate: Gate;
   };
   useLayoutEffect(() => { apply(useViewStore.getState().gateOpen[gate.id] ?? 0); });
   const last = useRef(-1);
+  const lastMode = useRef('');
   useFrame(() => {
-    const o = useViewStore.getState().gateOpen[gate.id] ?? 0;
-    if (o !== last.current) { last.current = o; apply(o); }
+    const st = useViewStore.getState();
+    const o = st.gateOpen[gate.id] ?? 0;
+    const m = st.doubleMode[gate.id] ?? 'both';
+    if (o !== last.current || m !== lastMode.current) { last.current = o; lastMode.current = m; apply(o); }
   });
+  // dvokrilna: najdublji deo krila (dvorišna strana je −Z), da zasun stoji tik uz stvarnu pozadinu krila
+  const depthZ = useMemo(() => {
+    if (!isDouble) return { back: -LEAF_HALF, front: LEAF_HALF };
+    const lw = closed[1 - activeIdx]?.widthMm ?? li.clearWidth / 2;
+    const ps = isCustomModel(gate.infillModelId) ? customPartsFor(gate.infillModelId, lw, leafH, hwHex) : [];
+    const e = ps.length ? zExtent(ps) : null;
+    return e ? { back: e.mid - e.depth / 2, front: e.mid + e.depth / 2 } : { back: -LEAF_HALF, front: LEAF_HALF };
+  }, [isDouble, gate.infillModelId, closed, activeIdx, li.clearWidth, leafH, hwHex, LEAF_HALF]);
+  const boltZ = s(depthZ.back - 14);
+  const frontZ = s(depthZ.front);
+  const backLockZ = s(depthZ.back);
+  const boltLen = s(floorBoltLengthMm(leafH));
+  const boltX = (p: { widthMm: number; extendDir: 1 | -1 }) => p.extendDir * (s(p.widthMm) / 2 - s(BOLT_INSET_MM));
+  const lockHy = s(lockHeightMm(gate, li.clearWidth, leafH));
 
   const space = slidingSpaceStatus(gate, li.clearWidth);
   const dir = gate.opening === 'right' ? 1 : -1;
@@ -109,7 +148,7 @@ export function GateMesh({ gate, li, showZones, postWidthMm = 0 }: { gate: Gate;
     <>
       <PanelBody modelId={gate.infillModelId} widthMm={p.widthMm} heightMm={leafH} params={gate.params} color={gate.color} centerZ={sliding} />
       {/* ručka i brava prate krilo (na slobodnoj ivici) */}
-      {!sliding && (lockSide === 1 || gate.gateType === 'double') && (
+      {!sliding && lockSide === 1 && (
         <group position={[p.extendDir * (w / 2 - 0.1), lockY, 0]}>
           <mesh geometry={boxGeometry} material={steelMaterial} scale={[0.022, 0.38, 0.026]} position={[0, 0, 0.034]} castShadow />
           <mesh geometry={boxGeometry} material={steelMaterial} scale={[0.022, 0.38, 0.026]} position={[0, 0, -0.034]} castShadow />
@@ -126,7 +165,7 @@ export function GateMesh({ gate, li, showZones, postWidthMm = 0 }: { gate: Gate;
         </group>
       )}
       {/* šarke */}
-      {!sliding && [0.14, 0.86].map((t) => (
+      {!sliding && hingeFractions(hingeCountFor(p.widthMm, leafH)).map((t) => (
         <mesh key={t} position={[-p.extendDir * w / 2 + p.extendDir * 0.01, height * t, 0.026]} material={darkMaterial} castShadow>
           <cylinderGeometry args={[0.02, 0.02, 0.11, 12]} />
         </mesh>
@@ -142,6 +181,29 @@ export function GateMesh({ gate, li, showZones, postWidthMm = 0 }: { gate: Gate;
           <group key={k} ref={(g) => { outer.current[k] = g; }} position={[s(p.pivotX + p.slideX), 0, sliding ? slideZ : 0]}>
             <group ref={(g) => { inner.current[k] = g; }}>
               <group position={[p.extendDir * w / 2, s(fbMm), 0]}>
+                {isDouble && (k === activeIdx ? (
+                  // brava, cilindar i kvaka na aktivnom krilu, uz unutrašnju ivicu (sa obe strane krila)
+                  <group name="active-lock" position={[p.extendDir * (w / 2 - 0.08), lockHy, 0]}>
+                    <mesh geometry={boxGeometry} material={steelMaterial} scale={[0.024, 0.34, 0.024]} position={[0, 0, frontZ + 0.014]} castShadow />
+                    <mesh geometry={boxGeometry} material={steelMaterial} scale={[0.024, 0.34, 0.024]} position={[0, 0, backLockZ - 0.014]} castShadow />
+                    <mesh geometry={boxGeometry} material={darkMaterial} scale={[0.07, 0.035, 0.03]} position={[-p.extendDir * 0.035, -0.02, frontZ + 0.04]} castShadow />
+                    <mesh geometry={boxGeometry} material={darkMaterial} scale={[0.07, 0.035, 0.03]} position={[-p.extendDir * 0.035, -0.02, backLockZ - 0.04]} castShadow />
+                    <mesh position={[0, -0.095, frontZ + 0.02]} rotation={[Math.PI / 2, 0, 0]} material={darkMaterial}><cylinderGeometry args={[0.012, 0.012, 0.03, 12]} /></mesh>
+                  </group>
+                ) : (
+                  <>
+                    {/* prihvatnik brave u visini brave */}
+                    <mesh name="strike-plate" geometry={boxGeometry} material={steelMaterial} scale={[0.03, 0.15, 0.05]} position={[p.extendDir * (w / 2 - 0.02), lockHy, 0]} castShadow />
+                    {/* podni zasun: nadgradna šipka sa dvorišne strane (−Z), prati pasivno krilo; podiže se pre otvaranja */}
+                    <group name="floor-bolt" ref={(g) => { bolt.current = g; }} position={[boltX(p), 0, boltZ]}>
+                      <mesh geometry={boxGeometry} material={steelMaterial} scale={[0.016, boltLen, 0.016]} position={[0, 0.005 + boltLen / 2, 0]} castShadow />
+                      <mesh geometry={boxGeometry} material={darkMaterial} scale={[0.05, 0.03, 0.02]} position={[0, 0.005 + boltLen - 0.04, 0]} />
+                      <mesh geometry={boxGeometry} material={darkMaterial} scale={[0.04, 0.012, 0.012]} position={[0.035 * p.extendDir, 0.005 + boltLen - 0.04, 0]} />
+                    </group>
+                    {/* držači šipke, vezani za krilo i ne podižu se sa zasunom */}
+                    {[0.12, 0.72].map((t) => <mesh key={t} geometry={boxGeometry} material={darkMaterial} scale={[0.045, 0.04, 0.03]} position={[boltX(p), 0.005 + boltLen * t, s(depthZ.back - 14) + 0.012]} castShadow />)}
+                  </>
+                ))}
                 {isTubesModel(gate.infillModelId) || isCustomModel(gate.infillModelId) ? legacy(p, w) : (
                   <GlbBoundary fallback={legacy(p, w)}>
                     <Suspense fallback={legacy(p, w)}>
@@ -160,6 +222,18 @@ export function GateMesh({ gate, li, showZones, postWidthMm = 0 }: { gate: Gate;
           </group>
         );
       })}
+
+      {/* podni prihvat zasuna: ostaje na mestu dok se krila otvaraju, tačno ispod šipke zatvorenog pasivnog krila */}
+      {isDouble && closed[1 - activeIdx] && (() => {
+        const p = closed[1 - activeIdx];
+        const cx = s(p.pivotX) + p.extendDir * (s(p.widthMm) - s(BOLT_INSET_MM));
+        return (
+          <group name="floor-catch" position={[cx, 0, boltZ]}>
+            <mesh geometry={boxGeometry} material={steelMaterial} scale={[0.07, 0.03, 0.07]} position={[0, 0.015, 0]} receiveShadow castShadow />
+            <mesh geometry={boxGeometry} material={darkMaterial} scale={[0.024, 0.004, 0.024]} position={[0, 0.0305, 0]} />
+          </group>
+        );
+      })()}
 
       {/* fiksni klizni okov (šina, kolica, vođica, graničnik, motor) */}
       {sl && (

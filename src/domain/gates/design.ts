@@ -554,11 +554,11 @@ export function applyExample(d: GateDesign, sys: GateSystem): GateDesign {
 export interface RequiredHw { role: HwRole; qty: number }
 
 /** okovi koje kapija ovog sistema mora da ima; radnik ih sam upisuje, a dok ne upiše, u sastavnici piše „nepoznata oznaka“ */
-export function requiredHardware(g: Pick<Gate, 'automation'>, sys: GateSystem): RequiredHw[] {
+export function requiredHardware(g: Pick<Gate, 'automation'>, sys: GateSystem, hinges: { left: number; right: number } = { left: 2, right: 2 }): RequiredHw[] {
   const base: RequiredHw[] = sys === 'swing_double'
-    ? [{ role: 'hinge_left', qty: 2 }, { role: 'hinge_right', qty: 2 }, { role: 'lock', qty: 1 }, { role: 'drop_bolt', qty: 1 }, { role: 'ground_stop', qty: 1 }]
+    ? [{ role: 'hinge_left', qty: hinges.left }, { role: 'hinge_right', qty: hinges.right }, { role: 'lock', qty: 1 }, { role: 'drop_bolt', qty: 1 }, { role: 'ground_stop', qty: 1 }]
     : sys === 'swing_single'
-      ? [{ role: 'hinge', qty: 2 }, { role: 'lock', qty: 1 }, { role: 'ground_stop', qty: 1 }]
+      ? [{ role: 'hinge', qty: hinges.left }, { role: 'lock', qty: 1 }, { role: 'ground_stop', qty: 1 }]
       : sys === 'cantilever'
         ? [{ role: 'trolley', qty: 2 }, { role: 'guide', qty: 1 }, { role: 'receiver', qty: 1 }, { role: 'stopper', qty: 1 }, { role: 'lock', qty: 1 }]
         : [{ role: 'wheel', qty: 2 }, { role: 'rail', qty: 1 }, { role: 'guide', qty: 1 }, { role: 'receiver', qty: 1 }, { role: 'stopper', qty: 1 }, { role: 'lock', qty: 1 }];
@@ -566,9 +566,9 @@ export function requiredHardware(g: Pick<Gate, 'automation'>, sys: GateSystem): 
 }
 
 /** okovi koje radnik još nije upisao (nema ni jednog sa tom ulogom i nazivom) */
-export function missingHardware(g: Pick<Gate, 'automation'> & { design?: GateDesign }, sys: GateSystem): RequiredHw[] {
+export function missingHardware(g: Pick<Gate, 'automation'> & { design?: GateDesign }, sys: GateSystem, hinges?: { left: number; right: number }): RequiredHw[] {
   const have = new Set((g.design?.hardware ?? []).filter((h) => h.name.trim()).map((h) => h.role));
-  return requiredHardware(g, sys).filter((r) => !have.has(r.role));
+  return requiredHardware(g, sys, hinges).filter((r) => !have.has(r.role));
 }
 
 export const unknownHwLabel = (role: HwRole): string => `${HW_ROLE_LABELS[role]} — nepoznata oznaka`;

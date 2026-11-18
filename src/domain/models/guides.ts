@@ -395,6 +395,8 @@ export interface BarGroup {
   u1s?: number[];
   /** najmanji razmak između dve susedne prečke (mm): 0 za uspravan presek, negativan kad se nagnute prečke uvlače jedna u drugu */
   gapMin: number;
+  /** najveće uvlačenje prečki (mm) ako je razmak ograničen pravilom za ovaj profil (Z profil, cev 80 × 20); bez vrednosti važi samo presek */
+  gapCap?: number;
 }
 
 /**
@@ -402,10 +404,32 @@ export interface BarGroup {
  * zato prečka sme da ode „u minus“ dok se ne dodirne sa gornjom: razmak = najmanji vertikalni korak − vidljiva visina.
  * Zaokruženo tako da se prečke sigurno ne preklapaju (npr. 80 × 20 pod 28,73°: korak 41,62, visina 79,72 → −38,1 mm).
  */
-export function minGap(section: Section, deg: number, face: number): number {
-  const g = minVerticalPitch(section, deg) - face;
-  return Math.min(0, Math.ceil(g * 100 - 1e-6) / 100) + 0;
+export interface GapLimit { mm: number; /** true: najmanji razmak je tačno −mm (Z profil); false: najviše −mm (ograničenje) */ exact: boolean }
+
+/**
+ * Najveće uvlačenje prečki jedna u drugu bez lufta (mm): Z profili tačno 20 mm (razmak −20), a kvadratna cev 80 × 20 u bočnim U profilima
+ * najviše 15 mm (razmak najmanje −15). Ostali profili: samo ono što dozvoljava presek.
+ */
+export function gapLimitOf(shape: MatShape | null | undefined): GapLimit | undefined {
+  if (!shape || shape.type !== 'linear') return undefined;
+  if (shape.group === 'z') return { mm: Z_MAX_OVERLAP_MM, exact: true };
+  const { w, h } = shape.section;
+  if (shape.group === 'kv' && ((Math.abs(w - 80) < 0.5 && Math.abs(h - 20) < 0.5) || (Math.abs(w - 20) < 0.5 && Math.abs(h - 80) < 0.5))) return { mm: 15, exact: false };
+  return undefined;
 }
+
+/** ograničenje razmaka grupe prečki: najstrože (najmanje uvlačenje) među njenim profilima */
+const capOf = (shapes: (MatShape | null | undefined)[]): number | undefined => { const l = shapes.map(gapLimitOf).filter((x): x is GapLimit => !!x); return l.length ? Math.min(...l.map((x) => x.mm)) : undefined; };
+
+export function minGap(section: Section, deg: number, face: number, limit?: GapLimit): number {
+  const g = minVerticalPitch(section, deg) - face;
+  const calc = Math.min(0, Math.ceil(g * 100 - 1e-6) / 100) + 0;
+  if (!limit) return calc;
+  return (limit.exact ? -limit.mm : Math.max(calc, -limit.mm)) + 0;
+}
+
+/** koliko se Z profili (bez lufta) najviše uvlače jedan u drugi: razmak −20 mm */
+export const Z_MAX_OVERLAP_MM = 20;
 
 export function barGroup(model: CustomModel, bar: CustomPart, materials: Material[]): BarGroup | null {
   const shape = shapeLookup(materials)(bar);
@@ -423,8 +447,8 @@ export function barGroup(model: CustomModel, bar: CustomPart, materials: Materia
   const faces = bars.map(face);
   const hs = faces.map((x) => x.face);
   const mixed = hs.some((x) => Math.abs(x - hs[0]) > 1e-6) || bars.some((b) => b.materialId !== bar.materialId);
-  const gapMin = mixed ? Math.max(...bars.map((b, i) => minGap(linear(b)!.section, partAngle(b), faces[i].face))) : minGap(sec, partAngle(bar), e.face);
-  return { bars, h: e.face, u0: e.u0, u1: e.u1, yTop: Math.min(g[0].y1, g[1].y1), yBot: Math.max(g[0].y0, g[1].y0), gapMin, ...(mixed ? { hs, u1s: faces.map((x) => x.u1) } : {}) };
+  const gapMin = mixed ? Math.max(...bars.map((b, i) => minGap(linear(b)!.section, partAngle(b), faces[i].face, gapLimitOf(linear(b))))) : minGap(sec, partAngle(bar), e.face, gapLimitOf(shape));
+  return { bars, h: e.face, u0: e.u0, u1: e.u1, yTop: Math.min(g[0].y1, g[1].y1), yBot: Math.max(g[0].y0, g[1].y0), gapMin, gapCap: capOf(bars.map((b) => linear(b))), ...(mixed ? { hs, u1s: faces.map((x) => x.u1) } : {}) };
 }
 
 /**
@@ -472,8 +496,8 @@ function freeBarGroup(model: CustomModel, bar: CustomPart, shape: MatShape | nul
   const hs = faces.map((x) => x.face);
   const mixed = hs.some((x) => Math.abs(x - hs[0]) > 1e-6);
   // najmanji razmak: za prečke različitih preseka uzima se najstroži (najbliži nuli)
-  const gapMin = Math.max(...bars.map((b) => { const x = edgeOf(b); const s = shapeOf(b) as Extract<MatShape, { type: 'linear' }>; return minGap(s.section, partAngle(b), x.face); }));
-  return { bars, h: e.face, u0: e.u0, u1: e.u1, yTop, yBot, gapMin: mixed ? gapMin : minGap(sec, partAngle(bar), e.face), free: true, ...(mixed ? { hs, u1s: faces.map((x) => x.u1) } : {}) };
+  const gapMin = Math.max(...bars.map((b) => { const x = edgeOf(b); const s = shapeOf(b) as Extract<MatShape, { type: 'linear' }>; return minGap(s.section, partAngle(b), x.face, gapLimitOf(s)); }));
+  return { bars, h: e.face, u0: e.u0, u1: e.u1, yTop, yBot, gapCap: capOf(bars.map((b) => shapeOf(b))), gapMin: mixed ? gapMin : minGap(sec, partAngle(bar), e.face, gapLimitOf(shapeOf(bar))), free: true, ...(mixed ? { hs, u1s: faces.map((x) => x.u1) } : {}) };
 }
 
 const r2 = (n: number): number => Math.round(n * 100) / 100;
@@ -559,7 +583,8 @@ export function layoutBars(model: CustomModel, barId: string, materials: Materia
     auto = 'bottom';
   }
   if (top < 0 || bottom < 0) return { error: 'Odstojanja od vrha i od dna ne mogu biti negativna.' };
-  const tooClose = (g: number) => `razmak ${f(g)} mm nije moguć: ${gapMin < 0 ? `pri nagibu od ${f(deg)}° prečke se dodiruju već kad im je razmak ${f(gapMin)} mm, a dalje bi jedna prodrla u drugu` : 'uspravne prečke (bez nagiba) ne mogu da se preklope, najmanji razmak je 0 mm; za negativan razmak nagnite prečke'}.`;
+  const capped = grp.gapCap !== undefined && gapMin < 0 && gapMin >= -grp.gapCap - 1e-6;
+  const tooClose = (g: number) => `razmak ${f(g)} mm nije moguć: ${capped ? `za ovu ogradu je najmanji razmak ${f(gapMin)} mm (prečke se uvlače jedna u drugu najviše ${f(-gapMin)} mm)` : gapMin < 0 ? `pri nagibu od ${f(deg)}° prečke se dodiruju već kad im je razmak ${f(gapMin)} mm, a dalje bi jedna prodrla u drugu` : 'uspravne prečke (bez nagiba) ne mogu da se preklope, najmanji razmak je 0 mm; za negativan razmak nagnite prečke'}.`;
   if (n > 1 && auto !== 'gap' && lufta === 'sa' && gap < -1e-6) return { error: `Operacija nije izvršena: razmak ${f(gap)} mm nije moguć: sa luftom razmak ne može biti negativan (najmanji je 0 mm). Negativan razmak imaju prečke „bez lufta“.` };
   if (n > 1 && auto !== 'gap' && lufta === 'bez' && gap > 1e-6) return { error: `Operacija nije izvršena: razmak ${f(gap)} mm nije moguć: bez lufta razmak ne može biti veći od 0 mm (ostao bi procep između prečki). Za razmak veći od 0 izaberite „Sa luftom“.` };
   if (n > 1 && auto !== 'gap' && lufta === 'bez' && gap < gapMin - 1e-6) return { error: `Operacija nije izvršena: ${tooClose(gap)}` };

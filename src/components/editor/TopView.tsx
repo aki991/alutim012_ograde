@@ -1,6 +1,7 @@
 import { isStair, stairGroupAt } from '../../domain/geometry/stair';
 import { computeLayout, isSpacer, outerWidthMm, type LaidOutItem } from '../../domain/geometry/layout';
 import { computePlan, planRuns, type Plan } from '../../domain/geometry/plan';
+import { doubleLeafBoxes } from '../../domain/geometry/gates';
 import { colorHex } from '../../domain/models/catalog';
 import type { Project } from '../../domain/models/types';
 import { fmtMm } from '../../utils/units';
@@ -174,9 +175,10 @@ export function TopView({ project, scale, selectedId, selectedPostId, onSelect, 
                   </g>
                 );
                 if (it.gateType === 'double') {
-                  const half = (b - a) / 2;
+                  // svako krilo se okreće oko svoje šarke: luk ima poluprečnik širine tog krila (krila mogu biti različitih širina)
+                  const [lw, rw] = doubleLeafBoxes(it, b - a).map((q) => q.w);
                   const sw = dirSign === 1 ? 1 : 0;
-                  return <g>{leaf(a, a + half, half, sw)}{leaf(b, b - half, half, 1 - sw)}</g>;
+                  return <g>{leaf(a, a + lw, lw, sw)}{leaf(b, b - rw, rw, 1 - sw)}</g>;
                 }
                 const hinge = it.opening === 'left' ? a : b;
                 const free = it.opening === 'left' ? b : a;

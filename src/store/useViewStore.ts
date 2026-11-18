@@ -5,6 +5,7 @@ import { create } from 'zustand';
  * režim 3D uređivanja, otvorenost kapija, zone otvaranja i sačuvane kamere po projektu.
  */
 import type { GroundKind } from '../components/editor/three/groundTextures';
+import type { DoubleOpenMode } from '../domain/geometry/gates';
 
 export type CameraPreset = 'iso' | 'front' | 'top' | 'side';
 
@@ -24,6 +25,8 @@ interface ViewState {
   gateOpen: Record<string, number>;
   /** ciljni procenat; razlika ka gateOpen pokreće animaciju */
   gateTarget: Record<string, number>;
+  /** dvokrilne kapije: otvara li se samo aktivno krilo ili oba (podrazumevano oba) */
+  doubleMode: Record<string, DoubleOpenMode>;
   cameras: Record<string, CameraPose>;
   presetRequest: { preset: CameraPreset | 'fit'; nonce: number } | null;
 
@@ -34,6 +37,8 @@ interface ViewState {
   closeGate: (id: string) => void;
   pauseGate: (id: string) => void;
   setGateOpen: (id: string, v: number) => void;
+  /** dvokrilna kapija: bira način i pokreće otvaranje (ili zatvaranje za 'closed') */
+  openDouble: (id: string, mode: DoubleOpenMode | 'closed') => void;
   setAll: (ids: string[], target: 0 | 1) => void;
   pauseAll: () => void;
   prune: (ids: string[]) => void;
@@ -52,6 +57,7 @@ export const useViewStore = create<ViewState>((set, get) => ({
   ground: readGround(),
   gateOpen: {},
   gateTarget: {},
+  doubleMode: {},
   cameras: {},
   presetRequest: null,
 
@@ -62,6 +68,10 @@ export const useViewStore = create<ViewState>((set, get) => ({
   closeGate: (id) => set((s) => ({ gateTarget: { ...s.gateTarget, [id]: 0 } })),
   pauseGate: (id) => set((s) => ({ gateTarget: { ...s.gateTarget, [id]: s.gateOpen[id] ?? 0 } })),
   setGateOpen: (id, v) => set((s) => ({ gateOpen: { ...s.gateOpen, [id]: clamp01(v) }, gateTarget: { ...s.gateTarget, [id]: clamp01(v) } })),
+  openDouble: (id, mode) => set((s) => (mode === 'closed'
+    ? { gateTarget: { ...s.gateTarget, [id]: 0 } }
+    // promena načina kreće iz zatvorenog položaja, da se sled (aktivno, zasun, pasivno) uvek vidi od početka
+    : { doubleMode: { ...s.doubleMode, [id]: mode }, gateOpen: s.doubleMode[id] !== mode ? { ...s.gateOpen, [id]: 0 } : s.gateOpen, gateTarget: { ...s.gateTarget, [id]: 1 } })),
   setAll: (ids, target) => set((s) => ({ gateTarget: { ...s.gateTarget, ...Object.fromEntries(ids.map((i) => [i, target])) } })),
   pauseAll: () => set((s) => ({ gateTarget: { ...s.gateOpen } })),
   prune: (ids) => {

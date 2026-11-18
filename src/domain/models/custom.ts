@@ -87,6 +87,8 @@ export interface PartFit {
 
 export interface CustomModel {
   id: string;
+  /** kapija koja još nije sačuvana („Sačuvaj tip kapije“): ne nudi se u spiskovima, a briše se kad se crtanje zatvori bez čuvanja */
+  draft?: boolean;
   name: string;
   /** ograda (dvorište), kapija ili ograda za terasu (posebna stranica i crtanje, samo materijali za terase) */
   kind: 'fence' | 'gate' | 'terrace';

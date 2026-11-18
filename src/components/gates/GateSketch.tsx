@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
 import type { Gate } from '../../domain/models/types';
+import { hingeCountFor } from '../../domain/gates/hingeRule';
 import { DIM_BY_KEY, fmt, hingePositions, VIEW_LABEL, type GateDesign, type GateResult } from '../../domain/gates/design';
 
 /**
@@ -212,7 +213,7 @@ function SwingSketch({ gate, res, W, H, from, onPick, width, showDims, postHs, p
           const w = (l.w ?? 0) * s;
           const bottom = groundY - (gB ?? 0) * ys;
           const top = bottom - hPx;
-          const nH = Math.max(1, Math.round(v('hingeCount') ?? 2));
+          const nH = Math.max(1, Math.round(v('hingeCount') ?? hingeCountFor(l.w ?? 0, H)));
           const spacing = v('hingeSpacing');
           const hTop = v('hingeTop') ?? 150;
           // šarke: razmak je od prve do poslednje, ostale ravnomerno između; nikad van krila
@@ -257,7 +258,7 @@ function SwingSketch({ gate, res, W, H, from, onPick, width, showDims, postHs, p
           {/* razmak osa šarki, sa strane šarki */}
           {(() => {
             const hl = res.leaves.find((l) => l.hinge === (double ? 'right' : gate.opening === 'left' ? 'left' : 'right'));
-            const sp = v('hingeSpacing'); const nH = Math.max(1, Math.round(v('hingeCount') ?? 2)); const hTop = v('hingeTop') ?? 150;
+            const sp = v('hingeSpacing'); const nH = Math.max(1, Math.round(v('hingeCount') ?? hingeCountFor(hl?.w ?? 0, H))); const hTop = v('hingeTop') ?? 150;
             if (!hl || sp === null || nH < 2) return null;
             const left = hl.hinge === 'left';
             const top = groundY - (gB ?? 0) * ys - hPx + hTop * ys;

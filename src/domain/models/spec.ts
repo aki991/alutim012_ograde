@@ -1,3 +1,4 @@
+import { hingeCountFor } from '../gates/hingeRule';
 import { customLiftOf, customModelOf, customPatternCounts, customSlatCount, customSpec } from './customRegistry';
 import { tubeLengthMm, ramInsets } from './tubes';
 import { computeInfill, summarizeInfill } from '../geometry/infill';
@@ -37,6 +38,8 @@ export type ModelSpecs = Partial<Record<FenceModelId, SpecPart[]>>;
 
 /** Promenljive koje formule mogu da koriste (opis za prikaz u uređivaču). */
 export const SPEC_VARIABLES: { name: string; label: string }[] = [
+  { name: 'HINGES', label: 'broj šarki po krilu: 3 kad je visina krila preko 1500 mm ili širina preko 1200 mm, inače 2' },
+  { name: 'FIRSTLEAF', label: '1 samo za prvo krilo dvokrilne kapije (0 za drugo); za delove kojih ima jedan po kapiji, npr. brava' },
   { name: 'W', label: 'svetli otvor polja (mm)' },
   { name: 'H', label: 'visina polja (mm)' },
   { name: 'A', label: 'razmak osa stubova — modul (mm)' },
@@ -73,6 +76,8 @@ export interface SpecContext {
   axisMm: number;
   params: FenceParams;
   doubleGate?: boolean;
+  /** dvokrilna, računanje po krilu: redni broj krila (0 = prvo); bez vrednosti važi prvo krilo */
+  leafIndex?: number;
   /** širine dva krila dvokrilne kapije (mm): nacrtan model se računa po krilu */
   leafWidthsMm?: number[];
   /** stepenište: odnos kose i horizontalne dužine (horizontalni delovi prate nagib); bez vrednosti 1 */
@@ -108,6 +113,8 @@ export function specVars(c: SpecContext): Record<string, number> {
     GLASS: sum.glassAreaM2 / f,
     PERIM: 2 * c.widthMm * f + 2 * c.heightMm, AREA: (c.widthMm * c.heightMm) / 1_000_000,
     DOUBLE: c.doubleGate ? 1 : 0,
+    FIRSTLEAF: c.leafIndex ? 0 : 1,
+    HINGES: hingeCountFor(c.widthMm, c.heightMm),
     SLATS: (c.leafWidthsMm?.length ? c.leafWidthsMm : [c.widthMm]).reduce((n, w) => n + customSlatCount(c.modelId, w, c.heightMm, c.params.slats), 0),
     ...hbarVars(c),
     TUBELEN: tubeLengthMm(Math.max(0, c.widthMm - 2 * ramInsets(c.modelId, c.params).side), c.params),
@@ -211,7 +218,7 @@ export interface EvaluatedPart {
  */
 export function evaluateItemSpec(parts: SpecPart[], c: SpecContext): EvaluatedPart[] {
   if (c.leafWidthsMm && c.leafWidthsMm.length > 1) {
-    return c.leafWidthsMm.flatMap((w) => evaluateSpec(parts, specVars({ ...c, widthMm: w, axisMm: w, leafWidthsMm: undefined, doubleGate: false })));
+    return c.leafWidthsMm.flatMap((w, i) => evaluateSpec(parts, specVars({ ...c, widthMm: w, axisMm: w, leafWidthsMm: undefined, doubleGate: false, leafIndex: i })));
   }
   return evaluateSpec(parts, specVars(c));
 }
@@ -328,7 +335,8 @@ export const extraSpecKey = (modelId: string): string => `${modelId}#dodato`;
 /** Sastavnica modela: izmenjena ili podrazumevana specifikacija; kod nacrtanog modela uz crtež idu i dodati materijali. */
 export const specFor = (modelId: FenceModelId, specs?: ModelSpecs): SpecPart[] => {
   const base = specs?.[modelId] ?? defaultSpec(modelId);
-  const extra = customModelOf(modelId) ? (specs as Record<string, SpecPart[]> | undefined)?.[extraSpecKey(modelId)] : undefined;
+  // šarke upisane ranije sa stalnom količinom 2 računaju se po pravilu (3 za visoko ili široko krilo)
+  const extra = customModelOf(modelId) ? (specs as Record<string, SpecPart[]> | undefined)?.[extraSpecKey(modelId)]?.map((p) => ((p.id === 'pair_hinge' || p.id === 'single_hinge') && p.qty.trim() === '2' ? { ...p, qty: 'HINGES' } : p)) : undefined;
   return extra?.length ? [...base, ...extra] : base;
 };
 

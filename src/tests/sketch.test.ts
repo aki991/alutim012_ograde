@@ -47,9 +47,9 @@ describe('podaci skice', () => {
   });
 
   it('nagnute prečke: negativan razmak i ugao u tabeli i u podacima preseka', () => {
-    const sk = buildSketch(fence(28.7, 20), MATS);
+    const sk = buildSketch(fence(28.7, 13), MATS);
     const gaps = sk.left.filter((d) => d.kind === 'gap');
-    expect(gaps).toHaveLength(19);
+    expect(gaps).toHaveLength(12);
     expect(gaps.every((d) => d.value < 0)).toBe(true);
     expect(sk.positions.find((p) => p.materialId === KV80.id)!.angle).toBe('nagib 28,7°');
     expect(sk.groups[0].tiltDeg).toBeCloseTo(28.7, 6);
@@ -63,8 +63,8 @@ describe('kote zavarivanja', () => {
     expect(sk.welds.map((w) => w.value)).toEqual([950, 745, 540, 335, 130]);
   });
   it('nagnute prečke: kota ide do unutrašnje linije preseka (gde prečka naleže na U profil), ne do najviše tačke', () => {
-    const sk = buildSketch(fence(28.7, 20), MATS);
-    expect(sk.welds).toHaveLength(20);
+    const sk = buildSketch(fence(28.7, 13), MATS);
+    expect(sk.welds).toHaveLength(13);
     // najviši ugao je na 950; unutrašnja linija je niža za 2 × (debljina / 2) × sin(nagib)
     expect(sk.welds[0].value).toBeCloseTo(950 - 20 * Math.sin((28.7 * Math.PI) / 180), 1);
     for (let i = 1; i < sk.welds.length; i++) expect(sk.welds[i].value).toBeLessThan(sk.welds[i - 1].value);
@@ -93,7 +93,7 @@ describe('crtež skice', () => {
     expect(html).toContain('Nagib preseka 0°');
   });
   it('nagnute prečke: negativne kote i ugao u skici', () => {
-    const html = renderToStaticMarkup(createElement(SketchSvg, { model: fence(28.7, 20), materials: MATS }));
+    const html = renderToStaticMarkup(createElement(SketchSvg, { model: fence(28.7, 13), materials: MATS }));
     expect(html).toMatch(/Nagib preseka 28,7°/);
     expect(html).toContain('uvučene jedna u drugu');
     expect(html).toContain('−');

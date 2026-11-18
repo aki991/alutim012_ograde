@@ -3,7 +3,7 @@ import { isRl10Model, isRl10Post, rl10Ends, rl10ItemAt, rl10PostInfo, rl10Tan } 
 import { Rl10FieldArt, Rl10JointArt, Rl10PostArt } from '../fences/Rl10Art';
 import { isStairPost, stairGroupAt, stairGroupSummary, stairProfile } from '../../domain/geometry/stair';
 import { memo } from 'react';
-import { swingLeafBoxes } from '../../domain/geometry/gates';
+import { activeLeafIndex, doubleLeafBoxes, swingLeafBoxes } from '../../domain/geometry/gates';
 import { computeLayout, isSpacer } from '../../domain/geometry/layout';
 import { cornerInfo, isCorner } from '../../domain/geometry/corner';
 import { colorHex, GATE_LABELS, hasLightFence, leftPostShared, postDrawnByItems, rodCountFor } from '../../domain/models/catalog';
@@ -582,11 +582,12 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
               }
               const li = d.li!;
               // kapija sa merama: kota je širina samog krila (svetli otvor − zazori), posebno za svako krilo; menja se u „Mere kapije“
-              const boxes = li.item.kind === 'gate' ? swingLeafBoxes(li.item, li.clearWidth) : null;
+              const boxes = li.item.kind === 'gate' ? (li.item.gateType === 'double' ? doubleLeafBoxes(li.item, li.clearWidth) : swingLeafBoxes(li.item, li.clearWidth)) : null;
               if (boxes) {
                 return (
                   <g key={`d-${li.item.id}`} data-testid="dim-panel">
-                    {boxes.map((b, n) => <DimLine key={n} x1={d.x1 + b.x} x2={d.x1 + b.x + b.w} y={dy} text={fmtMm(b.w)} sub="krilo" fs={fs} scale={scale} />)}
+                    {boxes.map((b, n) => <DimLine key={n} x1={d.x1 + b.x} x2={d.x1 + b.x + b.w} y={dy} text={fmtMm(b.w)} sub={li.item.kind === 'gate' && li.item.gateType === 'double' ? (activeLeafIndex(li.item) === n ? 'aktivno krilo' : 'pasivno krilo') : 'krilo'} fs={fs} scale={scale} />)}
+                    {li.item.kind === 'gate' && li.item.gateType === 'double' && <DimLine x1={d.x1} x2={d.x2} y={dy - 46 * px} text={fmtMm(d.x2 - d.x1)} sub="svetli otvor" fs={fs} scale={scale} color="#1d4ed8" />}
                   </g>
                 );
               }

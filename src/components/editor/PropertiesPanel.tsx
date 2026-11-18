@@ -448,7 +448,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
         <ModelSelect value={fenceModelOfGate(g)} onChange={(m) => st.setItemModel(id, m)} />
         <ColorField stacked value={g.color} testId="field-color" onChange={(c) => st.setItemColor(id, c)} finish={g.finish} onFinishChange={(f) => st.setItemFinish(id, f)} />
         <GateOwnPosts project={project} id={id} g={g} />
-        <SegmentedField label={g.gateType === 'sliding' ? 'Smer klizanja' : 'Strana šarki'} testId="field-opening" value={g.opening} options={[{ value: 'left', label: 'Levo' }, { value: 'right', label: 'Desno' }]} onChange={(v) => st.patchItem(id, { opening: v })} />
+        <SegmentedField label={g.gateType === 'sliding' ? 'Smer klizanja' : g.gateType === 'double' ? 'Aktivno krilo (sa ulice)' : 'Strana šarki'} testId="field-opening" value={g.opening} options={[{ value: 'left', label: 'Levo' }, { value: 'right', label: 'Desno' }]} onChange={(v) => st.patchItem(id, { opening: v, ...(g.gateType === 'double' && g.design?.activeLeaf ? { design: { ...g.design, activeLeaf: v } } : {}) })} />
         {swing && g.gateType !== 'double' && <></>}
         {swing && <SegmentedField label="Otvaranje" testId="field-swing" value={g.swing} options={[{ value: 'inward', label: 'Unutra' }, { value: 'outward', label: 'Spolja' }]} onChange={(v) => st.patchItem(id, { swing: v })} />}
         <SelectField label="Brava" value={g.lock} options={Object.entries(LOCK_LABELS).map(([value, label]) => ({ value: value as Gate['lock'], label }))} onChange={(v) => st.patchItem(id, { lock: v })} />

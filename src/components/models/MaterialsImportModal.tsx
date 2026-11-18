@@ -12,7 +12,6 @@ const STATUS_CLASS: Record<ImportStatus, string> = {
 /** Uvoz cenovnika iz PDF, Excel (.xlsx) ili CSV dokumenta: prvo pregled izmena (stara → nova cena), pa tek onda primena. */
 export function MaterialsImportModal({ fileName, table, onClose }: { fileName: string; table: string[][]; onClose: () => void }) {
   const materials = useAppStore((s) => s.materials);
-  const currency = useAppStore((s) => s.settings.currency);
   const [addNew, setAddNew] = useState(() => documentHasNewColumns(table));
   const plan = useMemo(() => planImport(materials, table, addNew), [materials, table, addNew]);
   const [showAll, setShowAll] = useState(false);
@@ -75,8 +74,8 @@ export function MaterialsImportModal({ fileName, table, onClose }: { fileName: s
                         <td className="td text-muted tabular-nums">{r.line}</td>
                         <td className="td text-xs">{r.sku}</td>
                         <td className="td">{r.name}{r.message && <div className="text-[12px] text-muted">{r.message}</div>}</td>
-                        <td className="td text-right tabular-nums">{r.oldPrice !== undefined ? `${fmtNum(r.oldPrice, 2)} ${currency}` : '—'}</td>
-                        <td className="td text-right tabular-nums font-medium">{r.newPrice !== undefined && r.status !== 'error' ? `${fmtNum(r.newPrice, 2)} ${currency}` : '—'}</td>
+                        <td className="td text-right tabular-nums">{r.oldPrice !== undefined ? `${fmtNum(r.oldPrice, 2)} RSD` : '—'}</td>
+                        <td className="td text-right tabular-nums font-medium">{r.newPrice !== undefined && r.status !== 'error' ? `${fmtNum(r.newPrice, 2)} RSD` : '—'}</td>
                         <td className={`td text-right tabular-nums ${diff !== null && diff > 0 ? 'text-[#b42318]' : diff !== null && diff < 0 ? 'text-[#15803d]' : ''}`}>{diff !== null && r.status === 'changed' ? `${diff > 0 ? '+' : ''}${fmtNum(diff, 1)} %` : ''}</td>
                         <td className="td"><span className={`pill ${STATUS_CLASS[r.status]}`}>{STATUS_LABEL[r.status]}</span></td>
                       </tr>

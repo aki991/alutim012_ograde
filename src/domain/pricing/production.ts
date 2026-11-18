@@ -11,6 +11,7 @@ import { Material } from '../models/types';
 import { evaluateItemSpec, hasCustomSpec, materialName, specFor, type ModelSpecs, type SpecContext } from '../models/spec';
 import { isLouver08 } from './louverSpec';
 import { isRail04 } from './railSpec';
+import { gateHingeQty } from '../gates/hingeRule';
 import { HW_ROLE_LABELS, missingHardware, resolveGate, systemOf, unknownHwLabel } from '../gates/design';
 import { gateCutRows } from '../gates/production';
 import { resolveSliding, slidingBom, variantTitle } from '../gates/slidingAssembly';
@@ -130,7 +131,7 @@ export function buildHardwareList(project: Project, materials?: Material[]): Har
     if (it.design) {
       for (const h of it.design.hardware.filter((x) => x.name.trim())) rows.push({ element: el, item: `${HW_ROLE_LABELS[h.role]}: ${h.name}${h.code ? ` (${h.code})` : ''}`, qty: h.qty });
       // okov koji radnik nije upisao: nepoznata oznaka, sa količinom koja uz kapiju ide
-      for (const r of missingHardware(it, systemOf(it))) rows.push({ element: el, item: unknownHwLabel(r.role), qty: r.qty });
+      for (const r of missingHardware(it, systemOf(it), gateHingeQty(it, layout.items[i].clearWidth))) rows.push({ element: el, item: unknownHwLabel(r.role), qty: r.qty });
       return;
     }
     const hinges = { pedestrian: 2, single: 2, double: 4, sliding: 0 }[it.gateType];

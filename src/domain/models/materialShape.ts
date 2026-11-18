@@ -98,7 +98,7 @@ export type MatShape =
   | { type: 'sheet'; group: MaterialGroupId; thick: number; glass: boolean }
   | { type: 'piece'; group: MaterialGroupId; solids: Solid[] };
 
-const norm = (s: string): string => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'dj');
+export const norm = (s: string): string => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'dj');
 const num = (s: string): number => parseFloat(s.replace(',', '.'));
 const N = '(\\d+(?:[.,]\\d+)?)';
 
@@ -164,7 +164,7 @@ const box = (w: number, h: number, d: number, x: number, y: number, z = 0): Soli
 const cyl = (r: number, len: number, axis: 'x' | 'y' | 'z', x: number, y: number, z = 0): Solid => ({ prim: 'cyl', r, len, axis, pos: [x, y, z] });
 
 type PieceKind = 'cap_flat' | 'cap_pyramid' | 'rosette' | 'foot' | 'side_foot' | 'plug' | 'hinge' | 'lock' | 'wheel' | 'motor' | 'bracket' | 'ring' | 'screw' | 'box'
-  | 'flange_round' | 'holder' | 'end_cap' | 'connector' | 'picket_cap';
+  | 'flange_round' | 'holder' | 'end_cap' | 'connector' | 'picket_cap' | 'strike' | 'bolt' | 'floor_catch';
 
 /**
  * Mere okova ograde za terasu (mm), „Mere ograde“: zavise od materijala koji radionica koristi, pa se podešavaju po modelu.
@@ -241,8 +241,18 @@ export function pieceSolids(kind: PieceKind, w: number, d: number, dims: HwDims 
     case 'foot': return [box(w + 60, 6, d + 60, 0, 3), box(w + 6, 70, d + 6, 0, 41)];
     case 'side_foot': return [box(6, Math.max(90, w + 50), d + 40, -3, Math.max(90, w + 50) / 2), box(60, w + 6, d + 6, 30, Math.max(90, w + 50) / 2)];
     case 'plug': return [box(w, 4, d, 0, 2), box(Math.max(2, w - 4), 12, Math.max(2, d - 4), 0, -6)];
-    case 'hinge': return [cyl(9, 90, 'y', 0, 45), box(38, 60, 5, 22, 45), box(38, 60, 5, -22, 45)];
-    case 'lock': return [box(34, 170, 44, 0, 85), box(22, 150, 4, 0, 85, 24), cyl(8, 110, 'x', 45, 105, 38), cyl(8, 24, 'z', 0, 105, 34), cyl(6, 6, 'z', 0, 60, 27)];
+    // dvokrilna kapija: prihvatnik brave (pločica u profilu pasivnog krila), vertikalni podni zasun sa držačima i podni prihvat
+    case 'strike': return [box(26, 120, 5, 0, 60), box(12, 70, 4, 0, 60, 4)];
+    case 'bolt': return [cyl(8, 700, 'y', 0, 350, 0), box(36, 40, 14, 0, 130, -10), box(36, 40, 14, 0, 480, -10), box(40, 16, 18, 22, 650, 0)];
+    case 'floor_catch': return [box(60, 10, 60, 0, 5), box(24, 14, 24, 0, 17)];
+    // šarka kao postavljena: osovina (tri članka) na ivici krila, jedan list na krilu, drugi na stubu, sa zavrtnjima; početak je osovina
+    case 'hinge': return [
+      cyl(10, 28, 'y', 0, 15, 10), cyl(10, 28, 'y', 0, 45, 10), cyl(10, 28, 'y', 0, 75, 10), cyl(6, 6, 'y', 0, 93, 10),
+      box(40, 60, 4, 30, 45, 2), box(40, 60, 4, -30, 45, 2),
+      cyl(3.5, 3, 'z', 30, 27, 5.5), cyl(3.5, 3, 'z', 30, 63, 5.5), cyl(3.5, 3, 'z', -30, 27, 5.5), cyl(3.5, 3, 'z', -30, 63, 5.5),
+    ];
+    // brava sa kvakom (kao na kartici kapije): rozeta, uspravna kvaka i cilindar; simetrična, pa ne zavisi od strane na kojoj stoji
+    case 'lock': return [box(60, 80, 22, 0, 220, 11), box(22, 440, 14, 0, 220, 29), cyl(9, 8, 'z', 0, 190, 36)];
     case 'wheel': return [cyl(40, 22, 'z', 0, 40), box(100, 8, 44, 0, 86), box(6, 50, 44, -47, 60), box(6, 50, 44, 47, 60)];
     case 'motor': return [box(320, 240, 180, 0, 130), box(360, 10, 220, 0, 5), cyl(34, 30, 'z', 60, 90, 105)];
     case 'bracket': return [box(Math.max(30, w), 4, Math.max(25, d), 0, 2), box(4, Math.max(30, w), Math.max(25, d), -Math.max(30, w) / 2 + 2, Math.max(30, w) / 2)];
@@ -400,6 +410,10 @@ function resolveShape(m: ShapeInput, hwd?: HwDims): Resolved {
     if (has(/veza stub/) && has(/rukohvat/) && dias.length >= 2) return plain(piece('okov', 'connector', dias[0], dias[1], hwd));
     if (has(/zavrsetak (prec|rukohvat|cevi)|kapica prec/)) return plain(piece('okov', 'end_cap', dias[0], dias[0], hwd));
   }
+  // dvokrilna kapija: prihvatnik brave, podni prihvat i podni zasun (pre brave i stezaljki: naziv sadrži „brave“, „zasuna“, „graničnik“)
+  if (has(/prihvatnik/)) return plain(piece('okov', 'strike', w, d));
+  if (has(/podni prihvat|prihvat zasun|prihvat rigl/)) return plain(piece('okov', 'floor_catch', w, d));
+  if (has(/zasun|rigl/)) return plain(piece('okov', 'bolt', w, d));
   // okov ograda za terase: flanše, bočne obujmice, spigoti i stezaljke stakla (pre provere „staklo“, da ne postanu ploča)
   if (has(/flans/)) return plain(piece('rozetne', 'rosette', w, d));
   if (has(/obujmic/)) return plain(piece('stope', 'side_foot', w, d));
@@ -443,7 +457,8 @@ function resolveShape(m: ShapeInput, hwd?: HwDims): Resolved {
   }
   if (has(/\bl[- ]?profil|ugaoni profil/)) return fromSpec(withDims({ kind: 'l', a: dims[0] ?? 20, b: dims[1] ?? 20, c: wall }, ov), 'l', dims.length >= 2);
   if (has(/\bh[- ]?profil/)) return fromSpec(withDims({ kind: 'h', width: dims[0] ?? 60, up: 20, down: 10, t: m.wallMm ?? 1.2 }, ov), 'h', false);
-  if (has(/\bz[- ]?profil/)) return fromSpec({ kind: 'shape', name: 'zmali' }, 'z', false);
+  // Z profil po nazivu (npr. kopija sa drugom šifrom): „veliki“ je veliki Z profil, inače mali; mere se mogu menjati
+  if (has(/\bz[- ]?profil/)) return fromSpec(withDims({ kind: 'shape', name: has(/veliki/) ? 'zveliki' : 'zmali' }, ov), 'z', false);
   if (has(/zakosen/)) return fromSpec(withDims({ kind: 'slant', width: dims[0] ?? 80, height: dims[1] ?? 20, wall: m.wallMm ?? dims[2] ?? 1, offset: 25.6 }, ov), 'kose', false);
   if (has(/traka|flah|lajsn|maskic/)) {
     const a = pos('a') ?? dims[0] ?? 30; const b = pos('b') ?? dims[1] ?? 3;
@@ -527,6 +542,8 @@ export function materialOwnColor(name: string): string | null {
   const ral = /ral\s*(\d{4})/i.exec(name);
   if (ral) { const c = RAL_COLORS.find((x) => x.key === `RAL ${ral[1]}`); if (c) return c.hex; }
   if (/inox|nerđaj|nerdjaj/i.test(name)) return '#B7BEC6';
+  // šarke, brave, zasuni i prihvatnici su sivi (metal), a ne u boji kapije, da se na crtežu vide
+  if (/sark|baglam|brav|kvak|cilind|zasun|rigl|prihvatnik|podni prihvat/.test(norm(name))) return '#8D97A3';
   return null;
 }
 
