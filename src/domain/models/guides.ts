@@ -263,6 +263,8 @@ export function autoAttachBars(model: CustomModel, materials: Material[]): Custo
   for (const p of model.parts) {
     // deo rama (dodat dugmetom „Dodaj ram“) nije prečka: ne uklapa se samo u bočne U profile
     if (p.cut45 && p.miter) continue;
+    // vodoravno ojačanje se spaja sa bočnim stranama, ne ulazi u U profile kao prečka
+    if (p.divider) continue;
     if (p.guides || norm(p.angleDeg) % 90 !== 0) continue;
     const s = shapeOf(p);
     if (!s || s.type !== 'linear' || s.u) continue;
@@ -435,6 +437,34 @@ export function minGap(section: Section, deg: number, face: number, limit?: GapL
 /** koliko se Z profili (bez lufta) najviše uvlače jedan u drugi: razmak −20 mm */
 export const Z_MAX_OVERLAP_MM = 20;
 
+/**
+ * Polja koja vodoravna ojačanja (`divider`) prave u prostoru za prečke [yBot, yTop]: odozdo naviše, svako sa donjom i gornjom granicom i
+ * oznakom da li je granica ojačanje. Bez ojačanja jedno polje (ceo prostor).
+ */
+export function dividerZones(model: CustomModel, yBot: number, yTop: number, materials: Material[]): { y0: number; y1: number; lowDiv: boolean; highDiv: boolean }[] {
+  const shapeOf = shapeLookup(materials);
+  const divs = model.parts.filter((p) => p.divider && norm(p.angleDeg) % 180 === 0).map((p) => {
+    const s = shapeOf(p);
+    if (!s || s.type !== 'linear') return null;
+    const x = sectionFace(s.section, partAngle(p));
+    return { lo: p.y + x.u0, hi: p.y + x.u1 };
+  }).filter((d): d is { lo: number; hi: number } => !!d && d.lo > yBot + 1 && d.hi < yTop - 1).sort((a, b) => a.lo - b.lo);
+  const zones: { y0: number; y1: number; lowDiv: boolean; highDiv: boolean }[] = [];
+  let y0 = yBot; let lowDiv = false;
+  for (const d of divs) { zones.push({ y0, y1: d.lo, lowDiv, highDiv: true }); y0 = d.hi; lowDiv = true; }
+  zones.push({ y0, y1: yTop, lowDiv, highDiv: false });
+  return zones;
+}
+
+/** polje u kome je sredina prečke; prečke iz drugih polja ne pripadaju njenoj grupi */
+function zoneOf(model: CustomModel, bar: CustomPart, yBot: number, yTop: number, materials: Material[]) {
+  const s = shapeLookup(materials)(bar);
+  const x = s && s.type === 'linear' ? sectionFace(s.section, partAngle(bar)) : { u0: 0, u1: 0 };
+  const c = bar.y + (x.u0 + x.u1) / 2;
+  const zones = dividerZones(model, yBot, yTop, materials);
+  return zones.find((z) => c >= z.y0 - 1e-6 && c <= z.y1 + 1e-6) ?? zones[0];
+}
+
 export function barGroup(model: CustomModel, bar: CustomPart, materials: Material[]): BarGroup | null {
   const shape = shapeLookup(materials)(bar);
   if (!bar.guides) return freeBarGroup(model, bar, shape, materials);
@@ -445,14 +475,18 @@ export function barGroup(model: CustomModel, bar: CustomPart, materials: Materia
   const shapeOf = shapeLookup(materials);
   const linear = (p: CustomPart) => { const s = shapeOf(p); return s && s.type === 'linear' ? s : null; };
   // prečke različite debljine (drugi materijal) u istim vođicama čine jednu grupu: razmak se zadaje za sve zajedno
-  const members = model.parts.filter((p) => p.guides && p.guides[0] === bar.guides![0] && p.guides[1] === bar.guides![1] && linear(p));
   const face = (p: CustomPart) => sectionFace(linear(p)!.section, partAngle(p));
+  // vodoravno ojačanje deli visinu bočnih strana na polja: grupa su prečke u polju izabrane prečke, a prostor je to polje
+  const gyTop = Math.min(g[0].y1, g[1].y1); const gyBot = Math.max(g[0].y0, g[1].y0);
+  const zone = zoneOf(model, bar, gyBot, gyTop, materials);
+  const inZone = (p: CustomPart) => { const x = face(p); const c = p.y + (x.u0 + x.u1) / 2; return c >= zone.y0 - 1e-6 && c <= zone.y1 + 1e-6; };
+  const members = model.parts.filter((p) => p.guides && p.guides[0] === bar.guides![0] && p.guides[1] === bar.guides![1] && linear(p) && inZone(p));
   const bars = members.sort((a, b) => (b.y + face(b).u1) - (a.y + face(a).u1));
   const faces = bars.map(face);
   const hs = faces.map((x) => x.face);
   const mixed = hs.some((x) => Math.abs(x - hs[0]) > 1e-6) || bars.some((b) => b.materialId !== bar.materialId);
   const gapMin = mixed ? Math.max(...bars.map((b, i) => minGap(linear(b)!.section, partAngle(b), faces[i].face, gapLimitOf(linear(b))))) : minGap(sec, partAngle(bar), e.face, gapLimitOf(shape));
-  return { bars, h: e.face, u0: e.u0, u1: e.u1, yTop: Math.min(g[0].y1, g[1].y1), yBot: Math.max(g[0].y0, g[1].y0), gapMin, gapCap: capOf(bars.map((b) => linear(b))), ...(mixed ? { hs, u1s: faces.map((x) => x.u1) } : {}) };
+  return { bars, h: e.face, u0: e.u0, u1: e.u1, yTop: zone.y1, yBot: zone.y0, gapMin, gapCap: capOf(bars.map((b) => linear(b))), ...(mixed ? { hs, u1s: faces.map((x) => x.u1) } : {}) };
 }
 
 /**
@@ -460,6 +494,8 @@ export function barGroup(model: CustomModel, bar: CustomPart, materials: Materia
  * jedna iznad druge (isti početak i dužina). Prostor za raspored je visina modela između ramova uz donju i gornju ivicu.
  */
 function freeBarGroup(model: CustomModel, bar: CustomPart, shape: MatShape | null, materials: Material[]): BarGroup | null {
+  // vodoravno ojačanje nije prečka: nema svoj raspored
+  if (bar.divider) return null;
   if (!shape || shape.type !== 'linear' || (norm(bar.angleDeg) !== 0 && norm(bar.angleDeg) !== 180)) return null;
   const sec = shape.section;
   const e = sectionFace(sec, partAngle(bar));
@@ -480,10 +516,10 @@ function freeBarGroup(model: CustomModel, bar: CustomPart, shape: MatShape | nul
   // grupa su samo prečke u istoj ravni (po dubini): delovi iza ili ispred njih (drugi sloj) ne ulaze u raspored
   const myDepth = depthRange(bar, materials);
   const sameLayer = (p: CustomPart): boolean => { const d = depthRange(p, materials); return !myDepth || !d || Math.min(d.z1, myDepth.z1) - Math.max(d.z0, myDepth.z0) > 0.5 * Math.min(d.z1 - d.z0, myDepth.z1 - myDepth.z0); };
-  const same = (p: CustomPart) => geom(p) && sameLayer(p) && (p.materialId === bar.materialId || inner(p));
+  const same = (p: CustomPart) => !p.divider && geom(p) && sameLayer(p) && (p.materialId === bar.materialId || inner(p));
   const edgeOf = (p: CustomPart) => { const s = shapeOf(p) as Extract<MatShape, { type: 'linear' }>; return sectionFace(s.section, partAngle(p)); };
   const topOf = (p: CustomPart) => p.y + edgeOf(p).u1;
-  const bars = model.parts.filter(same).sort((a, b) => topOf(b) - topOf(a));
+  const all = model.parts.filter(same);
   void top;
   // ramovi uz ivice (vodoravni delovi koji nisu u grupi i dodiruju donju ili gornju ivicu) ograničavaju prostor za prečke
   let yBot = 0; let yTop = model.heightMm;
@@ -496,6 +532,10 @@ function freeBarGroup(model: CustomModel, bar: CustomPart, shape: MatShape | nul
     if (lo < 1) yBot = Math.max(yBot, hi);
     if (hi > model.heightMm - 1) yTop = Math.min(yTop, lo);
   }
+  // vodoravno ojačanje deli prostor na polja: grupa su prečke u polju izabrane prečke
+  const zone = zoneOf(model, bar, yBot, yTop, materials);
+  yBot = zone.y0; yTop = zone.y1;
+  const bars = all.filter((p) => { const x = edgeOf(p); const c = p.y + (x.u0 + x.u1) / 2; return c >= yBot - 1e-6 && c <= yTop + 1e-6; }).sort((a, b) => topOf(b) - topOf(a));
   const faces = bars.map(edgeOf);
   const hs = faces.map((x) => x.face);
   const mixed = hs.some((x) => Math.abs(x - hs[0]) > 1e-6);

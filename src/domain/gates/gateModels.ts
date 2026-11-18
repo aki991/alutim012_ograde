@@ -128,6 +128,6 @@ export function leafKeyOf(modelId: string, list: readonly CustomModel[] | undefi
 export function gateModelsFor(list: readonly CustomModel[] | undefined, gateType: GateType, fenceModelId: string, support?: 'ground_rail' | 'cantilever'): CustomModel[] {
   const key = leafKeyOf(fenceModelId, list);
   return (list ?? [])
-    .filter((m) => m.kind === 'gate' && !m.replaces && !m.draft && m.parts.length > 0 && m.gate?.gateType === gateType && m.leafModelId === key && (!support || m.gate?.sliding?.support === support))
+    .filter((m) => m.kind === 'gate' && !m.replaces && !m.draft && !m.derivedFrom && m.parts.length > 0 && m.gate?.gateType === gateType && m.leafModelId === key && (!support || m.gate?.sliding?.support === support))
     .sort((a, b) => Number(!!b.gateDefault) - Number(!!a.gateDefault));
 }

@@ -1,4 +1,4 @@
-import { Maximize2, ZoomIn, ZoomOut } from 'lucide-react';
+import { Maximize2, Ruler, ZoomIn, ZoomOut } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { extentBounds, partBounds, type CustomModel, type CustomPart } from '../../domain/models/custom';
 import { materialShape, sectionFace, type MatShape } from '../../domain/models/materialShape';
@@ -158,6 +158,17 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, snapObje
   /** okvir izbora u toku (mm, y nagore) */
   const [box, setBox] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const selected = useMemo(() => new Set(selectedIds), [selectedIds]);
+  /** metar: merenje između dve tačke (mm, y nagore); b = null dok se kraj još bira (prati pokazivač) */
+  const [measuring, setMeasuring] = useState(false);
+  const [meas, setMeas] = useState<{ a: { x: number; y: number }; b: { x: number; y: number } | null } | null>(null);
+  const [measLive, setMeasLive] = useState<{ x: number; y: number } | null>(null);
+  const measureOn = measuring && !active && !placing?.length;
+  useEffect(() => {
+    if (!measuring) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); setMeas(null); setMeasuring(false); } };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [measuring]);
   const activeShape = useMemo(() => (active ? materialShape(active) : null), [active]);
   const vh = (view.w * size.h) / size.w;
   /** prag privlačenja: 10 piksela na ekranu */
@@ -240,10 +251,28 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, snapObje
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /**
+   * Tačka metra: na mreži, privučena uz ivice delova i tlo (Alt isključuje privlačenje); sa Shift kraj ide samo vodoravno ili uspravno od početka.
+   */
+  const measurePoint = (e: { clientX: number; clientY: number; altKey: boolean; shiftKey: boolean }, from?: { x: number; y: number } | null): { x: number; y: number } => {
+    const p = toWorld(e.clientX, e.clientY);
+    let x = snap(p.x, gridMm); let y = snap(p.y, gridMm);
+    if (!e.altKey) { const s = snapPoint(p.x, p.y, refsFor(), thr); if (s.gx !== null) x = s.x; if (s.gy !== null) y = s.y; }
+    if (from && e.shiftKey) { if (Math.abs(x - from.x) >= Math.abs(y - from.y)) y = from.y; else x = from.x; }
+    const r = (n: number) => Math.round(n * 10) / 10;
+    return { x: r(x), y: r(y) };
+  };
+
   const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     const p = toWorld(e.clientX, e.clientY);
     e.currentTarget.setPointerCapture(e.pointerId);
     if (e.button === 1 || e.button === 2) { drag.current = { mode: 'pan', cx: e.clientX, cy: e.clientY, view }; return; }
+    // metar: prvi klik je početak, drugi kraj; sledeći klik počinje novo merenje (delovi se ne biraju i ne pomeraju)
+    if (measureOn) {
+      if (e.button !== 0) return;
+      if (!meas || meas.b) { const a = measurePoint(e); setMeas({ a, b: null }); setMeasLive(a); } else setMeas({ a: meas.a, b: measurePoint(e, meas.a) });
+      return;
+    }
     if (placing?.length) {
       // klik postavlja nalepljene delove tamo gde stoje (pokazivač se pre klika ažurira pomeranjem)
       if (e.button === 0) { const sp = { x: snap(p.x, gridMm), y: snap(p.y, gridMm) }; setCursor(sp); const o = placeAt(sp); if (o) onPlace?.(o.dx, o.dy); }
@@ -278,6 +307,7 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, snapObje
     const sp = { x: snap(p.x, gridMm), y: snap(p.y, gridMm) };
     setCursor(sp);
     const d = drag.current;
+    if (measureOn && (!d || d.mode !== 'pan')) { if (meas && !meas.b) setMeasLive(measurePoint(e, meas.a)); else setMeasLive(measurePoint(e)); return; }
     const refs = snapObjects && !e.altKey ? refsFor() : null;
     if (!d) { if (active && activeShape?.type === 'piece') { const r = partFromDragSnapped(active.id, activeShape, sp.x, sp.y, sp.x, sp.y, ortho, 'ghost', refs, thr); setGhost(r.part); setGuides({ gx: r.gx, gy: r.gy }); } return; }
     if (d.mode === 'pan') {
@@ -337,7 +367,7 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, snapObje
 
   return (
     <div ref={wrapRef} className="relative h-full w-full bg-[#eef2f6] overflow-hidden select-none" style={{ touchAction: 'none' }} data-testid="designer-2d">
-      <svg ref={svgRef} className="absolute inset-0 w-full h-full" viewBox={`${view.x} ${view.y} ${view.w} ${vh}`} style={{ cursor: active || placing ? 'crosshair' : 'default' }}
+      <svg ref={svgRef} className="absolute inset-0 w-full h-full" viewBox={`${view.x} ${view.y} ${view.w} ${vh}`} style={{ cursor: active || placing || measureOn ? 'crosshair' : 'default' }}
         onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={() => { setCursor(null); setGuides({ gx: [], gy: [] }); if (!drag.current) setGhost(null); }} onPointerCancel={() => { drag.current = null; setBox(null); }} onContextMenu={(e) => e.preventDefault()}>
         {lines}
         <line x1={view.x} y1={groundY} x2={view.x + view.w} y2={groundY} stroke="#64748b" strokeWidth={1.5} vectorEffect="non-scaling-stroke" data-testid="designer-ground" />
@@ -350,7 +380,28 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, snapObje
           {guides.gx.map((x) => <line key={`gx${x}`} data-testid="designer-snap-guide" x1={x} x2={x} y1={-(view.y + vh)} y2={-view.y} stroke="#d946ef" strokeWidth={1} strokeDasharray="5 4" vectorEffect="non-scaling-stroke" pointerEvents="none" />)}
           {guides.gy.map((y) => <line key={`gy${y}`} data-testid="designer-snap-guide" x1={view.x} x2={view.x + view.w} y1={y} y2={y} stroke="#d946ef" strokeWidth={1} strokeDasharray="5 4" vectorEffect="non-scaling-stroke" pointerEvents="none" />)}
           {placing && placeOffset && <g transform={`translate(${placeOffset.dx} ${placeOffset.dy})`} data-testid="designer-paste-ghost" pointerEvents="none">{placing.map((r) => <PartSvg key={r.part.id} part={r.part} shape={r.shape} hex="#d71920" ghost />)}</g>}
+          {measureOn && measLive && !(meas && !meas.b) && <circle cx={measLive.x} cy={measLive.y} r={fs * 0.25} fill="none" stroke="#0891b2" strokeWidth={1.5} vectorEffect="non-scaling-stroke" pointerEvents="none" />}
         </g>
+        {measureOn && meas && (() => {
+          const b = meas.b ?? measLive ?? meas.a;
+          const a = meas.a;
+          const dx = Math.abs(b.x - a.x); const dy = Math.abs(b.y - a.y); const len = Math.hypot(dx, dy);
+          const f = (n: number) => String(Math.round(n * 10) / 10).replace('.', ',');
+          const label = dx > 0.05 && dy > 0.05 ? `${f(len)} mm  (vodoravno ${f(dx)} · uspravno ${f(dy)})` : `${f(len)} mm`;
+          const tick = fs * 0.45;
+          // SVG koordinate (y naniže); natpis iznad sredine linije
+          const ax = a.x; const ay = -a.y; const bx = b.x; const by = -b.y;
+          const mx = (ax + bx) / 2; const my = (ay + by) / 2;
+          return (
+            <g data-testid="designer-measure" pointerEvents="none">
+              <line x1={ax} y1={ay} x2={bx} y2={by} stroke="#0891b2" strokeWidth={2} strokeDasharray={meas.b ? undefined : '6 4'} vectorEffect="non-scaling-stroke" />
+              {[[ax, ay], [bx, by]].map(([x, y], i) => <g key={i}><line x1={x - tick} y1={y} x2={x + tick} y2={y} stroke="#0891b2" strokeWidth={1.5} vectorEffect="non-scaling-stroke" /><line x1={x} y1={y - tick} x2={x} y2={y + tick} stroke="#0891b2" strokeWidth={1.5} vectorEffect="non-scaling-stroke" /></g>)}
+              {len > 0.05 && (
+                <text x={mx} y={my - fs * 0.6} textAnchor="middle" fontSize={fs} fontWeight="700" fill="#0e7490" stroke="#fff" strokeWidth={fs * 0.25} paintOrder="stroke" data-testid="designer-measure-label">{label}</text>
+              )}
+            </g>
+          );
+        })()}
         {overlay && <g data-testid="designer-overlay">{overlay(view.w / size.w)}</g>}
         {ghost && ghostLabel && <text x={ghost.x + fs} y={-(ghost.y + (ghost.heightMm ?? 0)) - fs * 1.2} fontSize={fs} fill="#d71920" fontWeight="700" data-testid="designer-ghost-label">{ghostLabel}</text>}
       </svg>
@@ -361,12 +412,18 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, snapObje
         <div className="absolute left-3 top-3 right-28 text-[12.5px] bg-white/95 border border-line rounded-lg px-3 py-1.5 text-slate-700" data-testid="designer-paste-hint">
           Nalepljeno ({placing.length}): pomerite miša i kliknite na mesto gde deo treba da stoji. Esc: otkaži.
         </div>
+      ) : measureOn ? (
+        <div className="absolute left-3 top-3 right-44 text-[12.5px] bg-white/95 border border-line rounded-lg px-3 py-1.5 text-slate-700" data-testid="designer-measure-hint">
+          <b>Metar:</b> kliknite početnu, pa krajnju tačku. Tačke se privlače uz ivice delova (Alt isključuje), Shift: samo vodoravno ili uspravno. Novi klik: novo merenje. Esc: kraj.
+        </div>
       ) : active && (
         <div className="absolute left-3 top-3 right-28 text-[12.5px] bg-white/95 border border-line rounded-lg px-3 py-1.5 text-slate-700" data-testid="designer-hint">
           <b>{active.sku}</b> — {activeShape?.type === 'piece' ? 'kliknite na mesto gde deo treba da stoji.' : activeShape?.type === 'sheet' ? 'povucite mišem pravougaonik ploče.' : 'povucite mišem od početka do kraja profila.'} Esc: kraj crtanja.
         </div>
       )}
       <div className="absolute right-3 top-3 flex gap-1.5">
+        <button className={`btn btn-sm ${measuring ? 'btn-dark' : ''}`} data-testid="designer-measure-toggle" aria-pressed={measuring} title="Metar: meri rastojanje između dve tačke na crtežu"
+          onClick={() => { setMeasuring((m) => !m); setMeas(null); setMeasLive(null); }}><Ruler size={15} />Metar</button>
         <button className="btn btn-icon" aria-label="Uvećaj" onClick={() => zoomAt(1 / 1.3)}><ZoomIn size={16} /></button>
         <button className="btn btn-icon" aria-label="Umanji" onClick={() => zoomAt(1.3)}><ZoomOut size={16} /></button>
         <button className="btn btn-icon" aria-label="Uklopi ceo model" onClick={fit}><Maximize2 size={16} /></button>

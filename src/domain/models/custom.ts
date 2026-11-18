@@ -36,6 +36,15 @@ export interface CustomPart {
   rot: number;
   /** okretanje je ručno zadato (dugmad „Okretanje preseka“): bočni U profil ostaje kako je okrenut (npr. ravna strana ka ispuni), program ga ne vraća ka unutra */
   rotLocked?: boolean;
+  /** ID-ovi bočnih U vođica u koje ovaj komad prečke ulazi krajem (prečka presečena uspravnom cevi); preklapanje sa njima nije greška, a vođice ne razvlače komad */
+  nests?: string[];
+  /**
+   * vodoravno ojačanje (dugme „Dodaj ojačanje“): cev koja deli platno po visini i spaja se sa bočnim stranama. Nije prečka: ne ulazi u U
+   * vođice, a prečke iznad i ispod nje se raspoređuju odvojeno (dva polja)
+   */
+  divider?: boolean;
+  /** gornji komad bočnog U profila presečenog vodoravnim ojačanjem: ID donjeg komada (pri pomeranju ojačanja komadi se spajaju i seku iznova) */
+  splitOf?: string;
   /** nagib preseka oko ose profila (stepeni, dodaje se okretanju): prečka postavljena koso */
   tiltDeg?: number;
   /** prečka uklopljena u dve bočne U vođice (ID levog i desnog U profila): ne može da izađe van njihovog kanala */
@@ -91,6 +100,11 @@ export interface CustomModel {
   id: string;
   /** kapija koja još nije sačuvana („Sačuvaj tip kapije“): ne nudi se u spiskovima, a briše se kad se crtanje zatvori bez čuvanja */
   draft?: boolean;
+  /** izvedeni model kapije sa ramom (nevidljiv u spiskovima): sastavlja se iz osnovnog modela `derivedFrom` i cevi `frameMaterialId` */
+  derivedFrom?: string;
+  /** ograda: ima li kapija od ovog modela ram od kvadratne cevi (bez vrednosti: ima, osim modela sa tarabicama) */
+  gateFrame?: boolean;
+  frameMaterialId?: string;
   name: string;
   /** ograda (dvorište), kapija ili ograda za terasu (posebna stranica i crtanje, samo materijali za terase) */
   kind: 'fence' | 'gate' | 'terrace';
@@ -287,10 +301,27 @@ export interface ResolvedPart { part: CustomPart; shape: MatShape; hex: string; 
  * Delovi modela sa oblikom i bojom; deo čiji je materijal obrisan iz cenovnika crta se kao sivi profil 40 × 20.
  * Bočne U vođice se crtaju posle prečki, da krajevi prečki u kanalu budu iza stranice U profila (kao u stvarnosti).
  */
+/**
+ * ID-ovi bočnih U vođica: one u koje ulaze prečke (`guides`) ili komadi prečki presečenih uspravnom cevi (`nests`). Komadi sačuvani pre oznake
+ * `nests` (ID završava sa _c1, _c2 …) smeju u sve uspravne U profile.
+ */
+export function guideIdsOf(parts: CustomPart[], materials: Material[]): Set<string> {
+  const ids = new Set(parts.flatMap((p) => [...(p.guides ?? []), ...(p.nests ?? [])]));
+  if (parts.some((p) => /_c\d+$/.test(p.id) && !p.nests)) {
+    for (const p of parts) {
+      if (Math.abs(Math.sin((p.angleDeg * Math.PI) / 180)) < 0.99) continue;
+      const m = materials.find((x) => x.id === p.materialId);
+      const s = m ? materialShape(m) : null;
+      if (s && s.type === 'linear' && s.u) ids.add(p.id);
+    }
+  }
+  return ids;
+}
+
 export function resolveParts(model: Pick<CustomModel, 'parts' | 'color'> & { hw?: Partial<HwDims> }, materials: Material[]): ResolvedPart[] {
   const byId = new Map(materials.map((m) => [m.id, m]));
   const dims = model.hw ? hwDimsOf(model.hw) : null;
-  const guideIds = new Set(model.parts.flatMap((p) => p.guides ?? []));
+  const guideIds = guideIdsOf(model.parts, materials);
   // bez U vođica delovi se crtaju od zadnjeg ka prednjem (po dubini), pa deo ispred prekriva onaj iza njega
   const ordered = guideIds.size ? [...model.parts.filter((p) => !guideIds.has(p.id)), ...model.parts.filter((p) => guideIds.has(p.id))] : [...model.parts].sort((p, q) => p.z - q.z);
   const all = ordered.map((part) => {

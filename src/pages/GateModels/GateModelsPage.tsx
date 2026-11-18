@@ -1,7 +1,7 @@
 import { ListChecks, PencilRuler, Trash2 } from 'lucide-react';
 import { SpecEditor } from '../../components/models/SpecEditor';
 import { basicGateRows, type BomRow } from '../../domain/gates/basicBom';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ElementThumb, GateModelThumb, SlidingThumb } from '../../components/editor/Catalog';
 import { Page, PageHeader } from '../../components/ui/Common';
@@ -44,13 +44,16 @@ export default function GateModelsPage() {
   const projects = useListedProjects();
   const currentId = useAppStore((s) => s.editor.projectId);
   const current = projects.find((p) => p.id === currentId);
-  const models = (customModels ?? []).filter((m) => m.kind === 'gate' && !m.replaces && !m.draft);
+  const models = (customModels ?? []).filter((m) => m.kind === 'gate' && !m.replaces && !m.draft && !m.derivedFrom);
   const [del, setDel] = useState<CustomModel | null>(null);
   const [choice, setChoice] = useState<CustomModel | null>(null);
   const [delAll, setDelAll] = useState(false);
   // ograda na sličicama: model iz otvorenog projekta; bez projekta prvi model sa stranice Modeli ograda
   const shownModel = (current && projectModelId(current.items)) || allFenceModels()[0].id;
   const doradaModel = leafKeyOf(shownModel, customModels);
+  // sličice kapija: model ograde sa ramom (ako ga kapija od tog modela dobija)
+  const [thumbModel, setThumbModel] = useState<string>(shownModel);
+  useEffect(() => { setThumbModel(useAppStore.getState().gateInfillWithFrame(shownModel)); }, [shownModel, customModels, materials]);
   // osnovne kapije se samo gledaju: crtež se otvara bez mogućnosti menjanja, a za izmene se kapija sačuva kao nov tip
   const openSliding = (p: SlidingPresetId) => navigate(`/modeli/crtanje/${useAppStore.getState().startSlidingDorada(p, doradaModel)}`, { state: { kind: 'gate', readOnly: true } });
   const openBasic = (t: GateType) => navigate(`/modeli/crtanje/${useAppStore.getState().startGateDorada(t, doradaModel)}`, { state: { kind: 'gate', readOnly: true } });
@@ -73,7 +76,7 @@ export default function GateModelsPage() {
         <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
           {BASIC.filter((b) => !hidden.includes(`gate:${b.type}`)).map((b) => (
             <article key={b.type} className="card overflow-hidden flex flex-col" data-testid={`basic-gate-${b.type}`}>
-              <div className="relative aspect-[16/10] bg-[#eef2f6] overflow-hidden border-b border-line grid place-items-center"><ElementThumb kind={b.type} model={shownModel} size={THUMB} /></div>
+              <div className="relative aspect-[16/10] bg-[#eef2f6] overflow-hidden border-b border-line grid place-items-center"><ElementThumb kind={b.type} model={thumbModel as typeof shownModel} size={THUMB} /></div>
               <div className="p-4 flex-1 flex flex-col">
                 <h3 className="font-bold text-[17px]">{GATE_LABELS[b.type]}</h3>
                 <p className="text-sm text-muted mt-0.5">{b.subtitle}</p>
@@ -88,7 +91,7 @@ export default function GateModelsPage() {
           {/* klizne kapije kao sklop; ručna / motorna se bira u projektu, Doradi pravi nov model koji se menja deo po deo */}
           {SLIDING.filter((k) => !hidden.includes(`gate:slide:${k.preset}`)).map((k) => (
             <article key={k.id} className="card overflow-hidden flex flex-col" data-testid={`basic-${k.id}`}>
-              <div className="relative aspect-[16/10] bg-[#eef2f6] overflow-hidden border-b border-line grid place-items-center"><SlidingThumb preset={k.preset} model={shownModel} size={THUMB} /></div>
+              <div className="relative aspect-[16/10] bg-[#eef2f6] overflow-hidden border-b border-line grid place-items-center"><SlidingThumb preset={k.preset} model={thumbModel as typeof shownModel} size={THUMB} /></div>
               <div className="p-4 flex-1 flex flex-col">
                 <h3 className="font-bold text-[17px]">{k.title}</h3>
                 <p className="text-sm text-muted mt-0.5">{k.subtitle}</p>

@@ -129,6 +129,9 @@ function overlaps(a: Box, b: Box): boolean {
   return true;
 }
 
+const nestedPiece = (p: CustomPart): boolean => /_c\d+$/.test(p.id) && Math.abs(Math.sin((p.angleDeg * Math.PI) / 180)) < 0.01;
+const sideGuide = (p: CustomPart): boolean => !p.id.startsWith('rf_') && Math.abs(Math.sin((p.angleDeg * Math.PI) / 180)) > 0.99;
+
 export interface Overlap { a: CustomPart; b: CustomPart; nameA: string; nameB: string }
 
 /** Svi parovi profila koji se preklapaju (prečka i njene U vođice se ne računaju). */
@@ -139,7 +142,9 @@ export function findOverlaps(model: Pick<CustomModel, 'parts'>, materials: Mater
   for (let i = 0; i < items.length; i++) {
     for (let j = i + 1; j < items.length; j++) {
       const A = items[i]; const B = items[j];
-      if (A.p.guides?.includes(B.p.id) || B.p.guides?.includes(A.p.id)) continue;
+      if (A.p.guides?.includes(B.p.id) || B.p.guides?.includes(A.p.id) || A.p.nests?.includes(B.p.id) || B.p.nests?.includes(A.p.id)) continue;
+      // komad prečke presečene uspravnom cevi (sačuvan pre oznake `nests`): ulazi u bočnu U vođicu kao i cela prečka
+      if ((nestedPiece(A.p) && sideGuide(B.p)) || (nestedPiece(B.p) && sideGuide(A.p))) continue;
       if (overlaps(A.box, B.box)) out.push({ a: A.p, b: B.p, nameA: A.box.name, nameB: B.box.name });
     }
   }

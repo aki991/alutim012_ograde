@@ -175,10 +175,12 @@ export function buildSketch(model: CustomModel, materials: Material[]): Sketch {
   // polja (par bočnih U profila + prečke između): ako sva polja imaju prečke na istim visinama, mere se daju jednom;
   // polje sa drugačijim visinama se izdvaja i crta odvojeno, pa se pored njega daju njegove mere
   const bays = new Map<string, { guides: string[]; bars: Item[]; sig: string }>();
+  // bočni U profil presečen vodoravnim ojačanjem ima dva komada: prečke iznad i ispod ojačanja su isto polje (jedno iznad drugog), ne dva polja
+  const whole = (id: string): string => items.find((i) => i.p.id === id)?.p.splitOf ?? id;
   for (const it of items) {
     const g = it.p.guides;
     if (!g || it.shape.type !== 'linear') continue;
-    const k = `${g[0]}|${g[1]}`;
+    const k = `${whole(g[0])}|${whole(g[1])}`;
     const e = bays.get(k) ?? { guides: [...g], bars: [], sig: '' };
     e.bars.push(it); bays.set(k, e);
   }

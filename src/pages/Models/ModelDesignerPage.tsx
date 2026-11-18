@@ -7,6 +7,8 @@ import { FitBox } from '../../components/designer/FitBox';
 import { hingesAlongEdge, isHingeMaterial, restOnSurface } from '../../domain/models/surface';
 import { layerPart } from '../../domain/models/overlap';
 import { ALL_FRAME_SIDES, frameIds, isFramePart, modelWithFrame, modelWithoutFrame, modelWithRotatedFrame, resizeWithFrame } from '../../domain/models/frame';
+import { wantsGateFrame } from '../../domain/models/gateFrame';
+import { addDivider } from '../../domain/models/reinforce';
 import { GateDesignModal } from '../../components/gates/GateDesignModal';
 import { SlidingAssemblyArt } from '../../components/gates/SlidingAssemblyArt';
 import { SlidingDesignerPanel, SlidingPartButtons } from '../../components/gates/SlidingDesignerPanel';
@@ -100,8 +102,42 @@ function Num({ label, value, onChange, min = -100000, max = 100000, testId, unit
 
 const AUTO_LABELS: Record<LayoutAuto, string> = { gap: 'razmak između prečki', bottom: 'odstojanje od dna', top: 'odstojanje od vrha' };
 
+/**
+ * Raspored prečki kad vodoravno ojačanje deli platno: za svako polje (ispod, između i iznad ojačanja) poseban raspored, sa odstojanjima
+ * od ojačanja. Bez ojačanja isto što i jedan raspored.
+ */
+function BarLayoutZones({ model, bar, materials, onApply, onError }: { model: CustomModel; bar: CustomPart; materials: Material[]; onApply: (m: CustomModel) => void; onError: (msg: string) => void }) {
+  const grp = barGroup(model, bar, materials);
+  if (!grp || !model.parts.some((p) => p.divider)) return <BarLayoutBox model={model} bar={bar} materials={materials} onApply={onApply} onError={onError} />;
+  // ceo prostor za prečke (od najnižeg do najvišeg polja) i prečke iste vrste u svakom polju
+  const sameKind = (p: CustomPart) => !p.divider && (bar.guides ? !!p.guides && p.guides[0] === bar.guides[0] && p.guides[1] === bar.guides[1] : !p.guides && p.materialId === bar.materialId && Math.abs(p.angleDeg - bar.angleDeg) < 1e-6);
+  const candidates = model.parts.filter(sameKind);
+  const zoneOfBar = (p: CustomPart) => { const g = barGroup(model, p, materials); return g ? `${g.yBot}|${g.yTop}` : null; };
+  const zones = new Map<string, { lead: CustomPart; y0: number; y1: number }>();
+  for (const p of candidates) {
+    const k = zoneOfBar(p);
+    if (!k || zones.has(k)) continue;
+    const [y0, y1] = k.split('|').map(Number);
+    zones.set(k, { lead: p, y0, y1 });
+  }
+  const list = [...zones.values()].sort((a, b) => b.y0 - a.y0);
+  const divs = model.parts.filter((p) => p.divider);
+  const nearDiv = (y: number) => divs.some((d) => { const s = materialShape(materials.find((m) => m.id === d.materialId) ?? materials[0]); if (s.type !== 'linear') return false; const x = sectionFace(s.section, d.rot); return Math.abs(d.y + x.u0 - y) < 1 || Math.abs(d.y + x.u1 - y) < 1; });
+  return (
+    <div data-testid="bar-layout-zones">
+      <p className="text-[11.5px] text-muted mt-2">Ojačanje deli platno na {list.length} polja: prečke se raspoređuju u svakom polju posebno, a odstojanja se mere od ojačanja.</p>
+      {list.map((z, i) => {
+        const above = nearDiv(z.y0); const below = nearDiv(z.y1);
+        const title = above && below ? 'Prečke između ojačanja' : above ? 'Prečke iznad ojačanja' : below ? 'Prečke ispod ojačanja' : 'Prečke';
+        return <BarLayoutBox key={`${z.y0}-${z.y1}-${i}`} model={model} bar={z.lead} materials={materials} onApply={onApply} onError={onError}
+          title={title} topLabel={below ? 'Od ojačanja (gore)' : undefined} bottomLabel={above ? 'Od ojačanja (dole)' : undefined} />;
+      })}
+    </div>
+  );
+}
+
 /** Raspored prečki grupe (isti materijal, iste U vođice): broj, odstojanje od vrha i dna i razmak; jedna mera se računa sama. */
-function BarLayoutBox({ model, bar, materials, onApply, onError }: { model: CustomModel; bar: CustomPart; materials: Material[]; onApply: (m: CustomModel) => void; onError: (msg: string) => void }) {
+function BarLayoutBox({ model, bar, materials, onApply, onError, title, topLabel, bottomLabel }: { model: CustomModel; bar: CustomPart; materials: Material[]; onApply: (m: CustomModel) => void; onError: (msg: string) => void; title?: string; topLabel?: string; bottomLabel?: string }) {
   const [auto, setAuto] = useState<LayoutAuto>('gap');
   const [gap1, setGap1] = useState(20);
   // uspravne letvice (tarabice): isti raspored po širini polja, bez lufta i nagiba, sa čepovima na vrhu
@@ -129,7 +165,7 @@ function BarLayoutBox({ model, bar, materials, onApply, onError }: { model: Cust
   const fmtR = (n: number) => String(n).replace('.', ',');
   return (
     <div className="mt-2 rounded-lg border border-line p-2" data-testid="bar-layout">
-      <div className="text-[12.5px] font-semibold mb-1 flex items-center gap-1.5"><Rows3 size={14} />{vert ? 'Raspored letvica' : 'Raspored prečki'}</div>
+      <div className="text-[12.5px] font-semibold mb-1 flex items-center gap-1.5"><Rows3 size={14} />{title ?? (vert ? 'Raspored letvica' : 'Raspored prečki')}</div>
       <p className="text-[11.5px] text-muted mb-1">{vert ? 'Prostor za letvice (širina polja)' : info.free ? 'Prostor za prečke (visina modela između ramova)' : 'Visina bočnih strana'} <b data-testid="layout-height">{String(info.H).replace('.', ',')} mm</b>, {info.mixed ? <>{vert ? 'letvice' : 'prečke'} različitih {vert ? 'širina' : 'debljina'} (<b>{info.count} kom</b>): razmak važi između svih susednih, užih i širih.</> : <>{vert ? 'širina letvice' : 'visina prečke'} <b>{String(info.h).replace('.', ',')} mm</b>.</>} {vert ? 'Letvice' : 'Prečke'} se rasporede same.</p>
       {!vert && <>
       <div className="flex items-center justify-between gap-2 py-1 text-[13px]">
@@ -145,8 +181,8 @@ function BarLayoutBox({ model, bar, materials, onApply, onError }: { model: Cust
         : 'Sa luftom: između prečki se vidi procep, razmak ide od 0 do najvećeg koji staje.'}</p>
       </>}
       <Num label={vert ? 'Broj letvica' : 'Broj prečki'} unit="kom" value={info.count} min={1} max={200} testId="layout-count" onSame={() => onError('')} onChange={(v) => run({ count: Math.round(v) }, { countChange: true })} />
-      <Num label={vert ? 'Od leve ivice' : 'Od vrha'} value={info.top} min={0} testId="layout-top" readOnly={eff === 'top'} onChange={(v) => run({ top: v })} />
-      <Num label={vert ? 'Od desne ivice' : 'Od dna'} value={info.bottom} min={0} testId="layout-bottom" readOnly={eff === 'bottom'} onChange={(v) => run({ bottom: v })} />
+      <Num label={vert ? 'Od leve ivice' : topLabel ?? 'Od vrha'} value={info.top} min={0} testId="layout-top" readOnly={eff === 'top'} onChange={(v) => run({ top: v })} />
+      <Num label={vert ? 'Od desne ivice' : bottomLabel ?? 'Od dna'} value={info.bottom} min={0} testId="layout-bottom" readOnly={eff === 'bottom'} onChange={(v) => run({ bottom: v })} />
       <Num label="Razmak između" value={info.gap ?? 0} min={-1000} testId="layout-gap" readOnly={eff === 'gap' || single} onChange={(v) => { setGap1(v); run({ gap: v }); }} />
       <label className="flex items-center justify-between gap-2 py-1 text-[12.5px]">
         <span className="text-slate-600">Sama se računa</span>
@@ -646,6 +682,16 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
     if ('error' in next) { setNotice(next.error); return; }
     if (change(() => next)) { setSelectedIds(frameIds(next)); setFitTick((t) => t + 1); }
   };
+  /** vodoravno ojačanje (kvadratna cev po dubini modela) na sredini prostora za prečke; izabrano je, pa se odmah vidi i pomera */
+  const addDividerTube = () => {
+    const r = addDivider(modelRef.current, materialsRef.current, { id: uid('part') });
+    if ('error' in r) { setNotice(r.error); return; }
+    // cev naleže na bočne strane (dodir), pa se provera preklapanja novog dela preskače
+    if (change(() => r.model, true, true, false)) {
+      setSelectedIds([r.id]);
+      setNotice('Ojačanje je dodato na sredinu. Pomerite ga poljem „Y (od tla)“, a prečke iznad i ispod njega rasporedite u „Raspored prečki“ (izaberite bilo koju prečku).');
+    }
+  };
   /** briše ram dodat dugmetom „Dodaj ram“; mere modela se vraćaju na mere platna */
   /** nova širina / visina celog crteža; sa ramom se razvlači platno unutar njega (ram zadržava debljinu) */
   /** krilo kapije se crta od izabranog modela ograde (kao „Doradi“ modela): zamenjuje trenutne delove, može da se poništi */
@@ -784,6 +830,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
         {model.kind === 'gate' && model.parts.length > 0 && (model.draft
           ? (!readOnly && <button className="btn btn-sm btn-primary" data-testid="designer-save-gate" title="Tip kapije se dodaje u „Moji tipovi kapija“ tek kad ga sačuvate" onClick={() => { const cur = modelRef.current; const auto = autoGateSpec(cur, materialsRef.current); if (auto?.length) { const st = useAppStore.getState(); const k = extraSpecKey(cur.id); if (!st.settings.modelSpecs?.[k]?.length) st.updateSettings({ modelSpecs: { ...st.settings.modelSpecs, [k]: auto } }); } change((m) => ({ ...m, draft: undefined }), false); }}>Sačuvaj tip kapije</button>)
           : <span className="text-[12.5px] font-semibold text-[#067647]" data-testid="designer-gate-saved">Tip kapije je sačuvan</span>)}
+        {model.kind === 'fence' && !readOnly && <label className="flex items-center gap-1.5 text-[13px]" title="Kapija od ovog modela dobija ram od kvadratne cevi (materijal se bira u projektu). Isključite za modele kao što su tarabice. Model koji već ima ram ne dobija drugi."><input type="checkbox" data-testid="designer-gate-frame" checked={wantsGateFrame(model)} onChange={(e) => change((m) => ({ ...m, gateFrame: e.target.checked }), false)} />Ram na kapiji</label>}
         {model.parts.length > 0 && <button className={`btn btn-sm ${readOnly ? 'btn-primary' : ''}`} data-testid="designer-save-new" title="Izmene se čuvaju kao nov model, a model u koji ste ušli ostaje kakav je bio kad ste ga otvorili" onClick={saveAsNew}><Copy size={14} />{model.kind === 'gate' ? 'Sačuvaj kao nov tip kapije' : 'Sačuvaj kao nov model'}</button>}
         {/* ograda za terasu ostaje ograda za terasu (posebna stranica i materijali); ograda i kapija se mogu menjati jedna u drugu */}
         {isTerrace && <span className="pill !text-[12.5px] bg-[#eff8ff] text-[#175cd3]" data-testid="designer-kind-terrace">Ograda za terasu</span>}
@@ -844,6 +891,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
         {isTerrace && <button className="btn btn-sm btn-primary" data-testid="designer-fill-hw" title="Svakom stubu, rukohvatu i prečki dodaje odgovarajući okov (flanše, veze, prstenove, kapice) na pravo mesto; šta ne treba, odkvačite uz izabran deo" onClick={() => { const before = modelRef.current; const next = fillHardware(before, materialsRef.current); if (next === before) setNotice('Nema šta da se doda: svi delovi već imaju okov ili u cenovniku nema odgovarajućeg okova. Crtajte stubove, rukohvat i prečke, pa kliknite ovo dugme.'); else change(() => next); }}>Dopuni okov</button>}
         {!isTerrace && <button className="btn btn-sm" data-testid="designer-add-slope" title="Ograda ili kapija na kosom terenu: ispod ispune se dodaju kosi donji profil i ploča (lim) koja popunjava pad" onClick={() => setSlopeAsk(true)}>Dodaj pad</button>}
         {!isTerrace && <button className="btn btn-sm" data-testid="designer-add-frame" title="Dodaje ram oko platna (uglovi pod 45°)" onClick={() => setFrameAsk(true)}>Dodaj ram</button>}
+        {!isTerrace && !readOnly && <button className="btn btn-sm" data-testid="designer-add-divider" title="Vodoravna kvadratna cev koja deli platno po visini i spaja se sa bočnim stranama. Prečke iznad i ispod nje se raspoređuju posebno (Raspored prečki)." onClick={addDividerTube}>Dodaj ojačanje</button>}
         {model.parts.some(isFramePart) && <button className="btn btn-sm" data-testid="designer-remove-frame" title="Briše dodat ram; mere modela se vraćaju na mere platna" onClick={removeFrame}><Trash2 size={14} />Obriši ram</button>}
         </>}
         <div className="flex-1" />
@@ -1160,7 +1208,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
                   <p className="text-[11.5px] text-muted mt-1.5">Prečka ne može da izađe van U profila: dužina, položaj, dubina i nagib se ograničavaju na kanal.</p>
                 </div>
               )}
-              {(barGroup(model, sel.part, materials) || vBarGroup(model, sel.part, materials)) && <BarLayoutBox key={sel.part.id} model={model} bar={sel.part} materials={materials} onApply={(m) => change(() => m)} onError={setNotice} />}
+              {(barGroup(model, sel.part, materials) || vBarGroup(model, sel.part, materials)) && <BarLayoutZones key={sel.part.id} model={model} bar={sel.part} materials={materials} onApply={(m) => change(() => m)} onError={setNotice} />}
               {sel.shape.type === 'linear' && !report && sel.part.angleDeg % 90 === 0 && (
                 <div className="mt-2">
                   <button className="btn btn-sm w-full" data-testid="guide-attach" onClick={() => { const fitted = attach(modelRef.current, sel.part.id, false); if (fitted) change(() => fitted); }}><Link2 size={14} />{sel.part.angleDeg % 180 === 0 ? 'Uklopi u bočne U profile' : 'Uklopi u U profile (gore i dole)'}</button>

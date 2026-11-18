@@ -7,7 +7,7 @@ import { useAppStore } from '../../store/useAppStore';
 export function gateModelChoices(models: ReturnType<typeof useAppStore.getState>['settings']['customModels'], g: Gate) {
   const fence = leafKeyOf(fenceModelOfGate(g), models);
   return (models ?? [])
-    .filter((m) => m.kind === 'gate' && !m.replaces && !m.draft && m.parts.length > 0 && m.gate?.gateType === g.gateType && m.leafModelId === fence && (g.gateType !== 'sliding' || m.gate?.sliding?.support === g.sliding?.support))
+    .filter((m) => m.kind === 'gate' && !m.replaces && !m.draft && !m.derivedFrom && m.parts.length > 0 && m.gate?.gateType === g.gateType && m.leafModelId === fence && (g.gateType !== 'sliding' || m.gate?.sliding?.support === g.sliding?.support))
     .sort((a, b) => Number(!!b.gateDefault) - Number(!!a.gateDefault));
 }
 

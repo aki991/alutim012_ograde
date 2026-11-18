@@ -21,6 +21,7 @@ export default function ModelsPage({ terrace = false }: { terrace?: boolean }) {
   const navigate = useNavigate();
   const [choice, setChoice] = useState<FenceModelId | null>(null);
   const [specFor, setSpecFor] = useState<FenceModelId | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
   const [del, setDel] = useState<CustomModel | null>(null);
   const [delBuiltin, setDelBuiltin] = useState<FenceModelId | null>(null);
   const hiddenModels = useAppStore((s) => s.settings.hiddenModels);
@@ -71,7 +72,14 @@ export default function ModelsPage({ terrace = false }: { terrace?: boolean }) {
       <article key={m.id} className="card overflow-hidden flex flex-col" data-testid="custom-model-card">
         <div className="relative aspect-[16/10] bg-[#eef2f6] overflow-hidden border-b border-line p-3"><CustomModelThumb model={m} materials={materials} /></div>
         <div className="p-4 flex-1 flex flex-col">
-          <h3 className="font-bold text-[17px]">{m.name || 'Model bez naziva'}</h3>
+          {renaming === m.id ? (
+            <input autoFocus className="input font-bold text-[17px] !py-0.5 w-full" data-testid="rename-model-input" defaultValue={m.name} maxLength={80} aria-label="Naziv modela"
+              onFocus={(e) => e.currentTarget.select()}
+              onBlur={(e) => { const v = e.currentTarget.value.trim(); setRenaming(null); if (v && v !== m.name) useAppStore.getState().updateSettings({ customModels: (useAppStore.getState().settings.customModels ?? []).map((x) => (x.id === m.id ? { ...x, name: v, updatedAt: new Date().toISOString() } : x)) }); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); else if (e.key === 'Escape') { e.currentTarget.value = m.name; e.currentTarget.blur(); } }} />
+          ) : (
+            <h3 className="font-bold text-[17px] cursor-text rounded hover:bg-slate-100" data-testid="model-name" title="Kliknite da promenite naziv modela" tabIndex={0} onClick={() => setRenaming(m.id)} onKeyDown={(e) => { if (e.key === 'Enter') setRenaming(m.id); }}>{m.name || 'Model bez naziva'}</h3>
+          )}
           <p className="text-sm text-muted mt-0.5">{CUSTOM_KIND_LABELS[m.kind]} · {m.widthMm} × {m.heightMm} mm · {m.parts.length} delova</p>
           <div className="flex gap-2 mt-auto pt-4">
             <button className="btn flex-1 !px-2" data-testid="open-custom-model" onClick={() => navigate(`${drawPath}/${m.id}`)}><PencilRuler size={16} />Otvori crtež</button>

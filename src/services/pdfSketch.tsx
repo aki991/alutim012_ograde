@@ -2,7 +2,7 @@ import { gateLeafPoses } from '../domain/geometry/gates';
 import { createElement } from 'react';
 import { SketchSvg } from '../components/designer/Sketch';
 import { CUSTOM_KIND_LABELS, type CustomModel } from '../domain/models/custom';
-import { customModelOf, scaledModel } from '../domain/models/customRegistry';
+import { customModelOf, scaledWithReinforce } from '../domain/models/customRegistry';
 import { builtinToCustom } from '../domain/models/fromBuiltin';
 import type { AppSettings, Customer, FenceModelId, Material, Project } from '../domain/models/types';
 import { leafHeightOf, slidingH } from '../domain/gates/slidingLayout';
@@ -79,7 +79,7 @@ export function elementModel(project: Project, idx: number, materials: Material[
       // polje je svetli otvor između stubova (kao na crtežu i u krojnoj listi), ne mera osa–osa stubova
       const w = Math.round(li?.clearWidth ?? it.widthMm);
       const src = customModelOf(it.modelId);
-      const model = src ? scaledModel(src, w, it.heightMm, it.params.slats) : builtinToCustom(it.modelId as FenceModelId, materials, `sk_${idx}`, w, it.heightMm, { miterFrame: true });
+      const model = src ? scaledWithReinforce(src, w, it.heightMm, it.params.slats) : builtinToCustom(it.modelId as FenceModelId, materials, `sk_${idx}`, w, it.heightMm, { miterFrame: true });
       return { ...model, name: src?.name ?? model.name };
     }
     if (!it.infillModelId || !li) return null;
@@ -92,7 +92,7 @@ export function elementModel(project: Project, idx: number, materials: Material[
       w = Math.round(res.W); h = Math.round(res.frameHeight);
     }
     const src = customModelOf(it.infillModelId);
-    const model = src ? scaledModel(src, w, h, it.params.slats) : builtinToCustom(it.infillModelId as FenceModelId, materials, `skg_${idx}`, w, h, { miterFrame: true });
+    const model = src ? scaledWithReinforce(src, w, h, it.params.slats) : builtinToCustom(it.infillModelId as FenceModelId, materials, `skg_${idx}`, w, h, { miterFrame: true });
     return { ...model, name: src?.name ?? model.name, widthMm: w, heightMm: h };
   } catch { return null; }
 }

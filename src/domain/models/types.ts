@@ -43,6 +43,11 @@ export interface FenceParams {
   ram?: 'u' | 'tube';
   /** širina kvadratne cevi rama u prednjem pogledu (mm); bez vrednosti 40 */
   ramMm?: Mm;
+  /**
+   * Samo kapija ručno nacrtanog modela: ram od kvadratne cevi koji se dodaje oko crteža. `baseId` je model bez rama, `materialId` cev rama
+   * (infillModelId kapije je tada izvedeni model sa ramom); null = bez rama (izbor korisnika); bez vrednosti ram još nije određen.
+   */
+  gateFrame?: { baseId: string; materialId: string } | null;
 }
 
 /** Stepenište (samo ograde za terase): polje prati stepenice. */

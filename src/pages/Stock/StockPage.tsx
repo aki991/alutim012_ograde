@@ -15,14 +15,14 @@ import { uid } from '../../utils/id';
 import { fmtNum } from '../../utils/units';
 
 /** Izbor materijala razvrstan po grupama (kao u crtanju modela). */
-export function MaterialSelect({ materials, value, onChange, testId, only }: { materials: Material[]; value: string; onChange: (id: string) => void; testId?: string; only?: (m: Material) => boolean }) {
+export function MaterialSelect({ materials, value, onChange, testId, only, emptyLabel }: { materials: Material[]; value: string; onChange: (id: string) => void; testId?: string; only?: (m: Material) => boolean; /** naziv izbora bez materijala (podrazumevano „— izaberite materijal —“) */ emptyLabel?: string }) {
   const groups = useMemo(() => {
     const shown = visibleMaterials(materials, value ? [value] : []);
     const list = only ? shown.filter(only) : shown;
     return MATERIAL_GROUPS.map((g) => ({ ...g, items: list.filter((m) => materialShape(m).group === g.id).sort(compareMaterials) })).filter((g) => g.items.length);
   }, [materials, only, value]);
   const searchGroups = useMemo(() => groups.map((g) => ({ label: g.label, items: g.items.map((m) => ({ value: m.id, label: `${m.name} (${m.sku})` })) })), [groups]);
-  return <SearchSelect value={value} onChange={onChange} groups={searchGroups} placeholder="— izaberite materijal —" testId={testId} searchPlaceholder="Kucajte naziv ili šifru materijala…" />;
+  return <SearchSelect value={value} onChange={onChange} groups={searchGroups} placeholder={emptyLabel ?? '— izaberite materijal —'} testId={testId} searchPlaceholder="Kucajte naziv ili šifru materijala…" />;
 }
 
 const isLinear = (m: Material): boolean => materialShape(m).type === 'linear';

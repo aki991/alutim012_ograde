@@ -16,17 +16,19 @@ describe('model sa ramom na polju druge veličine (projekat)', () => {
     const framed = modelWithFrame(base, fm, mats);
     if ('error' in framed) throw new Error(framed.error);
     registerCustomModels([framed], mats);
-    const parts = customPartsFor('cm_fr', w, h, 'RAL 7016');
-    const b = (i: number) => partBounds(parts[i].part, parts[i].shape);
-    const n = parts.length;
-    // delovi rama su poslednja četiri (dole, gore, levo, desno)
-    const [bot, top, left, right] = [b(n - 4), b(n - 3), b(n - 2), b(n - 1)];
+    const parts = customPartsFor('cm_fr', w, h, 'RAL 7016').filter((r) => !r.part.id.startsWith('rf_'));
+    // delovi rama (dole, gore, levo, desno) su oni sa rezom 45°; ostali su ispuna
+    const frame = parts.filter((r) => r.part.cut45);
+    const rest = parts.filter((r) => !r.part.cut45);
+    const bb = (r: (typeof parts)[number]) => partBounds(r.part, r.shape);
+    expect(frame.length).toBe(4);
+    const [bot, top, left, right] = frame.map(bb);
     const eq = (a: number, c: number) => expect(Math.abs(a - c)).toBeLessThan(0.05);
     // spoljne ivice rama su ivice polja, debljina rama je ista kao na crtežu (40 mm)
     eq(left.x0, 0); eq(right.x1, w); eq(bot.y0, 0); eq(top.y1, h);
     eq(left.x1 - left.x0, 40); eq(right.x1 - right.x0, 40); eq(top.y1 - top.y0, 40); eq(bot.y1 - bot.y0, 40);
     // bočni U profili naležu na unutrašnju ivicu rama (bez razmaka i bez preklapanja), i levo i desno
-    const sides = parts.slice(0, n - 4).filter((r) => r.shape.type === 'linear' && !!(r.shape as { u?: unknown }).u);
+    const sides = rest.filter((r) => r.shape.type === 'linear' && !!(r.shape as { u?: unknown }).u);
     expect(sides.length).toBe(2);
     const sb = sides.map((r) => partBounds(r.part, r.shape)).sort((p, q) => p.x0 - q.x0);
     eq(sb[0].x0, left.x1); eq(sb[1].x1, right.x0);

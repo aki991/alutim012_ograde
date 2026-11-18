@@ -12,7 +12,10 @@ import { newItemFor } from '../domain/geometry/newItem';
 import { computeLayout } from '../domain/geometry/layout';
 import { removeStair, setStairGroup } from '../domain/geometry/stairOps';
 import { defaultModelId, FENCE_MODELS, REMOVED_MODELS, TERRACE_NO_GATES, isTerraceModel, projectModelId } from '../domain/models/catalog';
-import { allFenceModels, effectiveModelId, registerCustomModels, setHiddenModels } from '../domain/models/customRegistry';
+import { allFenceModels, customModelOf, effectiveModelId, registerCustomModels, setHiddenModels } from '../domain/models/customRegistry';
+import type { CustomModel } from '../domain/models/custom';
+import { framedModelId, hasRealFrame, suggestFrameMaterial, wantsGateFrame } from '../domain/models/gateFrame';
+import { RAM_TUBE_DEFAULT_MM, isTubesModel, tubesDims } from '../domain/models/tubes';
 import { presetTitle, slidingForModel, specFromPreset, type SlidingSpec } from '../domain/gates/slidingAssembly';
 import { defaultGateConfig, gateClearWidth, gateConfigFromGate, gateFieldsFromModel, GATE_TYPE_LABELS, leafKeyOf, postDimsOf, withModelPosts } from '../domain/gates/gateModels';
 import { postHalfSum } from '../domain/geometry/layout';
@@ -28,7 +31,7 @@ import type {
 } from '../domain/models/types';
 import { migrateProject } from '../domain/validation/project';
 import { applyPostTemplate as applyPostTemplateTo } from '../domain/models/postTemplates';
-import { remapMissingMaterials } from '../domain/models/materialRemap';
+import { remapMissingMaterials, repairBrokenGuides } from '../domain/models/materialRemap';
 import { bookProjectStock, isStockStatus, unbookProjectStock } from '../domain/pricing/stockBooking';
 import { uid } from '../utils/id';
 
@@ -121,6 +124,10 @@ interface AppState {
   patchItemParams: (id: string, patch: Partial<FenceSection['params']>, key?: string) => void;
   patchPost: (id: string, patch: Partial<Post>, key?: string) => void;
   setItemModel: (id: string, modelId: FenceModelId) => void;
+  /** ram kapije od kvadratne cevi (materijal iz cenovnika); null = bez rama */
+  setGateFrame: (itemId: string, materialId: string | null) => void;
+  /** model sa ramom za prikaz kapije od zadatog modela ograde (sličice na stranici Modeli kapija); isti model kad ram ne ide */
+  gateInfillWithFrame: (modelId: string) => string;
   setItemColor: (id: string, color: string) => void;
   setItemFinish: (id: string, finish: import('../domain/models/types').Finish | undefined) => void;
   /** zadaje spoljnu širinu platna; sa zaključanom ukupnom dužinom se ostala platna prilagođavaju, a ako ne može — obaveštenje i bez izmene */
@@ -278,6 +285,52 @@ export const useAppStore = create<AppState>((set, get) => {
     return id ? get().projects.find((p) => p.id === id) : undefined;
   };
 
+  /** izvedeni model kapije sa ramom (osnovni model + cev rama): dodaje se u katalog ako ga još nema; vraća njegov ID */
+  const ensureFramedModel = (baseId: string, materialId: string): string | null => {
+    const id = framedModelId(baseId, materialId);
+    const list = get().settings.customModels ?? [];
+    if (list.some((m) => m.id === id)) return id;
+    const base = customModelOf(baseId);
+    if (!base || !get().materials.some((m) => m.id === materialId)) return null;
+    const stub: CustomModel = { id, name: base.name, kind: 'gate', widthMm: base.widthMm, heightMm: base.heightMm, color: base.color, parts: [], derivedFrom: baseId, frameMaterialId: materialId, updatedAt: new Date().toISOString() };
+    const customModels = [...list, stub];
+    registerCustomModels(customModels, get().materials);
+    set((s) => ({ settings: { ...s.settings, customModels } }));
+    return id;
+  };
+
+  /**
+   * Svaka nova kapija (ili kapija kojoj je promenjen model) dobija ram: ručno nacrtan model bez rama dobija cev po dubini modela, a model
+   * sa cevima u U profilima ram od kvadratne cevi. Ram se menja u podešavanjima kapije; izbor „bez rama“ se pamti.
+   */
+  const withGateFrames = (p: Project, prev?: Project): Project => {
+    let changed = false;
+    const items = p.items.map((it): LayoutItem => {
+      if (it.kind !== 'gate' || it.gateType === 'sliding') return it;
+      const was = prev?.items.find((x) => x.id === it.id);
+      const gf = it.params.gateFrame;
+      const ours = !!gf && it.infillModelId === framedModelId(gf.baseId, gf.materialId);
+      if (was && was.kind === 'gate' && (was.infillModelId === it.infillModelId || ours)) return it;
+      // „bez rama“ izabrano na kapiji sa ramom: model se vraća na osnovni i tako ostaje
+      if (was && was.kind === 'gate' && gf === null && was.params.gateFrame?.baseId === it.infillModelId) return it;
+      if (!was && gf !== undefined && ours) return it;
+      const base = (ours ? gf!.baseId : it.infillModelId) as string;
+      const decide = (patch: Partial<Gate['params']>, infill?: string): LayoutItem => { changed = true; return { ...it, ...(infill ? { infillModelId: infill as FenceModelId } : {}), params: { ...it.params, ...patch } } as LayoutItem; };
+      if (isTubesModel(base as FenceModelId)) {
+        const ram = it.params.ram ?? 'tube';
+        return decide({ gateFrame: null, ram, ...(ram === 'tube' && it.params.ramMm === undefined ? { ramMm: Math.max(RAM_TUBE_DEFAULT_MM, Math.round(tubesDims(it.params).uDepthMm)) } : {}) }, base);
+      }
+      const m = customModelOf(base);
+      if (m && m.kind === 'fence' && !m.derivedFrom && wantsGateFrame(m) && !hasRealFrame(m, get().materials)) {
+        const mat = suggestFrameMaterial(m, get().materials);
+        const id = mat ? ensureFramedModel(base, mat.id) : null;
+        if (mat && id) return decide({ gateFrame: { baseId: base, materialId: mat.id } }, id);
+      }
+      return decide({ gateFrame: null }, base);
+    });
+    return changed ? { ...p, items } : p;
+  };
+
   return {
     ready: false,
     loadError: null,
@@ -367,6 +420,9 @@ export const useAppStore = create<AppState>((set, get) => {
           // delovi nacrtanih modela sa obrisanim materijalom prelaze na isti materijal (ista šifra) iz cenovnika, npr. čep tarabice K100018
           const remapped = remapMissingMaterials(settings.customModels, materials);
           if (remapped) settings = { ...settings, customModels: remapped };
+          // prečke vezane za U vođice kojih nema u crtežu (crtež kapije od ograde): ponovo se vezuju za svoje U profile
+          const reguided = repairBrokenGuides(settings.customModels, materials);
+          if (reguided) settings = { ...settings, customModels: reguided };
           // kapije koje nikad nisu sačuvane (zatvoreno crtanje, osvežena stranica) se ne zadržavaju
           if (settings.customModels?.some((m) => m.draft)) settings = { ...settings, customModels: settings.customModels.filter((m) => !m.draft) };
           // nacrtani modeli moraju biti u katalogu pre nego što se projekti učitaju
@@ -427,7 +483,12 @@ export const useAppStore = create<AppState>((set, get) => {
           if (materials !== s.materials) out.materials = materials;
         }
         // i modeli iz baze: deo sa obrisanim materijalom prelazi na isti materijal iz cenovnika (izmena se zatim šalje u bazu)
-        if (patch.settings) { const fixedModels = remapMissingMaterials(patch.settings.customModels, out.materials ?? s.materials); out.settings = fixedModels ? { ...patch.settings, customModels: fixedModels } : patch.settings; }
+        if (patch.settings) {
+          const mats = out.materials ?? s.materials;
+          const fixedModels = remapMissingMaterials(patch.settings.customModels, mats) ?? patch.settings.customModels;
+          const reguided = repairBrokenGuides(fixedModels, mats) ?? fixedModels;
+          out.settings = reguided !== patch.settings.customModels ? { ...patch.settings, customModels: reguided } : patch.settings;
+        }
         // modeli iz baze se registruju PRE provere projekata: inače bi projekat koji koristi nacrtani model (koji ovaj uređaj još nema) bio
         // vraćen na podrazumevani model, a prikaz bi pao na nepoznatom modelu i sinhronizacija bi stala sa greškom
         if (patch.settings || out.materials) registerCustomModels((out.settings ?? s.settings).customModels, out.materials ?? s.materials);
@@ -454,7 +515,7 @@ export const useAppStore = create<AppState>((set, get) => {
       const items: LayoutItem[] = [];
       if (opts.modelId) items.push(createFence({ modelId: opts.modelId }));
       if (opts.startGate && !isTerraceModel(opts.modelId ?? defaultModelId())) items.push(createGate(opts.startGate, { infillModelId: opts.modelId ?? defaultModelId() }));
-      let p = createProject(opts.name ?? 'Novi projekat', items, opts.customerId ?? null);
+      let p = withGateFrames(createProject(opts.name ?? 'Novi projekat', items, opts.customerId ?? null));
       // univerzalna početna mera platna: svetla širina 1500 mm (ograde za terase zadržavaju svoje mere)
       if (opts.modelId && !isTerraceModel(opts.modelId)) p = setOuterWidth(p, items[0].id, DEFAULT_FENCE_WIDTH_MM + 2 * postHalfSum(p, 0));
       p.quoteNo = nextQuoteNo(get().projects);
@@ -532,8 +593,9 @@ export const useAppStore = create<AppState>((set, get) => {
     mutate(fn, key = null) {
       const cur = currentProject();
       if (!cur) return;
-      const next = fn(cur);
+      let next = fn(cur);
       if (next === cur) return;
+      next = withGateFrames(next, cur);
       set((s) => {
         const selection = s.editor.selection;
         const stillThere =
@@ -656,6 +718,24 @@ export const useAppStore = create<AppState>((set, get) => {
         const type = g.kind === 'gate' ? list.find((x) => x.id === g.design?.template?.id && x.kind === 'gate') : undefined;
         if (type && type.leafModelId !== key) get().applyBasicGate(g.id, modelId);
       }
+    },
+    gateInfillWithFrame(modelId) {
+      const m = customModelOf(modelId);
+      if (!m || m.kind !== 'fence' || m.derivedFrom || !wantsGateFrame(m) || hasRealFrame(m, get().materials)) return modelId;
+      const mat = suggestFrameMaterial(m, get().materials);
+      return (mat && ensureFramedModel(modelId, mat.id)) || modelId;
+    },
+    setGateFrame(itemId, materialId) {
+      get().mutate((p) => ({
+        ...p,
+        items: p.items.map((it) => {
+          if (it.id !== itemId || it.kind !== 'gate') return it;
+          const baseId = it.params.gateFrame?.baseId ?? it.infillModelId;
+          if (!materialId) return { ...it, infillModelId: baseId, params: { ...it.params, gateFrame: null } } as LayoutItem;
+          const id = ensureFramedModel(baseId, materialId);
+          return id ? ({ ...it, infillModelId: id as FenceModelId, params: { ...it.params, gateFrame: { baseId, materialId } } } as LayoutItem) : it;
+        }),
+      }), `gframe:${itemId}`);
     },
     setItemColor(id, color) { get().mutate((p) => changeColor(p, id, color)); },
     setItemFinish(id, finish) { get().mutate((p) => changeFinish(p, id, finish)); },
@@ -858,7 +938,7 @@ export const useAppStore = create<AppState>((set, get) => {
       const gate = p.items[0] as Gate;
       p = updateItem(p, gate.id, gateFieldsFromModel(m) as Partial<Gate>);
       p = setOuterWidth(p, gate.id, gateClearWidth(m) + 2 * postHalfSum(p, 0));
-      p = withModelPosts(p, gate.id, m.gate);
+      p = withGateFrames(withModelPosts(p, gate.id, m.gate));
       set((s) => ({ projects: [p, ...s.projects], editor: { ...emptyEditor(), projectId: p.id, activeModelId: s.editor.activeModelId } }));
       rememberProject(p.id);
       return p.id;

@@ -50,6 +50,10 @@ export interface SlatOverride {
   leftMm?: number; rightMm?: number; gapMm?: number;
   /** vodoravne prečke koje se ponavljaju: odstojanje donje od dna, gornje od vrha ispune i željeni razmak */
   bottomMm?: number; topMm?: number; hGapMm?: number;
+  /** vodoravne prečke: sa luftom (razmak 0 i više) ili bez lufta (razmak 0 i manje, prečke se uvlače); bez vrednosti važi tip iz crteža modela */
+  lufta?: import('./custom').Lufta;
+  /** ojačanje platna kvadratnim cevima (uspravne i vodoravne) */
+  reinforce?: import('./reinforce').Reinforce;
   /** nosači (vodoravni delovi koji se ne ponavljaju): odstojanje od bliže ivice ispune (dno ili vrh), po ID prvog dela nosača */
   rails?: Record<string, number>;
 }

@@ -15,7 +15,7 @@ import { uid } from '../../utils/id';
  */
 export function SaveGateModelDialog({ gate, clearWidthMm, defaultName, posts, onSaved, onClose }: { gate: Gate; clearWidthMm: number; defaultName: string; /** ručno zadate mere stubova uz kapiju */ posts?: GateConfig['posts']; onSaved: (modelId: string, name: string, version: number) => void; onClose: () => void }) {
   const all = useAppStore((s) => s.settings.customModels);
-  const models = (all ?? []).filter((m) => m.kind === 'gate' && !m.replaces && !m.draft);
+  const models = (all ?? []).filter((m) => m.kind === 'gate' && !m.replaces && !m.draft && !m.derivedFrom);
   const sourceId = gate.design?.template?.id;
   const source = models.find((m) => m.id === sourceId);
   const [mode, setMode] = useState<'new' | 'overwrite'>(source ? 'overwrite' : 'new');

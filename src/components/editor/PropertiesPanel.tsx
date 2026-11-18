@@ -1,5 +1,6 @@
 import { GateModelPicker } from '../gates/GateModelPicker';
-import { PartsPanel } from './PartsPanel';
+import { GateFrameBox } from './GateFrameBox';
+import { ReinforceSettings } from './ReinforceSettings';
 import { allFenceModels, customHBarLayout, customLiftOf, customRails, customSlatLayout, isCustomModel } from '../../domain/models/customRegistry';
 import { gateLeafPoses } from '../../domain/geometry/gates';
 import { leafHeightOf } from '../../domain/gates/slidingLayout';
@@ -97,7 +98,18 @@ function SlatSettings({ id, modelId, widthMm, heightMm, params, gate, clearWidth
               {sub('Vodoravne prečke')}
               <NumberField label="Od dna ispune do donje prečke" testId="hbar-bottom" value={r1(hb.bottom)} range={{ min: 0, max: halfH }} onCommit={(v) => setSlat({ bottomMm: v })} />
               <NumberField label="Od gornje prečke do vrha ispune" testId="hbar-top" value={r1(hb.top)} range={{ min: 0, max: halfH }} onCommit={(v) => setSlat({ topMm: v })} />
-              <NumberField label="Razmak između prečki" testId="hbar-gap" value={r1(hb.gap)} range={{ min: hb.gap < 0 ? -100 : 0, max: 400 }} onCommit={(v) => setSlat({ hGapMm: v })}
+              {(hb.gapMin < 0 || hb.lufta === 'bez') && (
+                <div className="flex items-center justify-between gap-2 py-1" data-testid="hbar-lufta">
+                  <span className="text-[13px]">Tip prečki</span>
+                  <div className="inline-flex rounded-lg border border-line overflow-hidden">
+                    {([['sa', 'Sa luftom'], ['bez', 'Bez lufta']] as const).map(([v, l]) => (
+                      <button key={v} data-testid={`hbar-lufta-${v}`} aria-pressed={hb.lufta === v} className={`px-2.5 py-1 text-[12px] font-semibold ${hb.lufta === v ? 'bg-brand-black text-white' : 'hover:bg-slate-50'}`}
+                        onClick={() => v !== hb.lufta && setSlat({ lufta: v, hGapMm: v === 'bez' ? Math.min(0, r1(hb.gap)) : Math.max(0, r1(hb.gap)) })}>{l}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <NumberField label="Razmak između prečki" testId="hbar-gap" value={r1(hb.gap)} range={hb.lufta === 'bez' ? { min: Math.min(0, hb.gapMin), max: 0 } : { min: 0, max: 400 }} onCommit={(v) => setSlat({ hGapMm: v })}
                 hint={`Prečki: ${hb.count}. Staje najviše prečki sa zadatim razmakom, a višak se ravnomerno deli na sve razmake.`} />
             </>
           )}
@@ -369,7 +381,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
         {isRl10Model(it.modelId) && <Rl10Parts params={it.params} />}
         {isTubesModel(it.modelId) && <TubesParts params={it.params} />}
         <SlatSettings id={id} modelId={it.modelId} widthMm={li.clearWidth} heightMm={it.heightMm} params={it.params} clearWidth={li.clearWidth} />
-        <PartsPanel project={project} params={it.params} />
+        <ReinforceSettings id={id} modelId={it.modelId} widthMm={li.clearWidth} heightMm={it.heightMm} params={it.params} />
         {isTerraceModel(it.modelId) && (() => {
           // stepenište: niz polja između stubova; prvi i poslednji stub su na krajevima, stubovi između se dodaju (preporuka: na svaki metar)
           const grp = stairGroupAt(project.items, index);
@@ -436,6 +448,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
         {/* krilo klizne kapije: model ograde ili nacrtan model kapije, kao kod ostalih kapija */}
         {g.sliding.drawnLeaf && <ModelSelect value={fenceModelOfGate(g)} onChange={(m) => st.setItemModel(id, m)} />}
         <SlidingPanel project={project} gate={g} />
+        {g.sliding.drawnLeaf && <ReinforceSettings id={id} modelId={g.infillModelId} widthMm={li.clearWidth} heightMm={leafHeightOf(g)} params={g.params} />}
         <ColorField stacked value={g.color} testId="field-color" onChange={(c) => st.setItemColor(id, c)} finish={g.finish} onFinishChange={(f) => st.setItemFinish(id, f)} />
         <GateOwnPosts project={project} id={id} g={g} />
       </>
@@ -444,6 +457,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
       <>
         <GateDesignEntry project={project} gate={g} />
         {common}
+        <GateFrameBox gate={g} />
         <GateModelPicker gate={g} />
         <ModelSelect value={fenceModelOfGate(g)} onChange={(m) => st.setItemModel(id, m)} />
         <ColorField stacked value={g.color} testId="field-color" onChange={(c) => st.setItemColor(id, c)} finish={g.finish} onFinishChange={(f) => st.setItemFinish(id, f)} />
@@ -480,7 +494,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
         )}
         <NumberField label="Debljina rama" value={g.params.frameMm} range={LIMITS.frame} onCommit={(v) => st.patchItemParams(id, { frameMm: v }, 'frame')} />
         {g.gateType !== 'sliding' && <SlatSettings id={id} modelId={g.infillModelId} widthMm={gateLeafPoses(g, li.clearStart, li.clearEnd, 0)[0]?.widthMm ?? li.clearWidth} heightMm={leafHeightOf(g)} params={g.params} gate={g} clearWidth={li.clearWidth} />}
-        <PartsPanel project={project} params={g.params} />
+        {g.gateType !== 'sliding' && <ReinforceSettings id={id} modelId={g.infillModelId} widthMm={gateLeafPoses(g, li.clearStart, li.clearEnd, 0)[0]?.widthMm ?? li.clearWidth} heightMm={leafHeightOf(g)} params={g.params} />}
       </>
     );
   }

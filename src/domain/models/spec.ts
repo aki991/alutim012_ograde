@@ -1,5 +1,5 @@
 import { hingeCountFor } from '../gates/hingeRule';
-import { customLiftOf, customModelOf, customPatternCounts, customSlatCount, customSpec } from './customRegistry';
+import { customLiftOf, customModelOf, customPatternCounts, customReinforceRows, customReinforceSplit, customSlatCount, customSpec } from './customRegistry';
 import { tubeLengthMm, ramInsets } from './tubes';
 import { computeInfill, summarizeInfill } from '../geometry/infill';
 import { CALC_RULES } from '../pricing/rules';
@@ -217,10 +217,28 @@ export interface EvaluatedPart {
  * Neispravna formula daje grešku i količinu 0.
  */
 export function evaluateItemSpec(parts: SpecPart[], c: SpecContext): EvaluatedPart[] {
+  // ojačanje platna cevima (uspravne i vodoravne): redovi se računaju iz crteža za stvarnu širinu i visinu
+  const withReinforce = (width: number): SpecPart[] => {
+    const rows = customReinforceRows(c.modelId, width, c.heightMm - (c.params.liftMm ?? customLiftOf(c.modelId)), c.params.slats);
+    return rows.length ? [...parts, ...rows.map((r, i): SpecPart => ({ id: `rf_${r.key}_${i}`, name: r.name, materialId: r.materialId, group: 'Profili ispune', qty: String(r.qty), lengthMm: String(r.lengthMm), enabled: true, role: r.role, note: 'ojačanje platna: dužina sa crteža' }))] : parts;
+  };
+  // prečke koje uspravne cevi seku: svaka prečka postaje n + 1 komada dužine (L − n·širina cevi) / (n + 1)
+  const split = (evs: EvaluatedPart[], width: number): EvaluatedPart[] => {
+    const s = customReinforceSplit(c.modelId, width, c.heightMm - (c.params.liftMm ?? customLiftOf(c.modelId)), c.params.slats);
+    if (!s) return evs;
+    return evs.map((ev) => {
+      const p = ev.part;
+      const horizontal = !!p.lengthMm && /\bW\b/.test(p.lengthMm) && !/\bH\b/.test(p.lengthMm) && !p.miterMm && p.group === 'Profili ispune' && !p.id.startsWith('rf_');
+      if (!horizontal || ev.lengthMm === null || ev.lengthMm <= width * 0.5 || ev.error) return ev;
+      const len = Math.max(0, (ev.lengthMm - s.n * s.tubeW) / (s.n + 1));
+      const qty = ev.qty * (s.n + 1);
+      return { ...ev, qty, lengthMm: len, materialQty: (qty * len) / 1000, part: { ...p, note: `${p.note ? `${p.note}; ` : ''}seče se na ${s.n + 1} komada (uspravne cevi ojačanja)` } };
+    });
+  };
   if (c.leafWidthsMm && c.leafWidthsMm.length > 1) {
-    return c.leafWidthsMm.flatMap((w, i) => evaluateSpec(parts, specVars({ ...c, widthMm: w, axisMm: w, leafWidthsMm: undefined, doubleGate: false, leafIndex: i })));
+    return c.leafWidthsMm.flatMap((w, i) => split(evaluateSpec(withReinforce(w), specVars({ ...c, widthMm: w, axisMm: w, leafWidthsMm: undefined, doubleGate: false, leafIndex: i })), w));
   }
-  return evaluateSpec(parts, specVars(c));
+  return split(evaluateSpec(withReinforce(c.widthMm), specVars(c)), c.widthMm);
 }
 
 export function evaluateSpec(parts: SpecPart[], vars: Record<string, number>): EvaluatedPart[] {
