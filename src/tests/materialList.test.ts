@@ -57,7 +57,8 @@ describe('sastavnica nacrtanog modela: dodat materijal', () => {
     const rows = materialListRows(project(), 'Petrović', groups);
     expect(rows[1]).toEqual(['Projekat', 'Probni']);
     expect(rows[2]).toEqual(['Kupac', 'Petrović']);
-    expect(rows.find((r) => r[1] === 'V-001')).toEqual(['Vijci', 'V-001', 'Vijak 4,8×19 inox', 'kom', '16', '16']);
+    // materijal se razlikuje po nazivu: tabela nema kolonu šifre
+    expect(rows.find((r) => r[1] === 'Vijak 4,8×19 inox')).toEqual(['Vijci', 'Vijak 4,8×19 inox', 'kom', '16', '16']);
   });
 
   it('količina za prikaz: komadi celi, ostalo na dve decimale sa zarezom', () => {

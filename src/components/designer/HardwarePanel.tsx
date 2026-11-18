@@ -63,7 +63,7 @@ export function HardwarePanel({ model, part, materials, onChange }: {
         {picked && (
           <select className="input !py-1 !text-[12px] mt-1 ml-6 !w-[calc(100%-1.5rem)]" aria-label={HW_LABELS[kind]} data-testid={`hw-${kind}-material`} value={picked}
             onChange={(e) => onChange((m) => setHwPick(m, part.id, kind, e.target.value))}>
-            {[...(options.some((o) => o.id === picked) || !byId.get(picked) ? [] : [byId.get(picked)!]), ...options].map((o) => <option key={o.id} value={o.id}>{o.sku} — {o.name}</option>)}
+            {[...(options.some((o) => o.id === picked) || !byId.get(picked) ? [] : [byId.get(picked)!]), ...options].map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
           </select>
         )}
       </div>

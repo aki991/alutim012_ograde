@@ -214,17 +214,18 @@ export function TextField({ label, value, onChange, placeholder, testId, multili
  * Polje za cenu u izabranoj valuti: cena se čuva u dinarima, a prikazuje i unosi u valuti iz podešavanja (evri preračunati po
  * kursu). Dok se kuca, tekst se ne prepisuje (decimale ostaju), a izmena se upisuje čim je broj ispravan.
  */
-export function PriceInput({ rsd, onChange, label, testId, className = '' }: { rsd: number; onChange: (rsd: number) => void; label: string; testId?: string; className?: string }) {
+export function PriceInput({ rsd, onChange, label, testId, className = '', precision }: { rsd: number; onChange: (rsd: number) => void; label: string; testId?: string; className?: string; precision?: number }) {
   const currency = useAppStore((s) => s.settings.currency);
   const rate = useAppStore((s) => s.settings.currencyRateToEur);
-  const shown = toCurrency(rsd, currency, rate);
+  const raw = toCurrency(rsd, currency, rate);
+  const shown = precision === undefined ? raw : Math.round(raw * 10 ** precision) / 10 ** precision;
   const [text, setText] = useState(String(shown));
   const focused = useRef(false);
   useEffect(() => { if (!focused.current) setText(String(shown)); }, [shown]);
   return (
     <input aria-label={label} data-testid={testId} type="number" min={0} step={currency === 'EUR' ? 0.01 : 1} className={`input text-right tabular-nums ${className}`} value={text}
       onFocus={() => { focused.current = true; }}
-      onBlur={() => { focused.current = false; setText(String(toCurrency(rsd, currency, rate))); }}
+      onBlur={() => { focused.current = false; setText(String(shown)); }}
       onChange={(e) => { setText(e.target.value); const v = Number(e.target.value); if (e.target.value.trim() !== '' && Number.isFinite(v) && v >= 0) onChange(fromCurrency(v, currency, rate)); }} />
   );
 }

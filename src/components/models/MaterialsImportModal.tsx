@@ -39,7 +39,7 @@ export function MaterialsImportModal({ fileName, table, onClose }: { fileName: s
       }
     >
       <div data-testid="import-preview">
-        <p className="text-sm text-muted mb-2">Dokument: <b className="text-ink">{fileName}</b>. Redovi se uparuju po ID-u, ili po šifri. Menjaju se samo cena i otpad; ostalo ostaje isto. Izmene cenovnika važe za sve projekte i ne mogu se poništiti, pa pre toga izvezite trenutni cenovnik kao rezervnu kopiju.</p>
+        <p className="text-sm text-muted mb-2">Dokument: <b className="text-ink">{fileName}</b>. Redovi se uparuju po ID-u, ili po nazivu materijala. Menjaju se samo cena i otpad; ostalo ostaje isto. Izmene cenovnika važe za sve projekte i ne mogu se poništiti, pa pre toga izvezite trenutni cenovnik kao rezervnu kopiju.</p>
         {plan.fatal ? (
           <p className="text-sm text-[#b42318] rounded-md bg-[#fef3f2] border border-[#fecdca] px-3 py-2" role="alert" data-testid="import-fatal">{plan.fatal}</p>
         ) : (
@@ -60,19 +60,18 @@ export function MaterialsImportModal({ fileName, table, onClose }: { fileName: s
               ))}
             </div>
             <div className="flex flex-wrap gap-4 mb-2 text-sm">
-              <label className="inline-flex items-center gap-2"><input type="checkbox" checked={addNew} onChange={(e) => setAddNew(e.target.checked)} data-testid="import-add-new" />Dodaj i materijale kojih nema u cenovniku (traži šifru, naziv i jedinicu)</label>
+              <label className="inline-flex items-center gap-2"><input type="checkbox" checked={addNew} onChange={(e) => setAddNew(e.target.checked)} data-testid="import-add-new" />Dodaj i materijale kojih nema u cenovniku (traži naziv i jedinicu)</label>
               <label className="inline-flex items-center gap-2"><input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} />Prikaži i nepromenjene</label>
             </div>
             <div className="overflow-auto max-h-[46vh] border border-line rounded-lg">
               <table className="w-full min-w-[720px]" data-testid="import-table">
-                <thead><tr><th className="th">Red</th><th className="th">Šifra</th><th className="th">Naziv</th><th className="th text-right">Stara cena</th><th className="th text-right">Nova cena</th><th className="th text-right">Promena</th><th className="th">Status</th></tr></thead>
+                <thead><tr><th className="th">Red</th><th className="th">Naziv</th><th className="th text-right">Stara cena</th><th className="th text-right">Nova cena</th><th className="th text-right">Promena</th><th className="th">Status</th></tr></thead>
                 <tbody>
                   {visible.map((r) => {
                     const diff = r.oldPrice !== undefined && r.newPrice !== undefined && r.oldPrice > 0 ? ((r.newPrice - r.oldPrice) / r.oldPrice) * 100 : null;
                     return (
                       <tr key={r.line} data-testid={`import-row-${r.status}`} className={diff !== null && r.status === 'changed' && Math.abs(diff) >= BIG_CHANGE_PERCENT ? 'bg-[#fef3f2]' : ''}>
                         <td className="td text-muted tabular-nums">{r.line}</td>
-                        <td className="td text-xs">{r.sku}</td>
                         <td className="td">{r.name}{r.message && <div className="text-[12px] text-muted">{r.message}</div>}</td>
                         <td className="td text-right tabular-nums">{r.oldPrice !== undefined ? `${fmtNum(r.oldPrice, 2)} RSD` : '—'}</td>
                         <td className="td text-right tabular-nums font-medium">{r.newPrice !== undefined && r.status !== 'error' ? `${fmtNum(r.newPrice, 2)} RSD` : '—'}</td>

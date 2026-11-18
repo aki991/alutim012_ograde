@@ -9,6 +9,7 @@ import { leafHeightOf } from '../domain/gates/slidingLayout';
 import { linearLocalPoly, partAngle, sheetPoly } from '../domain/models/custom';
 import { customLiftOf, customPartsFor, isCustomModel } from '../domain/models/customRegistry';
 import { sectionFace } from '../domain/models/materialShape';
+import { isProductionPost } from '../domain/models/productionPosts';
 
 /**
  * Shema ograde za radni nalog: svaki element u boji svoje pozicije (kao na krojnoj listi), sa oznakom, nazivom i merom.
@@ -45,7 +46,7 @@ export function schemaSvg(project: Project, keyOfItem: (index: number) => string
   const padX = 14;
   const real = layout.items.filter((li) => !isSpacer(li.item));
   const solid = real.filter((li) => li.item.kind !== 'opening');
-  const visiblePosts = layout.posts.filter((lp) => !lp.hidden);
+  const visiblePosts = layout.posts.filter((lp) => !lp.hidden && isProductionPost(lp.post));
   const maxPost = Math.max(0, ...project.posts.map((p) => p.widthMm));
   // klizne kapije se crtaju kako stvarno izgledaju (krilo iz crteža, rep, C-profil, kolica); rep može da izađe van ograde
   const slidingArt = new Map<number, Drawn[]>();

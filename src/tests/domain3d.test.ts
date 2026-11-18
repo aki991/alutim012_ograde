@@ -209,10 +209,10 @@ describe('kapije: pivot i krajnji položaji', () => {
     const [a, b] = gateLeafPoses(g, 0, 3400, 1);
     expect(a.pivotX).toBe(0);
     expect(b.pivotX).toBe(3400);
-    expect(a.widthMm + b.widthMm).toBeCloseTo(3400 - 20);
+    expect(a.widthMm + b.widthMm).toBeCloseTo(3400);
     const [l, r] = doubleLeafWidths({ unequalLeaves: true, leftLeafMm: 2000 }, 3400);
     expect(l).toBe(2000);
-    expect(r).toBeCloseTo(3380 - 2000);
+    expect(r).toBeCloseTo(3400 - 2000);
     const [l2, r2] = doubleLeafWidths({ unequalLeaves: true, leftLeafMm: 99999 }, 3400);
     expect(l2).toBeGreaterThan(0);
     expect(r2).toBeGreaterThanOrEqual(300);

@@ -82,6 +82,11 @@ export default function SettingsPage() {
           <NumberField label="Rad po m²" unit="RSD/m²" value={pr.laborPerM2Rsd} range={{ min: 0, max: 100000 }} allowZero onCommit={(v) => setPr({ laborPerM2Rsd: v })} />
           <NumberField label="Montaža po m" unit="RSD/m" value={pr.installPerMeterRsd} range={{ min: 0, max: 100000 }} allowZero onCommit={(v) => setPr({ installPerMeterRsd: v })} />
         </section>
+        <section className="card p-5" data-testid="set-coating">
+          <h2 className="font-bold mb-1">Plastificiranje</h2>
+          <NumberField label="Cena plastificiranja po m²" testId="set-coating-rate" unit="RSD/m²" value={pr.coatingPerM2Rsd ?? 0} range={{ min: 0, max: 100000 }} allowZero integer={false} step={10} onCommit={(v) => setPr({ coatingPerM2Rsd: v })} />
+          <p className="text-sm text-muted">Neto cena po razvijenoj površini materijala, sa stubovima. Promena važi za postojeće i nove projekte; za pojedinačan projekat može se promeniti u Kalkulaciji. Uključuje se u trošak pre zarade, popusta i PDV-a. Vrednost 0 isključuje trošak plastificiranja.</p>
+        </section>
         <section className="card p-5" data-testid="set-cutting">
           <h2 className="font-bold mb-1">Sečenje materijala (krojna lista)</h2>
           <p className="text-sm text-muted mb-2">Širina testere se dodaje na svaki rez, pa utiče na to koliko komada staje u jednu šipku i koliki je ostatak.</p>

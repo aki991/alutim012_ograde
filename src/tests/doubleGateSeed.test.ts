@@ -44,9 +44,9 @@ describe('dvokrilna kapija iz Doradi: dva krila sa svim okovom', () => {
   });
 
   it('nejednaka krila: širine se menjaju posebno i okov ide uz nove ivice', () => {
-    const res = resizePair(model, layout, { leftMm: 900, rightMm: 2080 }, 'left', MATS);
+    const res = resizePair(model, layout, { leftMm: 900, rightMm: 2100 }, 'left', MATS);
     if ('error' in res) throw new Error(res.error);
-    expect(res.layout).toEqual({ leftMm: 900, rightMm: 2080, gapMm: layout.gapMm });
+    expect(res.layout).toEqual({ leftMm: 900, rightMm: 2100, gapMm: layout.gapMm });
     expect(res.model.widthMm).toBe(3000);
     const lock = res.model.parts.find((p) => pairRoleOf(MATS.find((q) => q.id === p.materialId)) === 'lock')!;
     expect(lock.x).toBeLessThan(900);

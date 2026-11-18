@@ -6,6 +6,7 @@ import { fmtMoney, fmtNum, fromCurrency, toCurrency } from '../../utils/units';
 import { NumberField, PriceInput, SegmentedField, ToggleField } from '../forms/Fields';
 import { Modal } from '../ui/Modal';
 import { LIMITS } from '../../domain/validation/limits';
+import { FinishingSummary } from '../production/FinishingSummary';
 
 export function CalcModal({ project, onClose }: { project: Project; onClose: () => void }) {
   const materials = useAppStore((s) => s.materials);
@@ -48,7 +49,7 @@ export function CalcModal({ project, onClose }: { project: Project; onClose: () 
                 const mat = materials.find((m) => m.id === l.materialId);
                 return (
                   <tr key={l.key}>
-                    <td className="td !px-2"><div className="font-medium text-[13px] leading-snug break-words">{l.name}</div><div className="text-[11px] text-muted">{l.group} · {l.sku}</div></td>
+                    <td className="td !px-2"><div className="font-medium text-[13px] leading-snug break-words">{l.name}</div><div className="text-[11px] text-muted">{l.group}</div></td>
                     <td className="td !px-2 text-right tabular-nums text-[13px]" title={`Geometrijski: ${fmtNum(l.geometricQty, 2)} ${l.unit}`}>{fmtNum(l.purchaseQty, l.unit === 'kom' ? 0 : 2)}<span className="text-muted"> {l.unit}</span></td>
                     <td className="td !px-2 text-right">
                       {mat ? (
@@ -62,6 +63,7 @@ export function CalcModal({ project, onClose }: { project: Project; onClose: () 
               <tr className="bg-slate-50 font-semibold"><td className="td !px-2" colSpan={3}>Materijal ukupno (neto, {settings.currency})</td><td className="td !px-2 text-right tabular-nums">{fmtNum(cur(price.materialTotal), settings.currency === 'EUR' ? 2 : 0)}</td></tr>
             </tbody>
           </table>
+          <FinishingSummary value={price.finishing} />
         </div>
 
         <div className="min-w-0">
@@ -79,6 +81,7 @@ export function CalcModal({ project, onClose }: { project: Project; onClose: () 
           <div className="rounded-lg bg-primary-50 px-3 py-3 flex justify-between items-baseline mb-4"><b>Ukupno sa PDV-om</b><b className="text-xl tabular-nums" data-testid="calc-total">{money(price.grossTotal)}</b></div>
 
           <h3 className="font-semibold mb-1">Parametri cene</h3>
+          <NumberField label="Plastificiranje po m² (neto)" testId="calc-coating-rate" unit={`${settings.currency}/m²`} value={cur(pr.coatingPerM2Rsd ?? 0)} range={{ min: 0, max: 100000 }} allowZero integer={false} step={curStep} onCommit={(v) => setPricing({ coatingPerM2Rsd: fromCur(v) }, 'coating')} />
           <SegmentedField label="Zarada" value={pr.profitMode} options={[{ value: 'margin', label: 'Marža' }, { value: 'markup', label: 'Uvećanje' }]} onChange={(v) => setPricing({ profitMode: v })} testId="profit-mode" />
           <NumberField label={pr.profitMode === 'margin' ? 'Marža' : 'Uvećanje'} unit="%" value={pr.profitPercent} range={{ min: 0, max: 99 }} allowZero integer={false} step={1} onCommit={(v) => setPricing({ profitPercent: v }, 'pp')} />
           <NumberField label="Popust" unit="%" value={pr.discountPercent} range={LIMITS.percent} allowZero integer={false} step={1} onCommit={(v) => setPricing({ discountPercent: v }, 'dp')} />

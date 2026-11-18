@@ -65,7 +65,9 @@ describe('uvoz i izvoz cenovnika', () => {
     const p = planImport(SEED_MATERIALS, `Šifra;Cena\n${sku};abc\n${sku};\n`);
     expect(p.counts.error).toBe(2);
     expect(planImport(SEED_MATERIALS, 'Naziv;Opis\nx;y').fatal).toBeDefined();
-    expect(planImport(SEED_MATERIALS, 'Naziv;Cena\nx;5').fatal).toBeDefined();
+    // materijal se razlikuje po nazivu: kolona „Naziv“ je dovoljna za uparivanje (nepoznat naziv nije greška dokumenta)
+    expect(planImport(SEED_MATERIALS, 'Naziv;Cena\nx;5').fatal).toBeUndefined();
+    expect(planImport(SEED_MATERIALS, 'Kategorija;Cena\nx;5').fatal).toBeDefined();
     expect(planImport(SEED_MATERIALS, '').fatal).toBeDefined();
   });
 

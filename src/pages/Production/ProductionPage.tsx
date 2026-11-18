@@ -9,7 +9,9 @@ import { EmptyState, Page, PageHeader } from '../../components/ui/Common';
 import { STATUS_LABELS } from '../../domain/models/catalog';
 import { computeLayout, isSpacer } from '../../domain/geometry/layout';
 import type { ProjectStatus } from '../../domain/models/types';
-import { buildBom } from '../../domain/pricing/calc';
+import { buildBom, buildElementFinishing } from '../../domain/pricing/calc';
+import { finishingMass } from '../../domain/pricing/finishing';
+import { productionPostCount } from '../../domain/models/productionPosts';
 import { buildCutList, buildHardwareList, describeItem } from '../../domain/pricing/production';
 import { buildLouver08Sheet, FILL_PROFILES, GUIDE_PROFILES } from '../../domain/pricing/louverSpec';
 import { buildRail04Sheet } from '../../domain/pricing/railSpec';
@@ -34,6 +36,7 @@ export default function ProductionPage() {
   const rail = useMemo(() => (project ? buildRail04Sheet(project, specs) : null), [project, specs]);
   const rl10 = useMemo(() => (project ? buildRl10Sheet(project, specs) : null), [project, specs]);
   const louver = useMemo(() => (project ? buildLouver08Sheet(project, specs) : null), [project, specs]);
+  const elementMasses = useMemo(() => project ? project.items.map((it, i) => it.kind === 'opening' ? '—' : finishingMass(buildElementFinishing(project, [i], materials, specs))) : [], [project, materials, specs]);
   const [busy, setBusy] = useState(false);
   const [orderOpen, setOrderOpen] = useState(false);
   const [sketchOpen, setSketchOpen] = useState(false);
@@ -44,8 +47,8 @@ export default function ProductionPage() {
   const csv = () => {
     const bom = buildBom(project, materials, specs);
     downloadCsv([
-      ['Grupa', 'Šifra', 'Naziv', 'Jedinica', 'Geometrijska količina', 'Nabavna količina', 'Cena/JM (neto, RSD)', 'Ukupno (RSD)'],
-      ...bom.map((l) => [l.group, l.sku, l.name, l.unit, l.geometricQty.toFixed(3), l.purchaseQty.toFixed(3), l.unitPriceNet.toFixed(2), l.total.toFixed(2)]),
+      ['Grupa', 'Naziv', 'Jedinica', 'Geometrijska količina', 'Nabavna količina', 'Cena/JM (neto, RSD)', 'Ukupno (RSD)'],
+      ...bom.map((l) => [l.group, l.name, l.unit, l.geometricQty.toFixed(3), l.purchaseQty.toFixed(3), l.unitPriceNet.toFixed(2), l.total.toFixed(2)]),
     ], `materijal_${safeFilename(project.name)}.csv`);
   };
 
@@ -104,13 +107,13 @@ export default function ProductionPage() {
         <SelectField label="Status" testId="prod-status" value={project.status} options={(Object.keys(STATUS_LABELS) as ProjectStatus[]).map((s) => ({ value: s, label: STATUS_LABELS[s] }))} onChange={(v) => patchProject(project.id, { status: v })} />
         <div className="py-1.5 text-sm"><span className="label">Kupac:</span> {customer?.name ?? '—'}</div>
       </div>
-      <div className="card p-4 mb-5"><FrontView project={project} scale={0.07} className="block w-full h-auto max-h-[360px]" /></div>
+      <div className="card p-4 mb-5"><FrontView project={project} scale={0.07} options={{ production: true }} className="block w-full h-auto max-h-[360px]" /></div>
       <div className="grid gap-5 xl:grid-cols-2">
         <section className="card p-4 overflow-x-auto">
           <h2 className="font-bold mb-2">Redosled elemenata</h2>
-          <table className="w-full min-w-[480px]"><thead><tr><th className="th">#</th><th className="th">Element</th><th className="th">Model</th><th className="th text-right">Modul</th><th className="th text-right">Svetli otvor</th><th className="th text-right">Visina</th></tr></thead>
-            <tbody>{project.items.map((it, i) => isSpacer(it) ? null : <tr key={it.id}><td className="td">{itemNumber(project.items, i)}</td><td className="td">{itemLabel(project.items, i)}</td><td className="td text-slate-600">{describeItem(project, i)}</td><td className="td text-right tabular-nums">{fmtNum(it.widthMm, 0)}</td><td className="td text-right tabular-nums">{fmtNum(layout.items[i].clearWidth, 0)}</td><td className="td text-right tabular-nums">{fmtNum(it.heightMm, 0)}</td></tr>)}</tbody></table>
-          <p className="text-xs text-muted mt-2">Dimenzije u mm. Stubova: {layout.postCount} kom.</p>
+          <table className="w-full min-w-[560px]"><thead><tr><th className="th">#</th><th className="th">Element</th><th className="th">Model</th><th className="th text-right">Modul</th><th className="th text-right">Svetli otvor</th><th className="th text-right">Visina</th><th className="th text-right">Masa</th></tr></thead>
+            <tbody>{project.items.map((it, i) => isSpacer(it) ? null : <tr key={it.id}><td className="td">{itemNumber(project.items, i)}</td><td className="td">{itemLabel(project.items, i)}</td><td className="td text-slate-600">{describeItem(project, i)}</td><td className="td text-right tabular-nums">{fmtNum(it.widthMm, 0)}</td><td className="td text-right tabular-nums">{fmtNum(layout.items[i].clearWidth, 0)}</td><td className="td text-right tabular-nums">{fmtNum(it.heightMm, 0)}</td><td className="td text-right tabular-nums whitespace-nowrap" data-testid="prod-element-mass">{elementMasses[i]}</td></tr>)}</tbody></table>
+          <p className="text-xs text-muted mt-2">Dimenzije u mm. Masa elementa je bez zajedničkih stubova, okova i stakla. Stubova za izradu: {productionPostCount(project, layout)} kom; u ukupnom zbiru računaju se jednom.</p>
         </section>
         <section className="card p-4 overflow-x-auto">
           <h2 className="font-bold mb-2">Okovi i automatika</h2>

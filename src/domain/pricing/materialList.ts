@@ -44,8 +44,8 @@ export function materialListRows(project: Project, customerName: string | null, 
     ['Kupac', customerName ?? ''],
     ['Broj ponude', project.quoteNo],
     [],
-    ['Grupa', 'Šifra', 'Naziv', 'JM', 'Potrebno', 'Za nabavku (sa otpadom)'],
+    ['Grupa', 'Naziv', 'JM', 'Potrebno', 'Za nabavku (sa otpadom)'],
   ];
-  for (const g of groups) for (const l of g.lines) rows.push([g.group, l.sku, l.name, l.unit, materialQtyText(l.needed, l.unit), materialQtyText(l.purchase, l.unit)]);
+  for (const g of groups) for (const l of g.lines) rows.push([g.group, l.name, l.unit, materialQtyText(l.needed, l.unit), materialQtyText(l.purchase, l.unit)]);
   return rows;
 }

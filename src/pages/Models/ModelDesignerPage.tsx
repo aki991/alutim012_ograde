@@ -309,7 +309,7 @@ function Palette({ materials, activeId, onPick, terrace, showAll }: {
                     <span className="shrink-0 w-9 h-9 grid place-items-center bg-white border border-line rounded-md"><ShapeIcon shape={shape} size={30} /></span>
                     <span className="min-w-0">
                       <span className="block text-[12.5px] font-medium leading-tight line-clamp-2">{m.name}</span>
-                      <span className="block text-[11px] text-muted">{m.sku}{shape.type === 'linear' ? ` · ${sectionFace(shape.section, 0).face} × ${sectionFace(shape.section, 0).depth} mm` : ''}</span>
+                      {shape.type === 'linear' && <span className="block text-[11px] text-muted">{`${sectionFace(shape.section, 0).face} × ${sectionFace(shape.section, 0).depth} mm`}</span>}
                     </span>
                   </button>
                 );
@@ -429,6 +429,23 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
 
   const record = useCallback(() => setHist((h) => ({ past: [...h.past.slice(-99), modelRef.current], future: [] })), []);
   /**
+   * Prevlačenje delova: dok se drži taster ništa se ne proverava i ne piše; tek kad se deo spusti proverava se preklapanje. Ako je deo
+   * spušten gde ne sme, vraća se na mesto odakle je krenuo i piše se obaveštenje.
+   */
+  const dragFrom = useRef<CustomModel | null>(null);
+  const startMove = useCallback(() => { dragFrom.current = modelRef.current; record(); }, [record]);
+  const finishMove = () => {
+    const from = dragFrom.current;
+    dragFrom.current = null;
+    change((m) => ({ ...m }), false, true, false);
+    const bad = from && !freeRef.current ? checkNewOverlap(from, modelRef.current, materialsRef.current) : null;
+    if (!from || !bad) return;
+    modelRef.current = from;
+    setModel(from);
+    setHist((h) => ({ past: h.past.slice(0, -1), future: h.future }));
+    setNotice(bad);
+  };
+  /**
    * Izmena crteža. Vraća false (i piše obaveštenje) kad bi izmena napravila preklapanje delova; tada se ništa ne menja.
    * Uklopljene prečke se posle izmene vraćaju unutar svojih U profila.
    */
@@ -510,7 +527,17 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
   // stubovi uz kapiju (obavezni): kapija se uvek crta između dva stuba. Mere (debljina, visina) su iz „Mere kapije“ ili se zadaju ovde;
   // bez zadatih mera: širina 120 mm, visina = vrh kapije od poda + 50 mm (kao u projektu). Klizna kapija: stub zatvaranja je tamo gde su
   // prihvatnik i zasun, stub vođice tamo gde je vođica (krilo prelazi preko stubova), kao u projektu.
-  const gateFloor = slSpec ? slSpec.frameBottomY : 0;
+  // krilna kapija: zazori iz „Mere kapije“ — donji zazor podiže krilo od tla, bočni zazori odmiču stubove od krila (strana šarki / zatvaranja,
+  // kod dvokrilne levi i desni), pa 2D i 3D prikaz pokazuju iste mere kao „Mere kapije“ i projekat
+  const swingGaps = useMemo(() => {
+    if (model.kind !== 'gate' || slSpec) return { bottom: 0, left: 0, right: 0 };
+    const d = model.gate?.design?.dims ?? {};
+    const v = (k: string) => { const x = d[k]?.v; return typeof x === 'number' && Number.isFinite(x) && x > 0 ? x : 0; };
+    if (model.gate?.gateType === 'double') return { bottom: v('gB'), left: v('gL'), right: v('gR') };
+    const hingeLeft = model.gate?.opening === 'left';
+    return { bottom: v('gB'), left: hingeLeft ? v('gH') : v('gZ'), right: hingeLeft ? v('gZ') : v('gH') };
+  }, [model.kind, model.gate?.design, model.gate?.gateType, model.gate?.opening, slSpec]);
+  const gateFloor = slSpec ? slSpec.frameBottomY : swingGaps.bottom;
   // dvokrilna kapija nacrtana kao dva odvojena krila u jednom crtežu: levo i desno krilo, svako sa svojim ramom, ispunom i okovom
   const pair: PairLayout | null = model.kind === 'gate' && model.gate?.gateType === 'double' ? model.gate.leaves ?? null : null;
   const activeSide: 'left' | 'right' = model.gate?.opening === 'right' ? 'right' : 'left';
@@ -527,7 +554,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
     if (model.kind !== 'gate') return null;
     const total = model.heightMm + gateFloor;
     const dim = [0, 1].map((k) => ({ w: model.gate?.posts?.[k]?.widthMm ?? 120, h: model.gate?.posts?.[k]?.heightMm ?? total + GATE_POST_EXTRA_MM }));
-    let center = [-dim[0].w / 2, model.widthMm + dim[1].w / 2];
+    let center = [-swingGaps.left - dim[0].w / 2, model.widthMm + swingGaps.right + dim[1].w / 2];
     if (slSpec && slPlaced) {
       const left = model.gate?.opening === 'left';
       const closeIdx = left ? 1 : 0;
@@ -536,7 +563,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
       center = closeIdx === 0 ? [closeX, guideX] : [guideX, closeX];
     }
     return dim.map((d, k) => ({ ...d, x: center[k] - d.w / 2 }));
-  }, [model.kind, model.heightMm, model.widthMm, model.gate?.posts, model.gate?.opening, gateFloor, slSpec, slPlaced]);
+  }, [model.kind, model.heightMm, model.widthMm, model.gate?.posts, model.gate?.opening, gateFloor, slSpec, slPlaced, swingGaps]);
   /** dvokrilna kapija: nazivi krila (aktivno, pasivno) sa širinama i natpisi uz svaki deo okova, da se vidi šta je šta */
   const hwLabels = pair ?? (model.kind === 'gate' && model.gate?.hwDrawn ? { leftMm: model.widthMm, rightMm: 0, gapMm: 0 } : null);
   const pairArt = hwLabels ? (px: number) => {
@@ -1019,13 +1046,13 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
           {view === 'presek' && <PresekView model={model} materials={materials} />}
           {view !== '3d' && view !== 'skica' && view !== 'presek' && (
             <Designer2D model={model} parts={parts} active={active} selectedIds={selectedIds} ortho={ortho} gridMm={grid} snapObjects={snapObjects}
-              onSelect={(ids) => { setSelectedIds(ids); if (ids.length) setHwSel(null); }} placing={placingParts} onPlace={placeClip} showDims={showDims} viewShift={viewShift} fitTick={fitTick} onMoveEnd={() => change((m) => ({ ...m }), false)}
-              groundY={slSpec ? slSpec.frameBottomY : 0} extraBounds={dBounds} onOverlayPick={(c, member) => { const k = compPart(c); if (k) { setHwSel(k); setSelectedIds([]); useAppStore.getState().setTailSel(model.id, k === 'tail' ? member ?? null : null); } }}
+              onSelect={(ids) => { setSelectedIds(ids); if (ids.length) setHwSel(null); }} placing={placingParts} onPlace={placeClip} showDims={showDims} viewShift={viewShift} fitTick={fitTick} onMoveEnd={finishMove}
+              groundY={gateFloor} extraBounds={dBounds} onOverlayPick={(c, member) => { const k = compPart(c); if (k) { setHwSel(k); setSelectedIds([]); useAppStore.getState().setTailSel(model.id, k === 'tail' ? member ?? null : null); } }}
               underlay={slGate || postsArt ? (px) => <>{postsArt}{slGate && <SlidingAssemblyArt gate={slGate} clearStart={0} clearEnd={model.widthMm} clearWidth={model.widthMm} floorY={slSpec!.frameBottomY} px={px} hex={colorHex(model.color)} noLeaf layer="back" testPct={0} onPartClick={() => undefined} highlight={hwSelValid ? partDef(hwSelValid)?.comps : undefined} />}</> : undefined}
               overlay={slGate ? (px) => <SlidingAssemblyArt gate={slGate} clearStart={0} clearEnd={model.widthMm} clearWidth={model.widthMm} floorY={slSpec!.frameBottomY} px={px} hex={colorHex(model.color)} noLeaf layer="front" testPct={0} onPartClick={() => undefined} highlight={hwSelValid ? partDef(hwSelValid)?.comps : undefined} /> : pairArt ?? undefined}
               onAdd={(p0) => { const p1 = free ? p0 : restOnSurface(modelRef.current, p0, materialsRef.current); const p = layerRef.current === 'off' ? p1 : layerPart(modelRef.current, p1, layerRef.current, materialsRef.current); const next = { ...modelRef.current, parts: [...modelRef.current.parts, p] }; const fitted = !free && p.angleDeg === 0 ? attach(next, p.id, true) : null; if (change(() => fitted ?? next)) setSelectedId(p.id); }}
-              onMoveStart={record}
-              onMove={(moves) => { const at = new Map(moves.map((v) => [v.id, v])); change((m) => ({ ...m, parts: m.parts.map((p) => { const v = at.get(p.id); return v ? { ...p, x: v.x, y: v.y } : p; }) }), false, false); }} />
+              onMoveStart={startMove}
+              onMove={(moves) => { const at = new Map(moves.map((v) => [v.id, v])); change((m) => ({ ...m, parts: m.parts.map((p) => { const v = at.get(p.id); return v ? { ...p, x: v.x, y: v.y } : p; }) }), false, false, false); }} />
           )}
           {view !== '2d' && view !== 'skica' && view !== 'presek' && (
             <div className={`min-h-0 ${view === 'split' ? 'border-t xl:border-t-0 xl:border-l border-line' : ''}`}>
@@ -1126,7 +1153,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
           {sel && (
             <div className="mb-4" data-testid="designer-props">
               <div className="text-[13px] font-medium leading-snug">{sel.material?.name ?? 'Materijal je obrisan iz cenovnika'}</div>
-              <div className="text-[11.5px] text-muted mb-2">{sel.material?.sku}{sel.shape.type === 'linear' ? ` · presek ${sel.shape.section.w} × ${sel.shape.section.h} mm${sel.shape.exact ? '' : ' (približan oblik prema nazivu)'}` : ''}</div>
+              <div className="text-[11.5px] text-muted mb-2">{sel.shape.type === 'linear' ? `Presek ${sel.shape.section.w} × ${sel.shape.section.h} mm${sel.shape.exact ? '' : ' (približan oblik prema nazivu)'}` : ''}</div>
               {sel.material && (() => {
                 const options = replaceOptions(model, sel.part.id, materials, showAllSwap);
                 const moreOptions = replaceOptions(model, sel.part.id, materials, true).length > replaceOptions(model, sel.part.id, materials, false).length;
@@ -1235,7 +1262,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
               <tbody>
                 {bom.map((l) => (
                   <tr key={l.materialId} className="border-t border-line align-top">
-                    <td className="py-1.5 pr-2"><div className="font-medium leading-tight">{l.name}</div><div className="text-muted">{l.sku} · {l.qtyLabel}</div></td>
+                    <td className="py-1.5 pr-2"><div className="font-medium leading-tight">{l.name}</div><div className="text-muted">{l.qtyLabel}</div></td>
                     <td className="py-1.5 text-right tabular-nums whitespace-nowrap">{l.missing ? <span className="text-[#b45309]">bez cene</span> : fmtMoney(l.total, settings.currency, settings.currencyRateToEur)}</td>
                   </tr>
                 ))}

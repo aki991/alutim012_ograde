@@ -3,6 +3,7 @@ import { SpecEditor } from '../../components/models/SpecEditor';
 import { basicGateRows, type BomRow } from '../../domain/gates/basicBom';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { GateDrawingThumb } from '../../components/designer/PartsSvg';
 import { ElementThumb, GateModelThumb, SlidingThumb } from '../../components/editor/Catalog';
 import { Page, PageHeader } from '../../components/ui/Common';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
@@ -116,7 +117,7 @@ export default function GateModelsPage() {
           <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
             {models.map((m) => (
               <article key={m.id} className="card overflow-hidden flex flex-col" data-testid="gate-model-card">
-                <div className="relative aspect-[16/10] bg-[#eef2f6] overflow-hidden border-b border-line p-3"><div className="h-full grid place-items-center"><GateModelThumb model={m} size={THUMB} /></div></div>
+                <div className="relative aspect-[16/10] bg-[#eef2f6] overflow-hidden border-b border-line p-3"><div className="h-full grid place-items-center">{m.gate?.gateType === 'sliding' ? <GateModelThumb model={m} size={THUMB} /> : <GateDrawingThumb model={m} materials={materials} />}</div></div>
                 <div className="p-4 flex-1 flex flex-col">
                   <h3 className="font-bold text-[17px]" data-testid="gate-model-name">{m.name || 'Model bez naziva'}</h3>
                   <p className="text-sm text-muted mt-0.5">Kapija · {m.widthMm} × {m.heightMm + (m.gate?.gateType === 'sliding' ? m.gate.sliding?.frameBottomY ?? 0 : 0)} mm · {m.parts.length} delova</p>

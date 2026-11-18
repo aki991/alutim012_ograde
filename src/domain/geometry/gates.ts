@@ -11,7 +11,8 @@ export const SCENE_UNIT_MM = 1000;
 export const mmToScene = (mm: number): number => mm / SCENE_UNIT_MM;
 
 export const MAX_SWING_RAD = Math.PI / 2;
-export const LEAF_GAP_MM = 20;
+/** razmak između krila bez zadatih mera kapije: nema ga (krila se dodiruju); razmak postoji tek kad se upiše u Mere kapije (gC) */
+export const LEAF_GAP_MM = 0;
 
 export const clamp01 = (v: number): number => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0);
 
@@ -44,7 +45,10 @@ export function doubleLeafWidths(g: Pick<Gate, 'unequalLeaves' | 'leftLeafMm'> &
     const wl = r.values.WL?.v; const wr = r.values.WR?.v;
     if (typeof wl === 'number' && typeof wr === 'number' && wl > 0 && wr > 0) return [wl, wr];
   }
-  const avail = Math.max(0, clearWidthMm - LEAF_GAP_MM);
+  // zazori iz mera kapije (središnji gC i bočni gL, gR) oduzimaju se samo kad su upisani; inače krila dele ceo svetli otvor
+  const dv = g.design && g.kind === 'gate' && g.gateType === 'double' ? resolveGate(g as Gate, clearWidthMm).values : null;
+  const gaps = LEAF_GAP_MM + (dv?.gC?.v ?? 0) + (dv?.gL?.v ?? 0) + (dv?.gR?.v ?? 0);
+  const avail = Math.max(0, clearWidthMm - gaps);
   if (!g.unequalLeaves || g.leftLeafMm <= 0) return [avail / 2, avail / 2];
   const left = Math.min(Math.max(g.leftLeafMm, Math.min(300, avail / 2)), Math.max(Math.min(300, avail / 2), avail - 300));
   const l = Math.min(left, avail);

@@ -63,7 +63,7 @@ export function MaterialPicker({ materials, onPick, placeholder = '— izaberite
           style={{ left: box.left, width: box.width, maxHeight: box.maxH, ...(box.top !== undefined ? { top: box.top } : { bottom: box.bottom }) }} data-testid={testId ? `${testId}-list` : undefined}>
           <div className="p-2 border-b border-line shrink-0">
             <div className="relative"><Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
-              <input autoFocus className="input !py-1 !pl-8 text-[13px]" placeholder="Pretraga po nazivu ili šifri" aria-label="Pretraga materijala" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+              <input autoFocus className="input !py-1 !pl-8 text-[13px]" placeholder="Pretraga po nazivu" aria-label="Pretraga materijala" value={q} onChange={(e) => setQ(e.target.value)} /></div>
           </div>
           <div className="overflow-y-auto scroll-thin flex-1 min-h-0 py-1">
             {groups.length === 0 && <p className="text-[12.5px] text-muted px-3 py-3">Nema materijala koji odgovaraju pretrazi.</p>}
@@ -74,7 +74,6 @@ export function MaterialPicker({ materials, onPick, placeholder = '— izaberite
                   <button key={m.id} type="button" role="option" aria-selected={false} data-testid={testId ? `${testId}-option` : undefined} data-id={m.id} data-sku={m.sku}
                     className="w-full text-left px-3 py-1.5 hover:bg-slate-50 focus:bg-slate-50 outline-none" onClick={() => { setOpen(false); onPick(m.id); }}>
                     <span className="block text-[12.5px] leading-snug break-words">{m.name}</span>
-                    <span className="block text-[11px] text-muted">{m.sku}</span>
                   </button>
                 ))}
               </div>

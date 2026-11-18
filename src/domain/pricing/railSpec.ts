@@ -5,6 +5,7 @@ import type { FenceSection, Project } from '../models/types';
 import { itemLabel } from '../../utils/labels';
 import { isCorner } from '../geometry/corner';
 import { hasCustomSpec, type ModelSpecs } from '../models/spec';
+import { isProductionPost } from '../models/productionPosts';
 
 /**
  * Ugaoni spoj (savijanje između dva stuba) ne prekida niz: rukohvat i prečke idu neprekinuto kroz spoj i savijaju se.
@@ -164,7 +165,7 @@ export function rail04Runs(project: Project): Rail04Run[] {
 export function rail04Posts(project: Project): Rail04Post[] {
   return project.posts
     .map((p, i) => ({ p, i }))
-    .filter(({ i }) => [project.items[i - 1], project.items[i]].some((it) => it && isRail04(it)))
+    .filter(({ p, i }) => isProductionPost(p) && [project.items[i - 1], project.items[i]].some((it) => it && isRail04(it)))
     .map(({ p, i }) => ({ name: `Stub S${i + 1}`, heightMm: p.heightMm }));
 }
 
@@ -263,7 +264,7 @@ export function buildRail04Sheet(project: Project, specs?: ModelSpecs): Rail04Sh
     { pos: 13, part: 'Vijci i stezni elementi', code: 'Prema izabranim nosačima', qty: `za ${railSupports} gornjih i ${rodSupports} poprečnih nosača`, note: 'Proveriti šta se isporučuje uz nosače' },
     { pos: 14, part: 'Montažni potrošni materijal', code: 'Prema postupku montaže', qty: 'prema potrošnji', note: 'Ne računati celo pakovanje kao potrošnju' },
     ...(bendCount > 0 ? [{ pos: 15, part: 'Savijanje cevi (rukohvat Ø50 i prečke Ø16)', code: 'Savijanje ili gotove cevi pod uglom', qty: `${bendCount} savijanja`, note: `Ugaoni spoj: razmak između dva stuba; po spoju 1 rukohvat + ${runs.find((x) => x.bends.length)?.rodHeightsMm.length ?? 0} prečke` }] : []),
-  ];
+  ].filter((row) => nS > 0 || ![1, 10, 11, 12].includes(row.pos));
 
   const cuts: SheetCutRow[] = [];
   type Piece = { len: number; cut: string };

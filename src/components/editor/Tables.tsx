@@ -6,6 +6,7 @@ import { buildBom } from '../../domain/pricing/calc';
 import { useAppStore } from '../../store/useAppStore';
 import { itemLabel, itemNumber } from '../../utils/labels';
 import { fmtMoney, fmtNum } from '../../utils/units';
+import { isProductionPost, productionPostCount } from '../../domain/models/productionPosts';
 
 export function DimensionsTable({ project }: { project: Project }) {
   const layout = computeLayout(project);
@@ -40,13 +41,13 @@ export function DimensionsTable({ project }: { project: Project }) {
       <div className="mt-4 grid sm:grid-cols-2 gap-x-6 gap-y-1 text-sm text-slate-600">
         <div>Ukupna dužina: <b className="text-ink">{fmtNum(layout.occupiedMm, 0)} mm</b></div>
         {advanced && <div>Modularna dužina (osa–osa): <b className="text-ink">{fmtNum(layout.totalModularMm, 0)} mm</b></div>}
-        <div>Stubova: <b className="text-ink">{layout.postCount}</b> (zajedničkih međustubova: {layout.sharedPostCount}; bez deljenja bi bilo {layout.naivePostCount})</div>
+        <div>Stubova za izradu: <b className="text-ink">{productionPostCount(project, layout)}</b></div>
       </div>
-      <h3 className="font-semibold mt-5 mb-2">Stubovi</h3>
+      <h3 className="font-semibold mt-5 mb-2">Stubovi za izradu</h3>
       <table className="w-full min-w-[640px]">
         <thead><tr><th className="th">Stub</th><th className="th">Uloga</th><th className="th">Tip</th><th className="th text-right">Pozicija (osa)</th><th className="th text-right">Presek</th><th className="th">Montaža</th></tr></thead>
         <tbody>
-          {layout.posts.filter((lp) => !lp.hidden).map((lp) => (
+          {layout.posts.filter((lp) => !lp.hidden && isProductionPost(lp.post)).map((lp) => (
             <tr key={lp.post.id} className={`cursor-pointer hover:bg-slate-50 ${selection?.id === lp.post.id ? 'bg-primary-50' : ''}`} onClick={() => select({ type: 'post', id: lp.post.id })}>
               <td className="td">S{lp.index + 1}</td>
               <td className="td">{lp.role === 'end' ? 'Krajnji' : lp.role === 'gate' ? 'Stub kapije' : 'Međustub'}</td>
@@ -75,7 +76,6 @@ export function BomTable({ project, compact }: { project: Project; compact?: boo
         <thead>
           <tr>
             <th className="th">Stavka</th><th className="th">Opis</th>
-            {!compact && <th className="th">Šifra</th>}
             <th className="th text-right">Količina</th><th className="th">Jedinica</th>
             {!compact && <th className="th text-right">Nabavna kol.</th>}
             {!compact && <th className="th text-right">Ukupno</th>}
@@ -86,7 +86,6 @@ export function BomTable({ project, compact }: { project: Project; compact?: boo
             <tr key={l.key}>
               <td className="td text-slate-600">{l.group}</td>
               <td className="td">{l.name}</td>
-              {!compact && <td className="td text-xs text-muted">{l.sku}</td>}
               <td className="td text-right tabular-nums" title="Geometrijska količina iz crteža">{fmtNum(l.geometricQty, l.unit === 'kom' ? 0 : 2)}</td>
               <td className="td">{l.unit}</td>
               {!compact && <td className="td text-right tabular-nums" title="Sa otpadom / zaokruženo">{fmtNum(l.purchaseQty, l.unit === 'kom' ? 0 : 2)}</td>}

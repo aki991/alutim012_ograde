@@ -2,6 +2,7 @@ import { computeLayout, isSpacer, type ProjectLayout } from '../geometry/layout'
 import { isRl10Post, RL10_MODEL, rl10Corner, rl10Ends, rl10Geometry, rl10PostInfo, type Rl10Geometry } from '../models/rl10';
 import { hasCustomSpec, type ModelSpecs } from '../models/spec';
 import type { FenceSection, Project } from '../models/types';
+import { isProductionPost } from '../models/productionPosts';
 import { itemLabel } from '../../utils/labels';
 import { describePieces, fmtMm, group, planBars, RAIL04, splitLength, type BarPlanRow, type SheetBomRow, type SheetCutRow } from './railSpec';
 
@@ -129,8 +130,8 @@ export function rl10Runs(project: Project, layout: ProjectLayout = computeLayout
 
 export function rl10Posts(project: Project, layout: ProjectLayout = computeLayout(project)): Rl10Post[] {
   const out: Rl10Post[] = [];
-  project.posts.forEach((_, i) => {
-    if (layout.posts[i]?.hidden || !isRl10Post(project.items, i)) return;
+  project.posts.forEach((post, i) => {
+    if (layout.posts[i]?.hidden || !isProductionPost(post) || !isRl10Post(project.items, i)) return;
     const item = [project.items[i - 1], project.items[i]].find((it) => it && isRl10Item(it)) as FenceSection;
     const g = rl10Geometry(item.heightMm, item.params);
     const info = rl10PostInfo(project.items, layout, i);
@@ -191,14 +192,18 @@ export function buildRl10Sheet(project: Project, specs?: ModelSpecs): Rl10Sheet 
   const allRodLens = [...rodLens, ...cornerRodPieces];
   add(`Rukohvat — cev Ø${d.dims.railDiaMm} × 2 mm`, 'P-1033', describePieces(allRailLens), 'Neprekinut komad po nizu polja istog nagiba; slobodan kraj ima prepust do završetka; pravo parče između kugli na uglu');
   add(`Prečka — cev Ø${d.rodDiaMm}`, 'P-1146', describePieces(allRodLens), 'Jedan komad po prečki i nizu; prolazi kroz nosače ispred stubova; kratki komadi uz kuglu na uglu');
-  add(`Stub — cev Ø${d.dims.postDiaMm} × 2 mm sa kanalom`, 'P-1054', describePieces(tubeLens), 'Dužina = od mesta na kome stub stoji do vrha stuba (ispod veze sa rukohvatom)');
-  add('Pokrivna lajsna kanala stuba', 'P-AL2647', describePieces(tubeLens), 'Ista dužina kao stub (ulazi u kanal sa strane prečki)');
-  add('Prsten na vrhu stuba Ø40', 'AK-5062', `${posts.length} kom`, 'Po jedan na svakom stubu');
+  if (posts.length) {
+    add(`Stub — cev Ø${d.dims.postDiaMm} × 2 mm sa kanalom`, 'P-1054', describePieces(tubeLens), 'Dužina = od mesta na kome stub stoji do vrha stuba (ispod veze sa rukohvatom)');
+    add('Pokrivna lajsna kanala stuba', 'P-AL2647', describePieces(tubeLens), 'Ista dužina kao stub (ulazi u kanal sa strane prečki)');
+    add('Prsten na vrhu stuba Ø40', 'AK-5062', `${posts.length} kom`, 'Po jedan na svakom stubu');
+  }
   if (saddlesFixed > 0) add('Veza stub Ø40 – rukohvat Ø50, fiksna', 'AK-5039N', `${saddlesFixed} kom`, 'Ravni delovi (i stub ispod zgloba); 3 vijka BTS-VP4219 po vezi');
   if (saddlesAdjustable > 0) add('Veza stub Ø40 – rukohvat Ø50, podesiva', 'AK-5001', `${saddlesAdjustable} kom`, 'Stubovi uz stepenište: ležište prati nagib rukohvata; 3 vijka BTS-VP4219 po vezi');
-  add('Stopa stuba Ø40, spoljna prirubnica sa čaurom', 'AK-5036X', `${posts.length} kom`, 'Po jedna na svakom stubu');
-  add('Hemijsko sidro (ETA)', 'AK-5027K', `${posts.length * 3} kom`, '3 sidra po stopi (BTS-VT75100 × 3)');
-  add('Nosač prečke Ø16, podesivi', 'AK-5011Y', `${holders} kom`, 'Po jedan na svakom stubu za svaku prečku; 1 vijak BTS-VP4238 po nosaču');
+  if (posts.length) {
+    add('Stopa stuba Ø40, spoljna prirubnica sa čaurom', 'AK-5036X', `${posts.length} kom`, 'Po jedna na svakom stubu');
+    add('Hemijsko sidro (ETA)', 'AK-5027K', `${posts.length * 3} kom`, '3 sidra po stopi (BTS-VT75100 × 3)');
+    add('Nosač prečke Ø16, podesivi', 'AK-5011Y', `${holders} kom`, 'Po jedan na svakom stubu za svaku prečku; 1 vijak BTS-VP4238 po nosaču');
+  }
   if (jointsRail > 0) {
     add('Zglob rukohvata Ø50 (kuglasti, podesiv ugao)', 'AK-5020K', `${jointsRail} kom`, 'Spoj ravnog dela i stepeništa i ugao u osnovi; stoji sam (ne nosi ga stub); cevi se seku pod 90°');
   }

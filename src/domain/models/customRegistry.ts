@@ -4,7 +4,7 @@ import { guideIdsOf, miterEndsOf, partBounds, resolveParts, sheetAreaMm2, type C
 import { applyGuides, barLayoutInfo, guidesOf, scaleWithGuides } from './guides';
 import { anchoredLengthFormula, anchoredModel } from './anchored';
 import { isFramePart, resizeWithFrame } from './frame';
-import { repeatOffIds, applyRails, planPattern, railGroups, refillsVBars, patternCounts, refillPattern, refillVBars, slatIdsOf, slatLayoutOf, type SlatOverride } from './gateRefill';
+import { repeatOffIds, applyRails, planPattern, patternZoneInfo, railGroups, refillsVBars, patternCounts, refillPattern, refillVBars, slatIdsOf, slatLayoutOf, type SlatOverride } from './gateRefill';
 import { materialShape, sectionFace, type MatShape } from './materialShape';
 import { leafOfPair } from './pairHardware';
 import { framedGateModel } from './gateFrame';
@@ -327,6 +327,13 @@ export function customPatternCounts(modelId: string, heightMm: number, slats?: S
 }
 
 /** Raspored vodoravnih prečki koje se ponavljaju na ispuni zadate visine (broj, odstojanje od dna i vrha, razmak); null kad ih model nema. */
+/** Raspored prečki po poljima kad model ima vodoravno ojačanje (polje ispod, između i iznad ojačanja); null kad ga nema. */
+export function customHBarZones(modelId: string, heightMm: number, slats?: SlatOverride): ReturnType<typeof patternZoneInfo> {
+  const m = REG.get(modelId);
+  if (!m || !refillsVBars(m)) return null;
+  return patternZoneInfo(m, heightMm, MATERIALS, slats);
+}
+
 export function customHBarLayout(modelId: string, heightMm: number, slats?: SlatOverride): { count: number; bottom: number; top: number; gap: number; lufta: 'sa' | 'bez'; gapMin: number } | null {
   const m = REG.get(modelId);
   if (!m || !refillsVBars(m)) return null;

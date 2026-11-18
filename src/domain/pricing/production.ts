@@ -16,6 +16,7 @@ import { HW_ROLE_LABELS, missingHardware, resolveGate, systemOf, unknownHwLabel 
 import { gateCutRows } from '../gates/production';
 import { resolveSliding, slidingBom, variantTitle } from '../gates/slidingAssembly';
 import { leafHeightOf, slidingH } from '../gates/slidingLayout';
+import { isSimulationMaterial } from '../models/productionPosts';
 
 export interface CutRow {
   element: string;
@@ -61,6 +62,7 @@ export function buildCutList(project: Project, specs?: ModelSpecs, materials?: M
         if (b.cutMm === null || b.cutMm <= 0 || b.unit !== 'kom') continue;
         if (b.make !== 'izrada' && b.key !== 'rail' && b.key !== 'carrier') continue;
         const mat = b.materialId ? materials?.find((m) => m.id === b.materialId) : undefined;
+        if (isSimulationMaterial(mat)) continue;
         rows.push({ element: name, index: li.index, ...(b.key === 'rail' || b.key === 'carrier' ? { joinable: true } : {}), part: b.name, profile: mat ? mat.name : b.materialText ? b.materialText : `${b.name} — nije definisano`, lengthMm: b.cutMm, qty: b.qty, ...(b.ends && hasAngledEnds(b.ends) ? { ends: b.ends, ...(b.endShape ? { endShape: b.endShape } : {}), ...(b.faceMm ? { faceMm: b.faceMm } : {}) } : {}), note: [b.note, b.shownMm !== null && b.shownMm !== b.cutMm ? `prikazano ${b.shownMm} mm` : ''].filter(Boolean).join(' · ') || undefined });
       }
       if (!it.sliding.drawnLeaf) continue;
@@ -77,6 +79,7 @@ export function buildCutList(project: Project, specs?: ModelSpecs, materials?: M
       // mere kapije: ram krila, noseći profil, rep, šina — red koji još nema meru ostaje u prozoru „Mere kapije“ (ne ide u plan rezanja)
       for (const r of gateCutRows(it, resolveGate(it, li.clearWidth), materials ?? [])) {
         if (r.lengthMm === null || r.lengthMm <= 0) continue;
+        if (isSimulationMaterial(materials?.find((m) => m.id === r.materialId))) continue;
         const diff = r.manual && r.geometricMm !== null ? Math.round(r.lengthMm - r.geometricMm) : 0;
         rows.push({
           element: name, index: li.index, part: `${r.assembly} — ${r.part}`, profile: r.profile, lengthMm: Math.round(r.lengthMm), qty: r.qty, miter: r.miter,
@@ -85,6 +88,7 @@ export function buildCutList(project: Project, specs?: ModelSpecs, materials?: M
       }
     }
     for (const ev of evaluateItemSpec(specFor(modelId, specs), specCtx)) {
+      if (isSimulationMaterial(materials?.find((m) => m.id === (project.partMaterials?.[ev.part.materialId] ?? ev.part.materialId)))) continue;
       if (ev.lengthMm === null) continue;
       const len = Math.round(ev.lengthMm);
       const qty = Math.round(ev.qty);

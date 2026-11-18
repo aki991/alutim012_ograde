@@ -1,5 +1,6 @@
 import { partBounds, type CustomModel, type CustomPart } from './custom';
 import { shapeLookup } from './guides';
+import { innerRegion } from './reinforce';
 import { capOn, capsOver, layoutVBars, vBarGroup, vLayoutInfo } from './vbars';
 import type { Material } from './types';
 
@@ -54,6 +55,8 @@ export interface SlatOverride {
   lufta?: import('./custom').Lufta;
   /** ojačanje platna kvadratnim cevima (uspravne i vodoravne) */
   reinforce?: import('./reinforce').Reinforce;
+  /** model sa vodoravnim ojačanjem: raspored prečki po poljima (odozdo naviše): odstojanje od donje i gornje granice polja (dno / ojačanje / vrh) i razmak */
+  zones?: ({ bottomMm?: number; topMm?: number; hGapMm?: number } | undefined)[];
   /** nosači (vodoravni delovi koji se ne ponavljaju): odstojanje od bliže ivice ispune (dno ili vrh), po ID prvog dela nosača */
   rails?: Record<string, number>;
 }
@@ -201,6 +204,19 @@ const countOfKind = (t: number, k: number, j: number): number => (t > j ? Math.f
  * visinu `heightMm`. null kad model nema niz prečki koji se preračunava.
  */
 export function patternCounts(original: CustomModel, heightMm: number, materials: Material[], fill?: SlatOverride): { kinds: Map<string, number>; counts: number[] } | null {
+  // vodoravno ojačanje: svako polje ima svoj niz prečki; vrste prečki se broje redom (polje ispod, pa polje iznad)
+  if (original.parts.some((p) => p.divider)) {
+    const z = zonePlans(original, heightMm, materials, fill);
+    if (!z) return null;
+    const kinds = new Map<string, number>(); const counts: number[] = [];
+    for (const plan of z.plans) {
+      if (!plan) continue;
+      const off = counts.length;
+      plan.cands.forEach((c, i) => kinds.set(c.p.id, off + (i % plan.k)));
+      for (let j = 0; j < plan.k; j++) counts.push(countOfKind(plan.t, plan.k, j));
+    }
+    return counts.length ? { kinds, counts } : null;
+  }
   const plan = planPattern(original, heightMm, materials, fill);
   if (!plan) return null;
   return { kinds: new Map(plan.cands.map((c, i) => [c.p.id, i % plan.k])), counts: Array.from({ length: plan.k }, (_, j) => countOfKind(plan.t, plan.k, j)) };
@@ -208,7 +224,133 @@ export function patternCounts(original: CustomModel, heightMm: number, materials
 
 export interface PatternPlan { cands: { p: CustomPart; y0: number; y1: number }[]; k: number; t: number; gap: number; yBot: number; e0: number; e1: number; hOf: (t: number) => number }
 
+/* ---------- vodoravno ojačanje: prečke se preračunavaju posebno u svakom polju ---------- */
+
+interface ZoneSpan { lo: number; hi: number }
+interface ZoneLayout {
+  /** polja na crtežu modela (ispod, između i iznad ojačanja) i ista polja na traženoj visini */
+  zonesO: ZoneSpan[];
+  zonesN: ZoneSpan[];
+  /** ojačanja: ID, donja i gornja ivica na traženoj visini */
+  dividers: { id: string; y0: number; y1: number }[];
+}
+
+/**
+ * Polja koja vodoravna ojačanja prave u modelu i njihove mere na novoj visini: visina koja se dodaje (ili oduzima) deli se na polja
+ * srazmerno njihovoj visini, a ojačanja i ram zadržavaju debljinu. Null kad model nema ojačanja ili nema mesta.
+ */
+function zoneLayout(original: CustomModel, heightMm: number, materials: Material[]): ZoneLayout | null {
+  const shapeOf = shapeLookup(materials);
+  const divs = original.parts.filter((p) => p.divider).map((p) => { const s = shapeOf(p); return s && s.type === 'linear' ? { id: p.id, b: partBounds(p, s) } : null; }).filter((d): d is { id: string; b: { x0: number; y0: number; x1: number; y1: number } } => !!d).sort((a, b) => a.b.y0 - b.b.y0);
+  if (!divs.length) return null;
+  const inner = innerRegion(original, materials);
+  const zonesO: ZoneSpan[] = []; const thick: { id: string; t: number }[] = [];
+  let lo = inner.y0;
+  for (const d of divs) {
+    if (d.b.y0 > lo + 1) { zonesO.push({ lo, hi: d.b.y0 }); thick.push({ id: d.id, t: d.b.y1 - d.b.y0 }); lo = d.b.y1; }
+  }
+  zonesO.push({ lo, hi: inner.y1 });
+  if (zonesO.length !== thick.length + 1) return null;
+  const sumZ = zonesO.reduce((a, z) => a + (z.hi - z.lo), 0);
+  const dH = heightMm - original.heightMm;
+  if (sumZ <= 0) return null;
+  const zonesN: ZoneSpan[] = []; const dividers: ZoneLayout['dividers'] = [];
+  let y = inner.y0;
+  zonesO.forEach((z, i) => {
+    const h = (z.hi - z.lo) + (dH * (z.hi - z.lo)) / sumZ;
+    zonesN.push({ lo: y, hi: y + h });
+    y += h;
+    if (thick[i]) { dividers.push({ id: thick[i].id, y0: y, y1: y + thick[i].t }); y += thick[i].t; }
+  });
+  if (zonesN.some((z) => z.hi - z.lo < 20)) return null;
+  return { zonesO, zonesN, dividers };
+}
+
+/** crtež jednog polja (prečke u njemu, počevši od donje ivice polja): isto što i ceo model, samo niži */
+function zoneModel(original: CustomModel, z: ZoneSpan, materials: Material[]): CustomModel {
+  const shapeOf = shapeLookup(materials);
+  const parts = original.parts.filter((p) => {
+    if (p.divider) return false;
+    const s = shapeOf(p);
+    if (!s || s.type !== 'linear') return false;
+    const b = partBounds(p, s);
+    const c = (b.y0 + b.y1) / 2;
+    return c > z.lo && c < z.hi;
+  }).map((p) => ({ ...p, y: p.y - z.lo }));
+  return { ...original, heightMm: z.hi - z.lo, parts };
+}
+
+/** planovi prečki po poljima (za polje bez niza prečki plana nema) */
+function zonePlans(original: CustomModel, heightMm: number, materials: Material[], fill?: SlatOverride): { layout: ZoneLayout; plans: (PatternPlan | null)[]; exact: boolean } | null {
+  const layout = zoneLayout(original, heightMm, materials);
+  if (!layout) return null;
+  // na visini na kojoj je model nacrtan (bez ručno zadatih mera) prečke ostaju tačno kako su nacrtane
+  const exact = Math.abs(heightMm - original.heightMm) < 0.01 && fill?.hGapMm === undefined && !fill?.zones?.some(Boolean);
+  const plans = layout.zonesO.map((zo, i) => {
+    // ručno zadate mere polja (odstojanja od granica i razmak); razmak za ceo model važi za polja bez svoje mere
+    const zf = fill?.zones?.[i];
+    const f: SlatOverride = {};
+    const gap = zf?.hGapMm ?? fill?.hGapMm;
+    if (gap !== undefined) f.hGapMm = gap;
+    if (zf?.bottomMm !== undefined) f.bottomMm = zf.bottomMm;
+    if (zf?.topMm !== undefined) f.topMm = zf.topMm;
+    const plan = planPattern(zoneModel(original, zo, materials), layout.zonesN[i].hi - layout.zonesN[i].lo, materials, Object.keys(f).length ? f : undefined);
+    return plan && exact ? { ...plan, t: plan.cands.length } : plan;
+  });
+  return { layout, plans, exact };
+}
+
+/** Raspored prečki svakog polja modela sa ojačanjem (broj, odstojanja od granica polja i razmak) na traženoj visini; null kad model nema ojačanje. */
+export function patternZoneInfo(original: CustomModel, heightMm: number, materials: Material[], fill?: SlatOverride): { index: number; count: number; bottom: number; top: number; gap: number; first: boolean; last: boolean }[] | null {
+  const z = zonePlans(original, heightMm, materials, fill);
+  if (!z) return null;
+  const out: { index: number; count: number; bottom: number; top: number; gap: number; first: boolean; last: boolean }[] = [];
+  z.plans.forEach((plan, i) => { if (plan) out.push({ index: i, count: plan.t, bottom: plan.e0, top: plan.e1, gap: plan.gap, first: i === 0, last: i === z.plans.length - 1 }); });
+  return out;
+}
+
+/** ID-evi prečki svih nizova (po poljima) modela sa ojačanjem */
+export function zonePatternIds(original: CustomModel, heightMm: number, materials: Material[]): Set<string> | null {
+  const z = zonePlans(original, heightMm, materials);
+  return z ? new Set(z.plans.flatMap((p) => p?.cands.map((c) => c.p.id) ?? [])) : null;
+}
+
+function refillZones(original: CustomModel, scaled: CustomModel, materials: Material[], fill?: SlatOverride): CustomModel {
+  const z = zonePlans(original, scaled.heightMm, materials, fill);
+  if (!z) return scaled;
+  // ista visina kao na crtežu: prikaz je tačno crtež
+  if (z.exact) return scaled;
+  const shapeOf = shapeLookup(materials);
+  const byId = new Map(scaled.parts.map((p) => [p.id, p]));
+  const drop = new Set<string>();
+  const made: CustomPart[] = [];
+  z.plans.forEach((plan, zi) => {
+    if (!plan) return;
+    const zo = z.layout.zonesO[zi]; const zn = z.layout.zonesN[zi];
+    const { cands, k, hOf } = plan; const n = cands.length;
+    let y0 = plan.yBot + plan.e0;
+    for (let t = 0; t < plan.t; t++) {
+      const c = t < n ? cands[t] : cands[n - k + ((t - n) % k)];
+      const src = byId.get(c.p.id);
+      // c.p.y i c.y0 su u koordinatama polja (od donje ivice polja): y dela u celom crtežu je c.p.y + zo.lo, a nova donja ivica se prevodi na visinu u celom crtežu
+      if (src) made.push({ ...src, id: t < n ? c.p.id : `${c.p.id}_r${zi}_${t}`, y: c.p.y + zo.lo + (zn.lo + y0 - (c.y0 + zo.lo)) });
+      y0 += hOf(t) + plan.gap;
+    }
+    for (const c of cands) drop.add(c.p.id);
+  });
+  const placedDiv = new Map(z.layout.dividers.map((d) => [d.id, d]));
+  const parts: CustomPart[] = [];
+  let inserted = false;
+  for (const p of scaled.parts) {
+    const d = placedDiv.get(p.id);
+    if (d) { const s = shapeOf(p); const b = s && s.type === 'linear' ? partBounds(p, s) : null; parts.push(b ? { ...p, y: p.y + (d.y0 - b.y0) } : p); continue; }
+    if (!drop.has(p.id)) { parts.push(p); continue; }
+    if (!inserted) { parts.push(...made); inserted = true; }
+  }
+  return { ...scaled, parts };
+}
 export function refillPattern(original: CustomModel, scaled: CustomModel, materials: Material[], fill?: SlatOverride): CustomModel {
+  if (original.parts.some((p) => p.divider)) return refillZones(original, scaled, materials, fill);
   const plan = planPattern(original, scaled.heightMm, materials, fill);
   if (!plan) return scaled;
   const { cands, k, hOf } = plan;
@@ -256,7 +398,7 @@ export interface RailGroup {
 export function railGroups(original: CustomModel, materials: Material[]): RailGroup[] {
   const shapeOf = shapeLookup(materials);
   const W0 = original.widthMm; const H0 = original.heightMm;
-  const inPattern = new Set(planPattern(withoutRepeatOff(original), H0, materials)?.cands.map((c) => c.p.id) ?? []);
+  const inPattern = original.parts.some((p) => p.divider) ? (zonePatternIds(withoutRepeatOff(original), H0, materials) ?? new Set<string>()) : new Set(planPattern(withoutRepeatOff(original), H0, materials)?.cands.map((c) => c.p.id) ?? []);
   const items: { id: string; y0: number; y1: number }[] = [];
   for (const p of original.parts) {
     if (inPattern.has(p.id) || p.cut45 || p.heightMm || (norm(p.angleDeg) !== 0 && norm(p.angleDeg) !== 180)) continue;

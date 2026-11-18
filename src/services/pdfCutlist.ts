@@ -1,6 +1,8 @@
 import { endsLabel } from '../domain/pricing/cutEnds';
 import { STATUS_LABELS } from '../domain/models/catalog';
-import { buildCuttingList, cutOptions, groupBars, PRINT_SCOPE_LABELS, type CuttingList, type PrintScope } from '../domain/pricing/cutting';
+import { buildCuttingList, cutOptions, groupBars, PRINT_SCOPE_LABELS, scopedProject, type CuttingList, type PrintScope } from '../domain/pricing/cutting';
+import { buildProjectFinishing } from '../domain/pricing/calc';
+import { pdfFinishing } from './pdfFinishing';
 import type { AppSettings, Customer, Material, Project } from '../domain/models/types';
 import { fmtDate, fmtNum } from '../utils/units';
 import { BAR_VIEW_H, barSvg, positionColors } from './cutlistSvg';
@@ -173,6 +175,7 @@ export async function buildCutlistPdfBlob(project: Project, customer: Customer |
           { columns: [{ text: 'Sečenje izvršio: ________________', fontSize: 9, margin: [0, 18, 0, 0] }, { text: 'Kontrolisao: ________________', fontSize: 9, alignment: 'right', margin: [0, 18, 0, 0] }] },
         ],
       },
+      ...pdfFinishing(buildProjectFinishing(scopedProject(project, scope), materials, settings.modelSpecs)),
     ],
   };
   return renderBlob(pdfMake, def);

@@ -14,6 +14,8 @@ import { missingHardware, resolveGate, systemOf, unknownHwLabel, type HwRole } f
 import { gateCutRows } from '../gates/production';
 import { resolveSliding, slidingBom, type SlidingBomItem } from '../gates/slidingAssembly';
 import { leafHeightOf, slidingH } from '../gates/slidingLayout';
+import { measureFinishing, finishingArea, type FinishingSummary } from './finishing';
+import { isProductionPost, isSimulationMaterial } from '../models/productionPosts';
 
 const HW_GROUP: Record<HwRole, BomGroup> = {
   hinge_left: 'Šarke', hinge_right: 'Šarke', hinge: 'Šarke', lock: 'Brave', catch: 'Brave', drop_bolt: 'Brave', ground_stop: 'Nosači i spojnice', trolley: 'Točkići', carrier_kit: 'Točkići',
@@ -123,13 +125,16 @@ export const netUnitPrice = (price: number, pricing: PricingSettings): number =>
 
 interface Acc { group: BomGroup; materialId: string; qty: number; label?: string; unit?: Material['unit'] }
 
-export function buildBom(project: Project, materials: Material[], specs?: ModelSpecs): BomLine[] {
+export function buildBom(project: Project, materials: Material[], specs?: ModelSpecs, physical?: { netLengths?: boolean; includePosts?: boolean }): BomLine[] {
   const layout = computeLayout(project);
   const acc = new Map<string, Acc>();
   const add = (group: BomGroup, originalId: string, qty: number, label?: string, unit?: Material['unit']) => {
     if (qty <= 0) return;
+    if (physical?.includePosts === false && group === 'Stubovi') return;
     // deo zamenjen u projektu („Delovi ograde“): umesto materijala iz specifikacije ide izabrani
     const materialId = project.partMaterials?.[originalId] ?? originalId;
+    if (isSimulationMaterial(materials.find((m) => m.id === materialId))) return;
+    if (materialId === 'mat_post_concrete' || materialId === 'mat_concrete_plinth') return;
     const k = `${group}|${materialId}`;
     const cur = acc.get(k);
     if (cur) cur.qty += qty;
@@ -171,15 +176,16 @@ export function buildBom(project: Project, materials: Material[], specs?: ModelS
       const sp = louverSpecOf(project);
       const meters = (lens: number[]) => lens.reduce((x, v) => x + v, 0) / 1000;
       // osnovica „po šipki": kupuju se cele šipke (metraža = broj šipki × dužina šipke)
-      const guideM = sp.priceBasis === 'per_bar' ? (lv.quantities.guideBars * RAIL04.stockMm) / 1000 : meters(lv.quantities.guideLens);
-      const fillM = sp.priceBasis === 'per_bar' ? (lv.quantities.fillBars * RAIL04.stockMm) / 1000 : meters(lv.quantities.fillLens);
+      const guideM = sp.priceBasis === 'per_bar' && !physical?.netLengths ? (lv.quantities.guideBars * RAIL04.stockMm) / 1000 : meters(lv.quantities.guideLens);
+      const fillM = sp.priceBasis === 'per_bar' && !physical?.netLengths ? (lv.quantities.fillBars * RAIL04.stockMm) / 1000 : meters(lv.quantities.fillLens);
       add('Profili ispune', GUIDE_PROFILES[sp.guideProfile].materialId, guideM);
       add('Profili ispune', FILL_PROFILES[sp.fillProfile].materialId, fillM);
     }
   }
   const railPosts = new Set(hasCustomSpec('rail_black', specs) ? [] : project.posts.map((_, i) => i).filter((i) => [project.items[i - 1], project.items[i]].some((x) => x && isRail04(x))));
   project.posts.forEach((p, i) => {
-    if (layout.posts[i]?.hidden) return;
+    if (layout.posts[i]?.hidden || !isProductionPost(p)) return;
+    if (p.materialId && isSimulationMaterial(materials.find((m) => m.id === p.materialId))) return;
     // kapa na vrhu i dno stuba izabrani u panelu stuba (materijal iz cenovnika, po komadu)
     if (p.capTopMaterialId && p.type !== 'concrete' && p.type !== 'concrete_plinth') add('Stubovi', p.capTopMaterialId, 1);
     if (p.capBottomMaterialId && p.type !== 'concrete' && p.type !== 'concrete_plinth') add('Stubovi', p.capBottomMaterialId, 1);
@@ -227,7 +233,7 @@ export function buildBom(project: Project, materials: Material[], specs?: ModelS
       add('Stubovi', 'mat_bts_pal2647', meters(q.tubeLens));
       add('Stubovi', 'mat_bts_ak5036x', q.posts);
       add('Stubovi', 'mat_bts_ak5027k', q.posts * 3);
-      add('Nosači i spojnice', 'mat_bts_ak5062', q.posts);
+      if (physical?.includePosts !== false) add('Nosači i spojnice', 'mat_bts_ak5062', q.posts);
       add('Nosači i spojnice', 'mat_bts_ak5039n', q.saddlesFixed);
       add('Nosači i spojnice', 'mat_bts_ak5001', q.saddlesAdjustable);
       add('Nosači i spojnice', 'mat_bts_ak5011y', q.holders);
@@ -276,12 +282,34 @@ function toLine(a: Acc, mat: Material | undefined, pricing: PricingSettings): Bo
   };
 }
 
+/** Isti neto obračun za cenu plastificiranja, krojnu listu i radni nalog. */
+export function buildProjectFinishing(project: Project, materials: Material[], specs?: ModelSpecs, includePosts = true): FinishingSummary {
+  return measureFinishing(buildBom(project, materials, specs, { netLengths: true, includePosts }), materials);
+}
+
+/** Materijal jednog elementa/niza, bez zajedničkih stubova. Čuva položaje i svetle otvore projekta. */
+export function buildElementFinishing(project: Project, indices: number[], materials: Material[], specs?: ModelSpecs): FinishingSummary {
+  const keep = new Set(indices);
+  const part: Project = { ...project, items: project.items.map((it, i) => keep.has(i) || it.kind === 'opening' ? it : { kind: 'opening', id: it.id, widthMm: it.widthMm, heightMm: it.heightMm }) };
+  const result = buildProjectFinishing(part, materials, specs, false);
+  // Izdvajanje jednog dela neprekinutog niza menja prepuste i spojeve na njegovim krajevima.
+  // Takva pojedinačna masa je približna; zbir celog projekta koristi originalnu sastavnicu.
+  if (indices.some((i) => (isRl10Item(project.items[i]) || isRail04(project.items[i])) && project.items.some((it, j) => !keep.has(j) && (isRl10Item(it) || isRail04(it))))) {
+    result.massEstimated = true;
+    result.areaEstimated = true;
+  }
+  return result;
+}
+
 /* ---------- Cena ---------- */
 
 export interface PriceRow { label: string; base: string; amount: number; emphasis?: boolean }
 
 export interface PriceBreakdown {
   materialTotal: number;
+  coatingTotal: number;
+  coatingAreaM2: number;
+  finishing: FinishingSummary;
   laborTotal: number;
   installTotal: number;
   costBase: number;
@@ -337,7 +365,10 @@ export function computePrice(project: Project, materials: Material[], specs?: Mo
   const mat = materialTotal(bom);
   const labor = laborCost(project);
   const inst = installCost(project);
-  const costBase = mat + labor.total + inst.total;
+  const finishing = buildProjectFinishing(project, materials, specs);
+  const coatingRate = Math.max(0, Number.isFinite(pricing.coatingPerM2Rsd) ? pricing.coatingPerM2Rsd! : 0);
+  const coatingTotal = finishing.areaM2 * coatingRate;
+  const costBase = mat + labor.total + inst.total + coatingTotal;
   const sellNet = sellingPrice(costBase, pricing);
   const profitAmount = sellNet - costBase;
   const discountAmount = (sellNet * pricing.discountPercent) / 100;
@@ -345,12 +376,13 @@ export function computePrice(project: Project, materials: Material[], specs?: Mo
   const vatAmount = (netAfterDiscount * pricing.vatPercent) / 100;
   const grossTotal = netAfterDiscount + vatAmount;
   const profitLabel = pricing.profitMode === 'margin' ? `Marža ${pricing.profitPercent}%` : `Uvećanje ${pricing.profitPercent}%`;
-  const profitBase = pricing.profitMode === 'margin' ? 'udeo u prodajnoj ceni (trošak / (1 − marža))' : 'na nabavnu osnovicu (materijal + rad + montaža)';
+  const profitBase = pricing.profitMode === 'margin' ? 'udeo u prodajnoj ceni (trošak / (1 − marža))' : 'na nabavnu osnovicu (materijal + rad + montaža + plastificiranje)';
   const rows: PriceRow[] = [
     { label: 'Materijal', base: pricing.pricesIncludeVat ? 'neto (iz bruto cena bez PDV-a)' : 'neto, sa otpadom', amount: mat },
     { label: 'Rad (izrada)', base: `${labor.areaM2.toFixed(2)} m² ograde + ${labor.gates} kapija`, amount: labor.total },
     { label: 'Montaža', base: `${inst.meters.toFixed(2)} m trase + ${inst.gates} kapija`, amount: inst.total },
-    { label: 'Osnovica troška', base: 'materijal + rad + montaža', amount: costBase, emphasis: true },
+    { label: 'Plastificiranje', base: `${finishingArea(finishing)} × ${coatingRate.toLocaleString('sr-RS')} RSD/m² (neto)${finishing.missingArea.length ? ' • nepotpuna površina' : ''}`, amount: coatingTotal },
+    { label: 'Osnovica troška', base: 'materijal + rad + montaža + plastificiranje', amount: costBase, emphasis: true },
     { label: profitLabel, base: profitBase, amount: profitAmount },
     { label: 'Prodajna cena (neto)', base: 'trošak + zarada', amount: sellNet, emphasis: true },
     { label: `Popust ${pricing.discountPercent}%`, base: 'na prodajnu cenu (neto)', amount: -discountAmount },
@@ -359,7 +391,7 @@ export function computePrice(project: Project, materials: Material[], specs?: Mo
     { label: 'Ukupno sa PDV-om', base: '', amount: grossTotal, emphasis: true },
   ];
   return {
-    materialTotal: mat, laborTotal: labor.total, installTotal: inst.total, costBase, profitAmount, sellNet,
+    materialTotal: mat, coatingTotal, coatingAreaM2: finishing.areaM2, finishing, laborTotal: labor.total, installTotal: inst.total, costBase, profitAmount, sellNet,
     discountAmount, netAfterDiscount, vatAmount, grossTotal, rows,
     fenceAreaM2: labor.areaM2, runningMeters: inst.meters, gateCount: inst.gates,
   };

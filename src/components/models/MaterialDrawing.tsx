@@ -61,7 +61,6 @@ export function MaterialDrawing({ shape }: { shape: MatShape }) {
 export function materialFacts(m: Material): { label: string; value: string }[] {
   const shape = materialShape(m);
   const rows: { label: string; value: string }[] = [
-    { label: 'Šifra', value: m.sku },
     { label: 'Grupa', value: MATERIAL_GROUPS.find((g) => g.id === shape.group)?.label ?? '—' },
   ];
   if (shape.type === 'linear') {

@@ -9,6 +9,7 @@ import { buildCutList, describeItem } from './production';
 import { FILL_PROFILES, GUIDE_PROFILES, buildLouver08Sheet, louver08Panels } from './louverSpec';
 import { buildRail04Sheet, isRail04, rail04Posts, rail04Runs } from './railSpec';
 import { postMaterialLine } from '../models/postTemplates';
+import { isProductionPost, isSimulationMaterial } from '../models/productionPosts';
 
 /** Krojna lista: raspored komada profila na nabavne šipke (širina reza testere uračunata), sa ostatkom po šipki. */
 
@@ -257,7 +258,8 @@ function collectPieces(project: Project, specs: ModelSpecs | undefined, material
 
   // stubovi od profila izabranog šablonom stuba: cev stuba se seče iz šipke po dužini stuba
   project.posts.forEach((p, i) => {
-    if (laid.posts[i]?.hidden || [project.items[i - 1], project.items[i]].some((x) => x && isRail04(x))) return;
+    if (laid.posts[i]?.hidden || !isProductionPost(p) || [project.items[i - 1], project.items[i]].some((x) => x && isRail04(x))) return;
+    if (p.materialId && isSimulationMaterial(materials.find((m) => m.id === p.materialId))) return;
     const len = Math.round(laid.posts[i]?.lengthMm ?? p.heightMm);
     const own = postMaterialLine(project, i, materials, len);
     if (!own?.linear) return;

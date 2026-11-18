@@ -11,6 +11,7 @@ import { getPdfMake, renderBlob } from './pdf';
 import { schemaSvg } from './workorderSvg';
 import { slidingWorkSvg } from './slidingWorkSvg';
 import { elementAssembly } from './pdfSketch';
+import { pdfFinishing } from './pdfFinishing';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -77,7 +78,7 @@ export async function buildWorkorderPdfBlob(project: Project, customer: Customer
         card('UKUPNA DUŽINA', `${fmtNum(sm.occupiedMm / 1000, 2)} m`, BRAND_RED),
         card('ELEMENATA', String(sm.elements)),
         card('KAPIJA', String(sm.gates)),
-        card('STUBOVA', String(sm.posts)),
+        card('STUBOVA ZA IZRADU', String(sm.posts)),
         card('NAJVEĆA VISINA', fmtMm(sm.maxHeightMm)),
       ]],
     },
@@ -231,7 +232,7 @@ export async function buildWorkorderPdfBlob(project: Project, customer: Customer
         },
         layout: { hLineColor: () => LINE, hLineWidth: (i: number, node: any) => (i === 0 || i === node.table.body.length ? 0.6 : 0.4), vLineWidth: () => 0, paddingTop: () => 3, paddingBottom: () => 3 },
       }
-    : { text: 'Projekat nema stubova.', color: MUTED };
+    : { text: 'Nema stubova za izradu.', color: MUTED };
 
   const smallTable: any = wo.small.length
     ? {
@@ -273,12 +274,12 @@ export async function buildWorkorderPdfBlob(project: Project, customer: Customer
       infoRow,
       cards,
       { image: schemaPng, width: schemaW, height: schemaH, margin: [0, 0, 0, 2] },
-      { text: 'Boja i oznaka P1, P2… su iste kao na krojnoj listi: isečene komade razvrstaj po bojama pre sklapanja. S1, S2… su stubovi.', fontSize: 8.5, color: MUTED },
+      { text: 'Boja i oznaka P1, P2… su iste kao na krojnoj listi: isečene komade razvrstaj po bojama pre sklapanja. Oznake S# predstavljaju stubove za izradu.', fontSize: 8.5, color: MUTED },
       ...(cards2.length
         ? [{ unbreakable: true, stack: [section('Elementi za sklapanje', 'Za svaki element: delovi sa dužinama i brojem komada, podaci i kontrolne tačke (čekiraj kad je gotovo).'), cards2[0]] }, ...cards2.slice(1)]
         : [section('Elementi za sklapanje'), { text: 'Projekat nema elemenata za sklapanje.', color: MUTED }]),
       ...assemblies,
-      section('Stubovi'),
+      section('Stubovi za izradu'),
       postsTable,
       section('Okovi i sitan materijal', 'Ukupno za projekat, bez rezerve.'),
       smallTable,
@@ -293,6 +294,7 @@ export async function buildWorkorderPdfBlob(project: Project, customer: Customer
           { columns: [sign('Nalog izdao'), sign('Majstor (preuzeo)'), sign('Kontrolu izvršio'), sign('Datum završetka')], columnGap: 20, margin: [0, 16, 0, 0] },
         ],
       },
+      ...pdfFinishing(wo.finishing),
     ],
   };
   return renderBlob(pdfMake, def);

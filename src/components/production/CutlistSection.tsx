@@ -10,6 +10,8 @@ import { NumberField, ToggleField } from '../forms/Fields';
 import { PdfPreviewModal } from '../editor/PdfPreviewModal';
 import { ConfirmCuttingButton } from './ConfirmCuttingButton';
 import { OffcutsPanel } from './OffcutsPanel';
+import { buildProjectFinishing } from '../../domain/pricing/calc';
+import { FinishingSummary } from './FinishingSummary';
 
 const posTag = (k: string) => (/^\d/.test(k) ? `P${k}` : k);
 
@@ -22,6 +24,7 @@ export function CutlistSection({ project, customer, materials }: { project: Proj
   const opts = cutOptions(settings);
   const list = useMemo(() => buildCuttingList(project, settings.modelSpecs, materials, opts), [project, settings.modelSpecs, materials, opts.stockMm, opts.kerfMm, opts.saveMaterial]); // eslint-disable-line react-hooks/exhaustive-deps
   const colors = useMemo(() => positionColors(list.positions), [list.positions]);
+  const finishing = useMemo(() => buildProjectFinishing(project, materials, settings.modelSpecs), [project, materials, settings.modelSpecs]);
   const t = list.totals;
   const setCutting = (patch: Partial<typeof opts>) => update({ cutting: { ...opts, ...patch } });
 
@@ -101,6 +104,7 @@ export function CutlistSection({ project, customer, materials }: { project: Proj
           <ul className="list-disc pl-5 mt-4 space-y-0.5 text-[12.5px] text-muted">{list.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
         </>
       )}
+      <FinishingSummary value={finishing} testId="cutlist-finishing" />
       {open && <PdfPreviewModal kind="cutlist" project={project} customer={customer} materials={materials} settings={settings} onClose={() => setOpen(false)} />}
     </section>
   );

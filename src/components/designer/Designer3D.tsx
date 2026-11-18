@@ -109,7 +109,8 @@ export function PartMesh({ part, shape, hex, materialKey, selected }: { part: Cu
 
 /** 3D prikaz nacrtanog modela: profili su izvučeni iz svog poprečnog preseka, komadni delovi su sklopljeni iz jednostavnih tela. */
 export default function Designer3D({ model, parts, selectedId, sliding, posts, floorMm = 0, postHex = '#4b5563' }: { model: CustomModel; parts: ResolvedPart[]; selectedId: string | null; sliding?: SlidingOverlay3D | null; /** stubovi uz kapiju: leva ivica, debljina i visina (mm) */ posts?: { x: number; w: number; h: number }[] | null; /** tlo ispod donje ivice crteža (mm) */ floorMm?: number; /** boja stubova (boja kapije) */ postHex?: string }) {
-  const ground = sliding ? sliding.groundMm / 1000 : 0;
+  // tlo: klizna kapija ima krilo podignuto za donju ivicu rama, krilna kapija za donji zazor iz „Mere kapije“
+  const ground = sliding ? sliding.groundMm / 1000 : floorMm / 1000;
   const W = model.widthMm / 1000; const H = model.heightMm / 1000;
   const dist = Math.max(W, H) * 1.5 + 0.8;
   // okov stoji u sredini krila po dubini (Z), ne na unapred zadatoj ravni

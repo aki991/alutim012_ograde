@@ -2,6 +2,8 @@ import { useMemo } from 'react';
 import { hasAngledEnds, linearLocalPoly, miterEndsOf, partAngle, partBounds, resolveParts, sheetPoly, type CustomModel, type CustomPart, type ResolvedPart } from '../../domain/models/custom';
 import { sectionEdgeLines, sectionFace, solidsBounds, type MatShape, type Solid } from '../../domain/models/materialShape';
 import type { Material } from '../../domain/models/types';
+import { colorHex } from '../../domain/models/catalog';
+import { GATE_POST_EXTRA_MM } from '../../domain/gates/design';
 
 const EDGE = '#0f172a';
 const GLASS = '#9fd3e0';
@@ -89,6 +91,29 @@ export function CustomModelThumb({ model, materials }: { model: CustomModel; mat
       <g transform="scale(1,-1)" style={{ pointerEvents: 'none' }}>
         {parts.length === 0 && <rect x={0} y={0} width={model.widthMm} height={model.heightMm} fill="none" stroke="#94a3b8" strokeDasharray="6 5" vectorEffect="non-scaling-stroke" />}
         {parts.map((r) => <PartSvg key={r.part.id} part={r.part} shape={r.shape} hex={r.hex} />)}
+      </g>
+    </svg>
+  );
+}
+
+/**
+ * Minijatura kapije kakva je u crtanju: crtež krila (sa šarkama i bravom koji su na crtežu) između stubova, na tlu. Isto što i „2D“ u crtanju
+ * modela, ne računski crtež iz projekta (koji može drugačije da rasporedi prečke).
+ */
+export function GateDrawingThumb({ model, materials }: { model: CustomModel; materials: Material[] }) {
+  const parts = useMemo(() => resolveParts(model, materials), [model, materials]);
+  const postHex = useMemo(() => colorHex(model.color), [model.color]);
+  const dims = [0, 1].map((k) => ({ w: model.gate?.posts?.[k]?.widthMm ?? 120, h: model.gate?.posts?.[k]?.heightMm ?? model.heightMm + GATE_POST_EXTRA_MM }));
+  const posts = [{ x: -dims[0].w, w: dims[0].w, h: dims[0].h }, { x: model.widthMm, w: dims[1].w, h: dims[1].h }];
+  let x0 = -dims[0].w; let y0 = 0; let x1 = model.widthMm + dims[1].w; let y1 = Math.max(dims[0].h, dims[1].h, model.heightMm);
+  for (const r of parts) { const b = partBounds(r.part, r.shape); x0 = Math.min(x0, b.x0); y0 = Math.min(y0, b.y0); x1 = Math.max(x1, b.x1); y1 = Math.max(y1, b.y1); }
+  const m = Math.max(x1 - x0, y1 - y0) * 0.05;
+  return (
+    <svg viewBox={`${x0 - m} ${-y1 - m} ${x1 - x0 + 2 * m} ${y1 - y0 + 2 * m}`} className="w-full h-full" preserveAspectRatio="xMidYMid meet" role="img" aria-label={`Crtež kapije: ${model.name}`} data-testid="gate-drawing-thumb">
+      <g transform="scale(1,-1)" style={{ pointerEvents: 'none' }}>
+        {posts.map((q, i) => <rect key={i} x={q.x} y={0} width={q.w} height={q.h} fill={postHex} stroke="#1f2937" strokeWidth={1} vectorEffect="non-scaling-stroke" />)}
+        {parts.map((r) => <PartSvg key={r.part.id} part={r.part} shape={r.shape} hex={r.hex} />)}
+        <line x1={x0 - m} y1={0} x2={x1 + m} y2={0} stroke="#64748b" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
       </g>
     </svg>
   );

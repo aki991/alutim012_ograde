@@ -1,17 +1,21 @@
-import type { Material, MaterialCategory, MaterialUnit } from '../models/types';
+import type { Material, MaterialCategory, MaterialMassUnit, MaterialUnit } from '../models/types';
 import { cleanMaterialName } from '../models/materialTitle';
+import { materialPriceInUnit, materialPriceToBase, materialUnitFactors, selectedPriceUnit, withMaterialUnits } from '../models/materialUnits';
+import { materialMassBasis } from '../models/materialMass';
+import { withMaterialCategory } from '../models/materialCategory';
 
 /** Nazivi kategorija kako se prikazuju u tabeli (i izvoze). */
-export const MATERIAL_CATEGORY_LABELS: Record<MaterialCategory, string> = { profil: 'Profili', stub: 'Stubovi', okov: 'Okovi', automatika: 'Automatika', staklo: 'Staklo', panel: 'Paneli', ostalo: 'Ostalo' };
+export const MATERIAL_CATEGORY_LABELS: Record<MaterialCategory, string> = { profil: 'Profili', stub: 'Stubovi', zavrsetak: 'Kape i završeci', montaza: 'Stope i spojni elementi', okov: 'Okovi', automatika: 'Automatika', staklo: 'Staklo', panel: 'Paneli', ostalo: 'Ostalo' };
 export const MATERIAL_UNITS: MaterialUnit[] = ['m', 'kom', 'set', 'm2', 'kg'];
 
-export const EXPORT_HEADER = ['Šifra', 'Naziv', 'Kategorija', 'Jedinica', 'Cena (neto)', 'Otpad %', 'ID'];
+// materijal se razlikuje po nazivu: šifra se ne izvozi (ID ostaje, da se izvezen cenovnik može ponovo uvesti)
+export const EXPORT_HEADER = ['Naziv', 'Kategorija', 'Jedinica', 'Cena (neto)', 'Otpad %', 'ID', 'Obračunska jedinica', 'Masa', 'Jedinica mase', 'Izvor mase', 'Dužina komada (m)', 'Površina komada (m²)', 'Komada u setu'];
 
 /** Broj sa zarezom kao decimalnim znakom (Excel na srpskom ga tako čita). */
 const num = (n: number): string => String(n).replace('.', ',');
 
 export function materialsToRows(materials: Material[]): (string | number)[][] {
-  return [EXPORT_HEADER, ...materials.map((m) => [m.sku, m.name, MATERIAL_CATEGORY_LABELS[m.category], m.unit, num(m.unitPrice), num(m.wastePercent), m.id])];
+  return [EXPORT_HEADER, ...materials.map((m) => [m.name, MATERIAL_CATEGORY_LABELS[m.category], selectedPriceUnit(m), num(materialPriceInUnit(m)), num(m.wastePercent), m.id, m.unit, m.mass === undefined ? '' : num(m.mass), m.massUnit ?? '', m.massSource ?? '', m.stockLengthM === undefined ? '' : num(m.stockLengthM), m.pieceAreaM2 === undefined ? '' : num(m.pieceAreaM2), m.piecesPerSet === undefined ? '' : num(m.piecesPerSet)])];
 }
 
 /** Čita broj u srpskom (1.234,56) ili engleskom (1,234.56) zapisu, sa oznakom valute ili razmacima; null ako nije broj. */
@@ -66,10 +70,17 @@ export function parseCsv(text: string): string[][] {
 
 const norm = (s: string): string => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').toLowerCase().trim();
 
-type Col = 'id' | 'sku' | 'name' | 'category' | 'unit' | 'price' | 'priceGross' | 'waste' | 'ral' | 'dimA' | 'dimB' | 'dimC';
+type Col = 'id' | 'sku' | 'name' | 'category' | 'unit' | 'price' | 'priceGross' | 'waste' | 'ral' | 'dimA' | 'dimB' | 'dimC' | 'baseUnit' | 'mass' | 'massUnit' | 'massSource' | 'stockLength' | 'pieceArea' | 'pack';
 function mapHeader(h: string): Col | null {
   const n = norm(h);
   if (n === 'id') return 'id';
+  if (n === 'obracunska jedinica') return 'baseUnit';
+  if (n === 'masa') return 'mass';
+  if (n === 'jedinica mase') return 'massUnit';
+  if (n === 'izvor mase') return 'massSource';
+  if (n.startsWith('duzina komada')) return 'stockLength';
+  if (n.startsWith('povrsina komada')) return 'pieceArea';
+  if (n === 'komada u setu') return 'pack';
   // dobavljači koriste različite nazive kolona: prepoznaje se početak naslova, ne tačan naziv
   if (n.startsWith('sifra') || n.startsWith('sku') || n.startsWith('kod') || n.startsWith('katalo') || n.startsWith('art. br') || n === 'artikal') return 'sku';
   if (n.startsWith('naziv') || n.startsWith('opis') || n === 'name' || n === 'artikal naziv') return 'name';
@@ -153,10 +164,14 @@ export function planImport(existing: Material[], source: string | string[][], ad
   const cols = table[0].map(mapHeader);
   const has = (c: Col) => cols.includes(c);
   if (!has('price') && has('priceGross')) return { rows: [], fatal: 'Dokument ima samo cenu sa PDV-om. Aplikacija radi sa neto cenama: potrebna je kolona sa cenom bez PDV-a.', counts };
-  if (!has('price')) return { rows: [], fatal: 'Nije pronađena kolona sa cenom. Prvi red mora imati naslove (npr. Šifra; Naziv; Cena).', counts };
-  if (!has('id') && !has('sku')) return { rows: [], fatal: 'Nije pronađena kolona „Šifra" ni „ID", pa se redovi ne mogu upariti sa materijalima.', counts };
+  if (!has('price')) return { rows: [], fatal: 'Nije pronađena kolona sa cenom. Prvi red mora imati naslove (npr. Naziv; Cena).', counts };
+  if (!has('id') && !has('sku') && !has('name')) return { rows: [], fatal: 'Nije pronađena kolona „Naziv" (ni „ID"), pa se redovi ne mogu upariti sa materijalima.', counts };
   const byId = new Map(existing.map((m) => [m.id, m]));
-  const bySku = new Map(existing.map((m) => [m.sku.trim().toLowerCase(), m]));
+  const bySku = new Map(existing.filter((m) => m.sku?.trim()).map((m) => [m.sku.trim().toLowerCase(), m]));
+  // materijal se razlikuje po nazivu: red bez ID-a i šifre uparuje se po nazivu (bez razlike velikih i malih slova i razmaka)
+  const nameKey = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+  const byName = new Map<string, Material>();
+  for (const m of existing) { const k = nameKey(m.name); if (k && !byName.has(k)) byName.set(k, m); }
   const seen = new Set<string>();
   const rows: ImportRow[] = [];
   const priceCol = cols.indexOf('price');
@@ -171,7 +186,7 @@ export function planImport(existing: Material[], source: string | string[][], ad
     const name = get('name');
     const idRaw = get('id');
     // kolona „ID" dobavljača je obično njegova šifra artikla: ako nije naš interni ID, pokušava se kao šifra
-    const found = (idRaw && byId.get(idRaw)) || (sku && bySku.get(sku.toLowerCase())) || (idRaw && bySku.get(idRaw.toLowerCase())) || undefined;
+    const found = (idRaw && byId.get(idRaw)) || (sku && bySku.get(sku.toLowerCase())) || (idRaw && bySku.get(idRaw.toLowerCase())) || (name && byName.get(nameKey(name))) || undefined;
     const priceRaw = get('price');
     let price = priceRaw === '' ? null : readPrice(priceRaw);
     const wasteRaw = get('waste');
@@ -183,11 +198,33 @@ export function planImport(existing: Material[], source: string | string[][], ad
     if (waste !== null && (waste < 0 || waste > 100)) { push({ ...base, message: `Otpad „${wasteRaw}" mora biti između 0 i 100.` }); return; }
     const docUnit = parseUnit(get('unit'));
     const notes: string[] = [];
+    const measure = (key: Col): number | undefined => {
+      const raw = get(key); if (!raw) return undefined;
+      const v = Number(raw.replace(',', '.'));
+      return Number.isFinite(v) && v > 0 ? v : undefined;
+    };
+    const extra: Partial<Material> = {
+      ...(measure('stockLength') || docUnit.barLen ? { stockLengthM: measure('stockLength') ?? docUnit.barLen } : {}),
+      ...(measure('pieceArea') ? { pieceAreaM2: measure('pieceArea') } : {}),
+      ...(measure('pack') ? { piecesPerSet: measure('pack') } : {}),
+    };
+    const massUnit = get('massUnit') as MaterialMassUnit;
+    if (measure('mass') && ['kg/m', 'kg/m²', 'kg/kom'].includes(massUnit)) {
+      extra.mass = measure('mass'); extra.massUnit = massUnit;
+      const source = get('massSource') as Material['massSource'];
+      extra.massSource = source && ['estimated', 'catalog', 'calculated', 'manual'].includes(source) ? source : 'manual';
+    }
+    const foundCandidate = found ? withMaterialCategory({ ...found, ...extra }) : undefined;
+    if (foundCandidate && extra.mass) foundCandidate.massBasis = materialMassBasis(foundCandidate);
+    const foundWithUnits = foundCandidate ? withMaterialUnits(foundCandidate) : undefined;
     if (docUnit.barLen && (!found || found.unit === 'm')) {
       price = round2(price / docUnit.barLen);
       notes.push(`Cena šipke od ${String(docUnit.barLen).replace('.', ',')} m podeljena dužinom: ${String(price).replace('.', ',')} po metru.`);
-    } else if (found && docUnit.unit && docUnit.unit !== found.unit) {
-      notes.push(`Jedinica u dokumentu (${get('unit')}) razlikuje se od cenovnika (${found.unit}): proverite cenu.`);
+    } else if (foundWithUnits && docUnit.unit && docUnit.unit !== foundWithUnits.unit) {
+      const factor = materialUnitFactors(foundWithUnits)[docUnit.unit];
+      if (!(factor && factor > 0)) { push({ ...base, message: `Cena po ${get('unit')} se ne može preračunati za ovaj materijal; nedostaje masa ili poznata mera komada/seta.` }); return; }
+      price = materialPriceToBase(foundWithUnits, price, docUnit.unit);
+      notes.push(`Cena po ${get('unit')} preračunata u ${foundWithUnits.unit}.`);
     } else if (found && docUnit.barLen) {
       notes.push(`Cena je po šipki od ${String(docUnit.barLen).replace('.', ',')} m, a materijal se vodi u ${found.unit}: proverite cenu.`);
     }
@@ -196,10 +233,11 @@ export function planImport(existing: Material[], source: string | string[][], ad
       if (seen.has(found.id)) { push({ ...base, message: 'Materijal se u dokumentu pojavljuje više puta; važi prvi red.' }); return; }
       seen.add(found.id);
       const newWaste = waste ?? found.wastePercent;
-      const same = price === found.unitPrice && newWaste === found.wastePercent;
+      const sameMetadata = (Object.keys(extra) as (keyof Material)[]).every((key) => extra[key] === found[key]);
+      const same = Math.abs(price - found.unitPrice) <= 1e-10 * Math.max(1, found.unitPrice) && newWaste === found.wastePercent && sameMetadata && (docUnit.unit === undefined || docUnit.unit === selectedPriceUnit(foundWithUnits!));
       push({
         ...base, status: same ? 'same' : 'changed', oldPrice: found.unitPrice, newPrice: price, oldWaste: found.wastePercent, newWaste, message: note,
-        result: same ? undefined : { ...found, unitPrice: price, wastePercent: newWaste, demo: false },
+        result: same ? undefined : { ...foundWithUnits!, unitPrice: price, priceUnit: docUnit.unit && docUnit.unit !== foundWithUnits!.unit ? docUnit.unit : undefined, wastePercent: newWaste, demo: false },
       });
       return;
     }
@@ -213,11 +251,23 @@ export function planImport(existing: Material[], source: string | string[][], ad
       const fullName = name
         ? [tidyName(name), dims.every(Boolean) ? ` ${dims.join('×')} mm` : '', ral ? `, ${/^sirovo$/i.test(ral) ? 'sirovo' : `RAL ${ral}`}` : '', docUnit.barLen && docUnit.barLen !== 6 ? `, šipka ${String(docUnit.barLen).replace('.', ',')} m` : ''].join('')
         : '';
-      if (sku && fullName && unit) {
-        push({ ...base, name: fullName, status: 'new', newPrice: price, newWaste: waste ?? 0, message: note, result: { id: `mat_imp_${sku.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`, sku, name: fullName, category: cat, unit, unitPrice: price, wastePercent: waste ?? 0, demo: false } });
+      // materijal se razlikuje po nazivu: šifra nije obavezna (ID se pravi od šifre, a bez nje od naziva)
+      if (fullName && unit) {
+        const key = (sku || fullName).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/đ/g, 'dj').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+        let result: Material = { id: `mat_imp_${key}`, sku: sku || '', name: fullName, category: cat, unit, unitPrice: price, wastePercent: waste ?? 0, demo: false, ...extra };
+        const exportedBase = parseUnit(get('baseUnit')).unit;
+        if (exportedBase) {
+          result = withMaterialCategory({ ...result, unit: exportedBase });
+          if (extra.mass) result.massBasis = materialMassBasis(result);
+          result = withMaterialUnits(result);
+          const factor = materialUnitFactors(result)[unit];
+          if (!(factor && factor > 0)) { push({ ...base, message: 'Nije moguće povezati izvezenu cenu sa obračunskom jedinicom.' }); return; }
+          result = { ...result, unitPrice: price / factor, priceUnit: unit === result.unit ? undefined : unit };
+        }
+        push({ ...base, name: fullName, status: 'new', newPrice: result.unitPrice, newWaste: waste ?? 0, message: note, result });
         return;
       }
-      push({ ...base, message: 'Novi materijal traži šifru, naziv i jedinicu (m, kom, set, m2, kg).' });
+      push({ ...base, message: 'Novi materijal traži naziv i jedinicu (m, kom, set, m2, kg).' });
       return;
     }
     push({ ...base, status: 'unknown', newPrice: price, message: ['Nije u cenovniku (preskočeno).', note].filter(Boolean).join(' ') });

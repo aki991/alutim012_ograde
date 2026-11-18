@@ -8,15 +8,16 @@ export function parseNum(t: string): number | null | 'bad' {
   return Number.isFinite(n) ? n : 'bad';
 }
 
-export const showNum = (v: number | null | undefined): string => (v === null || v === undefined ? '' : String(Math.round(v * 100) / 100).replace('.', ','));
+export const showNum = (v: number | null | undefined, precision = 2): string => (v === null || v === undefined ? '' : String(Math.round(v * 10 ** precision) / 10 ** precision).replace('.', ','));
 
 /** polje za broj koje dozvoljava praznu vrednost (nepoznato) i nulu; potvrđuje se na Enter ili izlazak iz polja */
-export function NumInput({ value, onCommit, testId, placeholder, className = '', readOnly, ariaLabel, chain }: {
+export function NumInput({ value, onCommit, testId, placeholder, className = '', readOnly, ariaLabel, chain, precision = 2 }: {
   value: number | null | undefined; onCommit: (v: number | null) => void; testId?: string; placeholder?: string; className?: string; readOnly?: boolean; ariaLabel?: string;
   /** polja sa istim nizom: Enter potvrđuje i prelazi na sledeće polje niza (brz unos mera sa terena) */
   chain?: string;
+  precision?: number;
 }) {
-  const [text, setText] = useState(showNum(value));
+  const [text, setText] = useState(showNum(value, precision));
   const [bad, setBad] = useState(false);
   // „prljavo“ = radnik je kucao u polju od kada je ušao u njega. Samo tada se vrednost potvrđuje; inače polje uvek prikazuje
   // trenutnu vrednost (i kad je fokusirano), da izračunata kota ne ostane sa starim tekstom i ne upiše se kao ručna mera.
@@ -24,7 +25,7 @@ export function NumInput({ value, onCommit, testId, placeholder, className = '',
   const skipBlur = useRef(false);
   // posle potvrde polje prikazuje vrednost koju je aplikacija stvarno prihvatila (npr. odbijena širina se vraća)
   const [rev, setRev] = useState(0);
-  useEffect(() => { if (!dirty.current) setText(showNum(value)); }, [value, rev]);
+  useEffect(() => { if (!dirty.current) setText(showNum(value, precision)); }, [value, rev, precision]);
   const commit = () => {
     if (!dirty.current) return;
     const n = parseNum(text);

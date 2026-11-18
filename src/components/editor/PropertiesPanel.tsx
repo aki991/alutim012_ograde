@@ -1,10 +1,11 @@
 import { GateModelPicker } from '../gates/GateModelPicker';
 import { GateFrameBox } from './GateFrameBox';
+import { RequisitionModal } from './RequisitionModal';
 import { ReinforceSettings } from './ReinforceSettings';
-import { allFenceModels, customHBarLayout, customLiftOf, customRails, customSlatLayout, isCustomModel } from '../../domain/models/customRegistry';
+import { allFenceModels, customHBarLayout, customHBarZones, customLiftOf, customRails, customSlatLayout, isCustomModel } from '../../domain/models/customRegistry';
 import { gateLeafPoses } from '../../domain/geometry/gates';
 import { leafHeightOf } from '../../domain/gates/slidingLayout';
-import { AlertTriangle, ArrowLeft, ArrowRight, Copy, Trash2, Calculator, FileDown, Scissors, ClipboardList, Ruler } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ArrowRight, Copy, Trash2, Calculator, FileDown, Scissors, ClipboardList, PackageCheck, Ruler } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import { autoFillToFixedTotal, changeColor, changeFinish, isTotalLocked, setItemWidthLock, setTotalLock, indexOfItem, resetPostHeights, restoreBasePosts, setAllColors, setAllFinishes, setAllGatesOwnPosts, setAllPlinths, removeItemPlinths, setItemPlinthHeight, setRl10Params, resetRl10Params, setTubesParams, resetTubesParams, setPlinthWidth, setAllHeights, updateItem, updatePost } from '../../domain/geometry/operations';
 import { computeInfill } from '../../domain/geometry/infill';
@@ -17,7 +18,7 @@ import {
 import { MAX_FIELDS, STAIR_DEFAULT_RISE_MM, STAIR_MAX_DEG, STAIR_MIN_DEG, recommendedStairPosts, slopeOf, stairGroupAt } from '../../domain/geometry/stair';
 import { clearStair, makeStair, setStairGroup, stairOuterRunMm, type StairPatch } from '../../domain/geometry/stairOps';
 import { OWN_POSTS_GAP_MM } from '../../domain/models/factories';
-import { PLINTH_DEFAULT_MM, type FenceModelId, type FenceParams, type Gate, type LayoutItem, type Post, type Project } from '../../domain/models/types';
+import { PLINTH_DEFAULT_MM, type FenceModelId, type FenceParams, type Gate, type LayoutItem, type Material, type Post, type Project } from '../../domain/models/types';
 import { RL10_LABELS, RL10_LIMITS, isRl10Model, rl10Dims, type Rl10Dims } from '../../domain/models/rl10';
 import { TUBES_LABELS, TUBES_LIMITS, isTubesModel, tubesDims, type TubesDims } from '../../domain/models/tubes';
 import { computePrice } from '../../domain/pricing/calc';
@@ -28,7 +29,9 @@ import { fmtMm, fmtMoney, fmtNum } from '../../utils/units';
 import { ColorField, NumberField, SegmentedField, SelectField, TextField, ToggleField } from '../forms/Fields';
 import { ConfirmDialog } from '../ui/Modal';
 import { PdfPreviewModal } from './PdfPreviewModal';
-import { capOptions, capPatch, templateFromPost, type CapSlot } from '../../domain/models/postTemplates';
+import { capOptions, capPatch, defaultPostMaterial, templateFromPost, type CapSlot } from '../../domain/models/postTemplates';
+import { MaterialSelect } from '../../pages/Stock/StockPage';
+import { materialShape } from '../../domain/models/materialShape';
 import { uid } from '../../utils/id';
 import { GateDesignModal } from '../gates/GateDesignModal';
 import { SlidingPanel } from '../gates/SlidingPanel';
@@ -66,6 +69,13 @@ function SlatSettings({ id, modelId, widthMm, heightMm, params, gate, clearWidth
   const lift = params.liftMm ?? customLiftOf(modelId);
   const lay = customSlatLayout(modelId, widthMm, heightMm - lift, params.slats);
   const hb = customHBarLayout(modelId, heightMm - lift, params.slats);
+  // model sa vodoravnim ojačanjem: raspored prečki posebno u svakom polju, sa odstojanjima od ojačanja
+  const zones = customHBarZones(modelId, heightMm - lift, params.slats);
+  const setZone = (i: number, patch: { bottomMm?: number; topMm?: number; hGapMm?: number }) => {
+    const zs = Array.from({ length: Math.max(i + 1, params.slats?.zones?.length ?? 0) }, (_, k) => params.slats?.zones?.[k]);
+    zs[i] = { ...zs[i], ...patch };
+    setSlat({ zones: zs });
+  };
   const rails = customRails(modelId, params.slats);
   const half = Math.max(50, Math.round(widthMm / 2));
   const halfH = Math.max(50, Math.round((heightMm - lift) / 2));
@@ -93,7 +103,24 @@ function SlatSettings({ id, modelId, widthMm, heightMm, params, gate, clearWidth
                 hint={`Letvica: ${lay.count}. Razmak se podešava tako da letvice ravnomerno popune širinu.`} />
             </>
           )}
-          {hb && (
+          {zones && zones.length > 0 && (
+            <>
+              {zones.map((z) => {
+                const n = zones.length;
+                const title = n === 1 ? 'Vodoravne prečke' : z.first ? 'Prečke ispod ojačanja' : z.last ? 'Prečke iznad ojačanja' : 'Prečke između ojačanja';
+                return (
+                  <div key={z.index} data-testid={`hbar-zone-${z.index}`}>
+                    {sub(title)}
+                    <NumberField label={z.first ? 'Od dna ispune do donje prečke' : 'Od ojačanja do donje prečke'} testId={`hbar-zone-${z.index}-bottom`} value={r1(z.bottom)} range={{ min: 0, max: 2000 }} onCommit={(v) => setZone(z.index, { bottomMm: v })} />
+                    <NumberField label={z.last ? 'Od gornje prečke do vrha ispune' : 'Od gornje prečke do ojačanja'} testId={`hbar-zone-${z.index}-top`} value={r1(z.top)} range={{ min: 0, max: 2000 }} onCommit={(v) => setZone(z.index, { topMm: v })} />
+                    <NumberField label="Razmak između prečki" testId={`hbar-zone-${z.index}-gap`} value={r1(z.gap)} range={{ min: z.gap < 0 ? -100 : 0, max: 400 }} onCommit={(v) => setZone(z.index, { hGapMm: v })}
+                      hint={`Prečki: ${z.count}. Staje najviše prečki sa zadatim razmakom, a višak se ravnomerno deli na sve razmake.`} />
+                  </div>
+                );
+              })}
+            </>
+          )}
+          {!zones && hb && (
             <>
               {sub('Vodoravne prečke')}
               <NumberField label="Od dna ispune do donje prečke" testId="hbar-bottom" value={r1(hb.bottom)} range={{ min: 0, max: halfH }} onCommit={(v) => setSlat({ bottomMm: v })} />
@@ -623,7 +650,19 @@ function PostPanel({ project, id }: { project: Project; id: string }) {
             {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
         </div>
-        {p.materialId && <div className="text-[12px] text-muted mt-1" data-testid="post-material">Presek: {materials.find((m) => m.id === p.materialId)?.name ?? 'materijal je obrisan iz cenovnika'}</div>}
+        {p.type !== 'concrete' && p.type !== 'concrete_plinth' && (() => {
+          // presek stuba: cev iz koje se stub seče (krojna lista, radni nalog, trebovanje); bez izbora standardna cev iste mere (80 × 80 → 80 × 80 × 3)
+          const def = defaultPostMaterial(p, materials);
+          const linear = (m: Material) => { const s = materialShape(m); return s.type === 'linear' && !s.u && (s.group === 'kv' || s.group === 'okrugle'); };
+          return (
+            <div className="mt-1.5" data-testid="post-material">
+              <div className="text-[13px] mb-1">Materijal stuba (presek)</div>
+              <MaterialSelect materials={materials} only={linear} value={p.materialId && materials.some((m) => m.id === p.materialId) ? p.materialId : ''} testId="post-material-select"
+                emptyLabel={def ? `Standardno: ${def.name}` : 'Standardni stub (po komadu)'} onChange={(v) => applyPatch({ materialId: v || undefined }, 'post-mat')} />
+              {p.materialId && !materials.some((m) => m.id === p.materialId) && <div className="text-[12px] text-[#b45309] mt-0.5">Izabrani materijal je obrisan iz cenovnika.</div>}
+            </div>
+          );
+        })()}
         {tplName === null
           ? <button className="btn btn-sm mt-1.5" data-testid="post-template-save" onClick={() => { setTplName(''); setTplMsg(null); }}>Sačuvaj stub kao šablon</button>
           : (
@@ -676,6 +715,7 @@ function PriceSummary({ project }: { project: Project }) {
   const [cutOpen, setCutOpen] = useState(false);
   const [orderOpen, setOrderOpen] = useState(false);
   const [sketchOpen, setSketchOpen] = useState(false);
+  const [reqOpen, setReqOpen] = useState(false);
   const customer = customers.find((c) => c.id === project.customerId) ?? null;
   const price = useMemo(() => computePrice(project, materials, specs), [project, materials, specs]);
   const money = (n: number) => fmtMoney(n, settings.currency, settings.currencyRateToEur);
@@ -692,7 +732,10 @@ function PriceSummary({ project }: { project: Project }) {
         <span className="font-bold">Ukupno</span>
         <span className="text-right"><span className="text-[19px] font-extrabold tabular-nums" data-testid="price-total">{money(price.grossTotal)}</span><span className="block text-[11px] text-muted">sa PDV-om · ≈ {fmtNum(price.grossTotal / settings.currencyRateToEur, 0)} €</span></span>
       </div>
-      <button className="btn btn-dark w-full mt-3" data-testid="btn-open-calc" onClick={() => window.dispatchEvent(new CustomEvent('open-calc'))}><Calculator size={16} />Detaljan obračun</button>
+      <div className="grid grid-cols-2 gap-2 mt-3">
+        <button className="btn btn-dark !px-2 !gap-1.5 text-[13px]" data-testid="btn-open-calc" onClick={() => window.dispatchEvent(new CustomEvent('open-calc'))}><Calculator size={16} />Detaljan obračun</button>
+        <button className="btn btn-dark !px-2 !gap-1.5 text-[13px]" data-testid="btn-requisition" title="Trebovanje materijala: sav materijal iz sastavnica, profili u celim šipkama; količine se mogu promeniti pre štampe" onClick={() => setReqOpen(true)}><PackageCheck size={16} />Trebovanje</button>
+      </div>
       {/* dokumenti odmah uz cenu, da se ne skroluje do dna panela */}
       <div className="grid grid-cols-2 gap-2 mt-2">
         <button className="btn !px-2 !py-1.5 !gap-1.5 text-[13px]" data-testid="btn-pdf" onClick={() => setPdfOpen(true)}><FileDown size={17} />PDF ponuda</button>
@@ -702,6 +745,7 @@ function PriceSummary({ project }: { project: Project }) {
       </div>
     </Section>
     {pdfOpen && <PdfPreviewModal project={project} customer={customer} materials={materials} settings={settings} onClose={() => setPdfOpen(false)} />}
+    {reqOpen && <RequisitionModal project={project} customer={customer} materials={materials} settings={settings} onClose={() => setReqOpen(false)} />}
     {orderOpen && <PdfPreviewModal kind="workorder" project={project} customer={customer} materials={materials} settings={settings} onClose={() => setOrderOpen(false)} />}
     {sketchOpen && <PdfPreviewModal kind="sketch" project={project} customer={customer} materials={materials} settings={settings} onClose={() => setSketchOpen(false)} />}
     {cutOpen && <PdfPreviewModal kind="cutlist" askOffcuts project={project} customer={customer} materials={materials} settings={settings} onClose={() => setCutOpen(false)} />}

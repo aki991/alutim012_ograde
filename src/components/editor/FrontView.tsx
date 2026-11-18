@@ -14,6 +14,7 @@ import { itemLabel } from '../../utils/labels';
 import { InfillArt, SvgDefs } from '../fences/InfillArt';
 import { GateArt } from '../gates/GateArt';
 import { slidingOverflow } from '../../domain/gates/slidingLayout';
+import { isProductionPost } from '../../domain/models/productionPosts';
 
 export interface FrontViewOptions {
   showDimensions: boolean;
@@ -23,6 +24,8 @@ export interface FrontViewOptions {
   showModular?: boolean;
   /** bez pozadine i tla (ograda za simulaciju na fotografiji) */
   transparent?: boolean;
+  /** Proizvodni prikaz: postojeći betonski oslonci i podnožja nisu delovi za izradu. */
+  production?: boolean;
 }
 
 export interface FrontViewProps {
@@ -86,7 +89,7 @@ export function widthDims(layout: ReturnType<typeof computeLayout>): WidthDim[] 
  * jer kapije obično nisu iste visine kao platna. Svaka kota pokazuje najvišu meru svoje vrste, a klik menja visinu svih.
  */
 export interface HeightGroup { key: string; kind: 'fence' | 'post' | 'gate'; heightMm: number; plinthMm: number; id: string; /** nivo poda (stepenište, terasa) */ floorMm: number; /** elementi te vrste nisu iste visine: kota pokazuje najvišu */ mixed: boolean }
-export function heightGroups(project: Project, _preferId?: string | null): HeightGroup[] {
+export function heightGroups(project: Project, _preferId?: string | null, production = false): HeightGroup[] {
   const layout = computeLayout(project);
   const out: HeightGroup[] = [];
   for (const kind of ['fence', 'gate'] as const) {
@@ -95,7 +98,7 @@ export function heightGroups(project: Project, _preferId?: string | null): Heigh
     const top = all.reduce((a, li) => (li.item.heightMm > a.item.heightMm ? li : a), all[0]);
     out.push({ key: kind, kind, heightMm: top.item.heightMm, plinthMm: top.plinthMm, id: top.item.id, floorMm: Math.min(top.floorStart, top.floorEnd), mixed: new Set(all.map((li) => Math.round(li.item.heightMm))).size > 1 });
     if (kind === 'fence') {
-      const posts = layout.posts.filter((lp) => !lp.hidden);
+      const posts = layout.posts.filter((lp) => !lp.hidden && (!production || isProductionPost(lp.post)));
       if (posts.length) {
         const tallest = posts.reduce((a, lp) => (lp.topMm > a.topMm ? lp : a), posts[0]);
         out.push({ key: 'post', kind: 'post', heightMm: tallest.topMm, plinthMm: 0, id: tallest.post.id, floorMm: tallest.floorMm, mixed: new Set(posts.map((lp) => Math.round(lp.topMm))).size > 1 });
@@ -104,7 +107,7 @@ export function heightGroups(project: Project, _preferId?: string | null): Heigh
   }
   // redosled: ograda, stubovi, kapije (stubovi su dodati odmah posle ograde); projekat samo sa kapijama dobija i kotu stubova
   if (!out.some((g) => g.kind === 'post')) {
-    const posts = layout.posts.filter((lp) => !lp.hidden);
+    const posts = layout.posts.filter((lp) => !lp.hidden && (!production || isProductionPost(lp.post)));
     if (posts.length) {
       const tallest = posts.reduce((a, lp) => (lp.topMm > a.topMm ? lp : a), posts[0]);
       out.splice(0, 0, { key: 'post', kind: 'post', heightMm: tallest.topMm, plinthMm: 0, id: tallest.post.id, floorMm: tallest.floorMm, mixed: new Set(posts.map((lp) => Math.round(lp.topMm))).size > 1 });
@@ -299,6 +302,7 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
     showLabels: options?.showLabels ?? project.settings.showLabels,
     showModular: options?.showModular ?? false,
     transparent: options?.transparent ?? false,
+    production: options?.production ?? false,
   };
   const m = frontViewMetrics(project, scale, opts.showDimensions && !compact, compact, Boolean(interactive) && project.items.length > 0);
   const { layout, groundY } = m;
@@ -314,7 +318,7 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
   const gy1 = m.vy + m.vh;
 
   const selectedItemIndex = selectedType === 'item' ? items.findIndex((i) => i.id === selectedId) : -1;
-  const hGroups = heightGroups(project, selectedItemIndex >= 0 ? items[selectedItemIndex].id : null);
+  const hGroups = heightGroups(project, selectedItemIndex >= 0 ? items[selectedItemIndex].id : null, opts.production);
 
   return (
     <svg
@@ -402,7 +406,7 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
         const shear = t !== 0 ? `matrix(1 ${-t} 0 1 0 ${t * li.axisStart})` : undefined;
         return (
           <g key={it.id} opacity={dim ? 0.3 : 1} data-item-art={it.id} transform={shear} data-stair={t !== 0 ? 'true' : undefined}>
-            {li.plinthMm > 0 && (() => {
+            {li.plinthMm > 0 && !opts.production && (() => {
               // gornja tamna traka podnožja ne ide ispod betonskog stuba koji stoji na njemu: stub i podnožje su jedna celina
               const masonryAt = (k: number) => { const lp = layout.posts[k]; return !!lp && !lp.hidden && (lp.post.type === 'concrete' || lp.post.type === 'concrete_plinth'); };
               const bx0 = masonryAt(li.index) ? Math.max(li.plinthX0, li.clearStart) : li.plinthX0;
@@ -466,7 +470,7 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
       })}
 
       {/* stubovi */}
-      {layout.posts.filter((lp) => !lp.hidden).map((lp) => (
+      {layout.posts.filter((lp) => !lp.hidden && (!opts.production || isProductionPost(lp.post))).map((lp) => (
         <g key={lp.post.id}>
           {(lp.post.turnDeg ?? 0) !== 0 && lp.role !== 'end' && (
             <g data-testid={`turn-mark-${lp.index}`} pointerEvents="none">
@@ -571,6 +575,7 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
             return widthDims(layout).map((d) => {
               if (d.kind === 'post') {
                 const lp = layout.posts[d.postIndex!];
+                if (opts.production && !isProductionPost(lp.post)) return null;
                 const top = groundY - lp.floorMm - lp.topMm - 4 * px;
                 return (
                   <g key={`dp-${lp.post.id}`} data-testid="dim-post">
@@ -581,13 +586,13 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
                 );
               }
               const li = d.li!;
-              // kapija sa merama: kota je širina samog krila (svetli otvor − zazori), posebno za svako krilo; menja se u „Mere kapije“
+              // kapija sa merama: kota je širina samog krila (svetli otvor − zazori), posebno za svako krilo; klik na kotu menja svetli otvor kapije (krila se računaju iz njega, zazori i raspodela se zadaju u „Mere kapije“)
               const boxes = li.item.kind === 'gate' ? (li.item.gateType === 'double' ? doubleLeafBoxes(li.item, li.clearWidth) : swingLeafBoxes(li.item, li.clearWidth)) : null;
               if (boxes) {
                 return (
                   <g key={`d-${li.item.id}`} data-testid="dim-panel">
-                    {boxes.map((b, n) => <DimLine key={n} x1={d.x1 + b.x} x2={d.x1 + b.x + b.w} y={dy} text={fmtMm(b.w)} sub={li.item.kind === 'gate' && li.item.gateType === 'double' ? (activeLeafIndex(li.item) === n ? 'aktivno krilo' : 'pasivno krilo') : 'krilo'} fs={fs} scale={scale} />)}
-                    {li.item.kind === 'gate' && li.item.gateType === 'double' && <DimLine x1={d.x1} x2={d.x2} y={dy - 46 * px} text={fmtMm(d.x2 - d.x1)} sub="svetli otvor" fs={fs} scale={scale} color="#1d4ed8" />}
+                    {boxes.map((b, n) => <DimLine key={n} x1={d.x1 + b.x} x2={d.x1 + b.x + b.w} y={dy} text={fmtMm(b.w)} sub={li.item.kind === 'gate' && li.item.gateType === 'double' ? (activeLeafIndex(li.item) === n ? 'aktivno krilo' : 'pasivno krilo') : 'krilo'} fs={fs} scale={scale} edit={interactive ? { kind: 'clear', id: li.item.id } : undefined} />)}
+                    {li.item.kind === 'gate' && li.item.gateType === 'double' && <DimLine x1={d.x1} x2={d.x2} y={dy - 46 * px} text={fmtMm(d.x2 - d.x1)} sub="svetli otvor" fs={fs} scale={scale} color="#1d4ed8" edit={interactive ? { kind: 'clear', id: li.item.id } : undefined} />}
                   </g>
                 );
               }
@@ -617,11 +622,11 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
           </g>
 
           {/* pozicije stubova */}
-          {opts.showModular && layout.posts.map((lp, i) => (
+          {opts.showModular && layout.posts.filter((lp) => !opts.production || isProductionPost(lp.post)).map((lp) => (
             <g key={`pp-${lp.post.id}`}>
               <line x1={lp.x} y1={groundY + 0} x2={lp.x} y2={groundY + 124 * px} stroke="#94a3b8" strokeWidth={1 * px} />
               <text x={lp.x} y={groundY + 140 * px} textAnchor="middle" fontSize={10 * px} fill="#64748b">
-                {`S${i + 1}·${lp.x}`}
+                {`S${lp.index + 1}·${lp.x}`}
               </text>
             </g>
           ))}

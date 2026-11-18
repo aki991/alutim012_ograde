@@ -24,6 +24,7 @@ import { doubleGateSeed, singleGateSeed } from '../domain/models/doubleGateSeed'
 import { pairWidth } from '../domain/models/pairHardware';
 import { builtinToCustom } from '../domain/models/fromBuiltin';
 import { cleanMaterialName } from '../domain/models/materialTitle';
+import { withMaterialUnits } from '../domain/models/materialUnits';
 import { createFence, createGate, createProject, DEFAULT_FENCE_WIDTH_MM, nowIso } from '../domain/models/factories';
 import { emptyHistory, recordChange, redo as redoH, undo as undoH, type History } from '../domain/models/history';
 import type {
@@ -417,6 +418,9 @@ export const useAppStore = create<AppState>((set, get) => {
               if (next) { materials = next; terraceAdded = true; } else localStorage.setItem(TERRACE_KEY, '1');
             }
           } catch { /* bez localStorage-a: preskače se */ }
+          const massMaterials = materials.map(withMaterialUnits);
+          const massChanged = massMaterials.some((m, i) => m !== materials[i]);
+          materials = massMaterials;
           // delovi nacrtanih modela sa obrisanim materijalom prelaze na isti materijal (ista šifra) iz cenovnika, npr. čep tarabice K100018
           const remapped = remapMissingMaterials(settings.customModels, materials);
           if (remapped) settings = { ...settings, customModels: remapped };
@@ -441,7 +445,7 @@ export const useAppStore = create<AppState>((set, get) => {
               localStorage.setItem(PROJECTS_WIPED_KEY, '1');
             } catch { /* neuspeh: pokušaće se opet pri sledećem pokretanju */ }
           }
-          if (backfilled || renamed || carriagesAdded || terraceAdded || railAdded || remapped) {
+          if (backfilled || renamed || carriagesAdded || terraceAdded || railAdded || remapped || massChanged) {
             // autosave počinje tek posle init-a, pa se dodati materijali upisuju odmah; oznaka se postavlja tek kad je upis uspeo
             try {
               await saveAll({ projects: get().projects, customers: get().customers, materials, settings });
@@ -479,7 +483,7 @@ export const useAppStore = create<AppState>((set, get) => {
           if (customers !== s.customers) out.customers = customers;
         }
         if (patch.materials) {
-          const materials = mergeById(s.materials, patch.materials.upsert.filter((m) => !isBuiltinMaterial(m)), patch.materials.remove);
+          const materials = mergeById(s.materials, patch.materials.upsert.filter((m) => !isBuiltinMaterial(m)).map(withMaterialUnits), patch.materials.remove);
           if (materials !== s.materials) out.materials = materials;
         }
         // i modeli iz baze: deo sa obrisanim materijalom prelazi na isti materijal iz cenovnika (izmena se zatim šalje u bazu)
@@ -758,11 +762,21 @@ export const useAppStore = create<AppState>((set, get) => {
       }));
     },
     upsertMaterial(m) {
+      m = withMaterialUnits(m);
       set((s) => ({ materials: s.materials.some((x) => x.id === m.id) ? s.materials.map((x) => (x.id === m.id ? m : x)) : [...s.materials, m] }));
     },
-    setMaterials(materials) { set({ materials }); },
+    setMaterials(materials) { set({ materials: materials.map(withMaterialUnits) }); },
     removeMaterial(id) { set((s) => ({ materials: s.materials.filter((x) => x.id !== id) })); },
-    updateSettings(patch) { set((s) => ({ settings: { ...s.settings, ...patch } })); },
+    updateSettings(patch) {
+      set((s) => {
+        const rate = patch.pricing?.coatingPerM2Rsd;
+        const changed = rate !== undefined && rate !== (s.settings.pricing.coatingPerM2Rsd ?? 0);
+        return {
+          settings: { ...s.settings, ...patch },
+          ...(changed ? { projects: s.projects.map((p) => ({ ...p, updatedAt: new Date().toISOString(), settings: { ...p.settings, pricing: { ...p.settings.pricing, coatingPerM2Rsd: rate } } })) } : {}),
+        };
+      });
+    },
     startDorada(builtinId) {
       const id = uid('cm');
       const model = builtinToCustom(builtinId, get().materials, id);
@@ -835,7 +849,9 @@ export const useAppStore = create<AppState>((set, get) => {
         const prev = g0 && g0.kind === 'gate' ? g0.design?.template?.prev ?? (g0.infillModelId in FENCE_MODELS && !isGateModel(g0.infillModelId) ? { infillModelId: g0.infillModelId, color: g0.color } : undefined) : undefined;
         const fields = gateFieldsFromModel(m);
         const q = updateItem(p, itemId, { ...fields, infillModelId: m.id as FenceModelId, ...(fields.design && prev ? { design: { ...fields.design, template: { ...fields.design.template!, prev } } } : {}) } as Partial<Gate>);
-        return withModelPosts(setOuterWidth(q, itemId, gateClearWidth(m) + 2 * postHalfSum(q, indexOfItem(q, itemId))), itemId, m.gate);
+        // stubovi kapije se postavljaju PRE širine: spoljna širina se računa sa stubovima koji stvarno ostaju uz kapiju (inače kapija gubi razliku širina stubova)
+        const withPosts = withModelPosts(q, itemId, m.gate);
+        return setOuterWidth(withPosts, itemId, gateClearWidth(m) + 2 * postHalfSum(withPosts, indexOfItem(withPosts, itemId)));
       });
       return true;
     },
@@ -937,8 +953,9 @@ export const useAppStore = create<AppState>((set, get) => {
       p.settings.pricing = { ...get().settings.pricing };
       const gate = p.items[0] as Gate;
       p = updateItem(p, gate.id, gateFieldsFromModel(m) as Partial<Gate>);
+      p = withModelPosts(p, gate.id, m.gate);
       p = setOuterWidth(p, gate.id, gateClearWidth(m) + 2 * postHalfSum(p, 0));
-      p = withGateFrames(withModelPosts(p, gate.id, m.gate));
+      p = withGateFrames(p);
       set((s) => ({ projects: [p, ...s.projects], editor: { ...emptyEditor(), projectId: p.id, activeModelId: s.editor.activeModelId } }));
       rememberProject(p.id);
       return p.id;
@@ -951,8 +968,8 @@ export const useAppStore = create<AppState>((set, get) => {
       p.settings.pricing = { ...get().settings.pricing };
       const gate = p.items[0] as Gate;
       p = updateItem(p, gate.id, gateFieldsFromModel(m) as Partial<Gate>);
-      p = setOuterWidth(p, gate.id, gateClearWidth(m) + 2 * postHalfSum(p, 0));
       p = withModelPosts(p, gate.id, m.gate);
+      p = setOuterWidth(p, gate.id, gateClearWidth(m) + 2 * postHalfSum(p, 0));
       DRAFT_PREV.set(p.id, get().editor.projectId);
       set((s) => ({ projects: [p, ...s.projects], editor: { ...emptyEditor(), projectId: p.id, activeModelId: s.editor.activeModelId } }));
       return { projectId: p.id, itemId: gate.id };

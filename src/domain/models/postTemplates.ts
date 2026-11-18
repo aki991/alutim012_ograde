@@ -89,7 +89,7 @@ export function postCapMaterials(materials: Material[], post: Pick<Post, 'widthM
  */
 export function capOptions(materials: Material[], post: Pick<Post, 'widthMm' | 'round'>, slot: CapSlot, current?: string): { empty: boolean; options: { value: string; label: string }[] } {
   const list = postCapMaterials(materials, post, slot);
-  const label = (m: Material) => (m.sku ? `${m.name} (${m.sku})` : m.name);
+  const label = (m: Material) => m.name;
   const stray = current && !list.some((m) => m.id === current) ? materials.find((m) => m.id === current) : undefined;
   return {
     empty: list.length === 0,
@@ -146,10 +146,33 @@ export function postSizeFromMaterial(m: Material): { widthMm: number; round: boo
  * Materijal stuba izabran šablonom (presek iz cenovnika) i njegova količina: profil po metru ide po dužini stuba, ostalo po komadu.
  * Null kad stub nema izabran materijal (obračunava se uobičajen stub prema tipu) ili ga obračunava sam model (RL10).
  */
+/** debljina zida cevi standardnog aluminijumskog stuba (mm): stub 80 × 80 je kvadratna cev 80 × 80 × 3 */
+export const POST_TUBE_WALL_MM = 3;
+
+/**
+ * Standardni presek aluminijumskog stuba (i stuba kapije) bez izabranog materijala: kvadratna cev iste mere kao stub (npr. stub 80 × 80 →
+ * kvadratna cev 80 × 80 × 3), okrugao stub → okrugla cev tog prečnika. Debljina zida najbliža 3 mm. Null kad takve cevi nema u cenovniku.
+ */
+export function defaultPostMaterial(post: Pick<Post, 'type' | 'widthMm' | 'round'>, materials: Material[]): Material | null {
+  if (post.type !== 'aluminium' && post.type !== 'gate') return null;
+  const w = post.widthMm;
+  let best: { m: Material; score: number } | null = null;
+  for (const m of materials) {
+    const s = materialShape(m);
+    if (s.type !== 'linear' || s.u) continue;
+    if (post.round ? s.group !== 'okrugle' : s.group !== 'kv' || /stub/i.test(m.name)) continue;
+    if (Math.abs(s.section.w - w) > 0.5 || Math.abs(s.section.h - w) > 0.5) continue;
+    const score = Math.abs((s.wall ?? POST_TUBE_WALL_MM) - POST_TUBE_WALL_MM);
+    if (!best || score < best.score) best = { m, score };
+  }
+  return best?.m ?? null;
+}
+
 export function postMaterialLine(project: Project, index: number, materials: Material[], lengthMm: number): { materialId: string; qty: number; linear: boolean } | null {
   const p = project.posts[index];
-  if (!p?.materialId || p.type === 'concrete' || p.type === 'concrete_plinth' || isRl10Post(project.items, index)) return null;
-  const m = materials.find((x) => x.id === p.materialId);
+  if (!p || p.type === 'concrete' || p.type === 'concrete_plinth' || isRl10Post(project.items, index)) return null;
+  // bez izabranog materijala: standardna cev stuba (aluminijumski stub se pravi kao i ostali elementi: seče se iz šipke)
+  const m = p.materialId ? materials.find((x) => x.id === p.materialId) : defaultPostMaterial(p, materials);
   if (!m) return null;
   const linear = materialShape(m).type === 'linear';
   return { materialId: m.id, qty: linear && m.unit === 'm' ? lengthMm / 1000 : 1, linear };

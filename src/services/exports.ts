@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createElement } from 'react';
-import { FrontView, frontViewMetrics } from '../components/editor/FrontView';
+import { FrontView, frontViewMetrics, type FrontViewOptions } from '../components/editor/FrontView';
 import { TOP_MARGIN_PX, TopView, topViewLayout } from '../components/editor/TopView';
 import type { Project } from '../domain/models/types';
 import { serializeProject } from '../domain/validation/project';
@@ -23,8 +23,8 @@ export function exportProjectJson(p: Project): void {
 }
 
 /** SVG string crteža spreda (bez interaktivnih elemenata) u razumnim dimenzijama (0,08 px/mm). */
-export function frontViewSvgString(project: Project, scale = 0.08): string {
-  const svg = renderToStaticMarkup(createElement(FrontView, { project, scale, options: { showGrid: false } }));
+export function frontViewSvgString(project: Project, scale = 0.08, options?: Partial<FrontViewOptions>): string {
+  const svg = renderToStaticMarkup(createElement(FrontView, { project, scale, options: { showGrid: false, ...options } }));
   return svg;
 }
 
@@ -68,12 +68,12 @@ export async function fenceOverlay(project: Project): Promise<{ url: string; asp
 }
 
 /** Pretvara crtež u PNG data URL (za PDF). */
-export async function frontViewPng(project: Project, targetWidthPx = 1400): Promise<{ dataUrl: string; width: number; height: number }> {
+export async function frontViewPng(project: Project, targetWidthPx = 1400, options?: Partial<FrontViewOptions>): Promise<{ dataUrl: string; width: number; height: number }> {
   const baseScale = 0.12;
   const m = frontViewMetrics(project, baseScale, project.settings.showDimensions);
   const scale = targetWidthPx / m.vw / 1;
   const mm = frontViewMetrics(project, scale, project.settings.showDimensions);
-  const svg = await inlineSvgImages(frontViewSvgString(project, scale));
+  const svg = await inlineSvgImages(frontViewSvgString(project, scale, options));
   const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
   const img = new Image();
   await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = () => rej(new Error('Crtež nije moguće pretvoriti u sliku.')); img.src = url; });

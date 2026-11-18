@@ -418,7 +418,7 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, snapObje
         </div>
       ) : active && (
         <div className="absolute left-3 top-3 right-28 text-[12.5px] bg-white/95 border border-line rounded-lg px-3 py-1.5 text-slate-700" data-testid="designer-hint">
-          <b>{active.sku}</b> — {activeShape?.type === 'piece' ? 'kliknite na mesto gde deo treba da stoji.' : activeShape?.type === 'sheet' ? 'povucite mišem pravougaonik ploče.' : 'povucite mišem od početka do kraja profila.'} Esc: kraj crtanja.
+          <b>{active.name}</b> — {activeShape?.type === 'piece' ? 'kliknite na mesto gde deo treba da stoji.' : activeShape?.type === 'sheet' ? 'povucite mišem pravougaonik ploče.' : 'povucite mišem od početka do kraja profila.'} Esc: kraj crtanja.
         </div>
       )}
       <div className="absolute right-3 top-3 flex gap-1.5">

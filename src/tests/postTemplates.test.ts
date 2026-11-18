@@ -124,10 +124,16 @@ describe('šabloni stubova', () => {
     expect(bom.find((l) => l.materialId === rose.id)?.geometricQty).toBe(3);
   });
 
-  it('betonski stub i stub bez materijala se obračunavaju kao do sada', () => {
+  it('aluminijumski stub bez izabranog materijala je kvadratna cev iste mere (×3); betonski stub nije profil', () => {
     const p = project();
-    expect(postMaterialLine(p, 0, [tube], 1700)).toBeNull();
+    const w = p.posts[0].widthMm;
+    const own: Material = { ...tube, id: 'm_own', name: `Kvadratna cev ${w}×${w}×3` };
+    const thin: Material = { ...tube, id: 'm_thin', name: `Kvadratna cev ${w}×${w}×2` };
+    expect(postMaterialLine(p, 0, [thin, own], 1700)).toMatchObject({ materialId: 'm_own', linear: true });
+    expect(postMaterialLine(p, 0, [thin, own], 1700)!.qty).toBeCloseTo(1.7);
+    // nema cevi te mere u cenovniku: stub se obračunava kao do sada (po komadu)
+    expect(postMaterialLine(p, 0, [{ ...tube, name: 'Kvadratna cev 30×30×2' }], 1700)).toBeNull();
     const conc = applyPostTemplate(p, [p.posts[0].id], { ...TPL, type: 'concrete' });
-    expect(postMaterialLine(conc, 0, [tube], 1700)).toBeNull();
+    expect(postMaterialLine(conc, 0, [tube, own], 1700)).toBeNull();
   });
 });

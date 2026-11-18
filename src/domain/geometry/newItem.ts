@@ -3,7 +3,7 @@ import { STAIR_DEFAULT_RISE_MM, STAIR_TREAD_MM, STEP_RISE_MM, isStair } from './
 import { FENCE_MODELS } from '../models/catalog';
 import { createCorner, createFence, createGate, createOpening, DEFAULT_FENCE_HEIGHT_MM, DEFAULT_FENCE_WIDTH_MM, DEFAULT_GATE_HEIGHT_MM } from '../models/factories';
 import type { FenceModelId, FenceParams, Finish, GateType, LayoutItem, Mm, Project } from '../models/types';
-import { outerWidthMm } from './layout';
+import { computeLayout, outerWidthMm } from './layout';
 
 export type NewItemSpec =
   | { kind: 'fence'; modelId?: FenceModelId; stair?: boolean }
@@ -16,6 +16,8 @@ export interface ReferenceDims {
   modelId: FenceModelId;
   /** spoljna širina polja ograde (kao u panelu); null kad je referenca kapija: njena širina se ne prenosi */
   outerWidthMm: Mm | null;
+  /** svetla širina polja ograde (između stubova); null kad je referenca kapija */
+  clearWidthMm: Mm | null;
   heightMm: Mm;
   params: FenceParams;
   color: string;
@@ -37,6 +39,7 @@ export function referenceDims(p: Project, selectedId?: string | null): Reference
   return {
     modelId,
     outerWidthMm: ref.kind === 'fence' ? outerWidthMm(p, p.items.indexOf(ref)) : null,
+    clearWidthMm: ref.kind === 'fence' ? computeLayout(p).items[p.items.indexOf(ref)]?.clearWidth ?? null : null,
     heightMm: ref.heightMm,
     params: ref.params,
     color: ref.color,
@@ -73,14 +76,16 @@ export function newItemFor(project: Project, spec: NewItemSpec, activeModel: Fen
     const item = createFence({ modelId: model, heightMm, ...look, ...(same?.plinthMm ? { plinthMm: same.plinthMm } : {}) });
     if (!ref && universal) return { item, outerWidthMm: DEFAULT_FENCE_WIDTH_MM, clearWidthMm: DEFAULT_FENCE_WIDTH_MM };
     if (!ref && def.defaultSize?.clearWidth) return { item, outerWidthMm: def.defaultSize.widthMm, clearWidthMm: def.defaultSize.widthMm };
-    return { item, outerWidthMm: ref?.outerWidthMm ?? (universal ? DEFAULT_FENCE_WIDTH_MM : def.defaultSize?.widthMm) ?? item.widthMm };
+    // novo polje ima isti svetli otvor kao postojeće, bez obzira na širinu stubova uz njega (betonski 400 ili aluminijumski 100)
+    return { item, outerWidthMm: ref?.outerWidthMm ?? (universal ? DEFAULT_FENCE_WIDTH_MM : def.defaultSize?.widthMm) ?? item.widthMm, ...(ref?.clearWidthMm ? { clearWidthMm: ref.clearWidthMm } : {}) };
   }
   if (spec.kind === 'gate') {
     // ako sve kapije u projektu imaju svoje stubove, i nova ih ima
     const gates = project.items.filter((i) => i.kind === 'gate');
     const own = gates.length > 0 && gates.every((g) => g.kind === 'gate' && g.ownPosts);
     const item = createGate(spec.gateType, { heightMm, infillModelId: model, ...look, ...(own ? { ownPosts: true } : {}) });
-    return { item, outerWidthMm: item.widthMm };
+    // zadata širina kapije (npr. 1000) je njen svetli otvor: stubovi uz nju ne smeju da je smanje
+    return { item, outerWidthMm: item.widthMm, clearWidthMm: item.widthMm };
   }
   if (spec.kind === 'corner') {
     const item = createCorner({ heightMm });

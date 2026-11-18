@@ -21,8 +21,8 @@ export function MaterialSelect({ materials, value, onChange, testId, only, empty
     const list = only ? shown.filter(only) : shown;
     return MATERIAL_GROUPS.map((g) => ({ ...g, items: list.filter((m) => materialShape(m).group === g.id).sort(compareMaterials) })).filter((g) => g.items.length);
   }, [materials, only, value]);
-  const searchGroups = useMemo(() => groups.map((g) => ({ label: g.label, items: g.items.map((m) => ({ value: m.id, label: `${m.name} (${m.sku})` })) })), [groups]);
-  return <SearchSelect value={value} onChange={onChange} groups={searchGroups} placeholder={emptyLabel ?? '— izaberite materijal —'} testId={testId} searchPlaceholder="Kucajte naziv ili šifru materijala…" />;
+  const searchGroups = useMemo(() => groups.map((g) => ({ label: g.label, items: g.items.map((m) => ({ value: m.id, label: m.name })) })), [groups]);
+  return <SearchSelect value={value} onChange={onChange} groups={searchGroups} placeholder={emptyLabel ?? '— izaberite materijal —'} testId={testId} searchPlaceholder="Kucajte naziv materijala…" />;
 }
 
 const isLinear = (m: Material): boolean => materialShape(m).type === 'linear';
@@ -86,13 +86,12 @@ export default function StockPage() {
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[840px]" data-testid="stock-table">
-            <thead><tr><th className="th">Šifra</th><th className="th">Materijal</th><th className="th text-right">Dužina (mm)</th><th className="th">Vrsta</th><th className="th text-right w-[110px]">Komada</th><th className="th text-right">Ukupno (m)</th><th className="th">Rezervisano</th><th className="th">Napomena</th><th className="th w-12" /></tr></thead>
+            <thead><tr><th className="th">Materijal</th><th className="th text-right">Dužina (mm)</th><th className="th">Vrsta</th><th className="th text-right w-[110px]">Komada</th><th className="th text-right">Ukupno (m)</th><th className="th">Rezervisano</th><th className="th">Napomena</th><th className="th w-12" /></tr></thead>
             <tbody>
               {rows.map((s) => {
                 const m = byId.get(s.materialId);
                 return (
                   <tr key={s.id} data-testid="stock-row">
-                    <td className="td text-xs text-muted">{m?.sku ?? '—'}</td>
                     <td className="td font-medium">{m?.name ?? (materialName(materials, s.materialId) !== s.materialId ? materialName(materials, s.materialId) : 'Materijal je obrisan iz cenovnika')}</td>
                     <td className="td text-right tabular-nums font-semibold">{fmtNum(s.lengthMm, 0)}</td>
                     <td className="td">{s.lengthMm >= full ? 'cela šipka' : <span className="text-[#b45309] font-semibold">ostatak</span>}</td>

@@ -1,15 +1,16 @@
 import { buildRl10Sheet } from '../domain/pricing/rl10Spec';
 import { colorText, FENCE_MODELS, STATUS_LABELS } from '../domain/models/catalog';
 import type { AppSettings, Customer, Material, Project } from '../domain/models/types';
-import { buildBom, computePrice } from '../domain/pricing/calc';
+import { buildQuotePrices, quoteDisplayAmounts } from '../domain/pricing/quote';
+import { productionPostCount } from '../domain/models/productionPosts';
 import { buildCutList, buildHardwareList, describeItem } from '../domain/pricing/production';
 import { buildLouver08Sheet } from '../domain/pricing/louverSpec';
 import { buildRail04Sheet } from '../domain/pricing/railSpec';
 import { computeLayout, isSpacer, outerWidthMm } from '../domain/geometry/layout';
 import { itemLabel, itemNumber } from '../utils/labels';
-import { fmtDate, fmtMoney, fmtNum, toCurrency } from '../utils/units';
+import { fmtDate, fmtNum } from '../utils/units';
 import { buildMaterialList, materialListRows, materialQtyText } from '../domain/pricing/materialList';
-import { downloadBlob, downloadCsv, frontViewPng, safeFilename, topViewPng } from './exports';
+import { downloadBlob, downloadCsv, frontViewPng, safeFilename } from './exports';
 import { BRAND_RED, docHeader, loadHeaderLogos } from './pdfHeader';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -50,30 +51,25 @@ export async function renderBlob(pdfMake: any, def: any): Promise<Blob> {
 
 export async function buildQuotePdfBlob(project: Project, customer: Customer | null, materials: Material[], settings: AppSettings): Promise<Blob> {
   const pdfMake = await getPdfMake();
-  const price = computePrice(project, materials, settings.modelSpecs);
-  const bom = buildBom(project, materials, settings.modelSpecs);
+  const price = buildQuotePrices(project, materials, settings.modelSpecs);
+  const display = quoteDisplayAmounts(price, settings.currency, settings.currencyRateToEur);
   const layout = computeLayout(project);
   const sketch = await frontViewPng(project, 1500);
   const logos = await loadHeaderLogos();
-  // pogled odozgo i 3D prikaz; ako se ne mogu napraviti (npr. nema WebGL), ponuda ide bez njih
-  const top = project.items.length ? await topViewPng(project).catch(() => null) : null;
-  const view3d = project.items.length ? await import('./scene3dImage').then((m) => m.scene3dJpeg(project)).catch(() => null) : null;
   const info = settings.companyInfo ?? {};
   const contact = [info.address, info.phone, info.email, info.pib ? `PIB: ${info.pib}` : ''].filter(Boolean).join('  ·  ');
   const demo = materials.some((m) => m.demo) || !project.quoteNo;
   const cur = settings.currency;
-  const rate = settings.currencyRateToEur;
-  const money = (n: number) => fmtMoney(n, cur, rate);
-  const pr = project.settings.pricing;
+  const money = (n: number) => `${fmtNum(n, display.digits)} ${cur === 'EUR' ? '€' : cur}`;
 
-  const itemRows = project.items.flatMap((it, i) => (isSpacer(it) ? [] : [[
-    td(itemNumber(project.items, i), 'center'),
-    td(itemLabel(project.items, i)),
-    td(describeItem(project, i)),
-    td(fmtNum(outerWidthMm(project, i), 0), 'right'),
-    td(fmtNum(it.heightMm, 0), 'right'),
-    td(it.kind === 'opening' ? '—' : colorText(it.color, it.finish)),
-  ]]));
+  const itemRows = price.elements.map(({ index: i }, n) => {
+    const it = project.items[i];
+    return [
+      td(itemNumber(project.items, i), 'center'),
+      { stack: [td(itemLabel(project.items, i), 'left', { bold: true }), { text: `${describeItem(project, i)} · ${fmtNum(outerWidthMm(project, i), 0)} × ${fmtNum(it.heightMm, 0)} mm${it.kind === 'opening' ? '' : ` · ${colorText(it.color, it.finish)}`}`, fontSize: 8, color: MUTED }] },
+      td(money(display.elements[n]), 'right', { bold: true }),
+    ];
+  });
 
   const def: any = {
     pageSize: 'A4',
@@ -95,48 +91,21 @@ export async function buildQuotePdfBlob(project: Project, customer: Customer | n
         margin: [0, 14, 0, 10],
         columns: [
           { width: '50%', stack: [{ text: 'KUPAC', fontSize: 8, color: MUTED, bold: true }, { text: customer?.name ?? 'Nije izabran', bold: true }, { text: customer?.address ?? '', color: MUTED }, { text: [customer?.phone, customer?.email].filter(Boolean).join(' · '), color: MUTED }] },
-          { width: '50%', stack: [{ text: 'PROJEKAT', fontSize: 8, color: MUTED, bold: true }, { text: project.name, bold: true }, { text: `Status: ${STATUS_LABELS[project.status]}`, color: MUTED }, { text: `Ukupna dužina: ${fmtNum(layout.occupiedMm, 0)} mm · Elemenata: ${project.items.filter((x) => !isSpacer(x)).length}`, color: MUTED }] },
+          { width: '50%', stack: [{ text: 'PROJEKAT', fontSize: 8, color: MUTED, bold: true }, { text: project.name, bold: true }, { text: `Ukupna dužina: ${fmtNum(layout.occupiedMm, 0)} mm · Elemenata: ${price.elements.length}`, color: MUTED }] },
         ],
       },
-      { image: sketch.dataUrl, width: 523, margin: [0, 0, 0, 10] },
-      ...(top ? [{ unbreakable: true, stack: [{ text: 'Pogled odozgo', style: 'h2' }, { image: top.dataUrl, fit: [523, 330], alignment: 'center', margin: [0, 0, 0, 10] }] }] : []),
-      ...(view3d ? [{ unbreakable: true, stack: [{ text: '3D prikaz', style: 'h2' }, { image: view3d.dataUrl, width: 523, margin: [0, 0, 0, 10] }] }] : []),
-      { text: 'Lista elemenata', style: 'h2' },
+      { image: sketch.dataUrl, fit: [523, 300], alignment: 'center', margin: [0, 0, 0, 10] },
+      { text: 'Cena elemenata ograde', style: 'h2' },
       {
-        table: { headerRows: 1, widths: [22, 85, '*', 50, 50, 55], body: [[th('R.br.', 'center'), th('Element'), th('Model'), th('Širina (mm)', 'right'), th('Visina (mm)', 'right'), th('Boja')], ...itemRows] },
-        layout: tableLayout,
-      },
-      { text: 'Širine su modularni rasponi (osa–osa stubova); stvarne proizvodne mere zavise od sistema profila.', fontSize: 8, color: MUTED, margin: [0, 3, 0, 10] },
-      { text: 'Specifikacija materijala', style: 'h2' },
-      {
-        table: {
-          headerRows: 1, dontBreakRows: true, widths: [52, '*', 24, 44, 52, 56],
-          body: [
-            [th('Šifra'), th('Naziv'), th('JM'), th('Količ.', 'right'), th(`Cena (${cur})`, 'right'), th(`Ukupno (${cur})`, 'right')],
-            ...bom.map((l) => [td(l.sku, 'left', { fontSize: 7.5 }), td(l.name), td(l.unit), td(fmtNum(l.purchaseQty, l.unit === 'kom' ? 0 : 2), 'right'), td(fmtNum(toCurrency(l.unitPriceNet, cur, rate), 2), 'right'), td(fmtNum(toCurrency(l.total, cur, rate), cur === 'EUR' ? 2 : 0), 'right')]),
-          ],
-        },
-        layout: tableLayout,
-      },
-      { text: 'Obračun cene', style: 'h2', pageBreak: undefined, margin: [0, 12, 0, 4] },
-      {
-        unbreakable: true,
-        table: {
-          widths: ['*', 200, 90],
-          body: [
-            [th('Stavka'), th('Osnovica'), th('Iznos', 'right')],
-            ...price.rows.map((r) => [td(r.label, 'left', { bold: r.emphasis }), td(r.base, 'left', { color: MUTED, fontSize: 8 }), td(money(r.amount), 'right', { bold: r.emphasis })]),
-          ],
-        },
+        table: { headerRows: 1, dontBreakRows: true, widths: [24, '*', 110], body: [[th('R.br.', 'center'), th('Element'), th('Cena sa PDV-om', 'right')], ...itemRows] },
         layout: tableLayout,
       },
       {
         margin: [0, 10, 0, 0],
         unbreakable: true,
-        table: { widths: ['*', 140], body: [[{ text: 'UKUPNO ZA UPLATU', bold: true, fontSize: 12, fillColor: '#eaf1ff' }, { text: money(price.grossTotal), bold: true, fontSize: 13, alignment: 'right', fillColor: '#eaf1ff' }]] },
+        table: { widths: ['*', 140], body: [[{ text: 'UKUPNO', bold: true, fontSize: 12, fillColor: '#eaf1ff' }, { text: money(display.total), bold: true, fontSize: 13, alignment: 'right', fillColor: '#eaf1ff' }]] },
         layout: { hLineWidth: () => 0, vLineWidth: () => 0, paddingTop: () => 8, paddingBottom: () => 8 },
       },
-      { text: `Marža/uvećanje: ${pr.profitMode === 'margin' ? 'marža' : 'uvećanje'} ${pr.profitPercent}% · Popust ${pr.discountPercent}% · PDV ${pr.vatPercent}%${pr.pricesIncludeVat ? ' (cene u cenovniku su bruto)' : ''}.`, fontSize: 8, color: MUTED, margin: [0, 6, 0, 0] },
       project.notes ? { text: [{ text: 'Napomena: ', bold: true }, project.notes], margin: [0, 10, 0, 0] } : {},
     ],
     styles: { h2: { fontSize: 12, bold: true, margin: [0, 6, 0, 4] } },
@@ -158,8 +127,8 @@ export async function buildProjectMaterialsPdfBlob(project: Project, customer: C
   const contact = [info.address, info.phone, info.email, info.pib ? `PIB: ${info.pib}` : ''].filter(Boolean).join('  ·  ');
   const count = groups.reduce((n, g) => n + g.lines.length, 0);
   const rows = groups.flatMap((g) => [
-    [{ text: g.group, colSpan: 5, bold: true, fontSize: 9, fillColor: '#f1f5f9', margin: [0, 2, 0, 2] }, {}, {}, {}, {}],
-    ...g.lines.map((l) => [td(l.sku, 'left', { fontSize: 7.5 }), td(l.name), td(l.unit), td(materialQtyText(l.needed, l.unit), 'right'), td(materialQtyText(l.purchase, l.unit), 'right', { bold: true })]),
+    [{ text: g.group, colSpan: 4, bold: true, fontSize: 9, fillColor: '#f1f5f9', margin: [0, 2, 0, 2] }, {}, {}, {}],
+    ...g.lines.map((l) => [td(l.name), td(l.unit), td(materialQtyText(l.needed, l.unit), 'right'), td(materialQtyText(l.purchase, l.unit), 'right', { bold: true })]),
   ]);
   const def: any = {
     pageSize: 'A4',
@@ -187,8 +156,8 @@ export async function buildProjectMaterialsPdfBlob(project: Project, customer: C
         ? { text: 'Projekat nema elemenata, pa nema ni materijala.', color: MUTED }
         : {
           table: {
-            headerRows: 1, dontBreakRows: true, widths: [58, '*', 28, 62, 78],
-            body: [[th('Šifra'), th('Naziv'), th('JM'), th('Potrebno', 'right'), th('Za nabavku', 'right')], ...rows],
+            headerRows: 1, dontBreakRows: true, widths: ['*', 28, 62, 78],
+            body: [[th('Naziv'), th('JM'), th('Potrebno', 'right'), th('Za nabavku', 'right')], ...rows],
           },
           layout: tableLayout,
         },
@@ -210,7 +179,7 @@ export function downloadProjectMaterialsCsv(project: Project, customer: Customer
 
 export async function buildProductionPdfBlob(project: Project, customer: Customer | null, settings: AppSettings, materials?: Material[]): Promise<Blob> {
   const pdfMake = await getPdfMake();
-  const sketch = await frontViewPng(project, 1500);
+  const sketch = await frontViewPng(project, 1500, { production: true });
   const cuts = buildCutList(project, settings.modelSpecs, materials);
   const hw = buildHardwareList(project, materials);
   const rail = buildRail04Sheet(project, settings.modelSpecs);
@@ -254,7 +223,7 @@ export async function buildProductionPdfBlob(project: Project, customer: Custome
       hw.length
         ? { table: { headerRows: 1, widths: [150, '*', 40], body: [[th('Element'), th('Stavka'), th('Kom.', 'right')], ...hw.map((h) => [td(h.element), td(h.item), td(h.qty, 'right')])] }, layout: tableLayout }
         : { text: 'Nema kapija u projektu.', color: MUTED },
-      { text: `Stubovi: ${layout.postCount} kom (svaki zajednički stub je računat jednom).`, margin: [0, 8, 0, 0] },
+      { text: `Stubovi za izradu: ${productionPostCount(project, layout)} kom (svaki zajednički stub je računat jednom).`, margin: [0, 8, 0, 0] },
       project.notes ? { text: [{ text: 'Napomene: ', bold: true }, project.notes], margin: [0, 8, 0, 0] } : {},
       ...(rail ? [
         { text: 'Model 04 — sastavnica', style: 'h2', margin: [0, 14, 0, 4], pageBreak: 'before' },
@@ -302,10 +271,11 @@ export async function downloadProductionPdf(project: Project, customer: Customer
  */
 export async function buildMaterialsPdfBlob(materials: Material[], settings: AppSettings): Promise<Blob> {
   const pdfMake = await getPdfMake();
-  const cats: Record<string, string> = { profil: 'Profili', stub: 'Stubovi', okov: 'Okovi', automatika: 'Automatika', staklo: 'Staklo', panel: 'Paneli', ostalo: 'Ostalo' };
+  const cats: Record<string, string> = { profil: 'Profili', stub: 'Stubovi', zavrsetak: 'Kape i završeci', montaza: 'Stope i spojni elementi', okov: 'Okovi', automatika: 'Automatika', staklo: 'Staklo', panel: 'Paneli', ostalo: 'Ostalo' };
   const head = (t: string, align: 'left' | 'right' = 'left') => ({ text: t, bold: true, fontSize: 8.5, color: INK, alignment: align, fillColor: '#ffc247', margin: [2, 3, 2, 3] });
   const cell = (t: string | number, align: 'left' | 'right' = 'left', extra: object = {}) => ({ text: String(t), fontSize: 8.5, alignment: align, fillColor: '#ffffff', margin: [2, 3, 2, 3], ...extra });
-  const body = materials.map((m) => [cell(m.sku), cell(m.name), cell(cats[m.category] ?? m.category), cell(m.unit), cell(fmtNum(m.unitPrice, 2), 'right'), cell(fmtNum(m.wastePercent, 1), 'right')]);
+  const { materialPriceInUnit, selectedPriceUnit, MATERIAL_UNIT_LABELS } = await import('../domain/models/materialUnits');
+  const body = materials.map((m) => [cell(m.name), cell(cats[m.category] ?? m.category), cell(MATERIAL_UNIT_LABELS[selectedPriceUnit(m)]), cell(fmtNum(materialPriceInUnit(m), 2), 'right'), cell(fmtNum(m.wastePercent, 1), 'right')]);
   const def: any = {
     pageSize: 'A4',
     pageOrientation: 'landscape',
@@ -318,8 +288,8 @@ export async function buildMaterialsPdfBlob(materials: Material[], settings: App
       {
         table: {
           headerRows: 1,
-          widths: [80, '*', 70, 40, 85, 55],
-          body: [[head('Šifra'), head('Naziv'), head('Kategorija'), head('Jedinica'), head('Cena (RSD, neto)', 'right'), head('Otpad %', 'right')], ...body],
+          widths: ['*', 70, 40, 85, 55],
+          body: [[head('Naziv'), head('Kategorija'), head('Jedinica'), head('Cena (RSD, neto)', 'right'), head('Otpad %', 'right')], ...body],
         },
         layout: { hLineWidth: () => 0.4, vLineWidth: () => 0.4, hLineColor: () => '#cbd5e1', vLineColor: () => '#cbd5e1' },
       },

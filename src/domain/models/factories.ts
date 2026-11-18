@@ -30,6 +30,7 @@ export const DEFAULT_PRICING: PricingSettings = {
   laborPerGateRsd: 9000,
   installPerMeterRsd: 4500,
   installPerGateRsd: 12000,
+  coatingPerM2Rsd: 0,
   currency: 'RSD',
 };
 

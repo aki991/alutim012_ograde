@@ -144,3 +144,76 @@ describe('provera veličina sa ojačanjem', () => {
     expect(msgs.filter((x) => /U profil|60×60|Kvadratna cev/.test(x))).toEqual([]);
   });
 });
+
+import { customSpec, scaledModel } from '../domain/models/customRegistry';
+import { evaluateItemSpec } from '../domain/models/spec';
+
+describe('povećanje visine kapije sa ojačanjem', () => {
+  it('prečke iznad i ispod ojačanja se popunjavaju srazmerno, a krojna lista prati crtež', () => {
+    const r = addDivider(seedGate(), MODEL_MATERIALS, { id: 'div1' });
+    if ('error' in r) throw new Error(r.error);
+    const gate: CustomModel = { ...r.model, id: 'cm_gh', kind: 'gate' };
+    registerCustomModels([gate], MODEL_MATERIALS);
+    const barsOf = (m: CustomModel) => {
+      const t = m.parts.find((p) => p.divider)!;
+      const tb = partBounds(t, materialShape(MODEL_MATERIALS.find((x) => x.id === t.materialId)!));
+      const bars = m.parts.filter((p) => p.guides);
+      return { tb, below: bars.filter((b) => b.y < tb.y0).length, above: bars.filter((b) => b.y > tb.y0).length, all: bars.length };
+    };
+    const same = scaledModel(gate, 1040, 1640);
+    // na izvornoj visini broj prečki ostaje kao na crtežu
+    expect(same.parts.filter((q) => q.guides).length).toBe(gate.parts.filter((q) => q.guides).length);
+    const base = barsOf(same);
+    for (const h of [2000, 2400, 1400]) {
+      const sc = scaledModel(gate, 1040, h);
+      const b = barsOf(sc);
+      if (h > 1640) { expect(b.below).toBeGreaterThan(base.below); expect(b.above).toBeGreaterThan(base.above); }
+      else expect(b.all).toBeLessThanOrEqual(base.all);
+      // bez preklapanja sa ojačanjem i U profilima
+      expect(findOverlaps(sc, MODEL_MATERIALS).filter((o) => o.a.divider || o.b.divider || o.a.materialId === U || o.b.materialId === U).map((o) => `${o.a.id}/${o.b.id}`)).toEqual([]);
+      // krojna lista: broj prečki iz specifikacije = broj prečki na crtežu te visine
+      const ev = evaluateItemSpec(customSpec(gate), { modelId: 'cm_gh' as never, widthMm: 1040, heightMm: h, axisMm: 1040, params: { barSizeMm: 0, gapMm: 0, frameMm: 0 } });
+      const barQty = ev.filter((e) => e.part.materialId === 'mat_ek_kv000007' && e.part.group === 'Profili ispune' && !e.part.id.startsWith('rf_')).reduce((a, e) => a + e.qty, 0);
+      expect(barQty).toBe(b.all);
+    }
+  });
+});
+
+import { customHBarZones } from '../domain/models/customRegistry';
+
+describe('raspored ispune sa ojačanjem u projektu', () => {
+  it('svako polje ima svoja odstojanja i razmak; ručna mera polja menja samo to polje', () => {
+    const r = addDivider(seedGate(), MODEL_MATERIALS, { id: 'div1' });
+    if ('error' in r) throw new Error(r.error);
+    registerCustomModels([{ ...r.model, id: 'cm_gz', kind: 'gate' }], MODEL_MATERIALS);
+    const zs = customHBarZones('cm_gz', 1640)!;
+    expect(zs.length).toBe(2);
+    expect(zs[0].first).toBe(true); expect(zs[1].last).toBe(true);
+    // gornje polje: odstojanje od ojačanja 40 mm; donje polje ostaje isto
+    const set = customHBarZones('cm_gz', 1640, { zones: [undefined, { bottomMm: 40 }] })!;
+    expect(Math.abs(set[1].bottom - 40)).toBeLessThan(0.5);
+    expect(set[0].count).toBe(zs[0].count);
+    expect(Math.abs(set[0].bottom - zs[0].bottom)).toBeLessThan(0.5);
+    // ručni razmak donjeg polja 30 mm
+    const g = customHBarZones('cm_gz', 1640, { zones: [{ hGapMm: 30 }] })!;
+    expect(g[0].gap).toBeGreaterThanOrEqual(29.9);
+    // model bez ojačanja: nema polja
+    registerCustomModels([{ ...seedGate(), id: 'cm_gn', kind: 'gate' }], MODEL_MATERIALS);
+    expect(customHBarZones('cm_gn', 1640)).toBeNull();
+  });
+});
+
+describe('kapija na veličini crteža', () => {
+  it('na visini na kojoj je nacrtana prečke ostaju tačno kako su nacrtane, a krojna lista ima isti broj', () => {
+    const r = addDivider(seedGate(), MODEL_MATERIALS, { id: 'div1' });
+    if ('error' in r) throw new Error(r.error);
+    const gate: CustomModel = { ...r.model, id: 'cm_gx', kind: 'gate' };
+    registerCustomModels([gate], MODEL_MATERIALS);
+    const same = scaledModel(gate, gate.widthMm, gate.heightMm);
+    const key = (m: CustomModel) => m.parts.filter((p) => p.guides || p.divider).map((p) => `${p.id}:${Math.round(p.y * 10) / 10}`).sort().join(',');
+    expect(key(same)).toBe(key(gate));
+    const ev = evaluateItemSpec(customSpec(gate), { modelId: 'cm_gx' as never, widthMm: gate.widthMm, heightMm: gate.heightMm, axisMm: gate.widthMm, params: { barSizeMm: 0, gapMm: 0, frameMm: 0 } });
+    const qty = ev.filter((e) => e.part.materialId === 'mat_ek_kv000007' && e.part.group === 'Profili ispune').reduce((a, e) => a + e.qty, 0);
+    expect(qty).toBe(gate.parts.filter((p) => p.guides).length);
+  });
+});

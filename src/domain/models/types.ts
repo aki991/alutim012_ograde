@@ -220,6 +220,8 @@ export interface PricingSettings {
   laborPerGateRsd: number;
   installPerMeterRsd: number;
   installPerGateRsd: number;
+  /** Neto cena plastificiranja po m² razvijene površine. Stari projekti: 0. */
+  coatingPerM2Rsd?: number;
   currency: string;
 }
 
@@ -274,6 +276,8 @@ export interface Project {
    * ga prvo pita); prazan spisak znači „nema ostataka“.
    */
   offcuts?: Offcut[];
+  /** trebovanje: ručno izmenjene količine za nabavku (ključ reda trebovanja → količina); bez vrednosti važi izračunata */
+  requisition?: Record<string, number>;
   /** izabrani materijali delova ograde za ovaj projekat: ključ „model::naziv dela“ → ID materijala iz cenovnika */
   partMaterials?: Record<string, string>;
   /** simulacija na fotografiji: slika dvorišta (data URL) i četiri ugla ograde (gore levo, gore desno, dole desno, dole levo) kao udeo širine/visine slike */
@@ -296,8 +300,9 @@ export interface Customer {
   note: string;
 }
 
-export type MaterialCategory = 'profil' | 'stub' | 'okov' | 'automatika' | 'ostalo' | 'staklo' | 'panel';
+export type MaterialCategory = 'profil' | 'stub' | 'zavrsetak' | 'montaza' | 'okov' | 'automatika' | 'ostalo' | 'staklo' | 'panel';
 export type MaterialUnit = 'm' | 'kom' | 'set' | 'm2' | 'kg';
+export type MaterialMassUnit = 'kg/m' | 'kg/m²' | 'kg/kom';
 
 export interface Material {
   id: string;
@@ -305,6 +310,14 @@ export interface Material {
   name: string;
   category: MaterialCategory;
   unit: MaterialUnit;
+  /** Izabrana jedinica prikaza/unosa cene; unit i unitPrice ostaju osnova količina i obračuna projekta. */
+  priceUnit?: MaterialUnit;
+  /** Poznate mere cele prodajne jedinice, nezavisno od preseka profila. */
+  stockLengthM?: number;
+  pieceAreaM2?: number;
+  piecesPerSet?: number;
+  /** Stara nelogična jedinica nije omogućavala pouzdano preračunavanje cene. */
+  unitCorrection?: { from: MaterialUnit; to: MaterialUnit; originalPrice: number };
   /** Jedinična cena u RSD (neto ili bruto, prema podešavanju) */
   unitPrice: number;
   wastePercent: number;
@@ -318,6 +331,13 @@ export interface Material {
   dims?: Record<string, number>;
   /** masa po metru (kg/m) iz deklaracije profila; bez vrednosti masa se ne računa (prikazuje se kao nepoznata) */
   kgPerM?: number;
+  /** Masa materijala nezavisno od prodajne jedinice i dužine šipke; čuva se bez zaokruživanja. */
+  mass?: number;
+  massUnit?: MaterialMassUnit;
+  massSource?: 'manual' | 'catalog' | 'calculated' | 'estimated';
+  massReference?: string;
+  /** Mere za koje važi kataloška/izračunata masa (za proveru posle izmene preseka). */
+  massBasis?: string;
   /** ručno nacrtan poprečni presek (dugme „Nacrtaj element“): ima prednost nad presekom iz šifre i naziva */
   drawn?: DrawnSection;
   /** materijal za ograde za terase (stubovi, rukohvati, prečke, staklo i okov): nudi se samo u crtanju ograda za terase */
