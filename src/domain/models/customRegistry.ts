@@ -22,7 +22,7 @@ const defOf = (m: CustomModel): FenceModelDef => ({
   id: m.id as FenceModelId, name: m.name || 'Model bez naziva', shortName: m.name || 'Model bez naziva',
   description: 'Ručno nacrtan model', infill: 'Prema crtežu', material: 'Prema crtežu',
   image: '', style: 'custom', defaultColor: m.color, defaults: { barSizeMm: 0, gapMm: 0, frameMm: 0 }, barLabel: '', gapLabel: '', hasBars: false,
-  defaultSize: { widthMm: m.widthMm, heightMm: m.heightMm, clearWidth: true }, defaultGateHeightMm: m.heightMm, postExtraMm: 0,
+  defaultSize: { widthMm: m.widthMm, heightMm: m.heightMm, clearWidth: true }, defaultGateHeightMm: m.heightMm, postExtraMm: m.kind === 'terrace' ? 0 : 50, // stubovi su 50 mm viši od platna (kao uz kapiju)
   materialId: m.parts?.[0]?.materialId ?? '', parts: { main: m.name },
   ...(m.kind === 'terrace' ? { terrace: true } : {}),
 });

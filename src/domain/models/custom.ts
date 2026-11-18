@@ -34,6 +34,8 @@ export interface CustomPart {
   angleDeg: number;
   /** okretanje preseka oko ose profila (0 / 90 / 180 / 270) */
   rot: number;
+  /** okretanje je ručno zadato (dugmad „Okretanje preseka“): bočni U profil ostaje kako je okrenut (npr. ravna strana ka ispuni), program ga ne vraća ka unutra */
+  rotLocked?: boolean;
   /** nagib preseka oko ose profila (stepeni, dodaje se okretanju): prečka postavljena koso */
   tiltDeg?: number;
   /** prečka uklopljena u dve bočne U vođice (ID levog i desnog U profila): ne može da izađe van njihovog kanala */

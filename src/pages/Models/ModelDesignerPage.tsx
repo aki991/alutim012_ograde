@@ -21,6 +21,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Designer2D } from '../../components/designer/Designer2D';
 import { GuideSection } from '../../components/designer/GuideSection';
 import { SideSection } from '../../components/designer/SideSection';
+import { PresekView } from '../../components/designer/PresekView';
 import { SlopeModal } from '../../components/designer/SlopeModal';
 import { FEATURES, visibleMaterials } from '../../config/features';
 import { HardwarePanel } from '../../components/designer/HardwarePanel';
@@ -54,7 +55,7 @@ import { fmtMoney } from '../../utils/units';
 
 const Designer3D = lazy(() => import('../../components/designer/Designer3D'));
 
-type ViewMode = '2d' | '3d' | 'split' | 'skica' | 'mere';
+type ViewMode = '2d' | '3d' | 'split' | 'presek' | 'skica' | 'mere';
 
 /**
  * Brojčano polje: ukucana vrednost se primenjuje TEK kad se pritisne Enter (Esc vraća staru). Dok se kuca, ništa se ne menja,
@@ -560,9 +561,11 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
   const attach = (base: CustomModel, pid: string, quiet: boolean): CustomModel | null => {
     const r = attachToGuides(base, pid, materials);
     if ('error' in r) { if (!quiet) setNotice(r.error); return null; }
+    // samo uklapanje pri crtanju (quiet) ne okreće ručno okrenut bočni U profil: prečka ostaje slobodna; dugme „Uklopi“ ga okreće
+    if (quiet && r.model.parts.some((q) => { const o = base.parts.find((x) => x.id === q.id); return !!o && !!o.rotLocked && ((o.rot % 360) + 360) % 360 !== ((q.rot % 360) + 360) % 360; })) return null;
     return r.model;
   };
-  const patchPart = (pid: string, patch: Partial<CustomPart>, keep = true) => change((m) => ({ ...m, parts: m.parts.map((p) => (p.id === pid ? { ...p, ...patch } : p)) }), keep);
+  const patchPart = (pid: string, patch: Partial<CustomPart>, keep = true) => change((m) => ({ ...m, parts: m.parts.map((p) => (p.id === pid ? { ...p, ...patch, ...('rot' in patch ? { rotLocked: true } : {}) } : p)) }), keep);
   /** zamena materijala izabranog dela; delovi koji moraju zajedno (suprotni U profil, ostale prečke grupe) menjaju se uz potvrdu */
   const swapMaterial = (ids: string[], materialId: string) => {
     let m = modelRef.current;
@@ -863,7 +866,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
         <button className="btn btn-sm btn-icon" aria-label="Ponovi izmenu" disabled={!hist.future.length} onClick={redo}><Redo2 size={16} /></button>
         </>}
         <div className="inline-flex rounded-lg border border-line overflow-hidden" role="group" aria-label="Prikaz">
-          {([['2d', '2D'], ['split', '2D + 3D'], ['3d', '3D'], ['skica', 'Skica'], ...(model.kind === 'gate' ? [['mere', 'Mere kapije']] : [])] as [ViewMode, string][]).map(([v, l]) => (
+          {([['2d', '2D'], ['split', '2D + 3D'], ['3d', '3D'], ['presek', 'Presek'], ['skica', 'Skica'], ...(model.kind === 'gate' ? [['mere', 'Mere kapije']] : [])] as [ViewMode, string][]).map(([v, l]) => (
             <button key={v} data-testid={v === 'mere' ? 'designer-gate-measures' : `designer-view-${v}`} aria-pressed={view === v} className={`px-3 py-1.5 text-[13px] font-semibold ${view === v ? 'bg-brand-black text-white' : 'bg-white hover:bg-slate-50'}`} onClick={() => selectView(v)}>{l}</button>
           ))}
         </div>
@@ -965,7 +968,8 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
               </div>
             </div>
           )}
-          {view !== '3d' && view !== 'skica' && (
+          {view === 'presek' && <PresekView model={model} materials={materials} />}
+          {view !== '3d' && view !== 'skica' && view !== 'presek' && (
             <Designer2D model={model} parts={parts} active={active} selectedIds={selectedIds} ortho={ortho} gridMm={grid} snapObjects={snapObjects}
               onSelect={(ids) => { setSelectedIds(ids); if (ids.length) setHwSel(null); }} placing={placingParts} onPlace={placeClip} showDims={showDims} viewShift={viewShift} fitTick={fitTick} onMoveEnd={() => change((m) => ({ ...m }), false)}
               groundY={slSpec ? slSpec.frameBottomY : 0} extraBounds={dBounds} onOverlayPick={(c, member) => { const k = compPart(c); if (k) { setHwSel(k); setSelectedIds([]); useAppStore.getState().setTailSel(model.id, k === 'tail' ? member ?? null : null); } }}
@@ -975,7 +979,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
               onMoveStart={record}
               onMove={(moves) => { const at = new Map(moves.map((v) => [v.id, v])); change((m) => ({ ...m, parts: m.parts.map((p) => { const v = at.get(p.id); return v ? { ...p, x: v.x, y: v.y } : p; }) }), false, false); }} />
           )}
-          {view !== '2d' && view !== 'skica' && (
+          {view !== '2d' && view !== 'skica' && view !== 'presek' && (
             <div className={`min-h-0 ${view === 'split' ? 'border-t xl:border-t-0 xl:border-l border-line' : ''}`}>
               <Suspense fallback={<div className="h-full grid place-items-center text-muted text-sm">Učitavanje 3D prikaza…</div>}>
                 <Designer3D model={model} parts={parts} selectedId={selectedId ?? selectedIds[0] ?? null} sliding={slPlaced && slSpec ? { res: slPlaced.res, X: slPlaced.X, hex: colorHex(model.color), groundMm: slSpec.frameBottomY } : null} posts={posts} floorMm={gateFloor} postHex={colorHex(model.color)} />
@@ -997,7 +1001,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
             const sheets = multi.every((r) => r.shape.type === 'sheet');
             /** vrednost polja: zajednička ako je ista kod svih, inače vrednost prvog dela uz napomenu */
             const common = (get: (p: CustomPart) => number) => { const v = get(first.part); return { value: v, same: multi.every((r) => Math.abs(get(r.part) - v) < 1e-6) }; };
-            const setAll = (patch: Partial<CustomPart>) => { const s = new Set(ids); change((m) => ({ ...m, parts: m.parts.map((p) => (s.has(p.id) ? { ...p, ...patch } : p)) })); };
+            const setAll = (patch: Partial<CustomPart>) => { const s = new Set(ids); change((m) => ({ ...m, parts: m.parts.map((p) => (s.has(p.id) ? { ...p, ...patch, ...('rot' in patch ? { rotLocked: true } : {}) } : p)) })); };
             const field = (label: string, get: (p: CustomPart) => number, apply: (v: number) => Partial<CustomPart>, o: { min?: number; max?: number; unit?: string; testId: string }) => {
               const c = common(get);
               return <Num key={o.testId} label={c.same ? label : `${label} (različito)`} value={c.value} min={o.min} max={o.max} unit={o.unit} testId={o.testId} onChange={(v) => setAll(apply(v))} />;

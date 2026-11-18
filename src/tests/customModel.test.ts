@@ -183,3 +183,46 @@ describe('cev 80×20 u bočnim U profilima: razmak bez lufta najviše do −15 m
     expect(gapLimitOf(other)).toBeUndefined();
   });
 });
+
+describe('skica: Z profili imaju kote od poda', () => {
+  it('vodoravni Z profili bez vođica dobijaju kote naleganja od poda (osa zavarivanja)', async () => {
+    const { buildSketch } = await import('../domain/models/sketch');
+    const mk = (id: string, sku: string, name: string, unit = 'm'): Material => ({ id, sku, name, category: 'profil', unit, unitPrice: 1, wastePercent: 3, demo: false } as Material);
+    const z = mk('mz', 'KZ000002', 'Z profil za ogradu - veliki'); const u = mk('mu', 'U60', 'U profil 60x28x2');
+    const part = (id: string, materialId: string, x: number, y: number, len: number, ang: number, extra = {}) => ({ id, materialId, x, y, lengthMm: len, angleDeg: ang, rot: 0, z: 0, ...extra });
+    const model = { ...newCustomModel('cmz'), widthMm: 600, heightMm: 600, parts: [part('L', u.id, 10, 0, 600, 90), part('R', u.id, 590, 0, 600, 90), part('z1', z.id, 20, 100, 560, 0, { tiltDeg: -45 }), part('z2', z.id, 20, 300, 560, 0, { tiltDeg: -45 })] };
+    const sk = buildSketch(model, [z, u]);
+    expect(sk.weldKind).toBe('weld');
+    expect(sk.welds.length).toBe(2);
+    expect(sk.welds[0].value).toBeGreaterThan(sk.welds[1].value);
+  });
+});
+
+describe('ručno okrenut bočni U profil ostaje kako je okrenut', () => {
+  const mk = (id: string, sku: string, name: string): Material => ({ id, sku, name, category: 'profil', unit: 'm', unitPrice: 1, wastePercent: 3, demo: false } as Material);
+  const u = mk('mu', 'U60', 'U profil 60x28x2'); const kv = mk('mk', 'KV', 'Kvadratna cev 40x20x1');
+  const part = (id: string, materialId: string, x: number, y: number, len: number, ang: number, rot = 0, extra = {}) => ({ id, materialId, x, y, lengthMm: len, angleDeg: ang, rot, z: 0, ...extra });
+  const base = (locked: boolean) => ({ ...newCustomModel('cmr'), widthMm: 1034, heightMm: 800, parts: [
+    part('L', u.id, 14, 0, 800, 90, 90, locked ? { rotLocked: true } : {}), part('R', u.id, 1020, 0, 800, 90, 270, locked ? { rotLocked: true } : {}),
+    part('b1', kv.id, 28, 200, 978, 0), part('b2', kv.id, 28, 400, 978, 0),
+  ] });
+  it('settle ne okreće zaključane U profile ka unutra, a prečke ostaju slobodne', async () => {
+    const { settleModel } = await import('../domain/models/settle');
+    const r = settleModel(base(true), [u, kv]).model;
+    expect(r.parts.find((p) => p.id === 'L')!.rot).toBe(90);
+    expect(r.parts.find((p) => p.id === 'R')!.rot).toBe(270);
+    expect(r.parts.filter((p) => p.guides).length).toBe(0);
+  });
+  it('bez ručnog okretanja bočni U profili idu ka unutra (kao do sada)', async () => {
+    const { settleModel } = await import('../domain/models/settle');
+    const r = settleModel(base(false), [u, kv]).model;
+    expect(r.parts.find((p) => p.id === 'L')!.rot).toBe(270);
+    expect(r.parts.find((p) => p.id === 'R')!.rot).toBe(90);
+  });
+  it('dugme „Uklopi“ okreće profile ka prečki i skida zaključavanje', async () => {
+    const { attachToGuides } = await import('../domain/models/guides');
+    const r = attachToGuides(base(true), 'b1', [u, kv]);
+    if ('error' in r) throw new Error(r.error);
+    expect(r.model.parts.find((p) => p.id === 'L')!.rotLocked).toBeUndefined();
+  });
+});

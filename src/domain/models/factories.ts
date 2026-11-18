@@ -45,7 +45,7 @@ export function defaultSettings(): ProjectSettings {
     fillStrategy: 'proportional',
     defaultHeightMm: DEFAULT_FENCE_HEIGHT_MM,
     defaultColor: 'RAL 7016',
-    showDimensions: false,
+    showDimensions: true, // kote su uvek prikazane dok ih korisnik sam ne isključi
     showGrid: true,
     showLabels: false,
     pricing: { ...DEFAULT_PRICING },
