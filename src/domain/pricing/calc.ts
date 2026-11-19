@@ -6,7 +6,7 @@ import { gateLeafPoses, gateSpecWidth } from '../geometry/gates';
 import { computeLayout, type LaidOutItem } from '../geometry/layout';
 import type { FenceModelId, FenceSection, Gate, Material, PricingSettings, Project } from '../models/types';
 import { CALC_RULES } from './rules';
-import { evaluateItemSpec, hasCustomSpec, specFor, type ModelSpecs, type SpecContext } from '../models/spec';
+import { evaluateItemParts, hasCustomSpec, type ModelSpecs, type SpecContext } from '../models/spec';
 import { buildLouver08Sheet, FILL_PROFILES, GUIDE_PROFILES, isLouver08, louverSpecOf } from './louverSpec';
 import { buildRail04Sheet, isRail04, RAIL04 } from './railSpec';
 import { gateHingeQty } from '../gates/hingeRule';
@@ -153,8 +153,8 @@ export function buildBom(project: Project, materials: Material[], specs?: ModelS
     // krilo iz modela (nacrtano ili model ograde) ide po specifikaciji modela, kao kod ostalih kapija; klizni okov iz sklopa
     if (it.kind === 'gate' && it.sliding) { for (const l of slidingBomLines(it, li.clearWidth, materials)) add(l.group, l.materialId, l.qty, l.label, l.unit); if (!it.sliding.drawnLeaf) continue; }
     // elementi specifikacije modela (podrazumevani ili izmenjeni): količine i dužine po formulama
-    const specCtx: SpecContext = ({ modelId, slopeFactor: itemSlope(li).factor, widthMm: it.kind === 'gate' ? gateSpecWidth(it, li.clearWidth) : li.clearWidth, heightMm: it.kind === 'gate' ? leafHeightOf(it) : it.heightMm, axisMm: li.axisEnd - li.axisStart, params: it.params, doubleGate: it.kind === 'gate' && it.gateType === 'double', leafWidthsMm: it.kind === 'gate' && it.gateType === 'double' ? gateLeafPoses(it, li.clearStart, li.clearEnd, 1).map((q) => q.widthMm) : undefined });
-    for (const ev of evaluateItemSpec(specFor(modelId, specs), specCtx)) add(ev.part.group, ev.part.materialId, ev.materialQty);
+    const specCtx: SpecContext = ({ modelId, slopeFactor: itemSlope(li).factor, widthMm: it.kind === 'gate' ? gateSpecWidth(it, li.clearWidth) : li.clearWidth, heightMm: it.kind === 'gate' ? leafHeightOf(it) : it.heightMm, axisMm: li.axisEnd - li.axisStart, params: it.params, doubleGate: it.kind === 'gate' && it.gateType === 'double', gate: it.kind === 'gate', leafWidthsMm: it.kind === 'gate' && it.gateType === 'double' ? gateLeafPoses(it, li.clearStart, li.clearEnd, 1).map((q) => q.widthMm) : undefined });
+    for (const ev of evaluateItemParts(modelId, specs, specCtx)) add(ev.part.group, ev.part.materialId, ev.materialQty);
 
     if (it.kind === 'gate' && it.sliding) {
       // klizni okov je već dodat iz sklopa

@@ -93,7 +93,7 @@ export function elementModel(project: Project, idx: number, materials: Material[
     }
     const src = customModelOf(it.infillModelId);
     const model = src ? scaledWithReinforce(src, w, h, it.params.slats) : builtinToCustom(it.infillModelId as FenceModelId, materials, `skg_${idx}`, w, h, { miterFrame: true });
-    return { ...model, name: src?.name ?? model.name, widthMm: w, heightMm: h };
+    return { ...model, name: src?.name ?? model.name, widthMm: w, heightMm: h, tolCtx: 'gate' };
   } catch { return null; }
 }
 
@@ -148,8 +148,8 @@ export interface SketchPage { title: string; png: string; width: number; height:
 export async function projectSketchPages(project: Project, materials: Material[], scope: PrintScope = 'all'): Promise<SketchPage[]> {
   const pages: SketchPage[] = [];
   const layout = computeLayout(project);
-  const seen = new Map<string, { idx: number[]; model: CustomModel; at: number }>();
-  const list: { idx: number[]; model: CustomModel; label?: string; leaves?: number }[] = [];
+  const seen = new Map<string, { idx: number[]; model: CustomModel; at: number; labels?: string[] }>();
+  const list: { idx: number[]; model: CustomModel; label?: string; leaves?: number; labels?: string[] }[] = [];
   project.items.forEach((it, i) => {
     if (!inPrintScope(it, scope) || it.kind === 'opening') return;
     const model = elementModel(project, i, materials, layout);
@@ -161,12 +161,20 @@ export async function projectSketchPages(project: Project, materials: Material[]
       if (ex) { ex.idx.push(i + 1); return; }
       const entry = { idx: [i + 1], model, at: list.length };
       seen.set(key, entry); list.push(entry);
-    } else list.push({ idx: [i + 1], model, label: itemLabel(project.items, i), leaves: it.gateType === 'double' ? (it.unequalLeaves ? 3 : 2) : 1 });
+    } else {
+      // iste kapije (isti model, mere krila, tip, okov) crtaju se jednom: „Kapija 2, Kapija 4 (2 kom)“
+      const key = `g|${it.infillModelId}|${model.widthMm}|${model.heightMm}|${it.gateType}|${it.opening}|${it.swing}|${it.lock}|${it.hinge}|${it.unequalLeaves ? it.leftLeafMm : 0}|${JSON.stringify(it.params.slats ?? null)}|${JSON.stringify(it.design?.hardware ?? null)}`;
+      const ex = it.sliding ? undefined : seen.get(key);
+      if (ex) { ex.idx.push(i + 1); ex.labels?.push(itemLabel(project.items, i)); return; }
+      const entry = { idx: [i + 1], model, at: list.length, label: itemLabel(project.items, i), labels: [itemLabel(project.items, i)], leaves: it.gateType === 'double' ? (it.unequalLeaves ? 3 : 2) : 1 };
+      if (!it.sliding) seen.set(key, entry as never);
+      list.push(entry);
+    }
   });
   for (const e of list) {
     const title = e.label
       // dvokrilna kapija: skica je jedno (levo) krilo; kod jednakih krila važi za oba
-      ? `${e.label} — ${e.model.name || 'Model'}  ·  ${e.leaves === 2 ? 'krilo' : e.leaves === 3 ? 'levo krilo' : 'kapija'} ${e.model.widthMm} × ${e.model.heightMm} mm${e.leaves === 2 ? ' (2 krila)' : ''}`
+      ? `${e.labels && e.labels.length > 1 ? `${e.labels.join(', ')} (${e.labels.length} kom)` : e.label} — ${e.model.name || 'Model'}  ·  ${e.leaves === 2 ? 'krilo' : e.leaves === 3 ? 'levo krilo' : 'kapija'} ${e.model.widthMm} × ${e.model.heightMm} mm${e.leaves === 2 ? ' (2 krila)' : ''}`
       : `Element ${e.idx.join(', ')}${e.idx.length > 1 ? ` (${e.idx.length} kom)` : ''} — ${e.model.name || 'Model'}  ·  ${e.model.widthMm} × ${e.model.heightMm} mm`;
     const { svg, width, height } = await sketchSvgString(e.model, materials);
     const px = Math.min(3200, Math.round(width * Math.min(3, 3200 / width)));

@@ -1,3 +1,5 @@
+import { guidesOf } from '../../domain/models/guides';
+import { defaultTolMm, FENCE_TOL_MM, GATE_TOL_MM, partTolMm } from '../../domain/models/tolerance';
 import { settleModel as settle } from '../../domain/models/settle';
 import { fillHardware, removeParts } from '../../domain/models/terraceHardware';
 import { checkDrawing } from '../../domain/models/drawingCheck';
@@ -1177,6 +1179,14 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
               <Num label="X" value={sel.part.x} testId="part-x" onChange={(v) => patchPart(sel.part.id, { x: v })} />
               <Num label="Y (od tla)" value={sel.part.y} testId="part-y" onChange={(v) => patchPart(sel.part.id, { y: v })} />
               {sel.shape.type !== 'piece' &&<Num label={sel.shape.type === 'sheet' ? 'Širina' : 'Dužina'} value={sel.part.lengthMm} min={1} testId="part-length" onChange={(v) => patchPart(sel.part.id, { lengthMm: v })} />}
+              {/* prečka u bočnim U profilima: tolerancija (seče se kraće od dužine na crtežu); platno 1 mm, kapija 3 mm */}
+              {sel.shape.type === 'linear' && guidesOf(model, sel.part, materials) && (() => {
+                const tol = partTolMm(model, sel.part, materials);
+                return (<>
+                  <Num label="Tolerancija" value={tol} min={0} max={20} testId="part-tol" onChange={(v) => patchPart(sel.part.id, { tolMm: v === defaultTolMm(model.kind === 'gate') ? undefined : v })} />
+                  <p className="text-[11.5px] text-muted -mt-0.5" data-testid="part-cut-length">Stvarna dužina za sečenje: <b>{String(Math.round((sel.part.lengthMm - tol) * 10) / 10).replace('.', ',')} mm</b> (dužina − tolerancija). Podrazumevano: platno {FENCE_TOL_MM} mm, kapija {GATE_TOL_MM} mm.</p>
+                </>);
+              })()}
               {sel.shape.type === 'sheet' && <Num label="Visina" value={sel.part.heightMm ?? 0} min={1} testId="part-height" onChange={(v) => patchPart(sel.part.id, { heightMm: v })} />}
               {sel.shape.type === 'sheet' && <Num label="Kosa donja ivica (desno više +, niže −)" value={sel.part.bottomSlopeMm ?? 0} min={-5000} max={5000} testId="part-bottom-slope" onChange={(v) => patchPart(sel.part.id, { bottomSlopeMm: v || undefined })} />}
               {sel.shape.type !== 'sheet' && <Num label="Ugao" unit="°" value={sel.part.angleDeg} min={-360} max={360} testId="part-angle" onChange={(v) => patchPart(sel.part.id, { angleDeg: v })} />}

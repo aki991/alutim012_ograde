@@ -8,7 +8,7 @@ import { RL10_DEFAULTS, rl10Corner, rl10Ends } from '../domain/models/rl10';
 import type { FenceSection } from '../domain/models/types';
 import { buildRl10Sheet } from '../domain/pricing/rl10Spec';
 import { LEVEL_BACK_MM, LEVEL_FRONT_MM, levelSlabRects } from '../domain/geometry/slab';
-import { stairGroupAt } from '../domain/geometry/stair';
+import { stairGroupAt, treadLevelAt } from '../domain/geometry/stair';
 
 const rl = (w: number) => createFence({ widthMm: w, modelId: 'rail_inox', heightMm: 1000 }) as FenceSection;
 
@@ -109,7 +109,7 @@ describe('RL10: ugao u osnovi (stepenište pa ograda u stranu)', () => {
     expect(buildRl10Sheet(p)!.quantities.posts).toBe(4);
   });
 
-  it('ugao uz stepenište: pomoćni stub je na ravnom delu; ploča terase ne ulazi u stepenice ni za jedan pravac skretanja', () => {
+  it('ugao uz stepenište: pomoćni stub je na ravnom delu; ploča terase ne izviruje kroz stepenice ni za jedan pravac skretanja', () => {
     for (const turn of [-90, 90]) {
       const { p, post } = stairThenLanding(turn);
       const plan = computePlan(p);
@@ -119,7 +119,7 @@ describe('RL10: ugao u osnovi (stepenište pa ograda u stranu)', () => {
       // pomoćni stub je 125 mm pre početka nove ograde (ugla), duž stepeništa: na ravnom delu iza stepenica
       const start = plan.items[post].start;
       expect(Math.hypot(start.x - pp.aux!.x, start.z - pp.aux!.z)).toBeCloseTo(RL10_DEFAULTS.jointPostOffsetMm, 6);
-      // ploča ne preklapa stepenice: nijedna tačka stepenica nije u ploči ravnih polja
+      // ploča (podest) sme da pokrije stepenice niže od nje, ali nijedan stepenik viši od ploče nije u njoj
       const g = stairGroupAt(p.items, 0)!;
       const a = l.items[g.from];
       const b = l.items[g.to];
@@ -134,7 +134,8 @@ describe('RL10: ugao u osnovi (stepenište pa ograda u stranu)', () => {
           const dz = w.z - pj.start.z;
           const lx = dx * Math.cos(pj.heading) + dz * Math.sin(pj.heading) + lj.axisStart;
           const lz = -dx * Math.sin(pj.heading) + dz * Math.cos(pj.heading);
-          if (levelSlabRects(p.items, plan, l, j, 0, 0).some((r) => lx > r.x0 + 0.5 && lx < r.x1 - 0.5 && lz > r.z0 + 0.5 && lz < r.z1 - 0.5)) hits++;
+          const lvl = treadLevelAt(x, a.axisStart, b.axisEnd, a.floorStart, b.floorEnd, g.steps).level;
+          if (lvl > lj.floorStart + 1 && levelSlabRects(p.items, plan, l, j, 0, 0).some((r) => lx > r.x0 + 0.5 && lx < r.x1 - 0.5 && lz > r.z0 + 0.5 && lz < r.z1 - 0.5)) hits++;
         });
       }
       expect(hits).toBe(0);

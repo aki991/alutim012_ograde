@@ -1108,8 +1108,8 @@ test('kapija sa svojim stubovima: stub ograde i stub kapije umesto zajedničkog 
   await page.getByTestId('cat-gate-pedestrian-add').click();
   await expect(page.getByTestId('count-posts')).toContainText('3');
   // izabrana je nova kapija: uključi svoje stubove
-  await page.getByTestId('field-gate-own-posts').getByRole('radio', { name: 'Svoji stubovi' }).click();
-  await expect(page.getByTestId('field-gate-own-posts').getByRole('radio', { name: 'Svoji stubovi' })).toHaveAttribute('aria-checked', 'true');
+  await page.getByTestId('field-gate-own-posts').getByRole('radio', { name: '2 stuba' }).click();
+  await expect(page.getByTestId('field-gate-own-posts').getByRole('radio', { name: '2 stuba' })).toHaveAttribute('aria-checked', 'true');
   await expect(page.getByTestId('count-items')).toHaveText('2'); // razmaknik nije element
   await expect(page.getByTestId('count-posts')).toContainText('4');
   await expect(page.locator('[data-hit="post"]')).toHaveCount(4);
@@ -1136,7 +1136,6 @@ test('kapija sa svojim stubovima: stub ograde i stub kapije umesto zajedničkog 
   await page.waitForTimeout(500);
   // novo polje posle kapije: kapija i dalje ima svoje stubove (tri razmaknika nisu potrebna: samo uz kapiju)
   await page.getByRole('tab', { name: /2D prikaz/ }).click();
-  await page.getByTestId('field-all-gates-own-posts').getByRole('radio', { name: 'Zajednički' }).click();
   await expect(page.getByTestId('count-posts')).toContainText('3');
   expect(errors).toEqual([]);
 });

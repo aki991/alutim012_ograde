@@ -18,6 +18,7 @@ import { gateLeafPoses, gateSpecWidth } from '../../domain/geometry/gates';
 import { gateBomLines } from '../../domain/pricing/calc';
 import type { Gate, Material, Project } from '../../domain/models/types';
 import { useAppStore } from '../../store/useAppStore';
+import { OWN_POSTS_GAP_MM } from '../../domain/models/factories';
 import { itemLabel } from '../../utils/labels';
 import { uid } from '../../utils/id';
 import { SaveGateModelDialog } from './SaveGateModelDialog';
@@ -287,6 +288,24 @@ function DimsTab({ project, index, g, design, res, update, patchGate, clearWidth
           <span>Nedostaje prostora</span><b data-testid="gd-shortfall" className={res.derived.shortfall ? 'text-[#b42318]' : ''}>{fmt(res.derived.shortfall)}</b>
         </div>
       )}
+      {g.gateType !== 'sliding' && g.ownPosts && (
+        <div data-testid="gd-posts">
+          <div className="text-[12px] font-bold uppercase text-muted mb-1">Stubovi kapije</div>
+          <div className="rounded-lg border border-line px-2.5 py-1.5">
+            <div className="grid grid-cols-[minmax(0,1fr)_110px] gap-2 items-center">
+              <div className="min-w-0">
+                <div className="text-[13px] font-semibold leading-tight">Razmak stuba kapije od susednog stuba</div>
+                <div className="text-[11px] text-muted leading-tight">Između aluminijumskog stuba kapije i stuba ograde (betonskog); 0 = stub kapije je uz susedni stub</div>
+              </div>
+              <div className="flex items-center gap-1">
+                <NumInput value={g.postGapMm ?? OWN_POSTS_GAP_MM} testId="gd-postgap" ariaLabel="Razmak stuba kapije od susednog stuba" chain="gd-dims"
+                  onCommit={(v) => st.patchItem(g.id, { postGapMm: v === null ? 0 : Math.max(0, Math.min(500, v)) }, 'postgap')} />
+                <span className="text-[11px] text-muted w-5">mm</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       <ExtraDims design={design} update={update} sys={sys} />
       <p className="text-[11.5px] text-muted">Prazno polje znači da mera nije poznata; nula je važeći unos. Decimalni zarez je dozvoljen. Mere izvan poznatih granica se čuvaju uz upozorenje. Širina usvojenog otvora menja širinu kapije u projektu ({fmt(clearWidth)}).</p>
     </div>
@@ -427,7 +446,7 @@ function ProductionTab({ project, index, g, materials, clearStart, clearEnd }: {
   const layout = computeLayout(project);
   const li = layout.items[index];
   const infill = useMemo(() => {
-    const specCtx: SpecContext = ({ modelId: g.infillModelId, slopeFactor: 1, widthMm: gateSpecWidth(g, li.clearWidth), heightMm: leafHeightOf(g), axisMm: li.axisEnd - li.axisStart, params: g.params, doubleGate: g.gateType === 'double', leafWidthsMm: g.gateType === 'double' ? gateLeafPoses(g, clearStart, clearEnd, 1).map((q) => q.widthMm) : undefined });
+    const specCtx: SpecContext = ({ modelId: g.infillModelId, slopeFactor: 1, widthMm: gateSpecWidth(g, li.clearWidth), heightMm: leafHeightOf(g), axisMm: li.axisEnd - li.axisStart, params: g.params, doubleGate: g.gateType === 'double', gate: true, leafWidthsMm: g.gateType === 'double' ? gateLeafPoses(g, clearStart, clearEnd, 1).map((q) => q.widthMm) : undefined });
     // isti materijal u više delova specifikacije sabira se u jedan red; redovi bez količine se ne prikazuju
     const acc = new Map<string, { name: string; qty: number; unit: string; kgPerM?: number; meters: number }>();
     for (const ev of evaluateItemSpec(specFor(g.infillModelId, useAppStore.getState().settings.modelSpecs), specCtx)) {

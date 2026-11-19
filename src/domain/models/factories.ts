@@ -137,7 +137,7 @@ export function createProject(name = 'Novi projekat', items: LayoutItem[] = [], 
 
 export const SPACER_DEFAULT_MM = 150;
 /** Podrazumevani razmak između stuba ograde i stuba kapije (mm) */
-export const OWN_POSTS_GAP_MM = 40;
+export const OWN_POSTS_GAP_MM = 0;
 
 export function createSpacer(widthMm: number = SPACER_DEFAULT_MM): Opening {
   return { kind: 'opening', id: uid('spacer'), widthMm, heightMm: 1, spacer: true };
@@ -146,6 +146,11 @@ export function createSpacer(widthMm: number = SPACER_DEFAULT_MM): Opening {
 /** da li kapija ima svoj stub sa date strane (levo ili desno, gledano spreda) */
 const ownsSide = (it: LayoutItem | undefined, side: 'left' | 'right'): boolean => it?.kind === 'gate' && Boolean(it.ownPosts) && (!it.ownPostsSide || it.ownPostsSide === side);
 const isGate = (it: LayoutItem | undefined): boolean => it?.kind === 'gate';
+const isConcretePost = (p: Post | undefined): boolean => p?.type === 'concrete' || p?.type === 'concrete_plinth';
+/** kraj trase: kapija sa svojim stubom sa te strane, a krajnji stub je betonski (stub zida) — kapija uz njega dobija svoj stub */
+const needsEndPost = (it: LayoutItem | undefined, side: 'left' | 'right', outer: Post | undefined): boolean => ownsSide(it, side) && isConcretePost(outer);
+/** aluminijumski stub kapije pored datog (betonskog) stuba: tip i širinu postavljaju uloge stubova (stub kapije) */
+const ownGatePost = (near: Post): Post => ({ ...near, id: uid('post'), type: 'aluminium', custom: false, widthMm: 100, plinthMm: undefined, heightCustom: undefined, turnDeg: undefined, materialId: undefined, templateId: undefined, basePost: undefined, capTop: undefined, capBottom: undefined, capTopMaterialId: undefined, capBottomMaterialId: undefined });
 
 /**
  * Da li između dva elementa treba dva stuba. Kapija sa svojim stubom sa te strane uvek ima svoj stub, bez obzira na to šta je susedni
@@ -166,12 +171,20 @@ export function syncSpacers(project: Project): Project {
   const outItems: LayoutItem[] = [];
   const outPosts: Post[] = [posts[0]];
   let changed = false;
+  // na kraju trase kapija sa svojim stubom uz betonski stub: betonski ostaje spolja, a kapija dobija svoj aluminijumski stub do njega
+  if (needsEndPost(items[0], 'left', posts[0])) {
+    outItems.push(createSpacer());
+    outPosts.push(ownGatePost(posts[0]));
+    changed = true;
+  }
   for (let i = 0; i < items.length; i++) {
     const it = items[i];
     const prev = outItems[outItems.length - 1];
     if (isSpacer(it)) {
       const next = items[i + 1];
-      const needed = prev && !isSpacer(prev) && next && !isSpacer(next) && needsTwoPosts(prev, next);
+      const needed = (prev && !isSpacer(prev) && next && !isSpacer(next) && needsTwoPosts(prev, next))
+        || (!prev && i === 0 && needsEndPost(next, 'left', posts[0]))
+        || (!next && prev && !isSpacer(prev) && needsEndPost(prev, 'right', posts[i + 1]));
       if (needed) { outItems.push(it); outPosts.push(posts[i + 1]); continue; }
       changed = true;
       // ostaje stub strane koja ima svoj stub (ograda ili kapija sa svojim stubovima); kapija bez svojih stubova uzima taj stub
@@ -184,11 +197,20 @@ export function syncSpacers(project: Project): Project {
       // novi stub pripada elementu desno: izgled preuzima od njegovog drugog stuba (stub ograde je isti kao ostali stubovi ograde)
       const model = posts[i + 1] ?? outPosts[outPosts.length - 1];
       outItems.push(createSpacer());
-      outPosts.push({ ...model, id: uid('post'), turnDeg: undefined, heightCustom: undefined });
+      // stub kapije uz betonski stub je aluminijumski (betonski ostaje uz ogradu)
+      outPosts.push(ownsSide(it, 'left') && isConcretePost(model) ? ownGatePost(model) : { ...model, id: uid('post'), turnDeg: undefined, heightCustom: undefined });
       changed = true;
     }
     outItems.push(it);
     outPosts.push(posts[i + 1]);
+  }
+  const lastIt = outItems[outItems.length - 1];
+  const lastPost = outPosts[outPosts.length - 1];
+  if (lastIt && !isSpacer(lastIt) && needsEndPost(lastIt, 'right', lastPost)) {
+    outPosts[outPosts.length - 1] = ownGatePost(lastPost);
+    outItems.push(createSpacer());
+    outPosts.push(lastPost);
+    changed = true;
   }
   return changed ? { ...project, items: outItems, posts: outPosts } : project;
 }

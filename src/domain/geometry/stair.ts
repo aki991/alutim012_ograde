@@ -1,5 +1,5 @@
 import { isTerraceModel } from '../models/catalog';
-import type { FenceSection, LayoutItem, Mm, StairSpec } from '../models/types';
+import type { FenceSection, LayoutItem, Mm, StairSpec, StepDim } from '../models/types';
 
 /**
  * Stepenište: polje ograde za terasu koje prati stepenice. Širina polja ostaje horizontalna dužina u osnovi (osa–osa stubova),
@@ -54,8 +54,17 @@ export const alongSlope = (it: LayoutItem | undefined, runMm: Mm, mm: Mm): Mm =>
  * Nivo stepenika (mm) na položaju `x` osa stepeništa od (x0, f0) do (x1, f1) sa `steps` stepenika; `lineMm` je nivo na liniji
  * nagiba. Stub stoji na gazištu: razlika (linija − gazište) je koliko stub treba da bude duži od vertikalnog razmaka do rukohvata.
  */
-export function treadLevelAt(x: Mm, x0: Mm, x1: Mm, f0: Mm, f1: Mm, steps: number): { level: Mm; line: Mm } {
+export function treadLevelAt(x: Mm, x0: Mm, x1: Mm, f0: Mm, f1: Mm, steps: number, dims?: StepDim[]): { level: Mm; line: Mm } {
   const n = Math.max(1, steps);
+  if (dims && dims.length === n) {
+    const b = stepBounds(x0, x1, f0, f1, dims);
+    const line = x1 > x0 ? f0 + ((x - x0) / (x1 - x0)) * (f1 - f0) : f0;
+    const up = f1 >= f0;
+    // stepenik u čijem je gazištu x (ivice se računaju po smeru kao kod jednakih stepenika)
+    let k = b.findIndex((s) => x >= s.xa - 1e-9 && x < s.xb - 1e-9);
+    if (k < 0) k = x < x0 ? 0 : n - 1;
+    return { level: up ? b[k].fa : b[k].fb, line };
+  }
   const d = (x1 - x0) / n;
   const r = (f1 - f0) / n;
   const line = x1 > x0 ? f0 + ((x - x0) / (x1 - x0)) * (f1 - f0) : f0;
@@ -69,12 +78,29 @@ export function treadLevelAt(x: Mm, x0: Mm, x1: Mm, f0: Mm, f1: Mm, steps: numbe
   return { level: f0 + (k + 1) * r, line };
 }
 
+/** Granice svakog stepenika sa zadatim merama: x od–do i nivo pre i posle stepenika; mere se srazmerno prilagođavaju dužini i visinskoj razlici. */
+export function stepBounds(x0: Mm, x1: Mm, f0: Mm, f1: Mm, dims: StepDim[]): { xa: Mm; xb: Mm; fa: Mm; fb: Mm }[] {
+  const st = dims.reduce((a, d) => a + Math.max(0, d.treadMm), 0) || 1;
+  const sr = dims.reduce((a, d) => a + Math.max(0, d.riseMm), 0) || 1;
+  const kx = (x1 - x0) / st; const kr = (f1 - f0) / sr;
+  let x = x0; let f = f0;
+  return dims.map((d) => { const xa = x; const fa = f; x += Math.max(0, d.treadMm) * kx; f += Math.max(0, d.riseMm) * kr; return { xa, xb: x, fa, fb: f }; });
+}
+
 /**
  * Profil stepenika (tačke [x, nivo] u mm) od (x0, f0) do (x1, f1): ivice stepenika leže na liniji nagiba, a stepenici su ispod nje.
  * Prva tačka je početak, poslednja kraj; između su naizmenično gazišta i čela.
  */
-export function stairProfile(x0: Mm, x1: Mm, f0: Mm, f1: Mm, steps: number): [Mm, Mm][] {
+export function stairProfile(x0: Mm, x1: Mm, f0: Mm, f1: Mm, steps: number, dims?: StepDim[]): [Mm, Mm][] {
   const n = Math.max(1, steps);
+  if (dims && dims.length === n) {
+    const pts: [Mm, Mm][] = [[x0, f0]];
+    for (const k of stepBounds(x0, x1, f0, f1, dims)) {
+      if (f1 >= f0) pts.push([k.xb, k.fa], [k.xb, k.fb]);
+      else pts.push([k.xa, k.fb], [k.xb, k.fb]);
+    }
+    return pts;
+  }
   const d = (x1 - x0) / n;
   const r = (f1 - f0) / n;
   const pts: [Mm, Mm][] = [[x0, f0]];
@@ -120,6 +146,8 @@ export interface StairGroupInfo {
   riseMm: Mm;
   steps: number;
   fieldsCustom: boolean;
+  /** mere svakog stepenika kad su zadate posebno (inače nema) */
+  dims?: StepDim[];
 }
 
 export function stairGroupAt(items: ReadonlyArray<LayoutItem>, index: number): StairGroupInfo | null {
@@ -139,7 +167,8 @@ export function stairGroupAt(items: ReadonlyArray<LayoutItem>, index: number): S
     riseMm += f.stair.riseMm;
   }
   steps = stairSteps(items[from]);
-  return { from, to, runMm, riseMm, steps, fieldsCustom: Boolean(it.stair.fieldsCustom) };
+  const dims = (items[from] as StairFence).stair.custom;
+  return { from, to, runMm, riseMm, steps, fieldsCustom: Boolean(it.stair.fieldsCustom), ...(dims && dims.length === steps ? { dims } : {}) };
 }
 
 /** Kratak opis celog stepeništa: „↑ 4.080 mm · 24 stepenika · 31°" (nagib prema dužini osa–osa). */

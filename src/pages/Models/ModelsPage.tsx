@@ -95,7 +95,7 @@ export default function ModelsPage({ terrace = false }: { terrace?: boolean }) {
     <Page>
       <PageHeader title={terrace ? 'Modeli ograda za terase' : 'Modeli ograda'}
         subtitle={terrace ? 'Ograde za terase, stepeništa i galerije: stubovi, rukohvat, prečke ili staklo. Nemaju veze sa dvorišnim ogradama i nemaju kapije. „Napravi model“ otvara crtanje ograda za terase sa materijalima za terase.' : undefined}
-        actions={<><button className="btn btn-primary" data-testid={terrace ? 'btn-create-terrace-model' : 'btn-create-model'} onClick={() => navigate(terrace ? `${drawPath}/${uid('cm')}` : drawPath)}><PencilRuler size={17} />Napravi model</button></>} />
+        actions={<>{terrace && TERRACE_MODEL_LIST.some((m) => hiddenModels?.includes(m.id)) && <button className="btn" data-testid="restore-terrace-models" onClick={() => { const ids = new Set(TERRACE_MODEL_LIST.map((m) => m.id)); for (const id of ids) if (hiddenModels?.includes(id)) useAppStore.getState().restoreHiddenModels(id); }}>Vrati obrisane modele</button>}<button className="btn btn-primary" data-testid={terrace ? 'btn-create-terrace-model' : 'btn-create-model'} onClick={() => navigate(terrace ? `${drawPath}/${uid('cm')}` : drawPath)}><PencilRuler size={17} />Napravi model</button></>} />
       {terrace && !!customModels?.some((m) => standalone(m) && m.kind === kind) && (
         <section className="mb-7" data-testid="custom-terrace-models">
           <h2 className="font-bold text-lg mb-3">Moje ograde za terase (ručno nacrtane)</h2>

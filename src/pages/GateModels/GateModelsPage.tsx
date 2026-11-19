@@ -50,7 +50,7 @@ export default function GateModelsPage() {
   const [choice, setChoice] = useState<CustomModel | null>(null);
   const [delAll, setDelAll] = useState(false);
   // ograda na sličicama: model iz otvorenog projekta; bez projekta prvi model sa stranice Modeli ograda
-  const shownModel = (current && projectModelId(current.items)) || allFenceModels()[0].id;
+  const shownModel = (current && projectModelId(current.items)) || (allFenceModels().find((m) => !m.terrace) ?? allFenceModels()[0]).id;
   const doradaModel = leafKeyOf(shownModel, customModels);
   // sličice kapija: model ograde sa ramom (ako ga kapija od tog modela dobija)
   const [thumbModel, setThumbModel] = useState<string>(shownModel);

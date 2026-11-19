@@ -75,8 +75,11 @@ function SlopedSheet({ part, thick, material }: { part: CustomPart; thick: numbe
   return <mesh geometry={geometry} material={material} castShadow />;
 }
 
+const sphGeometry = new THREE.SphereGeometry(1, 28, 18);
+
 function SolidMesh({ s, material }: { s: Solid; material: THREE.Material }) {
   if (s.prim === 'dome') return <DomeMesh s={s} material={material} />;
+  if (s.prim === 'sph') return <mesh geometry={sphGeometry} material={material} position={s.pos} scale={s.r} castShadow />;
   if (s.prim === 'box') return <mesh geometry={boxGeometry} material={material} position={s.pos} scale={s.size} castShadow />;
   if (s.prim === 'pyr') return <mesh geometry={pyrGeometry} material={material} position={[s.pos[0], s.pos[1] + s.h / 2, s.pos[2]]} scale={[s.base[0], s.h, s.base[1]]} castShadow />;
   return <mesh geometry={cylGeometry} material={material} position={s.pos} scale={[s.r, s.len, s.r]} rotation={s.axis === 'x' ? [0, 0, Math.PI / 2] : s.axis === 'z' ? [Math.PI / 2, 0, 0] : [0, 0, 0]} castShadow />;

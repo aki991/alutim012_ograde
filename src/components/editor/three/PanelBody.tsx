@@ -148,7 +148,12 @@ export function PanelBody(props: PanelProps) {
     const zMid = props.centerZ ? zExtent(resolved)?.mid ?? 0 : 0;
     return (
       <group position={[-s(props.widthMm) / 2, s(up), -s(zMid)]} scale={s(1)}>
-        {resolved.map((r) => <PartMesh key={r.part.id} part={r.part} shape={r.shape} hex={r.hex} materialKey={r.material ? materialKey(r.material) : 'x'} selected={false} />)}
+        {resolved.map((r) => {
+          const mesh = <PartMesh key={r.part.id} part={r.part} shape={r.shape} hex={r.hex} materialKey={r.material ? materialKey(r.material) : 'x'} selected={false} />;
+          const t = r.part.unshearTan;
+          // stepenište: flanša leži ravno na gazištu (poništava iskošenje polja)
+          return t ? <group key={r.part.id} matrixAutoUpdate={false} matrix={new THREE.Matrix4().set(1, 0, 0, 0, -t, 1, 0, t * r.part.x, 0, 0, 1, 0, 0, 0, 0, 1)}>{mesh}</group> : mesh;
+        })}
       </group>
     );
   }

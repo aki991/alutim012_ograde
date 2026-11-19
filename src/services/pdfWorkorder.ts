@@ -9,8 +9,9 @@ import { loadHeaderLogos } from './pdfHeader';
 import { downloadBlob, safeFilename } from './exports';
 import { getPdfMake, renderBlob } from './pdf';
 import { schemaSvg } from './workorderSvg';
+import { sameElementGroups } from './workorderGroups';
 import { slidingWorkSvg } from './slidingWorkSvg';
-import { elementAssembly } from './pdfSketch';
+import { elementAssembly, elementModel, sketchSvgString } from './pdfSketch';
 import { pdfFinishing } from './pdfFinishing';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -42,6 +43,11 @@ export async function buildWorkorderPdfBlob(project: Project, customer: Customer
   const pdfMake = await getPdfMake();
   const wo = buildWorkOrder(project, settings.modelSpecs, materials, { ...cutOptions(settings), scope });
   const colors = positionColors(wo.cutting.positions);
+  // potpuno isti elementi (isti model, mere, boja, delovi i okov) čine jednu stavku „2×“: jedna kartica i jedan sklopni crtež sa skicom
+  const groups = sameElementGroups(project, wo.elements);
+  for (const g of groups) for (const m of g.members.slice(1)) { const c = colors.get(g.rep.key); if (c) colors.set(m.key, c); }
+  const tagsOf = (g: { members: { key: string }[] }) => g.members.map((m) => tag(m.key)).join(' · ');
+  const labelOf = (g: { rep: { label: string }; members: { label: string }[] }) => (g.members.length > 1 ? g.members.slice(0, 3).map((m) => m.label).join(', ') + (g.members.length > 3 ? '…' : '') : g.rep.label);
   const logos = await loadHeaderLogos();
   const info = settings.companyInfo ?? {};
   const contact = [info.address, info.phone, info.email, info.pib ? `PIB: ${info.pib}` : ''].filter(Boolean).join('  ·  ');
@@ -114,7 +120,9 @@ export async function buildWorkorderPdfBlob(project: Project, customer: Customer
       : [{ text: e.detail, fontSize: 8.5, color: MUTED }],
   });
 
-  const cards2: any[] = wo.elements.map((e) => {
+  const cards2: any[] = groups.map((grp) => {
+    const e = grp.rep;
+    const n = grp.members.length;
     const col = colors.get(e.key) ?? '#475569';
     const checks = e.slidingIndex !== undefined
       ? ['Delovi isečeni po krojnoj listi', 'Krilo i rep zavareni po crtežu', 'Okov ugrađen', 'Hod proveren', 'Mere proverene', 'Boja bez oštećenja']
@@ -133,7 +141,7 @@ export async function buildWorkorderPdfBlob(project: Project, customer: Customer
         body: [
           [
             { colSpan: 2, fillColor: tint(col), margin: [8, 3, 8, 3], columns: [
-              { width: '*', text: [{ text: `${tag(e.key)}   `, bold: true, color: col, fontSize: 12 }, { text: e.label, bold: true, fontSize: 12 }, { text: `   ${e.detail}`, fontSize: 8.5, color: MUTED }], margin: [0, 2, 0, 0] },
+              { width: '*', text: [{ text: `${tagsOf(grp)}   `, bold: true, color: col, fontSize: 12 }, { text: labelOf(grp), bold: true, fontSize: 12 }, ...(n > 1 ? [{ text: `   ${n}×`, bold: true, fontSize: 13, color: BRAND_RED }] : []), { text: `   ${e.detail}`, fontSize: 8.5, color: MUTED }], margin: [0, 2, 0, 0] },
               ...(e.color ? [{ width: 'auto', text: e.color, bold: true, fontSize: 10, color: INK, margin: [0, 3, 0, 0] }] : []),
             ] },
             {},
@@ -160,7 +168,27 @@ export async function buildWorkorderPdfBlob(project: Project, customer: Customer
 
   // klizne kapije: sklopni crtež sa brojevima delova (iz tabele dela) i slovima okova (legenda pored crteža)
   const assemblies: any[] = [];
-  for (const e of wo.elements) {
+  // skica elementa sa kotama (pored sklopnog crteža): isti model i mera kao sklopni crtež
+  const sketchOf = async (idx: number | undefined): Promise<{ png: string } | null> => {
+    if (idx === undefined) return null;
+    const model = elementModel(project, idx, materials);
+    if (!model) return null;
+    try {
+      const { svg, width, height } = await sketchSvgString(model, materials);
+      const px = Math.min(2600, Math.round(width * Math.min(3, 2600 / width)));
+      return { png: await svgToPng(svg, px, Math.min(Math.round((px * height) / width), 3600)) };
+    } catch { return null; }
+  };
+  const pair = (left: string, right: string | undefined, maxH: number): any => (right
+    ? { columns: [
+        { width: '*', stack: [{ text: 'SKLOPNI CRTEŽ', fontSize: 7.5, bold: true, color: MUTED, characterSpacing: 0.5, margin: [0, 0, 0, 2] }, { image: left, fit: [386, maxH], alignment: 'center' }] },
+        { width: '*', stack: [{ text: 'SKICA SA KOTAMA', fontSize: 7.5, bold: true, color: MUTED, characterSpacing: 0.5, margin: [0, 0, 0, 2] }, { image: right, fit: [386, maxH], alignment: 'center' }] },
+      ], columnGap: 14, margin: [0, 2, 0, 6] }
+    : { image: left, fit: [786, maxH], alignment: 'center', margin: [0, 2, 0, 6] });
+  for (const grp of groups) {
+    const e = grp.rep;
+    const n = grp.members.length;
+    const heading = `${tagsOf(grp)} ${labelOf(grp)}${n > 1 ? ` (${n}×)` : ''}`;
     const col = colors.get(e.key) ?? '#475569';
     if (e.slidingIndex === undefined) {
       // ograda i krilne kapije: sklopni crtež u boji elementa (iste boje kao shema i kartica elementa), sa tabelom brojeva pored
@@ -171,8 +199,8 @@ export async function buildWorkorderPdfBlob(project: Project, customer: Customer
       assemblies.push({
         pageBreak: 'before',
         stack: [
-          section(`Sklopni crtež — ${tag(e.key)} ${e.label}`, 'Broj u krugu je broj dela iz tabele (naziv, presek, dužina i uglovi). Kote su u mm, pogled spreda.'),
-          { image: a.png, fit: [786, Math.max(120, Math.min(360, 531 - 56 - a.legendH - 14))], alignment: 'center', margin: [0, 2, 0, 6] },
+          section(`Sklopni crtež i skica — ${heading}`, 'Levo: sklopni crtež, broj u krugu je broj dela iz tabele (naziv, presek, dužina i uglovi). Desno: skica sa kotama zavarivanja. Mere su u mm, pogled spreda.'),
+          pair(a.png, (await sketchOf(e.itemIndex))?.png, Math.max(120, Math.min(340, 531 - 56 - a.legendH - 30))),
           a.legend,
         ],
       });
@@ -204,8 +232,8 @@ export async function buildWorkorderPdfBlob(project: Project, customer: Customer
     assemblies.push({
       pageBreak: 'before',
       stack: [
-        section(`Sklopni crtež — ${tag(e.key)} ${e.label}`, 'Broj u krugu je broj dela iz tabele elementa (naziv, profil, dužina i uglovi). Slovo je okov iz legende. Kote su u mm, pogled spreda, u stvarnom smeru otvaranja.'),
-        { image: png, fit: [786, Math.max(120, Math.min(360, 531 - 56 - (Math.ceil(d.hardware.length / 2) + 2) * 15 - 14))], alignment: 'center', margin: [0, 2, 0, 6] },
+        section(`Sklopni crtež${(await sketchOf(e.slidingIndex)) ? ' i skica' : ''} — ${heading}`, 'Broj u krugu je broj dela iz tabele elementa (naziv, profil, dužina i uglovi). Slovo je okov iz legende. Kote su u mm, pogled spreda, u stvarnom smeru otvaranja.'),
+        pair(png, (await sketchOf(e.slidingIndex))?.png, Math.max(120, Math.min(340, 531 - 56 - (Math.ceil(d.hardware.length / 2) + 2) * 15 - 30))),
         legend,
       ],
     });

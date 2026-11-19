@@ -378,7 +378,7 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
         const a = layout.items[grp.from];
         const b = layout.items[grp.to];
         const run = b.axisEnd - a.axisStart;
-        const pts = stairProfile(a.axisStart, b.axisEnd, a.floorStart, b.floorEnd, grp.steps);
+        const pts = stairProfile(a.axisStart, b.axisEnd, a.floorStart, b.floorEnd, grp.steps, grp.dims);
         const poly = [...pts.map(([x, f]) => `${x},${groundY - f}`), `${b.axisEnd},${groundY}`, `${a.axisStart},${groundY}`].join(' ');
         const ang = (-Math.atan2(b.floorEnd - a.floorStart, run) * 180) / Math.PI;
         const mx = (a.axisStart + b.axisEnd) / 2;
@@ -610,7 +610,10 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
           {/* kote osa–osa: razmak od sredine jednog stuba do sredine sledećeg, za svako platno (kapije i otvori su isto platna u nizu) */}
           <g data-testid="dim-axis-chain">
             {layout.items.filter((li) => !isSpacer(li.item)).map((li) => {
-              const a = li.axisStart; const b = li.axisEnd;
+              // polje ograde za terasu: osa–osa je od sredine prvog do sredine poslednjeg stuba modela
+              const px0 = li.item.kind === 'fence' ? li.item.params.slats?.postXs : undefined;
+              const own = px0 && px0.length > 1;
+              const a = own ? li.clearStart + px0[0] : li.axisStart; const b = own ? li.clearStart + px0[px0.length - 1] : li.axisEnd;
               return (
                 <g key={`ax-${li.item.id}`} data-testid="dim-axis">
                   <line x1={a} y1={groundY + 4 * px} x2={a} y2={groundY + 52 * px} stroke="#94a3b8" strokeWidth={1 * px} strokeDasharray={`${3 * px} ${3 * px}`} />

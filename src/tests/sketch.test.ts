@@ -38,7 +38,7 @@ describe('podaci skice', () => {
     const sk = buildSketch(fence(), MATS);
     expect(sk.positions).toHaveLength(2);
     const bars = sk.positions.find((p) => p.materialId === KV80.id)!;
-    expect(bars).toMatchObject({ count: 5, length: '996', section: '80 × 20' });
+    expect(bars).toMatchObject({ count: 5, length: '995', section: '80 × 20' });
     const sides = sk.positions.find((p) => p.materialId === U60.id)!;
     expect(sides).toMatchObject({ count: 2, length: '1000' });
     expect(sides.no).toBe(1); // uspravni delovi prvi

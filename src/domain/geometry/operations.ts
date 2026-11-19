@@ -200,11 +200,32 @@ export function setItemPlinthHeight(p: Project, itemId: string, mm: number): Pro
   return touch(applyPostRoles({ ...p, items, posts }));
 }
 
-/** Sve kapije dobijaju svoje stubove (ili zajednički stub sa susednim elementom). */
-export function setAllGatesOwnPosts(p: Project, own: boolean): Project {
-  const items = p.items.map((it) => (it.kind === 'gate' ? { ...it, ownPosts: own, ownPostsSide: undefined } : it));
-  return touch(applyPostRoles({ ...p, items }));
+/**
+ * Stubovi koji pripadaju kapiji sa svojim stubovima (sa strane koju kapija ima) postaju aluminijumski stub kapije ako su bili betonski:
+ * betonski stub ostaje uz ogradu, a kapija dobija svoj aluminijumski. Stub koji je korisnik ručno podesio van betonskih tipova ne menja se.
+ */
+export function ownPostsToAluminium(p: Project, gateIds?: string[]): Project {
+  const ids = gateIds ? new Set(gateIds) : null;
+  const swap = new Set<string>();
+  p.items.forEach((it, i) => {
+    if (it.kind !== 'gate' || !it.ownPosts || (ids && !ids.has(it.id))) return;
+    const sides: [number, boolean][] = [[i, !it.ownPostsSide || it.ownPostsSide === 'left'], [i + 1, !it.ownPostsSide || it.ownPostsSide === 'right']];
+    sides.forEach(([pi, on]) => { const post = p.posts[pi]; if (on && post && (post.type === 'concrete' || post.type === 'concrete_plinth')) swap.add(post.id); });
+  });
+  if (!swap.size) return p;
+  const posts = p.posts.map((x) => (swap.has(x.id) ? { ...x, type: 'aluminium' as const, custom: false, widthMm: 100, plinthMm: undefined, heightCustom: undefined } : x));
+  return touch(applyPostRoles({ ...p, posts }));
 }
+
+/** Kapija (ili sve kapije) dobija svoje stubove (aluminijumske) ili zajednički stub sa susednim elementom. */
+export function setGatesOwnPosts(p: Project, own: boolean, gateIds?: string[], side?: 'left' | 'right'): Project {
+  const ids = gateIds ? new Set(gateIds) : null;
+  const items = p.items.map((it) => (it.kind === 'gate' && (!ids || ids.has(it.id)) ? { ...it, ownPosts: own, ownPostsSide: own ? side : undefined } : it));
+  return ownPostsToAluminium(touch(applyPostRoles({ ...p, items })), gateIds);
+}
+
+/** Sve kapije dobijaju svoje stubove (ili zajednički stub sa susednim elementom). */
+export const setAllGatesOwnPosts = (p: Project, own: boolean): Project => setGatesOwnPosts(p, own);
 
 export function updateItemParams(p: Project, id: string, patch: Partial<FenceSection['params']>): Project {
   const items = p.items.map((it) => (it.id === id && 'params' in it ? ({ ...it, params: { ...it.params, ...patch } } as LayoutItem) : it));

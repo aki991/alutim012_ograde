@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { create } from 'zustand';
 import { isBuiltinMaterial } from '../data/materials';
 import { DEFAULT_CARRIAGES, DEFAULT_PLATES, DEFAULT_RAILS, missingModelMaterials } from '../data/modelMaterials';
+import { mergeTerraceRuns, withRunPosts } from '../domain/geometry/runPosts';
 import { withTerraceMaterials } from '../data/terraceMaterials';
 import { createSeedData } from '../data/seed';
 import { loadAll, saveAll, wipeAll } from '../db';
@@ -19,6 +20,7 @@ import { RAM_TUBE_DEFAULT_MM, isTubesModel, tubesDims } from '../domain/models/t
 import { presetTitle, slidingForModel, specFromPreset, type SlidingSpec } from '../domain/gates/slidingAssembly';
 import { defaultGateConfig, gateClearWidth, gateConfigFromGate, gateFieldsFromModel, GATE_TYPE_LABELS, leafKeyOf, postDimsOf, withModelPosts } from '../domain/gates/gateModels';
 import { postHalfSum } from '../domain/geometry/layout';
+import { propagateItemChange, type EditScope } from '../domain/geometry/editScope';
 import { leafKey, leafSeed } from '../domain/models/leafSeed';
 import { doubleGateSeed, singleGateSeed } from '../domain/models/doubleGateSeed';
 import { pairWidth } from '../domain/models/pairHardware';
@@ -49,7 +51,7 @@ export type Selection = { type: 'item' | 'post'; id: string } | null;
 export type EditorView = 'front' | 'top' | 'three' | 'split' | 'dims' | 'bom' | 'photo';
 
 export type NewElementSpec =
-  | { kind: 'fence'; modelId: FenceModelId; /** polje stepeništa (samo ograde za terase) */ stair?: boolean }
+  | { kind: 'fence'; modelId: FenceModelId; /** polje stepeništa (samo ograde za terase) */ stair?: boolean; /** polje pod uglom prema prethodnom (stepeni, samo ograde za terase): skretanje trase na njegovom levom stubu */ turnDeg?: number }
   | { kind: 'gate'; gateType: GateType; modelId?: FenceModelId; /** kapija između betonskih stubova */ concrete?: boolean; /** moj model kapije (ID) koji se postavlja umesto osnovne kapije */ gateModelId?: string }
   | { kind: 'opening' }
   | { kind: 'corner' };
@@ -72,6 +74,8 @@ interface EditorState {
   slideTest: Record<string, number>;
   /** izabrano ojačanje/cev repa klizne kapije (ključ stavke, npr. tail-diag, tail-brace-x1) po kapiji: ističe se na crtežu radi poređenja sa krojnom listom */
   tailSel?: Record<string, string | null>;
+  /** na koje elemente važe izmene podešavanja izabranog elementa (samo on, sva platna / sve kapije, ili sve) */
+  scope?: EditScope;
 }
 
 interface AppState {
@@ -119,7 +123,8 @@ interface AppState {
 
   addElement: (spec: NewElementSpec, index?: number) => string | null;
   deleteSelected: () => void;
-  duplicateSelected: () => void;
+  duplicateSelected: (count?: number) => void;
+  setEditScope: (scope: EditScope) => void;
   moveSelected: (delta: -1 | 1) => void;
   patchItem: (id: string, patch: Partial<FenceSection> | Partial<Gate> | { widthMm?: number; heightMm?: number; bendDeg?: number }, key?: string) => void;
   patchItemParams: (id: string, patch: Partial<FenceSection['params']>, key?: string) => void;
@@ -210,7 +215,7 @@ const ACTIVE_MODEL_KEY = 'alutim.activeModel';
 const rememberActiveModel = (id: string | null): void => { try { if (id) sessionStorage.setItem(ACTIVE_MODEL_KEY, id); else sessionStorage.removeItem(ACTIVE_MODEL_KEY); } catch { /* bez sessionStorage-a */ } };
 const isListedModel = (id: string): boolean => allFenceModels().some((m) => m.id === id);
 /** prvi model sa stranice Modeli ograda */
-const firstListedModel = (): FenceModelId => (allFenceModels()[0]?.id ?? defaultModelId()) as FenceModelId;
+const firstListedModel = (): FenceModelId => (allFenceModels().find((m) => !m.terrace)?.id ?? defaultModelId()) as FenceModelId;
 const sessionModel = (): FenceModelId | null => { try { const v = sessionStorage.getItem(ACTIVE_MODEL_KEY); return v && isListedModel(v) ? (v as FenceModelId) : null; } catch { return null; } };
 
 const emptyEditor = (): EditorState => ({
@@ -599,7 +604,14 @@ export const useAppStore = create<AppState>((set, get) => {
       if (!cur) return;
       let next = fn(cur);
       if (next === cur) return;
+      // izmena izabranog elementa važi i za ostale prema izabranom opsegu („Sva platna“, „Sve kapije“, „Platna i kapije“)
+      const sel = get().editor.selection; const scope = get().editor.scope ?? 'one';
+      if (scope !== 'one' && sel?.type === 'item') next = propagateItemChange(cur, next, sel.id, scope);
       next = withGateFrames(next, cur);
+      const mg = mergeTerraceRuns(next);
+      next = withRunPosts(mg.project, get().materials);
+      const selNow = get().editor.selection;
+      const moved = selNow?.type === 'item' ? mg.merged.get(selNow.id) : undefined;
       set((s) => {
         const selection = s.editor.selection;
         const stillThere =
@@ -607,7 +619,7 @@ export const useAppStore = create<AppState>((set, get) => {
           (selection.type === 'item' ? next.items.some((i) => i.id === selection.id) : next.posts.some((x) => x.id === selection.id));
         return {
           projects: s.projects.map((p) => (p.id === cur.id ? next : p)),
-          editor: { ...s.editor, history: recordChange(s.editor.history, cur, key), selection: stillThere ? selection : null, multi: keepMulti(s.editor.multi, next) },
+          editor: { ...s.editor, history: recordChange(s.editor.history, cur, key), selection: moved ? { ...selection!, id: moved } as typeof selection : stillThere ? selection : null, multi: keepMulti(s.editor.multi, next) },
         };
       });
     },
@@ -665,7 +677,11 @@ export const useAppStore = create<AppState>((set, get) => {
       const sel = get().editor.selection;
       const { item, outerWidthMm: outer, clearWidthMm } = newItemFor(cur, spec, modelId, sel?.type === 'item' ? sel.id : null);
       get().mutate((p) => {
-        const q = insertItem(p, item, index ?? p.items.length);
+        let q = insertItem(p, item, index ?? p.items.length);
+        if (spec.kind === 'fence' && spec.turnDeg) {
+          const at = q.items.findIndex((x) => x.id === item.id);
+          if (at > 0) q = { ...q, posts: q.posts.map((x, i) => (i === at ? { ...x, turnDeg: spec.turnDeg } : x)) };
+        }
         let w = setOuterWidth(spec.kind === 'gate' && spec.concrete ? withConcretePosts(q, item.id) : q, item.id, outer);
         // zadata svetla širina (sa U profilima): spoljna se dopuni za polovine stubova, tako da otvor bude tačno tražen
         if (clearWidthMm) {
@@ -688,14 +704,19 @@ export const useAppStore = create<AppState>((set, get) => {
       set((s) => ({ editor: { ...s.editor, selection: null, multi: [] } }));
     },
 
-    duplicateSelected() {
+    duplicateSelected(count = 1) {
       const sel = get().editor.selection;
       const cur = currentProject();
       if (!sel || sel.type !== 'item' || !cur || get().editor.multi.length > 1) return;
-      const { project, newId } = duplicateItem(cur, sel.id);
+      // više kopija odjednom (npr. 10 istih platna): svaka dolazi odmah posle izabranog elementa, sve u jednom koraku za poništavanje
+      const n = Math.max(1, Math.min(50, Math.floor(Number.isFinite(count) ? count : 1)));
+      let project = cur; let firstId: string | null = null;
+      for (let k = 0; k < n; k++) { const r = duplicateItem(project, sel.id); project = r.project; if (r.newId && !firstId) firstId = r.newId; }
       get().mutate(() => project);
-      if (newId) set((s) => ({ editor: { ...s.editor, selection: { type: 'item', id: newId }, multi: [] } }));
+      if (firstId) set((s) => ({ editor: { ...s.editor, selection: { type: 'item', id: firstId! }, multi: [] } }));
     },
+
+    setEditScope(scope) { set((s) => ({ editor: { ...s.editor, scope } })); },
 
     moveSelected(delta) {
       const sel = get().editor.selection;
@@ -1053,6 +1074,11 @@ export const useAppStore = create<AppState>((set, get) => {
 useAppStore.subscribe((s, prev) => {
   if (s.settings.customModels !== prev.settings.customModels || s.materials !== prev.materials) registerCustomModels(s.settings.customModels, s.materials);
   if (s.settings.hiddenModels !== prev.settings.hiddenModels) setHiddenModels(s.settings.hiddenModels);
+  // stubovi ograda za terase po ravnoj liniji ograde: iznova kad se promeni crtež modela, cenovnik ili se podaci učitaju
+  if (s.settings.customModels !== prev.settings.customModels || s.materials !== prev.materials || s.projects !== prev.projects || (s.ready && !prev.ready)) {
+    const fixed = s.projects.map((p) => withRunPosts(mergeTerraceRuns(p).project, s.materials));
+    if (fixed.some((p, i) => p !== s.projects[i])) useAppStore.setState({ projects: fixed });
+  }
   // izabrani model koji nije na stranici Modeli ograda (obrisan, sakriv ili zamenjen) menja se: izabran u ovoj sesiji, inače prvi sa stranice
   if (s.settings.customModels !== prev.settings.customModels || s.settings.hiddenModels !== prev.settings.hiddenModels || s.ready !== prev.ready) {
     // posle osvežavanja stranice važi model izabran u ovoj sesiji

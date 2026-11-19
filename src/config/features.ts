@@ -9,7 +9,7 @@ import { isTerraceMaterial } from '../domain/models/materialShape';
  * Za vraćanje: promeniti u `true`.
  */
 export const FEATURES = {
-  terraceFences: false,
+  terraceFences: true,
 } as const;
 
 /**

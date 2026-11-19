@@ -60,7 +60,11 @@ export interface StairSpec {
   group?: string;
   /** broj polja (stubova) je ručno zadat; inače se preporučuje jedan stub na svaki metar */
   fieldsCustom?: boolean;
+  /** „svaki stepenik posebno“: mere svakog stepenika od početka trase (dubina gazišta i visina, mm; visina bez znaka); bez vrednosti su svi stepenici isti */
+  custom?: StepDim[];
 }
+
+export interface StepDim { treadMm: number; riseMm: number }
 
 /** Završna obrada boje (po dogovoru sa majstorom): mat, sjaj ili struktura. Bez vrednosti = nije zadata. */
 export type Finish = 'mat' | 'sjaj' | 'struktura';
@@ -236,6 +240,10 @@ export interface ProjectSettings {
   showGrid: boolean;
   showLabels: boolean;
   pricing: PricingSettings;
+  /** ograda za terasu: spoj prečki i rukohvata na uglu u ovom projektu (kuglasti zglob ili koleno); bez vrednosti važi izbor iz modela */
+  cornerJoint?: 'ball' | 'elbow';
+  /** krak kolena (mm) u ovom projektu; bez vrednosti važi mera iz modela */
+  cornerArmMm?: number;
 }
 
 /** Radna specifikacija modela 08 (nepotvrđeni podaci radnika i cenovnika čuvaju se kao zasebna polja). */

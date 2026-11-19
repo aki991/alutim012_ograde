@@ -1,6 +1,7 @@
+import { FEATURES } from '../../config/features';
 import { allFenceModels } from '../../domain/models/customRegistry';
-import { Plus } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { ChevronDown, Plus } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { defaultModelId, FENCE_MODELS, GATE_LABELS, POST_LABELS, isLightColor, isTerraceModel, projectModelId } from '../../domain/models/catalog';
 import { createFence, createGate, createOpening, createProject, DEFAULT_FENCE_HEIGHT_MM, DEFAULT_FENCE_WIDTH_MM, DEFAULT_GATE_HEIGHT_MM } from '../../domain/models/factories';
 import { GATE_DEFAULT_WIDTH } from '../../domain/models/catalog';
@@ -34,6 +35,46 @@ function useMini(build: () => Project, key: string): Project {
   return useMemo(build, [key]);
 }
 
+/** Izbor modela ograde sa slikom platna uz naziv (lakše prepoznavanje modela); prava lista je skrivena i služi za testove i čitače ekrana. */
+function ModelDropdown({ model, options, missing, onChange }: { model: FenceModelId; options: { id: string; name: string }[]; missing?: string; onChange: (m: FenceModelId) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', close); document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc); };
+  }, [open]);
+  const current = options.find((o) => o.id === model)?.name ?? missing ?? FENCE_MODELS[model]?.name ?? model;
+  const thumb = { width: 96, height: 76 };
+  return (
+    <div className="relative" ref={ref}>
+      <select className="sr-only" tabIndex={-1} aria-hidden="true" data-testid="catalog-model" value={model} onChange={(e) => onChange(e.target.value as FenceModelId)}>
+        {options.some((m) => m.id === model) ? null : <option value={model} disabled>{missing ?? model}</option>}
+        {options.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+      </select>
+      <button type="button" className="input !w-auto !py-1 min-w-[260px] flex items-center gap-2 text-left" aria-haspopup="listbox" aria-expanded={open} data-testid="catalog-model-button" onClick={() => setOpen((v) => !v)}>
+        <span className="shrink-0"><ElementThumb kind="fence" model={model} size={{ width: 48, height: 38 }} /></span>
+        <span className="flex-1 text-[13px]">{current}</span>
+        <ChevronDown size={16} className="text-muted shrink-0" />
+      </button>
+      {open && (
+        <ul role="listbox" className="absolute z-30 mt-1 left-0 w-[min(460px,92vw)] max-h-[70vh] overflow-auto rounded-lg border border-line bg-white shadow-lg py-1" data-testid="catalog-model-list">
+          {options.map((m) => (
+            <li key={m.id} role="option" aria-selected={m.id === model}>
+              <button type="button" className={`w-full flex items-center gap-3 px-2.5 py-1.5 text-left hover:bg-[#fdf0f0] ${m.id === model ? 'bg-[#fdf0f0] font-semibold' : ''}`} data-testid={`catalog-model-option-${m.id}`} onClick={() => { onChange(m.id as FenceModelId); setOpen(false); }}>
+                <span className="shrink-0"><ElementThumb kind="fence" model={m.id as FenceModelId} size={thumb} /></span>
+                <span className="text-[13px] leading-snug">{m.name}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function CatalogCard({ title, subtitle, thumb, onAdd, onDragStart, testId, addLabel = 'Dodaj', choices, selector }: {
   title: string; subtitle: string; thumb: React.ReactNode; onAdd?: () => void; onDragStart?: (e: React.PointerEvent) => void; testId: string; addLabel?: string;
   /** izbor tipa: umesto jednog dugmeta „Dodaj“ nekoliko dugmadi (npr. ručna / motorna), svako dodaje svoj tip */
@@ -46,6 +87,9 @@ function CatalogCard({ title, subtitle, thumb, onAdd, onDragStart, testId, addLa
       data-testid={testId}
       className={`relative shrink-0 w-[172px] flex flex-col rounded-xl border border-line p-2.5 bg-white select-none ${onDragStart ? 'cursor-grab' : ''}`}
       onPointerDown={(e) => { if (e.pointerType === 'mouse' && e.button === 0 && !(e.target as Element).closest('button')) onDragStart?.(e); }}
+      // klik na sliku (ili bilo gde na karticu van dugmadi i izbora) ima isti efekat kao dugme „Dodaj“; kartica sa više dugmadi (ručna / motorna) traži izbor
+      onClick={(e) => { if ((e.target as Element).closest('button, select, option, a, input')) return; if (onAdd) onAdd(); else if (choices?.length === 1) choices[0].onAdd(); }}
+      title={onAdd || choices?.length === 1 ? 'Klik dodaje element' : undefined}
     >
       <div className="flex justify-center">{thumb}</div>
       <div className="mt-2 text-[13px] font-semibold leading-tight">{title}</div>
@@ -186,18 +230,33 @@ export function Catalog({ onBeginDrag }: { onBeginDrag: (source: DragSource, e: 
   return (
     <section className="card p-3" data-testid="catalog" aria-label="Katalog elemenata">
       <div className="flex flex-wrap items-center gap-2 pb-3">
-        <label className="flex items-center gap-2 text-sm font-medium">
-          Model ograde
-          <select className="input !w-auto !py-1.5 min-w-[260px]" data-testid="catalog-model" value={model} onChange={(e) => changeModel(e.target.value as FenceModelId)}>
-            {(() => { const list = allFenceModels(model); return <>{list.some((m) => m.id === model) ? null : <option value={model} disabled>{def.name} (nije na stranici Modeli ograda)</option>}{list.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</>; })()}
-          </select>
-        </label>
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <span>Model ograde</span>
+          {FEATURES.terraceFences && (
+            <div className="inline-flex rounded-lg border border-line overflow-hidden" role="group" aria-label="Vrsta ograde" data-testid="fence-family">
+              {([['yard', 'Dvorište'], ['terrace', 'Terasa']] as const).map(([fam, label]) => (
+                <button key={fam} type="button" className={`px-3 py-1.5 text-sm ${(fam === 'terrace') === terrace ? 'bg-primary text-white' : 'bg-white hover:bg-slate-50'}`} aria-pressed={(fam === 'terrace') === terrace} data-testid={`family-${fam}`}
+                  onClick={() => {
+                    if ((fam === 'terrace') === terrace) return;
+                    const first = allFenceModels(undefined, fam)[0];
+                    if (first) changeModel(first.id as FenceModelId);
+                    else useAppStore.getState().setNotice(fam === 'terrace' ? 'Nema modela ograda za terase. Nacrtajte ih na stranici Modeli ograda za terase.' : 'Nema modela ograda za dvorište. Nacrtajte ih na stranici Modeli ograda.');
+                  }}>{label}</button>
+              ))}
+            </div>
+          )}
+          <ModelDropdown model={model} options={allFenceModels(model)} missing={`${def.name} (nije na stranici Modeli ograda)`} onChange={changeModel} />
+        </div>
       </div>
       <div className="space-y-3" data-testid="catalog-items">
         {/* prvi red: platno i kapije */}
         <div className="flex flex-wrap gap-3" data-testid="catalog-row-elements">
           <CatalogCard testId="cat-fence" title="Platno" subtitle={`${def.name}${terrace ? '' : `
 ${DEFAULT_FENCE_WIDTH_MM} × ${DEFAULT_FENCE_HEIGHT_MM} mm`}`} thumb={<ElementThumb kind="fence" model={model} />} onAdd={() => addElement({ kind: 'fence', modelId: model })} onDragStart={startDrag({ kind: 'fence', modelId: model }, `Platno — ${def.name}`)} />
+          {terrace && (
+            <CatalogCard testId="cat-fence-angled" title="Platno pod uglom" subtitle="Sledeće platno skreće: ugao se upisuje u polju „Rotacija polja“" thumb={<ElementThumb kind="fence" model={model} />}
+              onAdd={() => addElement({ kind: 'fence', modelId: model, turnDeg: 90 })} onDragStart={startDrag({ kind: 'fence', modelId: model, turnDeg: 90 }, 'Platno pod uglom')} />
+          )}
           {terrace && (
             <CatalogCard testId="cat-stair" title="Stepenište" subtitle="Ograda koja prati stepenice" thumb={<ElementThumb kind="stair" model={model} />}
               onAdd={() => addElement({ kind: 'fence', modelId: model, stair: true })} onDragStart={startDrag({ kind: 'fence', modelId: model, stair: true }, 'Stepenište')} />

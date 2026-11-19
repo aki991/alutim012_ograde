@@ -24,6 +24,7 @@ const perimeter = (points: [number, number][]) => points.reduce((sum, p, i) => {
 function solidArea(s: Solid): number {
   if (s.prim === 'box') { const [a, b, c] = s.size; return 2 * (a * b + b * c + a * c); }
   if (s.prim === 'cyl') return 2 * Math.PI * s.r * (s.len + s.r);
+  if (s.prim === 'sph') return 4 * Math.PI * s.r ** 2;
   if (s.prim === 'pyr') { const [a, b] = s.base; return a * b + a * Math.hypot(b / 2, s.h) + b * Math.hypot(a / 2, s.h); }
   const a = s.w / 2; const b = s.h;
   const halfEllipse = Math.PI * (3 * (a + b) - Math.sqrt((3 * a + b) * (a + 3 * b))) / 2;

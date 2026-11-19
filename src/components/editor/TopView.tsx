@@ -197,7 +197,7 @@ export function TopView({ project, scale, selectedId, selectedPostId, onSelect, 
                 return (
                   <g data-testid={`top-stair-${li.index}`} pointerEvents="none">
                     <rect x={0} y={y0} width={len} height={STAIR_PLAN_WIDTH_MM} fill="#eef1f5" stroke="#64748b" strokeWidth={1.1 * px} />
-                    {Array.from({ length: n - 1 }, (_, k) => <line key={k} x1={(len * (k + 1)) / n} y1={y0} x2={(len * (k + 1)) / n} y2={y1} stroke="#64748b" strokeWidth={1 * px} />)}
+                    {Array.from({ length: n - 1 }, (_, k) => { const tot = grp.dims ? grp.dims.reduce((a, d) => a + d.treadMm, 0) || 1 : 0; const cx = grp.dims ? (len * grp.dims.slice(0, k + 1).reduce((a, d) => a + d.treadMm, 0)) / tot : (len * (k + 1)) / n; return <line key={k} x1={cx} y1={y0} x2={cx} y2={y1} stroke="#64748b" strokeWidth={1 * px} />; })}
                     <line x1={up ? len * 0.04 : len * 0.96} y1={(y0 + y1) / 2} x2={up ? len * 0.96 : len * 0.04} y2={(y0 + y1) / 2} stroke="#d71920" strokeWidth={1.8 * px} markerEnd="url(#arrow-end)" />
                   </g>
                 );

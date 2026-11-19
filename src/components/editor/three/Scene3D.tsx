@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { mmToScene as s, slidingSpaceStatus } from '../../../domain/geometry/gates';
 import { computeLayout, isSpacer, type LaidOutItem, type ProjectLayout } from '../../../domain/geometry/layout';
 import { stairGroupAt, stairProfile } from '../../../domain/geometry/stair';
-import { LEVEL_DEPTH_MM, levelSlabRects, type Rect } from '../../../domain/geometry/slab';
+import { LEVEL_DEPTH_MM, levelSlabRects, stairLandingRects, type Rect } from '../../../domain/geometry/slab';
 import { updateItem } from '../../../domain/geometry/operations';
 import type { FenceSection, Project } from '../../../domain/models/types';
 import { computeInfill } from '../../../domain/geometry/infill';
@@ -220,7 +220,7 @@ function SlopedRails({ li, fence }: { li: LaidOutItem; fence: FenceSection }) {
 }
 
 /** Terasa na višem nivou (ploča do tla) i stepenice ispod stepeništa; dubina je ka unutrašnjoj strani ograde. */
-function LevelMesh({ li, last, steps, slab }: { li: LaidOutItem; /** poslednje polje stepeništa (za ravno polje isto kao li) */ last: LaidOutItem; steps: number; /** delovi ploče ravnog polja (bez stepenica) */ slab: Rect[] }) {
+function LevelMesh({ li, last, steps, dims, slab, landing = [] }: { /** podest na vrhu stepeništa */ landing?: { rect: Rect; level: number }[]; li: LaidOutItem; /** poslednje polje stepeništa (za ravno polje isto kao li) */ last: LaidOutItem; steps: number; dims?: import('../../../domain/models/types').StepDim[]; /** delovi ploče ravnog polja (bez stepenica) */ slab: Rect[] }) {
   const depth = LEVEL_DEPTH_MM / 1000;
   const zc = -depth / 2 + 0.12;
   if (li.floorStart === li.floorEnd) {
@@ -233,7 +233,7 @@ function LevelMesh({ li, last, steps, slab }: { li: LaidOutItem; /** poslednje p
       </>
     );
   }
-  const pts = stairProfile(li.axisStart, last.axisEnd, li.floorStart, last.floorEnd, steps);
+  const pts = stairProfile(li.axisStart, last.axisEnd, li.floorStart, last.floorEnd, steps, dims);
   const treads: { x0: number; x1: number; f: number }[] = [];
   for (let k = 0; k + 1 < pts.length; k++) {
     const [xa, fa] = pts[k];
@@ -244,6 +244,9 @@ function LevelMesh({ li, last, steps, slab }: { li: LaidOutItem; /** poslednje p
     <>
       {treads.map((t, i) => (
         <mesh key={i} geometry={boxGeometry} material={levelMaterial} position={[s((t.x0 + t.x1) / 2), s(t.f) / 2, zc]} scale={[s(t.x1 - t.x0), s(t.f), depth]} castShadow receiveShadow />
+      ))}
+      {landing.map(({ rect: r, level }, i) => (
+        <mesh key={`ld${i}`} geometry={boxGeometry} material={levelMaterial} position={[s((r.x0 + r.x1) / 2), s(level) / 2, s((r.z0 + r.z1) / 2)]} scale={[s(r.x1 - r.x0), s(level), s(r.z1 - r.z0)]} castShadow receiveShadow />
       ))}
     </>
   );
@@ -474,9 +477,9 @@ export function SceneContent(p: ContentProps) {
             {(() => {
               const grp = stairGroupAt(project.items, li.index);
               if (li.floorStart !== li.floorEnd && (!grp || grp.from !== li.index)) return null; // stepenici se prave jednom za ceo niz polja
-              // ravni deo: ploča bez prostora stepenica (kad ograda posle stepeništa skrene ka toj strani, ploča ne ulazi u stepenice)
+              // ravni deo: ploča (bez stepenica koje se dižu iznad nje); na vrhu stepeništa podest kad ga ravni deo ne pokriva
               const slab = li.floorStart === li.floorEnd ? levelSlabRects(project.items, plan, layout, li.index, (layout.posts[li.index]?.widthMm ?? 0) / 2, (layout.posts[li.index + 1]?.widthMm ?? 0) / 2) : [];
-              return <LevelMesh li={li} last={grp ? layout.items[grp.to] : li} steps={grp?.steps ?? 1} slab={slab} />;
+              return <LevelMesh li={li} last={grp ? layout.items[grp.to] : li} steps={grp?.steps ?? 1} dims={grp?.dims} slab={slab} landing={grp ? stairLandingRects(project.items, plan, layout, li.index) : []} />;
             })()}
           </Frame>
         )))}

@@ -13,10 +13,14 @@ export type Lufta = 'sa' | 'bez';
  * Vrste okova ograda za terase koje aplikacija sama postavlja (kvačice uz izabran element): flanša na dnu stuba, kapa na vrhu stuba,
  * veza stuba i rukohvata, prsten (držač) prečke na stubu, kapica na kraju prečke i završetak na kraju rukohvata.
  */
-export type HwKind = 'flange' | 'postCap' | 'connector' | 'holder' | 'rodCap' | 'railCap';
+export type HwKind = 'flange' | 'postCap' | 'connector' | 'holder' | 'rodCap' | 'railCap' | 'cornerBall' | 'cornerArm';
 
 export interface CustomPart {
   id: string;
+  /** samo prikaz na stepeništu: okov (flanša) se ne iskošava sa poljem nego leži ravno na gazištu; nagib polja (tangens) */
+  unshearTan?: number;
+  /** prečka u bočnim U profilima: tolerancija (mm) — seče se kraće za toliko od dužine na crtežu; bez vrednosti platno 1 mm, kapija 3 mm */
+  tolMm?: number;
   materialId: string;
   /** profil: početak ose; komadni deo: sredina donje ivice; ploča: donji levi ugao */
   x: number;
@@ -102,6 +106,8 @@ export interface CustomModel {
   draft?: boolean;
   /** izvedeni model kapije sa ramom (nevidljiv u spiskovima): sastavlja se iz osnovnog modela `derivedFrom` i cevi `frameMaterialId` */
   derivedFrom?: string;
+  /** samo u obračunu: model je krilo kapije (gate) ili polje ograde (fence) u projektu — određuje podrazumevanu toleranciju prečki */
+  tolCtx?: 'gate' | 'fence';
   /** ograda: ima li kapija od ovog modela ram od kvadratne cevi (bez vrednosti: ima, osim modela sa tarabicama) */
   gateFrame?: boolean;
   frameMaterialId?: string;
@@ -132,7 +138,18 @@ export interface CustomModel {
   acceptedWarnings?: string[];
   /** samo ograda za terasu, „Mere ograde“: izmenjene mere okova (visina veze, podizanje stuba zbog flanše …); ostalo su podrazumevane mere */
   hw?: Partial<HwDims>;
+  /**
+   * samo ograda za terasu, „Raspored stubova“: stubovi se u projektu postavljaju sami, na jednakom razmaku od najviše `spacingMm`
+   * (podrazumevano 1000), a prvi i poslednji stub su na `leftMm` / `rightMm` od krajeva polja (bez vrednosti: kao na crtežu)
+   */
+  postLayout?: PostLayout;
+  /** samo ograda za terasu: spoj prečki i rukohvata na uglu — kuglasti zglob (cevi se sastaju u kugli) ili koleno (cevi se skraćuju za krak kolena); bez vrednosti zglob */
+  cornerJoint?: 'ball' | 'elbow';
 }
+
+export interface PostLayout { spacingMm?: number; leftMm?: number; rightMm?: number }
+
+export const DEFAULT_POST_SPACING_MM = 1000;
 
 /** koji krajevi dela rama su pod 45° (početak i kraj ose); deo koji nije deo rama nema ugaone krajeve */
 export const miterEndsOf = (p: Pick<CustomPart, 'cut45' | 'miter' | 'miterEnds'>): [boolean, boolean] => (p.cut45 && p.miter ? p.miterEnds ?? [true, true] : [false, false]);
@@ -324,11 +341,20 @@ export function resolveParts(model: Pick<CustomModel, 'parts' | 'color'> & { hw?
   const guideIds = guideIdsOf(model.parts, materials);
   // bez U vođica delovi se crtaju od zadnjeg ka prednjem (po dubini), pa deo ispred prekriva onaj iza njega
   const ordered = guideIds.size ? [...model.parts.filter((p) => !guideIds.has(p.id)), ...model.parts.filter((p) => guideIds.has(p.id))] : [...model.parts].sort((p, q) => p.z - q.z);
-  const all = ordered.map((part) => {
+  const all = ordered.flatMap((part) => {
     const material = byId.get(part.materialId);
     // okov koji je aplikacija sama postavila se crta prema merama modela („Mere ograde“)
     const shape = material ? (part.hw && dims ? materialShapeWith(material, dims) : materialShape(material)) : materialShape({ sku: '', name: part.heightMm ? 'ploča' : 'profil 40x20', unit: part.heightMm ? 'm2' : 'm', category: 'ostalo' });
-    return { part, shape, hex: material ? partHex(material, model, part) : part.color ? colorHex(part.color) : '#94a3b8', material };
+    const hex = material ? partHex(material, model, part) : part.color ? colorHex(part.color) : '#94a3b8';
+    // veza stub–rukohvat na stepeništu: donji deo (rozeta i vrat) je ravan na stubu, a samo ploča pod rukohvatom prati nagib
+    if (part.hw?.kind === 'connector' && part.unshearTan && shape.type === 'piece' && shape.solids.length > 1) {
+      const { unshearTan: _u, ...plate } = part;
+      return [
+        { part, shape: { ...shape, solids: shape.solids.slice(0, -1) }, hex, material },
+        { part: { ...plate, id: `${part.id}~plate` }, shape: { ...shape, solids: shape.solids.slice(-1) }, hex, material },
+      ];
+    }
+    return [{ part, shape, hex, material }];
   });
   // komadni delovi (brave, šarke, kape) se crtaju na kraju: uvek su iznad profila i mogu da stoje bilo gde, i na ramu
   return [...all.filter((r) => r.shape.type !== 'piece'), ...all.filter((r) => r.shape.type === 'piece')];

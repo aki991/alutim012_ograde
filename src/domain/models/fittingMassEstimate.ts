@@ -10,6 +10,7 @@ const volume = (s: Solid): number => {
     case 'cyl': return Math.PI * s.r ** 2 * s.len;
     case 'pyr': return s.base[0] * s.base[1] * s.h / 3;
     case 'dome': return Math.PI * s.w * s.h * s.d / 4;
+    case 'sph': return (4 / 3) * Math.PI * s.r ** 3;
   }
 };
 const ring = (a: number, b: number, t: number): number => a * b - Math.max(0, a - 2 * t) * Math.max(0, b - 2 * t);

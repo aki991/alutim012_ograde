@@ -1,5 +1,5 @@
 import { hingeCountFor } from '../gates/hingeRule';
-import { customLiftOf, customModelOf, customPatternCounts, customReinforceRows, customReinforceSplit, customSlatCount, customSpec } from './customRegistry';
+import { customLiftOf, customModelOf, customPatternCounts, customReinforceRows, customReinforceSplit, customSlatCount, customSpec, terraceEvaluated } from './customRegistry';
 import { tubeLengthMm, ramInsets } from './tubes';
 import { computeInfill, summarizeInfill } from '../geometry/infill';
 import { CALC_RULES } from '../pricing/rules';
@@ -30,6 +30,8 @@ export interface SpecPart {
   miterEnds?: [boolean, boolean];
   /** uloga dela na crtežu (npr. „Ram — gornja i donja prečka“): naziv dela u krojnoj listi i radnom nalogu; bez vrednosti naziv je materijal */
   role?: string;
+  /** uspravan deo (stub): na stepeništu ne dobija kos rez krajeva */
+  vertical?: boolean;
 }
 
 export const BOM_GROUPS: BomGroup[] = ['Profili ispune', 'Ramovi', 'Stubovi', 'Nosači i spojnice', 'Vijci', 'Šarke', 'Brave', 'Točkići', 'Automatika', 'Dodatni materijal'];
@@ -76,6 +78,8 @@ export interface SpecContext {
   axisMm: number;
   params: FenceParams;
   doubleGate?: boolean;
+  /** element je kapija (tolerancija prečki u U profilima je veća nego kod platna) */
+  gate?: boolean;
   /** dvokrilna, računanje po krilu: redni broj krila (0 = prvo); bez vrednosti važi prvo krilo */
   leafIndex?: number;
   /** širine dva krila dvokrilne kapije (mm): nacrtan model se računa po krilu */
@@ -113,6 +117,7 @@ export function specVars(c: SpecContext): Record<string, number> {
     GLASS: sum.glassAreaM2 / f,
     PERIM: 2 * c.widthMm * f + 2 * c.heightMm, AREA: (c.widthMm * c.heightMm) / 1_000_000,
     DOUBLE: c.doubleGate ? 1 : 0,
+    GATE: c.gate || c.doubleGate ? 1 : 0,
     FIRSTLEAF: c.leafIndex ? 0 : 1,
     HINGES: hingeCountFor(c.widthMm, c.heightMm),
     SLATS: (c.leafWidthsMm?.length ? c.leafWidthsMm : [c.widthMm]).reduce((n, w) => n + customSlatCount(c.modelId, w, c.heightMm, c.params.slats), 0),
@@ -216,6 +221,18 @@ export interface EvaluatedPart {
  * iz kataloga dobija ram i letvice po krilu (ranije su vodoravni delovi išli preko cele kapije, kao da je jedno krilo).
  * Neispravna formula daje grešku i količinu 0.
  */
+/**
+ * Delovi polja za krojnu listu i obračun elementa projekta: nacrtana ograda za terasu (bez izmenjene specifikacije) se računa iz delova
+ * postavljenih na polje, ostalo po specifikaciji modela.
+ */
+export function evaluateItemParts(modelId: FenceModelId, specs: ModelSpecs | undefined, c: SpecContext): EvaluatedPart[] {
+  if (!hasCustomSpec(modelId, specs)) {
+    const t = terraceEvaluated(modelId, c.widthMm, c.heightMm - (c.params.liftMm ?? customLiftOf(modelId)), c.params.slats, c.slopeFactor ?? 1);
+    if (t) return t;
+  }
+  return evaluateItemSpec(specFor(modelId, specs), c);
+}
+
 export function evaluateItemSpec(parts: SpecPart[], c: SpecContext): EvaluatedPart[] {
   // ojačanje platna cevima (uspravne i vodoravne): redovi se računaju iz crteža za stvarnu širinu i visinu
   const withReinforce = (width: number): SpecPart[] => {

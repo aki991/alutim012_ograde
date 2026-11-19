@@ -1,5 +1,6 @@
 import { uid } from '../../utils/id';
-import type { FenceSection, Mm, Project } from '../models/types';
+import { customModelOf } from '../models/customRegistry';
+import type { FenceSection, Mm, Project, StepDim } from '../models/types';
 import { computeLayout } from './layout';
 import { insertItem, removeItem, updateItem } from './operations';
 import { MAX_FIELDS, MAX_STEPS, STAIR_DEFAULT_RISE_MM, STEP_RISE_MM, isStair, recommendedStairPosts, stairGroupAt, stairPostSteps, type StairFence } from './stair';
@@ -21,6 +22,10 @@ export interface StairPatch {
   fields?: number;
   /** visina ograde na stepeništu (mm) */
   heightMm?: Mm;
+  /** „svi stepenici isti“ ili „svaki posebno“ (mere svakog stepenika zadaje korisnik) */
+  stepMode?: 'all' | 'each';
+  /** mere jednog stepenika (broj od 0): dubina gazišta i / ili visina; ukupna dužina i visinska razlika se preračunavaju */
+  stepDim?: { index: number; treadMm?: number; riseMm?: number };
 }
 
 /** Ukupna spoljna dužina stepeništa za zadati indeks polja. */
@@ -42,12 +47,31 @@ export function setStairGroup(p: Project, id: string, patch: StairPatch): Projec
   const template = p.items[g.from] as StairFence;
   const group = template.stair.group ?? uid('stair');
   const steps = Math.max(1, Math.min(MAX_STEPS, Math.round(patch.steps ?? g.steps)));
-  const rise = patch.riseMm ?? g.riseMm;
-  const run = Math.max(steps * 100, patch.outerRunMm !== undefined ? patch.outerRunMm - ends : g.runMm);
+  let rise = patch.riseMm ?? g.riseMm;
+  let run = Math.max(steps * 100, patch.outerRunMm !== undefined ? patch.outerRunMm - ends : g.runMm);
+  // mere stepenika: „svaki posebno“ čuva niz mera; promena broja stepenika ga vraća na jednake, a promena dužine ili visine ga srazmerno prilagođava
+  const each = patch.stepMode ? patch.stepMode === 'each' : Boolean(g.dims);
+  let dims: StepDim[] | undefined;
+  if (each) {
+    const old = g.dims;
+    if (old && old.length === steps) {
+      const st = old.reduce((a, d) => a + d.treadMm, 0) || 1; const sr = old.reduce((a, d) => a + d.riseMm, 0) || 1;
+      dims = old.map((d) => ({ treadMm: (d.treadMm * run) / st, riseMm: (Math.abs(rise) * d.riseMm) / sr }));
+    } else dims = Array.from({ length: steps }, () => ({ treadMm: run / steps, riseMm: Math.abs(rise) / steps }));
+    const sd = patch.stepDim;
+    if (sd && sd.index >= 0 && sd.index < dims.length) {
+      dims = dims.map((d, k) => (k === sd.index ? { treadMm: Math.max(10, sd.treadMm ?? d.treadMm), riseMm: Math.max(10, sd.riseMm ?? d.riseMm) } : d));
+      run = dims.reduce((a, d) => a + d.treadMm, 0);
+      rise = Math.sign(rise || 1) * dims.reduce((a, d) => a + d.riseMm, 0);
+    }
+    dims = dims.map((d) => ({ treadMm: Math.round(d.treadMm * 10) / 10, riseMm: Math.round(d.riseMm * 10) / 10 }));
+  }
   const custom = patch.fields !== undefined ? true : g.fieldsCustom;
   // stubovi između krajeva stoje po sredini gazišta (podrazumevano na svaki treći stepenik); polja nisu jednaka, ali se ne razvlače
   const wantedPosts = custom ? Math.round(patch.fields ?? (g.to - g.from + 1)) - 1 : recommendedStairPosts(steps);
-  const posts = Math.max(0, Math.min(MAX_FIELDS - 1, steps, wantedPosts));
+  // nacrtana ograda za terasu ima svoje stubove u modelu: stepenište je jedno polje
+  const ownPosts = customModelOf(template.modelId)?.kind === 'terrace';
+  const posts = ownPosts ? 0 : Math.max(0, Math.min(MAX_FIELDS - 1, steps, wantedPosts));
   const tread = run / steps;
   const cuts = [0, ...stairPostSteps(steps, posts).map((k) => (k - 0.5) * tread), run];
   const fields = cuts.length - 1;
@@ -70,7 +94,7 @@ export function setStairGroup(p: Project, id: string, patch: StairPatch): Projec
     const r = last ? rise - usedR : Math.round((rise * w) / run);
     usedW += w;
     usedR += r;
-    q = updateItem(q, fid, { widthMm: Math.max(1, w), heightMm: height, stair: { riseMm: r, steps, group, fieldsCustom: custom } } as Partial<FenceSection>);
+    q = updateItem(q, fid, { widthMm: Math.max(1, w), heightMm: height, stair: { riseMm: r, steps, group, fieldsCustom: custom, ...(dims ? { custom: dims } : {}) } } as Partial<FenceSection>);
   });
   return q;
 }

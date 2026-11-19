@@ -5,8 +5,8 @@ import { stairGroupAt } from './stair';
 
 /**
  * Ploča terase (ravan deo na višem nivou) i stepenice zauzimaju prostor iza ograde (do 1.180 mm) i malo ispred nje (120 mm).
- * Kad ograda posle stepeništa skrene ka toj strani, ploča bi ušla u stepenice: iz ploče se oduzima prostor stepenica, pa se
- * dva tela nikad ne preklapaju (a ploča ostaje svuda gde nema stepenica, i ispod stubova uz ugao).
+ * Na uglu gde se stepenište penje do ploče ploča je cela (podest): stepenice su niže od nje, pa ivica ploče dodiruje poslednji stepenik.
+ * Iz ploče se oduzimaju samo stepenice koje se dižu iznad nje (inače bi ploča izvirivala kroz gazišta).
  */
 export const LEVEL_DEPTH_MM = 1300;
 export const LEVEL_FRONT_MM = 120;
@@ -46,6 +46,8 @@ export function levelSlabRects(items: ReadonlyArray<LayoutItem>, plan: Plan, lay
     const ps = plan.items[g.from];
     const cs = Math.cos(ps.heading);
     const ss = Math.sin(ps.heading);
+    // stepenište koje se penje najviše do nivoa ploče: ploča ga pokriva (podest na uglu), ne seče se
+    if (Math.max(a.floorStart, b.floorEnd) <= li.floorStart + 1) continue;
     const rel = ps.heading - pj.heading;
     if (Math.abs(Math.sin(2 * rel)) > 1e-3) continue; // nije prav ugao: presek nije pravougaonik
     const xs: number[] = [];
@@ -65,4 +67,29 @@ export function levelSlabRects(items: ReadonlyArray<LayoutItem>, plan: Plan, lay
     rects = rects.flatMap((r) => subtract(r, o));
   }
   return rects.filter((r) => r.x1 - r.x0 > 1 && r.z1 - r.z0 > 1);
+}
+
+/**
+ * Podest na vrhu stepeništa (koordinate prvog polja stepeništa, kao gazišta): kad posle poslednjeg stepenika nema ravnog dela u istom pravcu
+ * (ograda skreće ka spoljnoj strani ili se trasa tu završava), dodaje se podloga koja spaja poslednji stepenik sa ravnim delom.
+ * Kad ograda skrene ka unutrašnjoj strani, ploča ravnog dela već pokriva ugao, pa podest nije potreban.
+ */
+export function stairLandingRects(items: ReadonlyArray<LayoutItem>, plan: Plan, layout: ProjectLayout, index: number): { rect: Rect; level: Mm }[] {
+  const g = stairGroupAt(items, index);
+  if (!g || g.from !== index) return [];
+  const a = layout.items[g.from];
+  const b = layout.items[g.to];
+  const up = b.floorEnd > a.floorStart;
+  const level = up ? b.floorEnd : a.floorStart;
+  if (level <= 0) return [];
+  const joint = up ? g.to + 1 : g.from;
+  const neighbor = layout.items[up ? g.to + 1 : g.from - 1];
+  const turn = plan.posts[joint]?.turnDeg ?? 0;
+  const flatHere = !!neighbor && neighbor.floorStart === neighbor.floorEnd && Math.abs(neighbor.floorStart - level) < 1;
+  // spoljna strana je + (ispred ograde): skretanje udesno (+) na vrhu stepenica koje se penju ide ka njoj; na vrhu stepenica koje silaze važi isti znak
+  const outward = turn > 0;
+  if (neighbor && !(flatHere && outward)) return [];
+  const z1 = neighbor ? 0 : LEVEL_FRONT_MM;
+  const rect: Rect = up ? { x0: b.axisEnd, x1: b.axisEnd + LEVEL_BACK_MM, z0: -LEVEL_BACK_MM, z1 } : { x0: a.axisStart - LEVEL_BACK_MM, x1: a.axisStart, z0: -LEVEL_BACK_MM, z1 };
+  return [{ rect, level }];
 }

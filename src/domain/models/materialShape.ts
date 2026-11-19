@@ -90,7 +90,9 @@ export type Solid =
   /** piramida: pos je sredina osnove, vrh je nagore */
   | { prim: 'pyr'; base: [number, number]; h: number; pos: [number, number, number] }
   /** kupola: polu-elipsa širine w i visine h izvučena po dubini d; pos je sredina osnove, vrh je nagore */
-  | { prim: 'dome'; w: number; h: number; d: number; pos: [number, number, number] };
+  | { prim: 'dome'; w: number; h: number; d: number; pos: [number, number, number] }
+  /** kugla poluprečnika r, pos je središte */
+  | { prim: 'sph'; r: number; pos: [number, number, number] };
 
 export type MatShape =
   /** u: mere U profila (A širina, B visina, C zid) — profil može da bude bočna vođica u koju ulaze prečke */
@@ -162,9 +164,10 @@ const solidSection = (w: number, h: number): Section => ({ polys: [{ outline: [[
 /* ---------- komadni delovi (kape, stope, okov) ---------- */
 const box = (w: number, h: number, d: number, x: number, y: number, z = 0): Solid => ({ prim: 'box', size: [w, h, d], pos: [x, y, z] });
 const cyl = (r: number, len: number, axis: 'x' | 'y' | 'z', x: number, y: number, z = 0): Solid => ({ prim: 'cyl', r, len, axis, pos: [x, y, z] });
+const sph = (r: number, x: number, y: number, z = 0): Solid => ({ prim: 'sph', r, pos: [x, y, z] });
 
 type PieceKind = 'cap_flat' | 'cap_pyramid' | 'rosette' | 'foot' | 'side_foot' | 'plug' | 'hinge' | 'lock' | 'wheel' | 'motor' | 'bracket' | 'ring' | 'screw' | 'box'
-  | 'flange_round' | 'holder' | 'end_cap' | 'connector' | 'picket_cap' | 'strike' | 'bolt' | 'floor_catch';
+  | 'flange_round' | 'holder' | 'end_cap' | 'connector' | 'picket_cap' | 'strike' | 'bolt' | 'floor_catch' | 'ball' | 'elbow';
 
 /**
  * Mere okova ograde za terasu (mm), „Mere ograde“: zavise od materijala koji radionica koristi, pa se podešavaju po modelu.
@@ -195,11 +198,13 @@ export interface HwDims {
   screwsHolder: number;
   screwsConnector: number;
   screwsFlange: number;
+  /** koleno na uglu: dužina kraka (mm); za toliko se skraćuje svaka cev uz koleno */
+  elbowArm: number;
 }
 
 export const DEFAULT_HW_DIMS: HwDims = {
   connectorH: 30, connectorNeckD: 24, connectorPlateLen: 44, connectorPlateT: 4, capH: 14, plateH: 8, plateOver: 32, sleeveH: 50, endCapLen: 8,
-  screwsHolder: 1, screwsConnector: 3, screwsFlange: 3,
+  screwsHolder: 1, screwsConnector: 3, screwsFlange: 3, elbowArm: 40,
 };
 
 /** Mere okova modela: podrazumevane, sa izmenama iz „Mere ograde“ (neispravne vrednosti se preskaču). */
@@ -222,6 +227,10 @@ export function pieceSolids(kind: PieceKind, w: number, d: number, dims: HwDims 
     case 'flange_round': return [cyl(w / 2 + dims.plateOver, dims.plateH, 'y', 0, dims.plateH / 2), cyl(w / 2 + 5, dims.sleeveH, 'y', 0, dims.plateH + dims.sleeveH / 2)];
     case 'holder': { const R = holderRadius(w, dims); return [cyl(R, 28, 'x', 0, 0, 0), cyl(3.5, 8, 'z', 0, 0, R + 2)]; }
     case 'end_cap': return [cyl(w / 2 + 1.5, dims.endCapLen, 'x', dims.endCapLen / 2, 0, 0)];
+    // kuglasti zglob na uglu: kugla nešto šira od cevi (cevi se sastaju u njenom središtu)
+    case 'ball': return [sph((w / 2) * 1.3, 0, 0)];
+    // koleno: krak ka dolazećoj cevi (−x) i savijen deo na uglu; drugi krak crta sledeće polje
+    case 'elbow': return [cyl(w / 2 + 2, dims.elbowArm, 'x', -dims.elbowArm / 2, 0, 0), sph(w / 2 + 2, 0, 0)];
     case 'connector': {
       // kao na fotografiji: uži vrat sa prstenom na vrhu stuba i ravna ploča pod rukohvatom
       const t = Math.min(dims.connectorPlateT, dims.connectorH);
@@ -269,6 +278,7 @@ export function solidsZMin(solids: Solid[]): number {
     if (s.prim === 'box') z = Math.min(z, s.pos[2] - s.size[2] / 2);
     else if (s.prim === 'pyr') z = Math.min(z, s.pos[2] - s.base[1] / 2);
     else if (s.prim === 'dome') z = Math.min(z, s.pos[2] - s.d / 2);
+    else if (s.prim === 'sph') z = Math.min(z, s.pos[2] - s.r);
     else z = Math.min(z, s.pos[2] - (s.axis === 'z' ? s.len / 2 : s.r));
   }
   return Number.isFinite(z) ? z : 0;
@@ -282,6 +292,7 @@ export function solidsBounds(solids: Solid[]): { x0: number; y0: number; x1: num
     if (s.prim === 'box') { hw = s.size[0] / 2; b = s.pos[1] - s.size[1] / 2; t = s.pos[1] + s.size[1] / 2; }
     else if (s.prim === 'pyr') { hw = s.base[0] / 2; b = s.pos[1]; t = s.pos[1] + s.h; }
     else if (s.prim === 'dome') { hw = s.w / 2; b = s.pos[1]; t = s.pos[1] + s.h; }
+    else if (s.prim === 'sph') { hw = s.r; b = s.pos[1] - s.r; t = s.pos[1] + s.r; }
     else { hw = s.axis === 'x' ? s.len / 2 : s.r; b = s.pos[1] - (s.axis === 'y' ? s.len / 2 : s.r); t = s.pos[1] + (s.axis === 'y' ? s.len / 2 : s.r); }
     x0 = Math.min(x0, s.pos[0] - hw); x1 = Math.max(x1, s.pos[0] + hw); y0 = Math.min(y0, b); y1 = Math.max(y1, t);
   }
@@ -409,6 +420,8 @@ function resolveShape(m: ShapeInput, hwd?: HwDims): Resolved {
     if (has(/prsten za prec|nosac prec|drzac prec/)) return plain(piece('okov', 'holder', dias[0], dias[1] ?? 40, hwd));
     if (has(/veza stub/) && has(/rukohvat/) && dias.length >= 2) return plain(piece('okov', 'connector', dias[0], dias[1], hwd));
     if (has(/zavrsetak (prec|rukohvat|cevi)|kapica prec/)) return plain(piece('okov', 'end_cap', dias[0], dias[0], hwd));
+    if (has(/koleno (prec|rukohvat)/)) return plain(piece('okov', 'elbow', dias[0], dias[0], hwd));
+    if (has(/zglob (prec|rukohvat)/) && has(/kuglast|podesiv ugao/)) return plain(piece('okov', 'ball', dias[0], dias[0], hwd));
   }
   // dvokrilna kapija: prihvatnik brave, podni prihvat i podni zasun (pre brave i stezaljki: naziv sadrži „brave“, „zasuna“, „graničnik“)
   if (has(/prihvatnik/)) return plain(piece('okov', 'strike', w, d));

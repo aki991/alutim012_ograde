@@ -1,4 +1,5 @@
 import { closingPostOffset, guideOverhangOf } from '../gates/slidingAssembly';
+import { FENCE_MODELS } from '../models/catalog';
 import { rl10AuxPostShift, rl10JointShift } from '../models/rl10';
 import { PLINTH_DEFAULT_MM, type LayoutItem, Mm, Post, Project } from '../models/types';
 import { stairGroupAt, stairRise, treadLevelAt } from './stair';
@@ -82,9 +83,14 @@ export interface ProjectLayout {
 export const isSpacer = (it: LayoutItem | undefined): boolean => it?.kind === 'opening' && Boolean(it.spacer);
 
 /** Prazan otvor je samo razmak između ograda: stub koji graniči samo sa praznim otvorima (ili krajem) se ne postavlja. */
+/** nacrtani model ograde za terasu: stubove crta sam model, pa uz njega nema zasebnog stuba projekta (ugrađeni terasni modeli ih traže) */
+const ownPostsModel = (id: string): boolean => { const d = (FENCE_MODELS as Record<string, { terrace?: boolean; style?: string } | undefined>)[id]; return Boolean(d?.terrace) && d?.style === 'custom'; };
+
 export function isHiddenPost(items: ReadonlyArray<LayoutItem>, index: number): boolean {
   const adj = [items[index - 1], items[index]].filter((x): x is LayoutItem => Boolean(x));
-  return adj.length > 0 && adj.every((it) => it.kind === 'opening' && it.bendDeg === undefined);
+  // razmaknik (između betonskog stuba i stuba kapije) ne sakriva stub
+  // ograda za terasu ima svoje stubove u modelu: uz nju nema zasebnog stuba projekta
+  return adj.length > 0 && adj.every((it) => (it.kind === 'opening' && it.bendDeg === undefined && !it.spacer) || (it.kind === 'fence' && ownPostsModel(it.modelId)));
 }
 
 export function postRole(project: Pick<Project, 'items'>, index: number): PostRole {
@@ -189,7 +195,7 @@ export function computeLayout(project: Pick<Project, 'items' | 'posts'>): Projec
     if (!g || i - 1 < g.from || i > g.to || stairGroupAt(items, i)?.from !== g.from) return;
     const a = laidItems[g.from];
     const b = laidItems[g.to];
-    const { level, line } = treadLevelAt(lp.x, a.axisStart, b.axisEnd, a.floorStart, b.floorEnd, g.steps);
+    const { level, line } = treadLevelAt(lp.x, a.axisStart, b.axisEnd, a.floorStart, b.floorEnd, g.steps, g.dims);
     const drop = Math.max(0, line - level);
     lp.lineMm = line;
     lp.floorMm = line - drop;

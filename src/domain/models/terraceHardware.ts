@@ -1,4 +1,4 @@
-import { partBounds, type CustomModel, type CustomPart, type HwKind } from './custom';
+import { DEFAULT_POST_SPACING_MM, partBounds, type CustomModel, type CustomPart, type HwKind } from './custom';
 import { hwDimsOf, holderRadius, isTerraceMaterial, materialShape, sectionFace, type HwDims, type MatShape } from './materialShape';
 import type { Material } from './types';
 
@@ -17,6 +17,8 @@ export const HW_LABELS: Record<HwKind, string> = {
   holder: 'Prsten za prečku',
   rodCap: 'Kapica na krajevima prečke',
   railCap: 'Završetak rukohvata',
+  cornerBall: 'Zglob ili koleno na uglu',
+  cornerArm: 'Krak kolena na uglu',
 };
 
 export type HwRole = 'post' | 'rail' | 'rod';
@@ -36,6 +38,8 @@ const PREFERRED: Record<HwKind, string[]> = {
   holder: ['AK-5011', 'AK-5011Y'],
   rodCap: ['AK-5012A'],
   railCap: ['AK-5013', 'AK-5009'],
+  cornerBall: [],
+  cornerArm: [],
 };
 
 /** Zavrtnji koji idu uz okov (broj po komadu okova): šifra okova → šifra zavrtnja i broj. */
@@ -285,4 +289,234 @@ export function fillHardware(model: CustomModel, materials: Material[]): CustomM
     }
   }
   return m;
+}
+
+/** Pravila rasporeda stubova modela: odstojanje prvog i poslednjeg stuba od krajeva, najveći razmak i pola širine stuba; null kad model nema stubova. */
+export function postSpec(orig: CustomModel, materials: Material[], over?: { postSpacingMm?: number; postLeftMm?: number; postRightMm?: number }): { left: number; right: number; spacing: number; half: number } | null {
+  if (orig.kind !== 'terrace') return null;
+  const byId = new Map(materials.map((m) => [m.id, m]));
+  const posts = orig.parts.filter((p) => { const m = byId.get(p.materialId); return !!m && !p.hw && hwRoleOf(p, materialShape(m)) === 'post'; });
+  if (!posts.length) return null;
+  const box = (p: CustomPart) => partBounds(p, materialShape(byId.get(p.materialId)!));
+  const cs = posts.map((p) => { const b = box(p); return { c: (b.x0 + b.x1) / 2, w: b.x1 - b.x0 }; }).sort((a, b) => a.c - b.c);
+  const lay = orig.postLayout ?? {};
+  return {
+    left: over?.postLeftMm ?? lay.leftMm ?? cs[0].c, right: over?.postRightMm ?? lay.rightMm ?? orig.widthMm - cs[cs.length - 1].c,
+    spacing: over?.postSpacingMm && over.postSpacingMm > 0 ? over.postSpacingMm : lay.spacingMm && lay.spacingMm > 0 ? lay.spacingMm : DEFAULT_POST_SPACING_MM, half: cs[0].w / 2,
+  };
+}
+
+/** Položaji osa stubova na dužini `width` (mm od početka): jednak razmak od najviše `spacing`, prvi i poslednji na zadatom odstojanju od krajeva. */
+export function postPositions(width: number, spec: { left: number; right: number; spacing: number }): number[] {
+  const span = width - spec.left - spec.right;
+  if (span < 1) return [width / 2];
+  const n = Math.max(2, Math.ceil(span / spec.spacing - 1e-9) + 1);
+  return Array.from({ length: n }, (_, i) => spec.left + (span * i) / (n - 1));
+}
+
+/**
+ * Raspored stubova ograde za terasu na polju zadate širine: stubovi na jednakom razmaku od najviše `postLayout.spacingMm` (1000 mm),
+ * prvi i poslednji na zadatom odstojanju od krajeva polja (bez vrednosti: kao na crtežu modela `orig`). Stub sa crteža (prvi sleva) je
+ * uzorak: ostali su njegove kopije sa istim izborom okova, a okov se računa iznova. `scaled` je model razvučen na širinu polja.
+ * `xs` (položaji u polju) zadaje raspored cele ravne linije ograde, kad polje nije samo.
+ */
+export function layoutPosts(scaled: CustomModel, orig: CustomModel, materials: Material[], xs?: number[], over?: Parameters<typeof postSpec>[2] & { postDrops?: number[]; stairTan?: number }): CustomModel {
+  if (scaled.kind !== 'terrace') return scaled;
+  const spec = postSpec(orig, materials, over);
+  if (!spec) return scaled;
+  const byId = new Map(materials.map((m) => [m.id, m]));
+  const roleOf = (p: CustomPart): boolean => { const m = byId.get(p.materialId); return !!m && !p.hw && hwRoleOf(p, materialShape(m)) === 'post'; };
+  const center = (p: CustomPart): number => { const b = partBounds(p, materialShape(byId.get(p.materialId)!)); return (b.x0 + b.x1) / 2; };
+  const posts = scaled.parts.filter(roleOf).sort((a, b) => center(a) - center(b));
+  if (!posts.length) return scaled;
+  const at = xs ?? postPositions(scaled.widthMm, spec);
+  const tpl = posts[0]; const c0 = center(tpl);
+  const ids = new Set(posts.map((p) => p.id));
+  // stepenište: stub je uspravan i stoji na gazištu, pa je duži naniže do njega (rukohvat ostaje na liniji nagiba)
+  const drops = xs && Math.abs(Math.sin((tpl.angleDeg * Math.PI) / 180) - 1) < 1e-6 ? over?.postDrops : undefined;
+  const fresh = at.map((x, i) => { const d = Math.max(0, drops?.[i] ?? 0); return { ...tpl, id: i === 0 ? tpl.id : `${tpl.id}~${i}`, x: r1(tpl.x + (x - c0)), ...(d ? { y: r1(tpl.y - d), lengthMm: r1(tpl.lengthMm + d) } : {}), ...(drops && over?.stairTan ? { unshearTan: over.stairTan } : {}) }; });
+  const rest = scaled.parts.filter((p) => !p.hw && !ids.has(p.id));
+  const synced = syncHardware({ ...scaled, parts: [...rest, ...fresh] }, materials);
+  // flanša na stepeništu leži ravno na gazištu (ne iskošava se sa poljem)
+  return over?.stairTan ? { ...synced, parts: synced.parts.map((p) => (p.hw?.kind === 'flange' || p.hw?.kind === 'postCap' || p.hw?.kind === 'connector' ? { ...p, unshearTan: over.stairTan } : p)) } : synced;
+}
+
+type RodOver = { rodCount?: number; rodBottomMm?: number; rodTopMm?: number; rodGaps?: (number | null)[] };
+const hasRodOver = (o: RodOver | undefined): boolean => !!o && (o.rodCount !== undefined || o.rodBottomMm !== undefined || o.rodTopMm !== undefined || !!o.rodGaps?.some((g) => g !== null && g !== undefined));
+
+/** vodoravne prečke (uloga „prečka“) od najniže, i visina ose rukohvata (vrh modela kad rukohvata nema) */
+function rodsOf(model: CustomModel, materials: Material[]): { rods: CustomPart[]; railY: number } | null {
+  const byId = new Map(materials.map((m) => [m.id, m]));
+  const rods: CustomPart[] = []; let railY: number | null = null;
+  for (const p of model.parts) {
+    const m = byId.get(p.materialId);
+    if (!m || p.hw) continue;
+    const role = hwRoleOf(p, materialShape(m));
+    const flat = Math.abs(Math.sin((p.angleDeg * Math.PI) / 180)) < 0.02;
+    if (role === 'rod') { if (!flat) return null; rods.push(p); }
+    else if (role === 'rail' && flat) railY = Math.max(railY ?? -Infinity, p.y);
+  }
+  if (!rods.length) return null;
+  return { rods: rods.sort((a, b) => a.y - b.y), railY: railY ?? model.heightMm };
+}
+
+/** Trenutni raspored prečki: broj, osa najniže prečke od poda, osa najviše prečke do ose rukohvata i razmak osa susednih prečki. */
+export function rodMetrics(model: CustomModel, materials: Material[]): { count: number; bottomMm: number; topMm: number; gapMm: number; gaps: number[] } | null {
+  const r = rodsOf(model, materials);
+  if (!r) return null;
+  const { rods, railY } = r; const n = rods.length;
+  return { count: n, bottomMm: rods[0].y, topMm: railY - rods[n - 1].y, gapMm: n > 1 ? (rods[n - 1].y - rods[0].y) / (n - 1) : 0, gaps: rods.slice(1).map((p, i) => Math.round((p.y - rods[i].y) * 10) / 10) };
+}
+
+/**
+ * Raspored prečki ograde za terasu: zadat broj prečki, osa najniže od poda i osa najviše do ose rukohvata; prečke su na jednakom razmaku.
+ * Prečka sa crteža je uzorak (isti materijal i izbor okova). Bez zadatih vrednosti raspored ostaje kao na crtežu.
+ */
+export function layoutRods(model: CustomModel, over: RodOver | undefined, materials: Material[]): CustomModel {
+  if (model.kind !== 'terrace' || !hasRodOver(over)) return model;
+  const r = rodsOf(model, materials);
+  if (!r) return model;
+  const { rods, railY } = r; const n0 = rods.length;
+  const n = Math.max(1, Math.min(60, Math.round(over!.rodCount ?? n0)));
+  const bottom = over!.rodBottomMm ?? rods[0].y;
+  const top = railY - (over!.rodTopMm ?? railY - rods[n0 - 1].y);
+  // razmaci između prečki: zadati su zadati, ostali dele ono što preostane do najviše prečke (bez slobodnih razmaka najviša prečka prati zbir)
+  const given = Array.from({ length: Math.max(0, n - 1) }, (_, i) => { const g = over!.rodGaps?.[i]; return g === null || g === undefined ? null : Math.max(0, g); });
+  const free = given.filter((g) => g === null).length;
+  const rest = Math.max(0, top - bottom - given.reduce<number>((a, g) => a + (g ?? 0), 0));
+  const ys: number[] = [bottom];
+  given.forEach((g) => ys.push(ys[ys.length - 1] + (g ?? (free ? rest / free : 0))));
+  const ids = new Set(rods.map((p) => p.id));
+  const tpl = rods[0];
+  const fresh = Array.from({ length: n }, (_, i) => ({ ...(rods[i] ?? tpl), id: rods[i]?.id ?? `${tpl.id}~r${i}`, y: r1(ys[i]) }));
+  return { ...model, parts: [...model.parts.filter((p) => !ids.has(p.id) && !p.hw), ...fresh] };
+}
+
+/** Zglob ili koleno za cev prečnika `dia` na uglu (prečka ili rukohvat); za koleno se bira 90° ili 135° prema uglu skretanja. */
+export function cornerMaterial(materials: Material[], mode: 'ball' | 'elbow', dia: number, role: 'rod' | 'rail', turnDeg: number): Material | undefined {
+  const tag = `Ø${fmt(dia)}`;
+  const list = materials.filter((m) => {
+    if (m.unit !== 'kom') return false;
+    const n = norm(m.name);
+    if (!norm(m.name.replace(/\./g, ',')).includes(norm(tag)) && !m.name.includes(tag)) return false;
+    if (!(role === 'rod' ? /prec/.test(n) : /rukohvat/.test(n))) return false;
+    return mode === 'ball' ? /zglob (prec|rukohvat)/.test(n) && /kuglast|podesiv ugao/.test(n) : /koleno (prec|rukohvat)/.test(n);
+  });
+  if (mode === 'ball') return list.sort((a, b) => a.sku.localeCompare(b.sku, 'sr', { numeric: true }))[0];
+  const wide = Math.abs(turnDeg) >= 70;
+  return list.sort((a, b) => {
+    const sa = /135/.test(a.name) === !wide ? 0 : /90|\boštro\b/.test(a.name) ? 1 : 2;
+    const sb = /135/.test(b.name) === !wide ? 0 : /90|\boštro\b/.test(b.name) ? 1 : 2;
+    return sa - sb || a.sku.localeCompare(b.sku, 'sr', { numeric: true });
+  })[0];
+}
+
+/**
+ * Ugao ograde za terasu: prečke su ispred stubova (z > 0), pa se na skretanju trase ne bi sastale. Prečka i rukohvat koji dolaze do kraja polja sa
+ * skretanjem sastaju se u istoj tački: produžavaju se ili skraćuju za z · tg(ugao / 2). Spoj je ili kuglasti zglob (kugla prečnika cevi u tački
+ * sastanka, crta je dolazeće polje) ili koleno (svaka cev se skraćuje za krak kolena, a krakove crtaju oba polja); kapica na tom kraju se ne stavlja.
+ */
+export function cornerRods(model: CustomModel, turns: [number, number] | undefined, materials: Material[], stairTan?: number, joint?: { mode?: 'ball' | 'elbow'; arm?: number }, bends?: [number, number]): CustomModel {
+  const tn: [number, number] = turns ?? [0, 0]; const bd: [number, number] = bends ?? [0, 0];
+  if (model.kind !== 'terrace' || (!tn[0] && !tn[1] && !bd[0] && !bd[1])) return model;
+  turns = tn;
+  const byId = new Map(materials.map((m) => [m.id, m]));
+  const mode = (joint?.mode ?? model.cornerJoint) === 'elbow' ? 'elbow' : 'ball';
+  const arm = mode === 'elbow' ? Math.max(0, joint?.arm ?? hwDimsOf(model.hw).elbowArm) : 0;
+  const W = model.widthMm;
+  const tl = Math.tan(((turns[0] || 0) * Math.PI) / 360);
+  const tr = Math.tan(((turns[1] || 0) * Math.PI) / 360);
+  type Corner = { p: CustomPart; role: 'rod' | 'rail'; dia: number | null; left?: number; right?: number };
+  const corners: Corner[] = [];
+  let changed = false;
+  const parts = model.parts.filter((p) => !p.hw).map((p) => {
+    const m = byId.get(p.materialId);
+    if (!m) return p;
+    const sh = materialShape(m);
+    const role = hwRoleOf(p, sh);
+    if ((role !== 'rod' && role !== 'rail') || Math.abs(Math.sin((p.angleDeg * Math.PI) / 180)) > 0.02) return p;
+    const fwd = Math.cos((p.angleDeg * Math.PI) / 180) > 0;
+    const x0 = fwd ? p.x : p.x - p.lengthMm; const x1 = x0 + p.lengthMm;
+    // cevi uz ugao idu do tačke sastanka (kraj polja), i kad su na crtežu počinjale kod stuba
+    const hasL = !!turns[0] || !!bd[0]; const hasR = !!turns[1] || !!bd[1];
+    if (!hasL && !hasR) return p;
+    let a = x0; let b = x1;
+    const c: Corner = { p, role, dia: sh.type === 'linear' && sh.section.round ? sh.section.w : null };
+    // skretanje u osnovi: cevi ispred stubova se sastaju na z · tg(ugao / 2); promena nagiba je u istoj ravni, pa se sastaju na kraju polja
+    if (hasL) { a = turns[0] ? p.z * tl : 0; c.left = a; a += arm; }
+    if (hasR) { b = turns[1] ? W - p.z * tr : W; c.right = b; b -= arm; }
+    corners.push(c);
+    changed = true;
+    return { ...p, x: r1(fwd ? a : b), lengthMm: r1(Math.max(1, b - a)) };
+  });
+  if (!changed) return model;
+  const own = model.parts.filter((p) => !p.hw);
+  const rest = own.map((p) => parts[own.indexOf(p)] ?? p);
+  const synced = syncHardware({ ...model, parts: rest }, materials);
+  const capEnd = (id: string): 'a' | 'b' | null => { const e = id.split('~').pop(); return e === 'a' || e === 'b' ? e : null; };
+  const out = synced.parts.filter((p) => {
+    if (p.hw?.kind !== 'rodCap' && p.hw?.kind !== 'railCap') return true;
+    const e = capEnd(p.id);
+    const onCorner = corners.some((c) => c.p.id === p.hw!.on);
+    return !(onCorner && ((e === 'a' && (turns![0] || bd[0])) || (e === 'b' && (turns![1] || bd[1]))));
+  });
+  const pieces: CustomPart[] = [];
+  for (const c of corners) {
+    if (c.dia === null) continue;
+    const y = c.p.y; const z = c.p.z;
+    const mk = (kind: 'cornerBall' | 'cornerArm', turn: number, x: number, angle: number, end: string) => {
+      const mat = cornerMaterial(materials, mode, c.dia!, c.role, turn);
+      if (mat) pieces.push({ id: `hw~${kind}~${c.p.id}~~${end}`, materialId: mat.id, x: r1(x), y: r1(y), lengthMm: 0, angleDeg: angle, rot: 0, z: r1(z), hw: { kind, on: c.p.id } });
+    };
+    if (c.right !== undefined) mk('cornerBall', turns![1] || bd[1], c.right, 0, 'b');
+    if (c.left !== undefined && mode === 'elbow') mk('cornerArm', turns![0] || bd[0], c.left, 180, 'a');
+  }
+  const tan = stairTan;
+  const full = [...out, ...pieces];
+  return { ...synced, parts: tan ? full.map((p) => (p.hw?.kind === 'flange' || p.hw?.kind === 'postCap' || p.hw?.kind === 'connector' || (!p.hw && hwRoleOf(p, materialShape(byId.get(p.materialId)!)) === 'post') ? { ...p, unshearTan: tan } : p)) : full };
+}
+
+/** Prečke i rukohvat (vodoravni delovi) sa osom stuba: središta stubova i krajevi cevi, za rastojanje od krajnjeg stuba do kraja cevi. */
+function endInfo(model: CustomModel, materials: Material[]): { minC: number; maxC: number; tubes: { p: CustomPart; x0: number; x1: number }[] } | null {
+  const byId = new Map(materials.map((m) => [m.id, m]));
+  const cs: number[] = []; const tubes: { p: CustomPart; x0: number; x1: number }[] = [];
+  for (const p of model.parts) {
+    const m = byId.get(p.materialId);
+    if (!m || p.hw) continue;
+    const sh = materialShape(m);
+    const role = hwRoleOf(p, sh);
+    if (role === 'post') { const b = partBounds(p, sh); cs.push((b.x0 + b.x1) / 2); }
+    else if ((role === 'rod' || role === 'rail') && Math.abs(Math.sin((p.angleDeg * Math.PI) / 180)) < 0.02) {
+      const fwd = Math.cos((p.angleDeg * Math.PI) / 180) > 0; const x0 = fwd ? p.x : p.x - p.lengthMm;
+      tubes.push({ p, x0, x1: x0 + p.lengthMm });
+    }
+  }
+  if (!cs.length || !tubes.length) return null;
+  return { minC: Math.min(...cs), maxC: Math.max(...cs), tubes };
+}
+
+/** Koliko prečke i rukohvat na crtežu modela stoje van krajnjih stubova (mm): levo i desno. */
+export function endOverhangOf(model: CustomModel, materials: Material[]): { left: number; right: number } | null {
+  const e = endInfo(model, materials);
+  if (!e) return null;
+  return { left: Math.max(0, Math.round((e.minC - Math.min(...e.tubes.map((t) => t.x0))) * 10) / 10), right: Math.max(0, Math.round((Math.max(...e.tubes.map((t) => t.x1)) - e.maxC) * 10) / 10) };
+}
+
+/**
+ * Stepenište kao krajnja tačka ograde: prečke i rukohvat sa slobodnog kraja završavaju se na zadatom rastojanju od krajnjeg stuba
+ * (isto za prečke i rukohvat). Okov na krajevima cevi (kapice) prati novi kraj.
+ */
+export function trimFreeEnds(model: CustomModel, free: [boolean, boolean] | undefined, overhang: number | undefined, materials: Material[]): CustomModel {
+  if (model.kind !== 'terrace' || !free || (!free[0] && !free[1]) || overhang === undefined) return model;
+  const e = endInfo(model, materials);
+  if (!e) return model;
+  const o = Math.max(0, overhang);
+  const parts = model.parts.filter((p) => !p.hw).map((p) => {
+    const t = e.tubes.find((x) => x.p.id === p.id);
+    if (!t) return p;
+    const a = free[0] ? e.minC - o : t.x0; const b = free[1] ? e.maxC + o : t.x1;
+    const fwd = Math.cos((p.angleDeg * Math.PI) / 180) > 0;
+    return { ...p, x: r1(fwd ? a : b), lengthMm: r1(Math.max(1, b - a)) };
+  });
+  return syncHardware({ ...model, parts }, materials);
 }

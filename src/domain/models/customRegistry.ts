@@ -1,3 +1,4 @@
+import { tolFormula } from './tolerance';
 import { FEATURES } from '../../config/features';
 import { defaultModelId, FENCE_MODEL_LIST, FENCE_MODELS, REMOVED_MODELS, setDefaultModelProvider, setGateFenceResolver, type FenceModelDef } from './catalog';
 import { guideIdsOf, miterEndsOf, partBounds, resolveParts, sheetAreaMm2, type CustomModel, type CustomPart, type ResolvedPart } from './custom';
@@ -9,7 +10,7 @@ import { materialShape, sectionFace, type MatShape } from './materialShape';
 import { leafOfPair } from './pairHardware';
 import { framedGateModel } from './gateFrame';
 import { cutGuidesAtDividers, planReinforce, unbakeReinforce, withReinforce, type ReinforceRow } from './reinforce';
-import { screwCounts, screwMaterial } from './terraceHardware';
+import { cornerRods, endOverhangOf, hwRoleOf, layoutPosts, layoutRods, rodMetrics, trimFreeEnds, screwCounts, screwMaterial } from './terraceHardware';
 import type { SpecPart } from './spec';
 import type { FenceModelId, Material } from './types';
 
@@ -70,9 +71,9 @@ export const effectiveModelId = <T extends string>(id: T): T => (replacementOf(i
  * Svi modeli za izbor u editoru: katalog (dorađen model stoji umesto originala), pa ostali ručno nacrtani. Uz model `keep`
  * (model projekta) nude se samo modeli iste vrste: ograde za terase nemaju veze sa dvorišnim ogradama.
  */
-export const allFenceModels = (keep?: string): FenceModelDef[] => {
+export const allFenceModels = (keep?: string, family?: 'terrace' | 'yard'): FenceModelDef[] => {
   const all = FENCE_MODELS as Record<string, FenceModelDef>;
-  const terrace = keep && all[keep] ? Boolean(all[keep].terrace) : undefined;
+  const terrace = family ? family === 'terrace' : keep && all[keep] ? Boolean(all[keep].terrace) : undefined;
   // ograde za terase isključene: ne nude se za izbor (osim modela koji projekat već koristi)
   const sameFamily = (d: FenceModelDef | undefined): boolean => !!d && (FEATURES.terraceFences
     ? (terrace === undefined || Boolean(d.terrace) === terrace || d.id === keep)
@@ -90,7 +91,14 @@ export const allFenceModels = (keep?: string): FenceModelDef[] => {
  */
 export function scaledModel(m: CustomModel, widthMm: number, heightMm: number, slats?: SlatOverride): CustomModel {
   // vodoravno ojačanje: bočni U profili se na novoj meri iznova seku po položaju ojačanja
-  return cutGuidesAtDividers(scaledCore(m, widthMm, heightMm, slats), MATERIALS);
+  const posted = layoutPosts(cutGuidesAtDividers(scaledCore(m, widthMm, heightMm, slats), MATERIALS), m, MATERIALS, slats?.postXs, slats);
+  // prečke se raspoređuju prema ravni rukohvata posle okova (veza i kapa podižu rukohvat), pa se okov računa iznova za nove prečke
+  const rods = layoutRods(posted, slats, MATERIALS);
+  const laid = rods === posted ? posted : layoutPosts(rods, m, MATERIALS, slats?.postXs, slats);
+  // stepenište kao krajnja tačka: kraj prečki i rukohvata od krajnjeg stuba
+  const trimmed = trimFreeEnds(laid, slats?.freeEnds, slats?.endOverhangMm, MATERIALS);
+  // ugao: prečke ispred stubova se sastaju sa prečkama susednog polja
+  return cornerRods(trimmed, slats?.cornerTurns, MATERIALS, slats?.stairTan, { mode: slats?.cornerJoint, arm: slats?.cornerArm }, slats?.cornerBends);
 }
 
 function scaledCore(m: CustomModel, widthMm: number, heightMm: number, slats?: SlatOverride): CustomModel {
@@ -113,20 +121,22 @@ function stretchedModel(m: CustomModel, widthMm: number, heightMm: number): Cust
 
 /** razvučen model sa ojačanjem (cevi koje dele široko platno i vodoravna cev); za prikaz i krojnu listu elementa u projektu */
 export function scaledWithReinforce(m: CustomModel, widthMm: number, heightMm: number, slats?: SlatOverride): CustomModel {
+  // ograda za terasu nema ojačanje cevima (stubove i prečke crta sam model)
+  if (m.kind === 'terrace') return scaledModel(m, widthMm, heightMm, slats);
   return withReinforce(scaledModel(m, widthMm, heightMm, slats), slats?.reinforce, MATERIALS);
 }
 
 /** redovi krojne liste za ojačanje platna zadate veličine (prazno kad ga nema ili model nije nacrtan) */
 export function customReinforceRows(modelId: string, widthMm: number, heightMm: number, slats?: SlatOverride): ReinforceRow[] {
   const m = REG.get(modelId);
-  if (!m) return [];
+  if (!m || m.kind === 'terrace') return [];
   return planReinforce(scaledModel(m, widthMm, heightMm, slats), slats?.reinforce, MATERIALS)?.rows ?? [];
 }
 
 /** uspravne cevi koje seku prečke: broj i širina cevi (null kad ih nema); prečke se u krojnoj listi dele na n + 1 komada */
 export function customReinforceSplit(modelId: string, widthMm: number, heightMm: number, slats?: SlatOverride): { n: number; tubeW: number; cuts: Map<string, [number, number][]> } | null {
   const m = REG.get(modelId);
-  if (!m) return null;
+  if (!m || m.kind === 'terrace') return null;
   const plan = planReinforce(scaledModel(m, widthMm, heightMm, slats), slats?.reinforce, MATERIALS);
   return plan && plan.vCount > 0 ? { n: plan.vCount, tubeW: plan.tubeW, cuts: plan.cuts } : null;
 }
@@ -138,6 +148,66 @@ export function customReinforceInfo(modelId: string, widthMm: number, heightMm: 
   const s = scaledModel(m, widthMm, heightMm, slats);
   const plan = planReinforce(s, { ...slats?.reinforce, hYs: slats?.reinforce?.hYs ?? [] }, MATERIALS);
   return plan ? { vCount: plan.vCount, innerHeightMm: plan.inner.y1 - plan.inner.y0, materialId: plan.materialId } : { vCount: 0, innerHeightMm: s.heightMm, materialId: null };
+}
+
+/** koliko prečke i rukohvat na crtežu modela stoje van krajnjih stubova (levo, desno) */
+export function customEndOverhang(modelId: string): { left: number; right: number } | null {
+  const m = REG.get(modelId);
+  return m && m.kind === 'terrace' ? endOverhangOf(m, MATERIALS) : null;
+}
+
+/** trenutni raspored prečki polja ograde za terasu (broj, od poda, do rukohvata, razmak); null kad model nema prečki */
+export function customRodInfo(modelId: string, widthMm: number, heightMm: number, slats?: SlatOverride): ReturnType<typeof rodMetrics> {
+  const m = REG.get(modelId);
+  return m && m.kind === 'terrace' ? rodMetrics(scaledModel(m, widthMm, heightMm, slats), MATERIALS) : null;
+}
+
+/**
+ * Delovi polja ograde za terasu za krojnu listu i obračun: uzimaju se iz delova koji su stvarno postavljeni na polje (broj i dužina stubova,
+ * broj prečki, okov po stubu), a ne iz modela sa crteža: stubova može biti više nego na crtežu, a na stepeništu je svaki duži do gazišta.
+ * Vodoravni delovi na stepeništu se računaju po kosoj dužini. null kad model nije nacrtana ograda za terasu.
+ */
+export function terraceEvaluated(modelId: string, widthMm: number, heightMm: number, slats: SlatOverride | undefined, slopeFactor: number): { part: SpecPart; qty: number; lengthMm: number | null; materialQty: number; error: null }[] | null {
+  const m = REG.get(modelId);
+  if (!m || m.kind !== 'terrace') return null;
+  const sc = scaledModel(m, widthMm, heightMm, slats);
+  const f = slopeFactor > 1 ? slopeFactor : 1;
+  const baseRoles = customPartRoles(m);
+  type Row = { part: SpecPart; qty: number; lengthMm: number | null; materialQty: number; error: null };
+  const rows = new Map<string, Row>();
+  let seqN = 0;
+  const add = (key: string, mk: () => SpecPart, qty: number, len: number | null) => {
+    const cur = rows.get(key);
+    if (cur) { cur.qty += qty; cur.materialQty = len === null ? cur.qty : (cur.qty * len) / 1000; return; }
+    rows.set(key, { part: mk(), qty, lengthMm: len, materialQty: len === null ? qty : (qty * len) / 1000, error: null });
+  };
+  for (const p of sc.parts) {
+    const mat = MATERIALS.find((x) => x.id === p.materialId);
+    if (!mat) continue;
+    if (p.hw?.kind === 'cornerArm') continue; // krak kolena je samo prikaz: koleno se računa jednom
+    const shape = materialShape(mat);
+    if (shape.type === 'piece') {
+      add(`${mat.id}|kom`, () => ({ id: `ts_${++seqN}`, name: mat.name, materialId: mat.id, group: 'Nosači i spojnice', qty: '0', enabled: true, note: 'okov postavljen na polje' }), 1, null);
+    } else if (shape.type === 'sheet' || p.heightMm) {
+      const area = sheetAreaMm2(p) / 1e6;
+      add(`${mat.id}|m2`, () => ({ id: `ts_${++seqN}`, name: mat.name, materialId: mat.id, group: 'Profili ispune', qty: '0', enabled: true, note: 'površina (m²)' }), Math.round(area * 10000) / 10000, null);
+    } else {
+      const role = hwRoleOf(p, shape);
+      const a = (p.angleDeg * Math.PI) / 180;
+      const vertical = Math.abs(Math.cos(a)) < 0.02;
+      const flat = Math.abs(Math.sin(a)) < 0.02;
+      const len = Math.round(p.lengthMm * (flat ? f : 1));
+      const base = baseRoles.get(p.id.split('~')[0]);
+      const name = role === 'post' ? 'Stub' : role === 'rail' ? 'Rukohvat' : role === 'rod' ? 'Prečka' : base ?? mat.name;
+      const note = role === 'post' && slats?.postDrops?.length ? 'stepenište: stub je uspravan, dužina = visina polja + razmak do gazišta na kome stoji' : '';
+      add(`${name}|${mat.id}|${len}|${vertical ? 'v' : 'h'}`, () => ({ id: `ts_${++seqN}`, name, role: name, materialId: mat.id, group: role === 'post' ? 'Stubovi' : 'Profili ispune', qty: '0', lengthMm: String(len), enabled: true, ...(note ? { note } : {}), ...(vertical ? { vertical: true } : {}) }), 1, len);
+    }
+  }
+  for (const [sku, n] of screwCounts(sc.parts, MATERIALS, m.hw)) {
+    const s = screwMaterial(sku, MATERIALS);
+    if (s) add(`${s.id}|vijak`, () => ({ id: `ts_${++seqN}`, name: s.name, materialId: s.id, group: 'Vijci', qty: '0', enabled: true, note: 'zavrtnji uz okov na polju' }), n, null);
+  }
+  return [...rows.values()].map((r) => ({ ...r, part: { ...r.part, qty: String(r.qty) } }));
 }
 
 const SCALED = new Map<string, { m: CustomModel; mats: Material[]; model: CustomModel }>();
@@ -254,6 +324,8 @@ function specKey(m: CustomModel, p: CustomPart, guideIds: Set<string>) {
     miterEnds = p.cut45 && p.miter && !(me[0] && me[1]) ? me : undefined;
     key = `${p.materialId}|${lengthMm}|${p.tiltDeg ?? 0}|${p.cut45 ? 45 : p.plumbEnds ? `p${r1(p.angleDeg)}` : 0}|${p.cutStartDeg ?? ''}/${p.cutEndDeg ?? ''}|${miterMm ?? ''}|${role.kind}${miterEnds ? `|${+miterEnds[0]}${+miterEnds[1]}` : ''}`;
     if (p.cut45) group = 'Ramovi';
+    // prečka u bočnim U profilima: seče se kraće za toleranciju (platno 1 mm, kapija 3 mm, ili ručno upisana)
+    if (g && lengthMm) { lengthMm = `${lengthMm}-${tolFormula(m, p)}`; key = `${key}|tol${p.tolMm ?? ''}`; }
   }
   return { key, lengthMm, group, miterMm, miterEnds, mat, role };
 }
@@ -367,7 +439,8 @@ export function customSlatLayout(modelId: string, widthMm: number, heightMm: num
   return slatLayoutOf(scaledModel(m, widthMm, heightMm, slats), MATERIALS);
 }
 
-setDefaultModelProvider(() => allFenceModels()[0]?.id as FenceModelId | undefined);
+// podrazumevani model je dvorišna ograda (ograde za terase se biraju same, na svojoj stranici)
+setDefaultModelProvider(() => allFenceModels().find((d) => !d.terrace)?.id as FenceModelId | undefined);
 // tip kapije pripada ogradi za koju je nacrtan (ako je ona obrisana: ograda koju je kapija imala, pa prvi model sa stranice Modeli ograda)
 const gateFenceResolver2 = (id: string, prevId?: string): FenceModelId | undefined => {
   const m = REG.get(id);

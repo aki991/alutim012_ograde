@@ -59,6 +59,26 @@ export interface SlatOverride {
   zones?: ({ bottomMm?: number; topMm?: number; hGapMm?: number } | undefined)[];
   /** nosači (vodoravni delovi koji se ne ponavljaju): odstojanje od bliže ivice ispune (dno ili vrh), po ID prvog dela nosača */
   rails?: Record<string, number>;
+  /** ograda za terasu: položaji osa stubova u ovom polju (mm od levog kraja); računa se sam za celu ravnu liniju ograde */
+  postXs?: number[];
+  /** stepenište: za koliko je (mm) svaki stub duži naniže, do gazišta na kome stoji; i nagib polja (tangens) za ravnu flanšu */
+  postDrops?: number[]; stairTan?: number;
+  /** skretanje trase (stepeni) na levom i desnom kraju polja: prečke ispred stubova se na uglu produžavaju ili skraćuju da se sastave */
+  cornerTurns?: [number, number];
+  /** promena nagiba na krajevima polja (stepeni, 0 = nema): ravno polje uz stepenište i obrnuto; cevi se sastaju u istoj tački (zglob ili koleno) */
+  cornerBends?: [number, number];
+  /** stepenište kao krajnja tačka ograde: koji su krajevi slobodni (levo, desno) i rastojanje (mm) od krajnjeg stuba do kraja prečke i rukohvata; bez vrednosti kao na crtežu */
+  freeEnds?: [boolean, boolean]; endOverhangMm?: number;
+  /** spoj na uglu za ovaj projekat (podešavanje projekta): kuglasti zglob ili koleno, i krak kolena (mm); bez vrednosti važi izbor iz modela */
+  cornerJoint?: 'ball' | 'elbow'; cornerArm?: number;
+  /** stepenište: prvi stub stoji na podu (na početku stepeništa), a ne na prvom stepeniku; i broj stepenika na kome stoji poslednji stub */
+  stairFirstFloor?: boolean; stairLastStep?: number;
+  /** ograda za terasu, „Raspored stubova i razmaci“ ovog polja: najveći razmak stubova i odstojanje prvog / poslednjeg stuba od krajeva (mm); bez vrednosti važi model */
+  /** ograda za terasu, „Raspored prečki“ ovog polja: broj prečki, osa najniže prečke od poda i osa najviše prečke od ose rukohvata (mm) */
+  rodCount?: number; rodBottomMm?: number; rodTopMm?: number;
+  /** razmak ose između susednih prečki (od donje): zadat razmak (mm) ili null = ravnomerno; ostali razmaci dele ono što preostane */
+  rodGaps?: (number | null)[];
+  postSpacingMm?: number; postLeftMm?: number; postRightMm?: number;
 }
 
 /** najveća grupa uspravnih letvica istog preseka (ram i U vođice nisu letvice); bar 3 letvice */

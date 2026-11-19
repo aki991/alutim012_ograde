@@ -1,3 +1,4 @@
+import { partTolMm } from './tolerance';
 import { partAngle, partBounds, type CustomModel, type CustomPart } from './custom';
 import { hwRoleOf } from './terraceHardware';
 import { barLayoutInfo, guideReport, type BarLayoutValues } from './guides';
@@ -153,7 +154,9 @@ export function buildSketch(model: CustomModel, materials: Material[]): Sketch {
   const keyOf = new Map<string, SketchPosition>();
   for (const it of sorted) {
     const { p, shape, mat } = it;
-    const key = [p.materialId, r1(p.lengthMm), r1(p.angleDeg), p.rot % 180, p.tiltDeg ?? 0, p.heightMm ?? '', p.cut45 ? 45 : 0, p.cut45 && p.miterEnds ? p.miterEnds.map(Number).join('') : ''].join('|');
+    // prečka u bočnim U profilima: dužina za sečenje je kraća za toleranciju
+    const cutLen = p.lengthMm - partTolMm(model, p, materials);
+    const key = [p.materialId, r1(cutLen), r1(p.angleDeg), p.rot % 180, p.tiltDeg ?? 0, p.heightMm ?? '', p.cut45 ? 45 : 0, p.cut45 && p.miterEnds ? p.miterEnds.map(Number).join('') : ''].join('|');
     let pos = keyOf.get(key);
     if (!pos) {
       const tilt = p.tiltDeg ? `nagib ${fmtNum(Math.abs(p.tiltDeg), 2)}°` : '';
@@ -162,7 +165,7 @@ export function buildSketch(model: CustomModel, materials: Material[]): Sketch {
         no: positions.length + 1, color: POSITION_COLORS[positions.length % POSITION_COLORS.length], materialId: p.materialId,
         name: mat?.name ?? 'Materijal je obrisan iz cenovnika', sku: mat?.sku ?? '—', kind: shape.type,
         section: shape.type === 'linear' ? `${fmtNum(shape.section.w, 1)} × ${fmtNum(shape.section.h, 1)}` : shape.type === 'sheet' ? `debljina ${fmtNum(shape.thick, 0)}` : '—',
-        length: shape.type === 'linear' ? fmtNum(p.lengthMm, 1) : shape.type === 'sheet' ? `${fmtNum(p.lengthMm, 0)} × ${fmtNum(p.heightMm ?? 0, 0)}` : '—',
+        length: shape.type === 'linear' ? fmtNum(cutLen, 1) : shape.type === 'sheet' ? `${fmtNum(p.lengthMm, 0)} × ${fmtNum(p.heightMm ?? 0, 0)}` : '—',
         angle: [axis, tilt, p.cut45 && shape.type === 'linear' ? (p.miterEnds && !(p.miterEnds[0] && p.miterEnds[1]) ? (p.miterEnds[0] || p.miterEnds[1] ? 'rez 45° na jednom kraju' : '') : 'rez 45°') : ''].filter(Boolean).join(', ') || '—', count: 0, firstId: p.id, partIds: [],
       };
       keyOf.set(key, pos); positions.push(pos);

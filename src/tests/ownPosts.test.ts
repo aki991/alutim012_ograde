@@ -23,12 +23,12 @@ describe('kapija sa svojim stubovima', () => {
     expect(p.items).toHaveLength(3);
     expect(p.posts).toHaveLength(4);
     expect(isSpacer(p.items[1])).toBe(true);
-    // stub ograde ostaje običan (100), stub kapije je pojačan (120); razmaknik je rastojanje njihovih osa (polovine stubova + razmak 40)
+    // stub ograde ostaje običan (100), stub kapije je pojačan (120); razmaknik je rastojanje njihovih osa (polovine stubova + razmak 0, stubovi su jedan uz drugi)
     expect([p.posts[1].type, p.posts[1].widthMm]).toEqual(['aluminium', 100]);
     expect([p.posts[2].type, p.posts[2].widthMm]).toEqual(['gate', 120]);
-    expect(p.items[1].widthMm).toBe(150);
+    expect(p.items[1].widthMm).toBe(110);
     const lay = computeLayout(p);
-    expect(lay.items[1].clearWidth).toBe(40); // razmak između stubova
+    expect(lay.items[1].clearWidth).toBe(0); // razmak između stubova
     expect(lay.postCount).toBe(4);
     // nazivi i brojevi pozicija ne računaju razmaknik
     expect(itemLabel(p.items, 2)).toBe('Pešačka kapija');

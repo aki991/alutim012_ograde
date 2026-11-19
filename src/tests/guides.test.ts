@@ -84,8 +84,28 @@ describe('prečka u bočnim U profilima', () => {
     const tilted = applyGuides({ ...m, parts: m.parts.map((p) => (p.id === 'b' ? { ...p, tiltDeg: 28.73 } : p)) }, MATS);
     registerCustomModels([tilted], MATS);
     const spec = defaultSpec('cm_g' as FenceModelId).find((s) => s.materialId === KV80.id)!;
-    expect(spec.lengthMm).toBe('996+1*(W-1000)');
+    expect(spec.lengthMm).toBe('996+1*(W-1000)-(GATE*3+(1-GATE)*1)') // tolerancija prečke u U profilima: platno 1 mm, kapija 3 mm;
     expect(spec.note).toContain('28,7');
     expect(customPartsFor('cm_g', 2000, 1000, '#000').find((r) => r.part.id === 'b')!.part.lengthMm).toBeCloseTo(1996, 6); // U profili ostaju uz ivice polja: prečka raste za razliku širina
+  });
+});
+
+describe('tolerancija prečke u bočnim U profilima', () => {
+  it('platno 1 mm, kapija 3 mm; ručno upisana važi za crtež platna, a u kapiji ostaje 3 mm', async () => {
+    const { evaluateSpec } = await import('../domain/models/spec');
+    const { partTolMm } = await import('../domain/models/tolerance');
+    const m = attached();
+    registerCustomModels([m], MATS);
+    const row = defaultSpec('cm_g' as FenceModelId).find((s) => s.materialId === KV80.id)!;
+    const len = (gate: number) => evaluateSpec([row], { W: 1000, H: 1000, GATE: gate } as never)[0].lengthMm;
+    expect(len(0)).toBeCloseTo(995, 6); // 996 − 1
+    expect(len(1)).toBeCloseTo(993, 6); // 996 − 3
+    const b = m.parts.find((p) => p.id === 'b')!;
+    expect(partTolMm(m, b, MATS)).toBe(1);
+    expect(partTolMm({ ...m, tolCtx: 'gate' }, b, MATS)).toBe(3);
+    const own = { ...m, parts: m.parts.map((p) => (p.id === 'b' ? { ...p, tolMm: 2 } : p)) };
+    expect(partTolMm(own, own.parts.find((p) => p.id === 'b')!, MATS)).toBe(2);
+    expect(partTolMm({ ...own, tolCtx: 'gate' }, own.parts.find((p) => p.id === 'b')!, MATS)).toBe(3);
+    expect(partTolMm(m, m.parts.find((p) => p.id === 'L')!, MATS)).toBe(0); // U profil nema toleranciju
   });
 });

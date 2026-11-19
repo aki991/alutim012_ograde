@@ -1,6 +1,6 @@
 import { NumInput } from '../forms/NumInput';
 import { Modal } from '../ui/Modal';
-import type { CustomModel } from '../../domain/models/custom';
+import { DEFAULT_POST_SPACING_MM, type CustomModel, type PostLayout } from '../../domain/models/custom';
 import { DEFAULT_HW_DIMS, hwDimsOf, type HwDims } from '../../domain/models/materialShape';
 
 interface Field { key: keyof HwDims; label: string; unit: string; hint: string; auto?: string }
@@ -19,6 +19,9 @@ const SECTIONS: { title: string; fields: Field[] }[] = [
   ] },
   { title: 'Kapa na vrhu stuba', fields: [
     { key: 'capH', label: 'Visina kape', unit: 'mm', hint: 'Kapa ispod veze podiže rukohvat za svoju visinu.' },
+  ] },
+  { title: 'Koleno na uglu', fields: [
+    { key: 'elbowArm', label: 'Krak kolena', unit: 'mm', hint: 'Samo kad je spoj na uglu koleno: za toliko se skraćuje svaka cev (prečka i rukohvat) uz koleno.' },
   ] },
   { title: 'Prsten i kapice prečke', fields: [
     { key: 'rodOffset', label: 'Osa prečke ispred stuba', unit: 'mm', auto: 'poluprečnik prečke + 7', hint: 'Rastojanje ose prečke od prednje ivice stuba. Prazno = prema prečniku prečke. Prečke se same postavljaju na ovo rastojanje.' },
@@ -47,6 +50,31 @@ export function TerraceMeasuresModal({ model, onChange, onClose }: { model: Cust
     <Modal title="Mere ograde" width={620} onClose={onClose}
       footer={<><button className="btn" data-testid="terrace-measures-reset" disabled={!model.hw} onClick={() => onChange((m) => ({ ...m, hw: undefined }))}>Vrati podrazumevane mere</button><button className="btn btn-primary" data-testid="terrace-measures-close" onClick={onClose}>Gotovo</button></>}>
       <p className="text-[12.5px] text-muted mb-3">Mere okova zavise od materijala koje koristite. Promena se odmah primenjuje na crtež: rukohvat se podiže na visinu veze, stub na debljinu flanše, a prečke se pomeraju na zadato rastojanje od stuba.</p>
+      <section className="mb-3" data-testid="terrace-corner-joint">
+        <h3 className="font-bold text-[13.5px] mb-1">Spoj prečki i rukohvata na uglu</h3>
+        <p className="text-[11.5px] text-muted leading-snug mb-1">Kuglasti zglob: cevi se sastaju u kugli prečnika cevi, ugao je podesiv. Koleno: svaka cev se skraćuje za krak kolena (vidi „Koleno na uglu“ ispod). Važi za sva skretanja ograde ovog modela.</p>
+        <div className="inline-flex rounded-lg border border-line overflow-hidden" role="group" aria-label="Spoj na uglu">
+          {([['ball', 'Kuglasti zglob'], ['elbow', 'Koleno']] as const).map(([v, label]) => (
+            <button key={v} type="button" data-testid={`corner-joint-${v}`} aria-pressed={(model.cornerJoint ?? 'ball') === v} className={`px-3 py-1.5 text-sm ${(model.cornerJoint ?? 'ball') === v ? 'bg-primary text-white' : 'bg-white hover:bg-slate-50'}`}
+              onClick={() => onChange((m) => ({ ...m, cornerJoint: v === 'ball' ? undefined : v }))}>{label}</button>
+          ))}
+        </div>
+      </section>
+      <section className="mb-3" data-testid="terrace-post-layout">
+        <h3 className="font-bold text-[13.5px] mb-1">Raspored stubova</h3>
+        <p className="text-[11.5px] text-muted leading-snug mb-1">U projektu se stubovi postavljaju sami: na jednakom razmaku od najviše zadatog (podrazumevano {DEFAULT_POST_SPACING_MM} mm), a prvi i poslednji stub na zadatom odstojanju od krajeva polja (osa stuba od ivice polja). Prazno = kao na crtežu modela. Važi za svako polje ovog modela.</p>
+        {([['spacingMm', 'Najveći razmak stubova', String(DEFAULT_POST_SPACING_MM)], ['leftMm', 'Prvi stub od levog kraja', 'kao na crtežu'], ['rightMm', 'Poslednji stub od desnog kraja (uz stepenice)', 'kao na crtežu']] as [keyof PostLayout, string, string][]).map(([k, label, ph]) => (
+          <div key={k} className="grid grid-cols-[minmax(0,1fr)_110px_36px] items-center gap-x-2 py-1 border-b border-line/60 last:border-0">
+            <label className="text-[13px] text-slate-800">{label}</label>
+            <NumInput testId={`terrace-post-${k}`} ariaLabel={label} value={model.postLayout?.[k]} placeholder={ph} onCommit={(v) => onChange((m) => {
+              const pl: PostLayout = { ...(m.postLayout ?? {}) };
+              if (v === null || v < 0 || (k === 'spacingMm' && v === 0)) delete pl[k]; else pl[k] = v;
+              return { ...m, postLayout: Object.keys(pl).length ? pl : undefined };
+            })} />
+            <span className="text-[12px] text-muted">mm</span>
+          </div>
+        ))}
+      </section>
       {SECTIONS.map((s) => (
         <section key={s.title} className="mb-3" data-testid="terrace-measures-section">
           <h3 className="font-bold text-[13.5px] mb-1">{s.title}</h3>

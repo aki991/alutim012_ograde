@@ -142,7 +142,10 @@ export function InfillArt(props: InfillProps) {
     return (
       <g data-testid="custom-art" transform={`translate(${x} ${y + h - up}) scale(1,-1)`} style={{ pointerEvents: 'none' }}>
         <rect x={0} y={0} width={w} height={hh} fill={GAP_TINT} fillOpacity="0.25" />
-        {customPartsFor(modelId, w, hh, hex, props.slats).map((r) => <PartSvg key={r.part.id} part={r.part} shape={r.shape} hex={r.hex} />)}
+        {customPartsFor(modelId, w, hh, hex, props.slats).map((r) => (r.part.unshearTan
+          // stepenište: flanša leži ravno na gazištu (poništava iskošenje polja)
+          ? <g key={r.part.id} transform={`matrix(1 ${-r.part.unshearTan} 0 1 0 ${r.part.unshearTan * r.part.x})`}><PartSvg part={r.part} shape={r.shape} hex={r.hex} /></g>
+          : <PartSvg key={r.part.id} part={r.part} shape={r.shape} hex={r.hex} />))}
       </g>
     );
   }
