@@ -411,6 +411,8 @@ export interface AppSettings {
   modelSpecs?: Record<string, import('./spec').SpecPart[]>;
   /** ručno nacrtani modeli ograda i kapija (strana Modeli ograda → Napravi model) */
   customModels?: import('./custom').CustomModel[];
+  /** Dvorišni modeli označeni za upotrebu i na terasama (izvorni modeli ostaju dvorišni). */
+  terraceModelIds?: string[];
   /** modeli iz kataloga (ograde i osnovne kapije) koje je korisnik obrisao; „Vrati obrisane modele“ ih vraća */
   hiddenModels?: string[];
   /** obaveštenja (specifikacije sa terena) pristigla do ovog trenutka (ISO) su obrisana u Ogradama; u Stolariji ostaju */

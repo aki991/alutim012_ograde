@@ -1,6 +1,7 @@
 import { DEFAULT_POST_SPACING_MM, partBounds, type CustomModel, type CustomPart, type HwKind } from './custom';
 import { hwDimsOf, holderRadius, isTerraceMaterial, materialShape, sectionFace, type HwDims, type MatShape } from './materialShape';
 import type { Material } from './types';
+import { syncGlassRailing } from './glassRailing';
 
 /**
  * Okov ograda za terase koji aplikacija sama postavlja. Crtaju se stubovi, rukohvat i prečke (X i Y zadaje radnik), a okov se
@@ -32,12 +33,12 @@ export const HW_KINDS_BY_ROLE: Record<HwRole, HwKind[]> = {
 
 /** Prvi izbor kad se okov kvačicom dodaje (šifre redom po željenom prvenstvu); inače prvi odgovarajući iz cenovnika. */
 const PREFERRED: Record<HwKind, string[]> = {
-  flange: ['AK-5036X', 'AK-5036', 'AK-5186'],
-  postCap: ['AK-5062'],
-  connector: ['AK-5039-40', 'AK-5039N', 'AK-5039'],
+  flange: ['AK-5036X', 'AK-5036', 'AK-5186', 'AK-5200', 'AK-5141'],
+  postCap: ['AK-5062', 'AK-5134'],
+  connector: ['AK-5039-40', 'AK-5039N', 'AK-5039', 'AK-5126', 'AK-5125'],
   holder: ['AK-5011', 'AK-5011Y'],
   rodCap: ['AK-5012A'],
-  railCap: ['AK-5013', 'AK-5009'],
+  railCap: ['AK-5013', 'AK-5009', 'AK-5104'],
   cornerBall: [],
   cornerArm: [],
 };
@@ -46,7 +47,7 @@ const PREFERRED: Record<HwKind, string[]> = {
 const SCREWS: { test: RegExp; screw: string; qty: keyof Pick<HwDims, 'screwsHolder' | 'screwsConnector' | 'screwsFlange'> }[] = [
   { test: /^AK-5011/i, screw: 'BTS-VP4238', qty: 'screwsHolder' },
   { test: /^AK-(5039|65039|65001|5001|5066|5126|5125|5128|5237)/i, screw: 'BTS-VP4219', qty: 'screwsConnector' },
-  { test: /^AK-(5036|5186|5089|5196|5037)/i, screw: 'BTS-VT75100', qty: 'screwsFlange' },
+  { test: /^AK-(5036|5186|5089|5196|5037|5200|5141)/i, screw: 'BTS-VT75100', qty: 'screwsFlange' },
 ];
 
 const norm = (s: string): string => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'dj');
@@ -114,7 +115,7 @@ export function compatibleHardware(kind: HwKind, parent: CustomPart, model: Pick
     const n = norm(m.name).replace(/\./g, ',');
     const name = m.name.replace(/\./g, ',');
     switch (kind) {
-      case 'flange': return sh.group.startsWith('t_') && /flans|stopa|prirubnic/.test(n) && me.role === 'post' && hasTag(name, tags);
+      case 'flange': return sh.group.startsWith('t_') && /flans|stopa|prirubnic/.test(n) && !/maska/.test(n) && me.role === 'post' && hasTag(name, tags);
       case 'postCap': return /vrh\w* stuba|kapa stuba/.test(n) && me.role === 'post' && hasTag(name, tags);
       case 'connector': {
         if (me.role !== 'post' || !/veza stub/.test(n)) return false;
@@ -158,7 +159,7 @@ const hwId = (kind: HwKind, on: string, at = '', end = ''): string => `hw~${kind
  * i bez prečki koje prolaze kroz stubove vraća se nepromenjen (isti objekat).
  */
 export function syncHardware(model: CustomModel, materials: Material[]): CustomModel {
-  if (model.kind !== 'terrace') return model.parts.some((p) => p.hw) ? { ...model, parts: model.parts.filter((p) => !p.hw) } : model;
+  if (model.kind !== 'terrace') return syncGlassRailing(model.parts.some((p) => p.hw) ? { ...model, parts: model.parts.filter((p) => !p.hw) } : model, materials);
   const byId = new Map(materials.map((m) => [m.id, m]));
   const dims = hwDimsOf(model.hw);
   const own = model.parts.filter((p) => !p.hw);
@@ -221,9 +222,9 @@ export function syncHardware(model: CustomModel, materials: Material[]): CustomM
 
   const same = (a: CustomPart[], b: CustomPart[]): boolean => a.length === b.length && a.every((p, i) => p.id === b[i].id && p.materialId === b[i].materialId && p.x === b[i].x && p.y === b[i].y && p.z === b[i].z && p.angleDeg === b[i].angleDeg);
   const oldHw = model.parts.filter((p) => p.hw);
-  if (!patch.size && same(oldHw, out)) return model;
+  if (!patch.size && same(oldHw, out)) return syncGlassRailing(model, materials);
   const moved = own.map((p) => (patch.has(p.id) ? { ...p, ...patch.get(p.id) } : p));
-  return { ...model, parts: [...moved, ...out] };
+  return syncGlassRailing({ ...model, parts: [...moved, ...out] }, materials);
 }
 
 /**
@@ -262,6 +263,9 @@ export function setHwPick(model: CustomModel, partId: string, kind: HwKind, mate
  */
 export function removeParts(model: CustomModel, ids: Set<string>): CustomModel {
   let m: CustomModel = model;
+  const glazing = model.parts.filter((p) => ids.has(p.id) && p.glazing);
+  if (glazing.some((p) => p.glazing?.kind === 'clamp')) m = { ...m, glassRailing: undefined };
+  else if (glazing.length && m.glassRailing) m = { ...m, glassRailing: { ...m.glassRailing, glassMaterialId: undefined } };
   for (const p of model.parts) if (ids.has(p.id) && p.hw) m = setHwPick(m, p.hw.on, p.hw.kind, null);
   return { ...m, parts: m.parts.filter((p) => !ids.has(p.id) && !(p.hw && ids.has(p.hw.on))) };
 }

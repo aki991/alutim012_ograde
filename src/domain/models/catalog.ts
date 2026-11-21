@@ -80,6 +80,8 @@ export interface FenceModelDef {
   parts: { main: string; rail?: string; accent?: string };
   /** ograda za terasu (rukohvat sa prečkama ili staklom): stranica „Modeli ograda za terase“, bez kapija; nema veze sa dvorišnim ogradama */
   terrace?: boolean;
+  /** Terasna varijanta dvorišnog modela: koristi stubove projekta kao izvorna ograda. */
+  terraceSourceId?: string;
 }
 
 const model = (d: Omit<FenceModelDef, 'shortName'>): FenceModelDef => ({ shortName: d.name, ...d });

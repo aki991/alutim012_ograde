@@ -2,6 +2,7 @@ import { guidesOf } from '../../domain/models/guides';
 import { defaultTolMm, FENCE_TOL_MM, GATE_TOL_MM, partTolMm } from '../../domain/models/tolerance';
 import { settleModel as settle } from '../../domain/models/settle';
 import { fillHardware, removeParts } from '../../domain/models/terraceHardware';
+import { GlassRailingPanel } from '../../components/designer/GlassRailingPanel';
 import { checkDrawing } from '../../domain/models/drawingCheck';
 import { checkSizes } from '../../domain/models/sizeCheck';
 import { SizeProbe } from '../../components/designer/SizeProbe';
@@ -1066,6 +1067,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
         </section>
 
         <aside className="border-l border-line bg-white min-h-0 overflow-auto scroll-thin p-3">
+          {isTerrace && <GlassRailingPanel model={model} materials={materials} onChange={(fn) => change(fn)} />}
           {slSpec && (hwSelValid || (!sel && !multi.length)) && <SlidingDesignerPanel slideId={model.id} spec={slSpec} W={model.widthMm} leafH={model.heightMm} onSpec={patchSliding} selected={hwSelValid} onSelect={setHwSel} />}
           <h2 className="font-bold text-[15px] mb-1">Izabrani deo</h2>
           {!sel && !multi.length && <p className="text-sm text-muted mb-4" data-testid="designer-no-selection">Izaberite materijal levo i nacrtajte ga na polju, ili kliknite na nacrtani deo da ga izmenite. Ctrl + klik ili prevlačenje po praznom biraju više delova.</p>}
@@ -1156,7 +1158,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
             <div className="mb-4" data-testid="designer-props">
               <div className="text-[13px] font-medium leading-snug">{sel.material?.name ?? 'Materijal je obrisan iz cenovnika'}</div>
               <div className="text-[11.5px] text-muted mb-2">{sel.shape.type === 'linear' ? `Presek ${sel.shape.section.w} × ${sel.shape.section.h} mm${sel.shape.exact ? '' : ' (približan oblik prema nazivu)'}` : ''}</div>
-              {sel.material && (() => {
+              {sel.material && !sel.part.glazing && (() => {
                 const options = replaceOptions(model, sel.part.id, materials, showAllSwap);
                 const moreOptions = replaceOptions(model, sel.part.id, materials, true).length > replaceOptions(model, sel.part.id, materials, false).length;
                 if (!options.length && !moreOptions) return null;
@@ -1173,9 +1175,10 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
                   <p className="text-[11.5px] text-muted -mt-0.5">{sel.shape.u ? <>Unutrašnji otvor U profila: <b data-testid="part-u-opening">{String(Math.round((sel.shape.u.a - 2 * sel.shape.u.c) * 100) / 100).replace('.', ',')} mm</b>. </> : null}Menja materijal u cenovniku, pa važi za sve delove od njega.</p>
                 </div>
               )}
-              <PartColorField testPrefix="part" colors={[sel.part.color]} modelColor={model.color} onPick={(c) => change((m) => setPartsColor(m, [sel.part.id], c))} />
+              {!sel.part.glazing && <PartColorField testPrefix="part" colors={[sel.part.color]} modelColor={model.color} onPick={(c) => change((m) => setPartsColor(m, [sel.part.id], c))} />}
               {isTerrace && <HardwarePanel model={model} part={sel.part} materials={materials} onChange={(fn) => change(fn)} />}
-              {!sel.part.hw && <>
+              {sel.part.glazing && <p className="text-xs text-muted my-2">Ovaj deo prati stubove. Mere i materijal se podešavaju u odeljku „Staklena ograda“ iznad.</p>}
+              {!sel.part.hw && !sel.part.glazing && <>
               <Num label="X" value={sel.part.x} testId="part-x" onChange={(v) => patchPart(sel.part.id, { x: v })} />
               <Num label="Y (od tla)" value={sel.part.y} testId="part-y" onChange={(v) => patchPart(sel.part.id, { y: v })} />
               {sel.shape.type !== 'piece' &&<Num label={sel.shape.type === 'sheet' ? 'Širina' : 'Dužina'} value={sel.part.lengthMm} min={1} testId="part-length" onChange={(v) => patchPart(sel.part.id, { lengthMm: v })} />}
@@ -1215,7 +1218,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
                   <input type="checkbox" data-testid="part-cut45" checked={!!sel.part.cut45} onChange={(e) => patchPart(sel.part.id, { cut45: e.target.checked || undefined })} />
                 </label>
               )}
-              {!sel.part.hw && <Num label="Dubina (ka napred)" value={sel.part.z} min={-2000} max={2000} testId="part-z" onChange={(v) => patchPart(sel.part.id, { z: v })} />}
+              {!sel.part.hw && !sel.part.glazing && <Num label="Dubina (ka napred)" value={sel.part.z} min={-2000} max={2000} testId="part-z" onChange={(v) => patchPart(sel.part.id, { z: v })} />}
               {!sel.part.hw && sel.shape.type === 'linear' && (
                 <div className="flex gap-2 py-1" data-testid="part-layer-buttons">
                   {(['behind', 'front'] as const).map((mode) => (
@@ -1252,15 +1255,15 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
                 </div>
               )}
               {model.kind !== 'terrace' && !sel.part.hw && sel.shape.type !== 'piece' && <FitBox model={model} part={sel.part} shape={sel.shape} materials={materials} onChange={(fit) => { patchPart(sel.part.id, { fit }); setProbeOpen(true); }} onRepeat={(ids, off) => { change((m) => ({ ...m, parts: m.parts.map((p) => { if (!ids.includes(p.id)) return p; const f = { ...p.fit, repeat: off ? ('off' as const) : undefined }; if (!f.repeat) delete f.repeat; return { ...p, fit: Object.keys(f).length ? f : undefined }; }) })); setProbeOpen(true); }} onShowProbe={() => setProbeOpen(true)} />}
-              <div className="mt-2 rounded-lg border border-line p-2">
+              {!sel.part.glazing && <div className="mt-2 rounded-lg border border-line p-2">
                 <div className="text-[12.5px] font-semibold mb-1 flex items-center gap-1.5"><Rows3 size={14} />Ponovi deo</div>
                 <Num label="Broj kopija" unit="kom" value={rep.count} min={1} max={200} onChange={(v) => setRep({ ...rep, count: Math.round(v) })} />
                 <Num label="Korak (osa–osa)" value={rep.step} min={-5000} max={5000} onChange={(v) => setRep({ ...rep, step: v })} />
                 <button className="btn btn-sm w-full mt-1" data-testid="part-repeat" onClick={() => change((m) => ({ ...m, parts: [...m.parts, ...repeatPart(sel.part, sel.shape, rep.count, rep.step, () => uid('part'))] }))}>Napravi kopije</button>
                 <p className="text-[11.5px] text-muted mt-1">Vodoravan profil se ponavlja nagore, uspravan udesno.</p>
-              </div>
+              </div>}
               <div className="flex gap-2 mt-2">
-                <button className="btn btn-sm flex-1" data-testid="part-duplicate" onClick={duplicateSel}><Copy size={14} />Dupliraj</button>
+                <button className="btn btn-sm flex-1" data-testid="part-duplicate" disabled={!!sel.part.glazing} onClick={duplicateSel}><Copy size={14} />Dupliraj</button>
                 <button className="btn btn-sm btn-danger flex-1" data-testid="part-delete" onClick={removeSel}><Trash2 size={14} />Obriši</button>
               </div>
             </div>

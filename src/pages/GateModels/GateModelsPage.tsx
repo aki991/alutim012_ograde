@@ -9,7 +9,7 @@ import { Page, PageHeader } from '../../components/ui/Common';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
 import { GATE_TYPE_LABELS, leafKeyOf } from '../../domain/gates/gateModels';
 import { type SlidingPresetId } from '../../domain/gates/slidingAssembly';
-import { GATE_LABELS, projectModelId } from '../../domain/models/catalog';
+import { GATE_LABELS, defaultModelId, isTerraceModel, projectModelId } from '../../domain/models/catalog';
 import { allFenceModels } from '../../domain/models/customRegistry';
 import type { CustomModel } from '../../domain/models/custom';
 import type { FenceModelId } from '../../domain/models/types';
@@ -41,19 +41,22 @@ export default function GateModelsPage() {
   const [basicBom, setBasicBom] = useState<{ title: string; rows: BomRow[] } | null>(null);
   const materials = useAppStore((s) => s.materials);
   const customModels = useAppStore((s) => s.settings.customModels);
+  useAppStore((s) => s.settings.terraceModelIds);
   const hidden = useAppStore((s) => s.settings.hiddenModels) ?? [];
   const projects = useListedProjects();
   const currentId = useAppStore((s) => s.editor.projectId);
   const current = projects.find((p) => p.id === currentId);
-  const models = (customModels ?? []).filter((m) => m.kind === 'gate' && !m.replaces && !m.draft && !m.derivedFrom);
+  const models = (customModels ?? []).filter((m) => m.kind === 'gate' && !m.replaces && !m.draft && !m.derivedFrom && (!m.leafModelId || !isTerraceModel(m.leafModelId as FenceModelId)));
   const [del, setDel] = useState<CustomModel | null>(null);
   const [choice, setChoice] = useState<CustomModel | null>(null);
   const [delAll, setDelAll] = useState(false);
   // ograda na sličicama: model iz otvorenog projekta; bez projekta prvi model sa stranice Modeli ograda
-  const shownModel = (current && projectModelId(current.items)) || (allFenceModels().find((m) => !m.terrace) ?? allFenceModels()[0]).id;
+  const currentModel = current && projectModelId(current.items);
+  const shownModel = currentModel && !isTerraceModel(currentModel) ? currentModel : (allFenceModels(undefined, 'yard')[0]?.id ?? defaultModelId());
   const doradaModel = leafKeyOf(shownModel, customModels);
   // sličice kapija: model ograde sa ramom (ako ga kapija od tog modela dobija)
   const [thumbModel, setThumbModel] = useState<string>(shownModel);
+  const safeThumbModel = isTerraceModel(thumbModel as FenceModelId) ? shownModel : thumbModel;
   useEffect(() => { setThumbModel(useAppStore.getState().gateInfillWithFrame(shownModel)); }, [shownModel, customModels, materials]);
   // osnovne kapije se samo gledaju: crtež se otvara bez mogućnosti menjanja, a za izmene se kapija sačuva kao nov tip
   const openSliding = (p: SlidingPresetId) => navigate(`/modeli/crtanje/${useAppStore.getState().startSlidingDorada(p, doradaModel)}`, { state: { kind: 'gate', readOnly: true } });
@@ -77,7 +80,7 @@ export default function GateModelsPage() {
         <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
           {BASIC.filter((b) => !hidden.includes(`gate:${b.type}`)).map((b) => (
             <article key={b.type} className="card overflow-hidden flex flex-col" data-testid={`basic-gate-${b.type}`}>
-              <div className="relative aspect-[16/10] bg-[#eef2f6] overflow-hidden border-b border-line grid place-items-center"><ElementThumb kind={b.type} model={thumbModel as typeof shownModel} size={THUMB} /></div>
+              <div className="relative aspect-[16/10] bg-[#eef2f6] overflow-hidden border-b border-line grid place-items-center" data-fence-model={shownModel}><ElementThumb kind={b.type} model={safeThumbModel as typeof shownModel} size={THUMB} /></div>
               <div className="p-4 flex-1 flex flex-col">
                 <h3 className="font-bold text-[17px]">{GATE_LABELS[b.type]}</h3>
                 <p className="text-sm text-muted mt-0.5">{b.subtitle}</p>
@@ -92,7 +95,7 @@ export default function GateModelsPage() {
           {/* klizne kapije kao sklop; ručna / motorna se bira u projektu, Doradi pravi nov model koji se menja deo po deo */}
           {SLIDING.filter((k) => !hidden.includes(`gate:slide:${k.preset}`)).map((k) => (
             <article key={k.id} className="card overflow-hidden flex flex-col" data-testid={`basic-${k.id}`}>
-              <div className="relative aspect-[16/10] bg-[#eef2f6] overflow-hidden border-b border-line grid place-items-center"><SlidingThumb preset={k.preset} model={thumbModel as typeof shownModel} size={THUMB} /></div>
+              <div className="relative aspect-[16/10] bg-[#eef2f6] overflow-hidden border-b border-line grid place-items-center" data-fence-model={shownModel}><SlidingThumb preset={k.preset} model={safeThumbModel as typeof shownModel} size={THUMB} /></div>
               <div className="p-4 flex-1 flex flex-col">
                 <h3 className="font-bold text-[17px]">{k.title}</h3>
                 <p className="text-sm text-muted mt-0.5">{k.subtitle}</p>

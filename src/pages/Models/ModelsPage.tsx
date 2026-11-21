@@ -12,6 +12,7 @@ import type { FenceModelId } from '../../domain/models/types';
 import { useAppStore, useListedProjects } from '../../store/useAppStore';
 import { uid } from '../../utils/id';
 import { itemLabel } from '../../utils/labels';
+import { allFenceModels, terraceVariants } from '../../domain/models/customRegistry';
 
 /**
  * Modeli ograda (dvorište) ili, sa `terrace`, Modeli ograda za terase: isti prikaz, a odvojeni spiskovi modela, nacrtanih modela i
@@ -30,6 +31,7 @@ export default function ModelsPage({ terrace = false }: { terrace?: boolean }) {
   const kind: CustomModel['kind'] = terrace ? 'terrace' : 'fence';
   const modelSpecs = useAppStore((s) => s.settings.modelSpecs);
   const customModels = useAppStore((s) => s.settings.customModels);
+  const terraceIds = useAppStore((s) => s.settings.terraceModelIds) ?? [];
   const materials = useAppStore((s) => s.materials);
   const projectId = useAppStore((s) => s.editor.projectId);
   const projects = useListedProjects();
@@ -68,7 +70,8 @@ export default function ModelsPage({ terrace = false }: { terrace?: boolean }) {
   // ručno nacrtani modeli: za dvorišne ograde idu u istu mrežu kao ostali modeli (bez posebnog naslova), za terase u svoj odeljak
   // nacrtani modeli i dorađeni crteži obrisanih originala iz kataloga (oni su sada obični nacrtani modeli)
   const standalone = (m: CustomModel) => !m.replaces || REMOVED_MODELS.has(m.replaces);
-  const customCards = customModels?.filter((m) => standalone(m) && m.kind === kind).map((m) => (
+  const cardModels = [...(customModels?.filter((m) => standalone(m) && m.kind === kind) ?? []), ...(terrace ? terraceVariants() : [])];
+  const customCards = cardModels.map((m) => (
       <article key={m.id} className="card overflow-hidden flex flex-col" data-testid="custom-model-card">
         <div className="relative aspect-[16/10] bg-[#eef2f6] overflow-hidden border-b border-line p-3"><CustomModelThumb model={m} materials={materials} /></div>
         <div className="p-4 flex-1 flex flex-col">
@@ -78,14 +81,15 @@ export default function ModelsPage({ terrace = false }: { terrace?: boolean }) {
               onBlur={(e) => { const v = e.currentTarget.value.trim(); setRenaming(null); if (v && v !== m.name) useAppStore.getState().updateSettings({ customModels: (useAppStore.getState().settings.customModels ?? []).map((x) => (x.id === m.id ? { ...x, name: v, updatedAt: new Date().toISOString() } : x)) }); }}
               onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); else if (e.key === 'Escape') { e.currentTarget.value = m.name; e.currentTarget.blur(); } }} />
           ) : (
-            <h3 className="font-bold text-[17px] cursor-text rounded hover:bg-slate-100" data-testid="model-name" title="Kliknite da promenite naziv modela" tabIndex={0} onClick={() => setRenaming(m.id)} onKeyDown={(e) => { if (e.key === 'Enter') setRenaming(m.id); }}>{m.name || 'Model bez naziva'}</h3>
+            <h3 className="font-bold text-[17px] cursor-text rounded hover:bg-slate-100" data-testid="model-name" title="Kliknite da promenite naziv modela" tabIndex={0} onClick={() => { if (!m.terraceSourceId) setRenaming(m.id); }} onKeyDown={(e) => { if (e.key === 'Enter' && !m.terraceSourceId) setRenaming(m.id); }}>{m.name || 'Model bez naziva'}</h3>
           )}
-          <p className="text-sm text-muted mt-0.5">{CUSTOM_KIND_LABELS[m.kind]} · {m.widthMm} × {m.heightMm} mm · {m.parts.length} delova</p>
+          <p className="text-sm text-muted mt-0.5">{m.terraceSourceId ? 'Dvorišni model dostupan i za terase' : CUSTOM_KIND_LABELS[m.kind]} · {m.widthMm} × {m.heightMm} mm · {m.parts.length} delova</p>
           <div className="flex gap-2 mt-auto pt-4">
-            <button className="btn flex-1 !px-2" data-testid="open-custom-model" onClick={() => navigate(`${drawPath}/${m.id}`)}><PencilRuler size={16} />Otvori crtež</button>
+            <button className="btn flex-1 !px-2" data-testid="open-custom-model" onClick={() => navigate(m.terraceSourceId ? `/modeli/crtanje/${m.terraceSourceId.startsWith('cm_') ? m.terraceSourceId : useAppStore.getState().startDorada(m.terraceSourceId as FenceModelId)}` : `${drawPath}/${m.id}`)}><PencilRuler size={16} />Otvori crtež</button>
             <button className="btn btn-primary flex-1 !px-2" data-testid="use-custom-model" disabled={m.parts.length === 0} onClick={() => useModel(m.id as FenceModelId)}>Koristi model</button>
             {specButton(m.id, Boolean(modelSpecs?.[extraSpecKey(m.id)]?.length))}
-            {deleteButton(`delete-custom-model-${m.id}`, m.name, () => setDel(m))}
+            {deleteButton(`delete-custom-model-${m.id}`, m.name, () => m.terraceSourceId
+              ? useAppStore.getState().updateSettings({ terraceModelIds: terraceIds.filter((id) => id !== m.terraceSourceId) }) : setDel(m))}
           </div>
         </div>
       </article>
@@ -94,9 +98,20 @@ export default function ModelsPage({ terrace = false }: { terrace?: boolean }) {
   return (
     <Page>
       <PageHeader title={terrace ? 'Modeli ograda za terase' : 'Modeli ograda'}
-        subtitle={terrace ? 'Ograde za terase, stepeništa i galerije: stubovi, rukohvat, prečke ili staklo. Nemaju veze sa dvorišnim ogradama i nemaju kapije. „Napravi model“ otvara crtanje ograda za terase sa materijalima za terase.' : undefined}
+        subtitle={terrace ? 'Ograde za terase, stepeništa i galerije, uključujući dvorišne modele označene za terase. Ograde za terase nemaju kapije.' : undefined}
         actions={<>{terrace && TERRACE_MODEL_LIST.some((m) => hiddenModels?.includes(m.id)) && <button className="btn" data-testid="restore-terrace-models" onClick={() => { const ids = new Set(TERRACE_MODEL_LIST.map((m) => m.id)); for (const id of ids) if (hiddenModels?.includes(id)) useAppStore.getState().restoreHiddenModels(id); }}>Vrati obrisane modele</button>}<button className="btn btn-primary" data-testid={terrace ? 'btn-create-terrace-model' : 'btn-create-model'} onClick={() => navigate(terrace ? `${drawPath}/${uid('cm')}` : drawPath)}><PencilRuler size={17} />Napravi model</button></>} />
-      {terrace && !!customModels?.some((m) => standalone(m) && m.kind === kind) && (
+      {!terrace && <details className="relative mb-5 max-w-xl" data-testid="terrace-model-picker">
+        <summary className="btn cursor-pointer">Modeli koji se koriste i za terase ({terraceIds.length})</summary>
+        <div className="absolute z-20 mt-1 w-full max-h-80 overflow-auto rounded-xl border border-line bg-white p-3 shadow-lg">
+          {allFenceModels(undefined, 'yard').map((m) => <label key={m.id} className="flex items-center gap-2 py-1.5 text-sm">
+            <input type="checkbox" data-testid={`terrace-use-${m.id}`} checked={terraceIds.includes(m.id)} onChange={(e) => useAppStore.getState().updateSettings({
+              terraceModelIds: e.target.checked ? [...new Set([...terraceIds, m.id])] : terraceIds.filter((id) => id !== m.id),
+            })} />{m.name}
+          </label>)}
+          {!allFenceModels(undefined, 'yard').length && <p className="text-sm text-muted">Najpre napravite model ograde.</p>}
+        </div>
+      </details>}
+      {terrace && cardModels.length > 0 && (
         <section className="mb-7" data-testid="custom-terrace-models">
           <h2 className="font-bold text-lg mb-3">Moje ograde za terase (ručno nacrtane)</h2>
           <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
@@ -105,7 +120,7 @@ export default function ModelsPage({ terrace = false }: { terrace?: boolean }) {
           <h2 className="font-bold text-lg mt-7 -mb-2">Modeli iz kataloga</h2>
         </section>
       )}
-      {terrace && list.every((m) => hiddenModels?.includes(m.id)) && (
+      {terrace && !cardModels.length && list.every((m) => hiddenModels?.includes(m.id)) && (
         <p className="text-sm text-muted card p-4" data-testid="terrace-models-empty">Svi modeli ograda za terase iz kataloga su obrisani. Vratite ih dugmetom „Vrati obrisane modele“ ili nacrtajte nov dugmetom „Napravi model“.</p>
       )}
       <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3" data-testid={terrace ? 'terrace-models' : 'yard-models'}>

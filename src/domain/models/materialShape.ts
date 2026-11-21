@@ -167,7 +167,7 @@ const cyl = (r: number, len: number, axis: 'x' | 'y' | 'z', x: number, y: number
 const sph = (r: number, x: number, y: number, z = 0): Solid => ({ prim: 'sph', r, pos: [x, y, z] });
 
 type PieceKind = 'cap_flat' | 'cap_pyramid' | 'rosette' | 'foot' | 'side_foot' | 'plug' | 'hinge' | 'lock' | 'wheel' | 'motor' | 'bracket' | 'ring' | 'screw' | 'box'
-  | 'flange_round' | 'holder' | 'end_cap' | 'connector' | 'picket_cap' | 'strike' | 'bolt' | 'floor_catch' | 'ball' | 'elbow';
+  | 'flange_round' | 'flange_rect' | 'post_cap_rect' | 'holder' | 'end_cap' | 'end_cap_rect' | 'connector' | 'connector_rect' | 'picket_cap' | 'strike' | 'bolt' | 'floor_catch' | 'ball' | 'elbow';
 
 /**
  * Mere okova ograde za terasu (mm), „Mere ograde“: zavise od materijala koji radionica koristi, pa se podešavaju po modelu.
@@ -225,17 +225,26 @@ export const holderRadius = (rodDia: number, dims: HwDims = DEFAULT_HW_DIMS): nu
 export function pieceSolids(kind: PieceKind, w: number, d: number, dims: HwDims = DEFAULT_HW_DIMS): Solid[] {
   switch (kind) {
     case 'flange_round': return [cyl(w / 2 + dims.plateOver, dims.plateH, 'y', 0, dims.plateH / 2), cyl(w / 2 + 5, dims.sleeveH, 'y', 0, dims.plateH + dims.sleeveH / 2)];
+    case 'flange_rect': return [box(w + 2 * dims.plateOver, dims.plateH, d + 2 * dims.plateOver, 0, dims.plateH / 2), box(w + 10, dims.sleeveH, d + 10, 0, dims.plateH + dims.sleeveH / 2)];
+    case 'post_cap_rect': return [box(w + 2, dims.capH, d + 2, 0, dims.capH / 2)];
     case 'holder': { const R = holderRadius(w, dims); return [cyl(R, 28, 'x', 0, 0, 0), cyl(3.5, 8, 'z', 0, 0, R + 2)]; }
     case 'end_cap': return [cyl(w / 2 + 1.5, dims.endCapLen, 'x', dims.endCapLen / 2, 0, 0)];
+    case 'end_cap_rect': return [box(dims.endCapLen, w + 2, d + 2, dims.endCapLen / 2, 0)];
     // kuglasti zglob na uglu: kugla nešto šira od cevi (cevi se sastaju u njenom središtu)
     case 'ball': return [sph((w / 2) * 1.3, 0, 0)];
     // koleno: krak ka dolazećoj cevi (−x) i savijen deo na uglu; drugi krak crta sledeće polje
     case 'elbow': return [cyl(w / 2 + 2, dims.elbowArm, 'x', -dims.elbowArm / 2, 0, 0), sph(w / 2 + 2, 0, 0)];
-    case 'connector': {
+    case 'connector':
+    case 'connector_rect': {
       // kao na fotografiji: uži vrat sa prstenom na vrhu stuba i ravna ploča pod rukohvatom
       const t = Math.min(dims.connectorPlateT, dims.connectorH);
       const neckH = Math.max(1, dims.connectorH - t);
       const shoulder = Math.min(5, neckH);
+      if (kind === 'connector_rect') return [
+        box(w, shoulder, w, 0, shoulder / 2),
+        box(dims.connectorNeckD, neckH, dims.connectorNeckD, 0, neckH / 2),
+        box(dims.connectorPlateLen, t, Math.max(10, d), 0, dims.connectorH - t / 2),
+      ];
       return [
         cyl(w / 2 - 0.5, shoulder, 'y', 0, shoulder / 2),
         cyl(Math.max(2, dims.connectorNeckD / 2), neckH, 'y', 0, neckH / 2),
@@ -413,6 +422,32 @@ function resolveShape(m: ShapeInput, hwd?: HwDims): Resolved {
   }
 
   // komadni delovi (naziv često sadrži i meru profila na koji idu, zato se proveravaju pre profila)
+  // Stezaljka se oslanja na stub u x = 0, a čeljusti obuhvataju staklo sa obe strane ravni z = 0.
+  // Mere su početne mere za crtanje, podesive u cenovniku; širina otvora se usklađuje sa izabranim staklom.
+  if (has(/stezaljk|drzac stakla/) && m.unit !== 'm2') {
+    const cw = posOv('clampW') ?? 40; const ch = posOv('clampH') ?? 50;
+    const gap = posOv('glassT') ?? 12.76; const jaw = posOv('jawT') ?? 6;
+    const mount = Math.min(10, cw / 3);
+    const solids: Solid[] = [box(mount, ch * 0.5, gap + 2 * jaw, mount / 2, 0)];
+    for (const side of [-1, 1]) {
+      solids.push(box(cw - mount, ch, jaw, (cw + mount) / 2, 0, side * (gap + jaw) / 2));
+      solids.push(cyl(3, 2, 'z', cw * 0.65, 0, side * (gap / 2 + jaw + 1)));
+    }
+    return { shape: { type: 'piece', group: 'okov', solids }, fields: [
+      { key: 'clampW', label: 'Širina držača', value: cw }, { key: 'clampH', label: 'Visina držača', value: ch },
+      { key: 'glassT', label: 'Otvor za staklo', value: gap }, { key: 'jawT', label: 'Debljina čeljusti', value: jaw },
+    ] };
+  }
+  // Kvadratni okov ima ravnu bazu i vrat; mere profila u nazivu nisu dimenzije generičkog L nosača.
+  if (isTerraceMaterial(m) && m.unit !== 'm' && dims.length >= 2) {
+    if (has(/veza stub/) && has(/rukohvat/)) {
+      const railDims = dimsFromName(m.name.split(/rukohvat/i)[1] ?? '');
+      return plain(piece('okov', 'connector_rect', w, Math.max(...railDims.slice(0, 2), d), hwd));
+    }
+    if (has(/flans/) && !has(/mask|zid/)) return plain(piece('stope', 'flange_rect', w, d, hwd));
+    if (has(/kapa stuba/)) return plain(piece('kape', 'post_cap_rect', w, d, hwd));
+    if (has(/zavrsetak (rukohvat|cevi|prec)/)) return plain(piece('okov', 'end_cap_rect', w, d, hwd));
+  }
   // okov ograda za terase sa prečnikom (Ø) u nazivu: pravi oblici flanše, prstena prečke, veze stub–rukohvat i kapice na kraju cevi
   const dias = diasOfName(m.name);
   if (dias.length) {

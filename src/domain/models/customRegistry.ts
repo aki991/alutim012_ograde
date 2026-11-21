@@ -13,6 +13,7 @@ import { cutGuidesAtDividers, planReinforce, unbakeReinforce, withReinforce, typ
 import { cornerRods, endOverhangOf, hwRoleOf, layoutPosts, layoutRods, rodMetrics, trimFreeEnds, screwCounts, screwMaterial } from './terraceHardware';
 import type { SpecPart } from './spec';
 import type { FenceModelId, Material } from './types';
+import { builtinToCustom } from './fromBuiltin';
 
 /**
  * Ručno nacrtani modeli u katalogu: svaki nacrtani model dobija zapis u FENCE_MODELS (stil „custom“), pa ga editor,
@@ -20,6 +21,9 @@ import type { FenceModelId, Material } from './types';
  */
 const REG = new Map<string, CustomModel>();
 let MATERIALS: Material[] = [];
+const TERRACE_SHARED = new Set<string>();
+export const terraceVariantId = (sourceId: string): FenceModelId => `cm_terrace_${sourceId}`;
+export const terraceVariants = (): CustomModel[] => [...REG.values()].filter((m) => m.terraceSourceId && TERRACE_SHARED.has(m.terraceSourceId) && !HIDDEN.has(m.terraceSourceId));
 
 const defOf = (m: CustomModel): FenceModelDef => ({
   id: m.id as FenceModelId, name: m.name || 'Model bez naziva', shortName: m.name || 'Model bez naziva',
@@ -28,16 +32,26 @@ const defOf = (m: CustomModel): FenceModelDef => ({
   defaultSize: { widthMm: m.widthMm, heightMm: m.heightMm, clearWidth: true }, defaultGateHeightMm: m.heightMm, postExtraMm: m.kind === 'terrace' ? 0 : 50, // stubovi su 50 mm viši od platna (kao uz kapiju)
   materialId: m.parts?.[0]?.materialId ?? '', parts: { main: m.name },
   ...(m.kind === 'terrace' ? { terrace: true } : {}),
+  ...(m.terraceSourceId ? { terraceSourceId: m.terraceSourceId } : {}),
 });
 
-export function registerCustomModels(models: CustomModel[] | undefined, materials: Material[]): void {
+export function registerCustomModels(models: CustomModel[] | undefined, materials: Material[], terraceIds?: string[]): void {
   const all = FENCE_MODELS as Record<string, FenceModelDef>;
   for (const id of REG.keys()) delete all[id];
   REG.clear();
   MATERIALS = materials;
+  if (terraceIds) { TERRACE_SHARED.clear(); terraceIds.forEach((id) => TERRACE_SHARED.add(id)); }
   // dvokrilna kapija nacrtana kao dva krila: u projektu važi crtež jednog krila (okov kapije crta projekat)
   // ojačanje ugrađeno u crtež kapije (cevi i presečene prečke) se uklanja: projekat ga računa za stvarnu širinu krila
   for (const m of models ?? []) { if (m.derivedFrom) continue; const r = unbakeReinforce(m.gate?.leaves || m.gate?.hwDrawn ? leafOfPair(m, materials) : m); REG.set(m.id, r); all[m.id] = defOf(r); }
+  // Varijante ostaju u registru i kad se odštikliraju, da postojeći projekti zadrže svoj crtež.
+  const yard = [...FENCE_MODEL_LIST.filter((d) => !d.terrace), ...[...REG.values()].filter((m) => m.kind === 'fence')];
+  for (const source of yard) {
+    const id = terraceVariantId(source.id);
+    const base = REG.get(source.id) ?? builtinToCustom(source.id as FenceModelId, materials, id);
+    const variant: CustomModel = { ...base, id, name: source.name, kind: 'terrace', terraceSourceId: source.id, replaces: undefined, derivedFrom: undefined };
+    REG.set(id, variant); all[id] = defOf(variant);
+  }
   // kapije sa ramom: osnovni crtež + ram od izabrane cevi (osnovni model koji ne postoji više: izvedeni se ne registruje)
   for (const m of models ?? []) {
     if (!m.derivedFrom) continue;
@@ -81,7 +95,8 @@ export const allFenceModels = (keep?: string, family?: 'terrace' | 'yard'): Fenc
   // samo modeli sa stranice „Modeli ograda“: obrisani modeli i kapije se ne nude (ni kad ih projekat još koristi); nov ručno nacrtan model se dodaje sam
   // obrisani originali iz kataloga (REMOVED_MODELS) ne postoje; njihovi dorađeni crteži su obični nacrtani modeli
   const catalog = FENCE_MODEL_LIST.filter((d) => !HIDDEN.has(d.id) && !REMOVED_MODELS.has(d.id)).map((d) => { const r = replacementOf(d.id); return r ? all[r.id] : d; });
-  return [...catalog, ...[...REG.values()].filter((m) => (!m.replaces || REMOVED_MODELS.has(m.replaces)) && m.kind !== 'gate').map((m) => all[m.id])].filter(sameFamily);
+  return [...catalog, ...[...REG.values()].filter((m) => (!m.replaces || REMOVED_MODELS.has(m.replaces)) && m.kind !== 'gate'
+    && (!m.terraceSourceId || (TERRACE_SHARED.has(m.terraceSourceId) && !HIDDEN.has(m.terraceSourceId)))).map((m) => all[m.id])].filter(sameFamily);
 };
 
 /** Delovi nacrtanog modela razvučeni na polje zadate širine i visine, u boji elementa (hex ili RAL ključ). */

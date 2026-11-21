@@ -1,5 +1,6 @@
 import { endsLabel } from '../../domain/pricing/cutEnds';
 import { Scissors } from 'lucide-react';
+import { GlassCutSection } from './GlassCutSection';
 import { useMemo, useState } from 'react';
 import type { Customer, Material, Project } from '../../domain/models/types';
 import { buildCuttingList, cutOptions, groupBars } from '../../domain/pricing/cutting';
@@ -37,7 +38,7 @@ export function CutlistSection({ project, customer, materials }: { project: Proj
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {t.pieces > 0 && <ConfirmCuttingButton project={project} materials={materials} />}
-          <button className="btn btn-primary" data-testid="cutlist-pdf" disabled={t.pieces === 0} onClick={() => setOpen(true)}><Scissors size={17} />Krojna lista PDF</button>
+          <button className="btn btn-primary" data-testid="cutlist-pdf" disabled={t.pieces === 0 && !list.glass.length} onClick={() => setOpen(true)}><Scissors size={17} />Krojna lista PDF</button>
         </div>
       </div>
 
@@ -50,7 +51,7 @@ export function CutlistSection({ project, customer, materials }: { project: Proj
       {t.pieces > 0 && <OffcutsPanel project={project} materials={materials} stock={settings.stock ?? []} profiles={list.profiles.map((p) => p.profile)} onChange={(offcuts) => patchProject(project.id, { offcuts })} />}
 
       {t.pieces === 0 ? (
-        <p className="text-sm text-muted" data-testid="cutlist-empty">Projekat nema šipkastih profila za sečenje. Dodajte ogradu ili kapiju.</p>
+        <p className="text-sm text-muted" data-testid="cutlist-empty">{list.glass.length ? 'Mere stakla za sečenje su prikazane ispod.' : 'Projekat nema šipkastih profila za sečenje. Dodajte ogradu ili kapiju.'}</p>
       ) : (
         <>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4" data-testid="cutlist-totals">
@@ -104,6 +105,7 @@ export function CutlistSection({ project, customer, materials }: { project: Proj
           <ul className="list-disc pl-5 mt-4 space-y-0.5 text-[12.5px] text-muted">{list.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
         </>
       )}
+      <GlassCutSection pieces={list.glass} />
       <FinishingSummary value={finishing} testId="cutlist-finishing" />
       {open && <PdfPreviewModal kind="cutlist" project={project} customer={customer} materials={materials} settings={settings} onClose={() => setOpen(false)} />}
     </section>

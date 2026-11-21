@@ -1,5 +1,5 @@
 import { colorHex } from './catalog';
-import { hwDimsOf, materialOwnColor, materialShape, materialShapeWith, sectionFace, solidsBounds, type HwDims, type MatShape } from './materialShape';
+import { hwDimsOf, materialOwnColor, materialShape, materialShapeWith, pieceSolids, sectionFace, solidsBounds, type HwDims, type MatShape } from './materialShape';
 import { screwCounts, screwMaterial } from './terraceHardware';
 import type { Material } from './types';
 
@@ -85,6 +85,8 @@ export interface CustomPart {
   hwPick?: Partial<Record<HwKind, string>>;
   /** okov koji je aplikacija sama postavila: vrsta i deo na koji naleže (stub / rukohvat / prečka) i drugi deo (stub za prsten prečke) */
   hw?: { kind: HwKind; on: string; at?: string };
+  /** Držač ili staklo koje pravi opcija „Staklena ograda“ između dva susedna stuba. */
+  glazing?: { kind: 'clamp' | 'pane'; left: string; right: string };
 }
 
 /**
@@ -102,6 +104,8 @@ export interface PartFit {
 
 export interface CustomModel {
   id: string;
+  /** Izvorni dvorišni model zajedničke terasne varijante (varijanta se izvodi iz registra). */
+  terraceSourceId?: string;
   /** kapija koja još nije sačuvana („Sačuvaj tip kapije“): ne nudi se u spiskovima, a briše se kad se crtanje zatvori bez čuvanja */
   draft?: boolean;
   /** izvedeni model kapije sa ramom (nevidljiv u spiskovima): sastavlja se iz osnovnog modela `derivedFrom` i cevi `frameMaterialId` */
@@ -143,11 +147,21 @@ export interface CustomModel {
    * (podrazumevano 1000), a prvi i poslednji stub su na `leftMm` / `rightMm` od krajeva polja (bez vrednosti: kao na crtežu)
    */
   postLayout?: PostLayout;
+  /** Automatski držači stakla; uz glassMaterialId popunjavaju se i staklena polja. */
+  glassRailing?: GlassRailingSpec;
   /** samo ograda za terasu: spoj prečki i rukohvata na uglu — kuglasti zglob (cevi se sastaju u kugli) ili koleno (cevi se skraćuju za krak kolena); bez vrednosti zglob */
   cornerJoint?: 'ball' | 'elbow';
 }
 
 export interface PostLayout { spacingMm?: number; leftMm?: number; rightMm?: number }
+
+export interface GlassRailingSpec {
+  clampMaterialId: string;
+  glassMaterialId?: string;
+  bottomMm?: number;
+  topMm?: number;
+  insetMm?: number;
+}
 
 export const DEFAULT_POST_SPACING_MM = 1000;
 
@@ -335,7 +349,7 @@ export function guideIdsOf(parts: CustomPart[], materials: Material[]): Set<stri
   return ids;
 }
 
-export function resolveParts(model: Pick<CustomModel, 'parts' | 'color'> & { hw?: Partial<HwDims> }, materials: Material[]): ResolvedPart[] {
+export function resolveParts(model: Pick<CustomModel, 'parts' | 'color'> & { hw?: Partial<HwDims>; glassRailing?: GlassRailingSpec }, materials: Material[]): ResolvedPart[] {
   const byId = new Map(materials.map((m) => [m.id, m]));
   const dims = model.hw ? hwDimsOf(model.hw) : null;
   const guideIds = guideIdsOf(model.parts, materials);
@@ -344,7 +358,21 @@ export function resolveParts(model: Pick<CustomModel, 'parts' | 'color'> & { hw?
   const all = ordered.flatMap((part) => {
     const material = byId.get(part.materialId);
     // okov koji je aplikacija sama postavila se crta prema merama modela („Mere ograde“)
-    const shape = material ? (part.hw && dims ? materialShapeWith(material, dims) : materialShape(material)) : materialShape({ sku: '', name: part.heightMm ? 'ploča' : 'profil 40x20', unit: part.heightMm ? 'm2' : 'm', category: 'ostalo' });
+    let shape = material ? (part.hw && dims ? materialShapeWith(material, dims) : materialShape(material)) : materialShape({ sku: '', name: part.heightMm ? 'ploča' : 'profil 40x20', unit: part.heightMm ? 'm2' : 'm', category: 'ostalo' });
+    if (part.glazing?.kind === 'clamp' && material && model.glassRailing?.glassMaterialId) {
+      const glass = byId.get(model.glassRailing.glassMaterialId);
+      const sheet = glass && materialShape(glass);
+      if (sheet?.type === 'sheet') shape = materialShape({ ...material, dims: { ...material.dims, glassT: sheet.thick } });
+    }
+    if (part.hw?.kind === 'railCap' && shape.type === 'piece') {
+      const parent = model.parts.find((p) => p.id === part.hw!.on);
+      const parentMat = parent && byId.get(parent.materialId);
+      const rail = parentMat && materialShape(parentMat);
+      if (parent && rail?.type === 'linear' && !rail.section.round) {
+        const e = sectionFace(rail.section, partAngle(parent));
+        shape = { ...shape, solids: pieceSolids('end_cap_rect', e.face, e.depth, dims ?? hwDimsOf()) };
+      }
+    }
     const hex = material ? partHex(material, model, part) : part.color ? colorHex(part.color) : '#94a3b8';
     // veza stub–rukohvat na stepeništu: donji deo (rozeta i vrat) je ravan na stubu, a samo ploča pod rukohvatom prati nagib
     if (part.hw?.kind === 'connector' && part.unshearTan && shape.type === 'piece' && shape.solids.length > 1) {

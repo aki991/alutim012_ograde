@@ -17,6 +17,7 @@ import { gateCutRows } from '../gates/production';
 import { resolveSliding, slidingBom, variantTitle } from '../gates/slidingAssembly';
 import { leafHeightOf, slidingH } from '../gates/slidingLayout';
 import { isSimulationMaterial } from '../models/productionPosts';
+import { buildGlassCutPieces, glassAnglesLabel, glassEdgesLabel } from './glassCutting';
 
 export interface CutRow {
   element: string;
@@ -48,6 +49,10 @@ export interface CutRow {
 export function buildCutList(project: Project, specs?: ModelSpecs, materials?: Material[]): CutRow[] {
   const layout = computeLayout(project);
   const rows: CutRow[] = [];
+  if (materials) for (const p of buildGlassCutPieces(project, materials)) rows.push({
+    element: itemLabel(project.items, p.index), index: p.index, glass: true, part: `Staklo ${p.id}`, profile: p.material,
+    lengthMm: p.edgesMm[0], qty: 1, note: `${glassEdgesLabel(p)} · uglovi ${glassAnglesLabel(p)}`,
+  });
   for (const li of layout.items) {
     const it = li.item;
     if (it.kind === 'opening') continue;

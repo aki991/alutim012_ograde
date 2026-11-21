@@ -176,6 +176,25 @@ export const TERRACE_MATERIALS: Material[] = [
   kom('J120BG', 'Juliet set J120, montaža na štok', 'set'),
 ];
 
+/** Komplet za crtanje staklene ograde sa kvadratnim stubovima i ravnim rukohvatom; staklo se bira iz postojećeg cenovnika. */
+const SQUARE_GLASS_SKUS = new Set(['P-1057', 'P-1633', 'P-1072', 'P-1634', 'AK-5126', 'AK-5125', 'AK-5105', 'AK-5205', 'AK-5200', 'AK-5141', 'AK-5107', 'AK-5134', 'AK-5104', 'AK-5111', 'AK-5165', 'AK-5129', 'BTS-VT75100', 'BTS-VP4219']);
+export const SQUARE_GLASS_MATERIALS = TERRACE_MATERIALS.filter((m) => SQUARE_GLASS_SKUS.has(m.sku));
+
+/** Dopunjava samo ovaj komplet, po šifri ili ID-u; postojeće mere, nazivi i cene ostaju sačuvani. */
+export function withSquareGlassMaterials(existing: Material[]): Material[] | null {
+  let changed = false;
+  const ids = new Set(SQUARE_GLASS_MATERIALS.map((m) => m.id));
+  const list = existing.map((m) => {
+    if ((!ids.has(m.id) && !SQUARE_GLASS_SKUS.has(m.sku.trim().toUpperCase())) || m.terrace === true) return m;
+    changed = true;
+    return { ...m, terrace: true };
+  });
+  const haveIds = new Set(list.map((m) => m.id));
+  const haveSkus = new Set(list.map((m) => m.sku.trim().toUpperCase()));
+  const add = SQUARE_GLASS_MATERIALS.filter((m) => !haveIds.has(m.id) && !haveSkus.has(m.sku.toUpperCase())).map((m) => ({ ...m }));
+  return changed || add.length ? [...list, ...add] : null;
+}
+
 /**
  * Stari nazivi BTS materijala modela RL10 (bez mera, pa ih crtanje nije prepoznavalo kao okrugle cevi): zamenjuju se jednom
  * nazivom sa merama, samo ako korisnik naziv nije menjao.

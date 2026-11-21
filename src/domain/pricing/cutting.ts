@@ -10,6 +10,7 @@ import { FILL_PROFILES, GUIDE_PROFILES, buildLouver08Sheet, louver08Panels } fro
 import { buildRail04Sheet, isRail04, rail04Posts, rail04Runs } from './railSpec';
 import { postMaterialLine } from '../models/postTemplates';
 import { isProductionPost, isSimulationMaterial } from '../models/productionPosts';
+import { buildGlassCutPieces, type GlassCutPiece } from './glassCutting';
 
 /** Krojna lista: raspored komada profila na nabavne šipke (širina reza testere uračunata), sa ostatkom po šipki. */
 
@@ -110,6 +111,7 @@ export interface ProfileCutPlan {
 }
 
 export interface CuttingList {
+  glass: GlassCutPiece[];
   stockMm: number;
   kerfMm: number;
   profiles: ProfileCutPlan[];
@@ -343,6 +345,8 @@ function collectPieces(project: Project, specs: ModelSpecs | undefined, material
 
 export function buildCuttingList(project: Project, specs: ModelSpecs | undefined, materials: Material[], opts: CutOptions = { stockMm: DEFAULT_STOCK_MM, kerfMm: DEFAULT_KERF_MM }): CuttingList {
   const { groups, positions } = collectPieces(project, specs, materials, opts.scope, opts.stockMm);
+  const glass = buildGlassCutPieces(scopedProject(project, opts.scope), materials);
+  for (const pane of glass) if (!positions.some((p) => p.key === pane.pos)) positions.push({ key: pane.pos, label: itemLabel(project.items, pane.index), detail: describeItem(project, pane.index) });
   // ostaci koje je poslovođa zadao za ovaj projekat, po profilu (nazivu materijala kao u krojnoj listi)
   const offcutsOf = new Map<string, number[]>();
   for (const o of project.offcuts ?? []) {
@@ -423,6 +427,7 @@ export function buildCuttingList(project: Project, specs: ModelSpecs | undefined
     stockMm: opts.stockMm,
     kerfMm: opts.kerfMm,
     profiles,
+    glass,
     positions,
     totals: {
       profiles: profiles.length,

@@ -3,7 +3,7 @@ import { create } from 'zustand';
 import { isBuiltinMaterial } from '../data/materials';
 import { DEFAULT_CARRIAGES, DEFAULT_PLATES, DEFAULT_RAILS, missingModelMaterials } from '../data/modelMaterials';
 import { mergeTerraceRuns, withRunPosts } from '../domain/geometry/runPosts';
-import { withTerraceMaterials } from '../data/terraceMaterials';
+import { withSquareGlassMaterials, withTerraceMaterials } from '../data/terraceMaterials';
 import { createSeedData } from '../data/seed';
 import { loadAll, saveAll, wipeAll } from '../db';
 import {
@@ -274,7 +274,10 @@ function mergeById<T extends { id: string }>(cur: T[], upsert: T[], remove: stri
 }
 
 /** početni podaci nove instalacije: bez probnih projekata (projekti dolaze iz baze ili se prave ručno) */
-const freshSeed = () => ({ ...createSeedData(), projects: [] as Project[] });
+const freshSeed = () => {
+  const data = createSeedData();
+  return { ...data, materials: withSquareGlassMaterials(data.materials) ?? data.materials, projects: [] as Project[] };
+};
 
 const seed = createSeedData();
 
@@ -423,6 +426,15 @@ export const useAppStore = create<AppState>((set, get) => {
               if (next) { materials = next; terraceAdded = true; } else localStorage.setItem(TERRACE_KEY, '1');
             }
           } catch { /* bez localStorage-a: preskače se */ }
+          // Staklena ograda sa kvadratnim stubovima: dopuna i za cenovnike koji su već prošli uvoz terasnih materijala.
+          const SQUARE_GLASS_KEY = 'alutim.squareGlassMaterialsV1';
+          let squareGlassAdded = false;
+          try {
+            if (localStorage.getItem(SQUARE_GLASS_KEY) !== '1') {
+              const next = withSquareGlassMaterials(materials);
+              if (next) { materials = next; squareGlassAdded = true; } else localStorage.setItem(SQUARE_GLASS_KEY, '1');
+            }
+          } catch { /* bez localStorage-a: preskače se */ }
           const massMaterials = materials.map(withMaterialUnits);
           const massChanged = massMaterials.some((m, i) => m !== materials[i]);
           materials = massMaterials;
@@ -435,7 +447,7 @@ export const useAppStore = create<AppState>((set, get) => {
           // kapije koje nikad nisu sačuvane (zatvoreno crtanje, osvežena stranica) se ne zadržavaju
           if (settings.customModels?.some((m) => m.draft)) settings = { ...settings, customModels: settings.customModels.filter((m) => !m.draft) };
           // nacrtani modeli moraju biti u katalogu pre nego što se projekti učitaju
-          registerCustomModels(settings.customModels, materials);
+          registerCustomModels(settings.customModels, materials, settings.terraceModelIds ?? []);
           setHiddenModels(settings.hiddenModels);
           // jednokratno (pre povezivanja sa bazom): brišu se svi ranije napravljeni projekti na ovom uređaju
           let wiped = false;
@@ -450,7 +462,7 @@ export const useAppStore = create<AppState>((set, get) => {
               localStorage.setItem(PROJECTS_WIPED_KEY, '1');
             } catch { /* neuspeh: pokušaće se opet pri sledećem pokretanju */ }
           }
-          if (backfilled || renamed || carriagesAdded || terraceAdded || railAdded || remapped || massChanged) {
+          if (backfilled || renamed || carriagesAdded || terraceAdded || squareGlassAdded || railAdded || remapped || massChanged) {
             // autosave počinje tek posle init-a, pa se dodati materijali upisuju odmah; oznaka se postavlja tek kad je upis uspeo
             try {
               await saveAll({ projects: get().projects, customers: get().customers, materials, settings });
@@ -458,6 +470,7 @@ export const useAppStore = create<AppState>((set, get) => {
               if (renamed) localStorage.setItem(NAMES_KEY, '1');
               if (carriagesAdded) localStorage.setItem(CARRIAGES_KEY, '1');
               if (terraceAdded) localStorage.setItem(TERRACE_KEY, '1');
+              if (squareGlassAdded) localStorage.setItem(SQUARE_GLASS_KEY, '1');
               for (const key of extraAdded) localStorage.setItem(key, '1');
             } catch { /* neuspeh ne sme da sakrije učitane podatke; pokušaće se opet pri sledećem pokretanju */ }
           }
@@ -500,7 +513,7 @@ export const useAppStore = create<AppState>((set, get) => {
         }
         // modeli iz baze se registruju PRE provere projekata: inače bi projekat koji koristi nacrtani model (koji ovaj uređaj još nema) bio
         // vraćen na podrazumevani model, a prikaz bi pao na nepoznatom modelu i sinhronizacija bi stala sa greškom
-        if (patch.settings || out.materials) registerCustomModels((out.settings ?? s.settings).customModels, out.materials ?? s.materials);
+        if (patch.settings || out.materials) registerCustomModels((out.settings ?? s.settings).customModels, out.materials ?? s.materials, (out.settings ?? s.settings).terraceModelIds ?? []);
         if (patch.projects) {
           const up = patch.projects.upsert.filter((p) => !p.modelDraft).map(migrateProject);
           const projects = mergeById(s.projects, up, patch.projects.remove);
@@ -1072,7 +1085,7 @@ export const useAppStore = create<AppState>((set, get) => {
 
 // katalog prati nacrtane modele i cenovnik (pretplata na nivou modula se izvršava pre osvežavanja komponenti)
 useAppStore.subscribe((s, prev) => {
-  if (s.settings.customModels !== prev.settings.customModels || s.materials !== prev.materials) registerCustomModels(s.settings.customModels, s.materials);
+  if (s.settings.customModels !== prev.settings.customModels || s.settings.terraceModelIds !== prev.settings.terraceModelIds || s.materials !== prev.materials) registerCustomModels(s.settings.customModels, s.materials, s.settings.terraceModelIds ?? []);
   if (s.settings.hiddenModels !== prev.settings.hiddenModels) setHiddenModels(s.settings.hiddenModels);
   // stubovi ograda za terase po ravnoj liniji ograde: iznova kad se promeni crtež modela, cenovnik ili se podaci učitaju
   if (s.settings.customModels !== prev.settings.customModels || s.materials !== prev.materials || s.projects !== prev.projects || (s.ready && !prev.ready)) {

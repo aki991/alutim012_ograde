@@ -9,6 +9,8 @@ import { BAR_VIEW_H, barSvg, positionColors } from './cutlistSvg';
 import { downloadBlob, safeFilename } from './exports';
 import { getPdfMake, renderBlob } from './pdf';
 import { AMBER, BRAND_DARK, BRAND_RED, docHeader, loadHeaderLogos, toDataUrl } from './pdfHeader';
+import { glassAnglesLabel, glassEdgesLabel, glassMm } from '../domain/pricing/glassCutting';
+import { glassCutSvg } from './glassCutSvg';
 
 export { AMBER, BRAND_DARK, BRAND_RED, docHeader, toDataUrl };
 
@@ -145,6 +147,21 @@ export async function buildCutlistPdfBlob(project: Project, customer: Customer |
     };
   });
 
+  const glassSections: any[] = [];
+  if (cl.glass?.length) {
+    glassSections.push({ text: 'STAKLO — MERE ZA SEČENJE', fontSize: 12, bold: true, margin: [0, 12, 0, 5] },
+      { text: 'Pogled spreda. A–D su unutrašnji uglovi; AB–DA su stvarne dužine ivica. Svaki red predstavlja jednu tablu.', fontSize: 8.5, color: MUTED, margin: [0, 0, 0, 5] });
+    for (const p of cl.glass) glassSections.push({ unbreakable: true, margin: [0, 0, 0, 6], table: {
+      widths: [200, '*'], body: [[{ image: await svgToPng(glassCutSvg(p), 1020, 570), width: 200 }, { stack: [
+        { text: `${p.id} · Pozicija ${p.pos} · 1 kom`, bold: true, fontSize: 11, margin: [0, 6, 0, 4] },
+        { text: `${p.sku} · ${p.material} · debljina ${glassMm(p.thicknessMm, 2)} mm`, fontSize: 9, margin: [0, 0, 0, 5] },
+        { text: glassEdgesLabel(p), fontSize: 9, margin: [0, 0, 0, 5] },
+        { text: glassAnglesLabel(p), fontSize: 9, margin: [0, 0, 0, 5] },
+        { text: `Nagib ${glassMm(p.slopeDeg)}° · pravougaonik za iskroj ${glassMm(p.horizontalMm)} × ${glassMm(p.heightMm)} mm`, fontSize: 8.5, color: MUTED },
+      ] }]],
+    }, layout: { hLineColor: () => LINE, vLineColor: () => LINE, hLineWidth: () => 0.5, vLineWidth: () => 0.5 } });
+  }
+
   const def: any = {
     pageSize: 'A4',
     pageOrientation: 'landscape',
@@ -166,6 +183,7 @@ export async function buildCutlistPdfBlob(project: Project, customer: Customer |
       { text: 'Pozicije', fontSize: 11.5, bold: true, margin: [0, 2, 0, 4] },
       legend,
       ...sections,
+      ...glassSections,
       {
         margin: [0, 12, 0, 0],
         unbreakable: true,

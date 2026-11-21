@@ -84,7 +84,7 @@ export const isSpacer = (it: LayoutItem | undefined): boolean => it?.kind === 'o
 
 /** Prazan otvor je samo razmak između ograda: stub koji graniči samo sa praznim otvorima (ili krajem) se ne postavlja. */
 /** nacrtani model ograde za terasu: stubove crta sam model, pa uz njega nema zasebnog stuba projekta (ugrađeni terasni modeli ih traže) */
-const ownPostsModel = (id: string): boolean => { const d = (FENCE_MODELS as Record<string, { terrace?: boolean; style?: string } | undefined>)[id]; return Boolean(d?.terrace) && d?.style === 'custom'; };
+const ownPostsModel = (id: string): boolean => { const d = (FENCE_MODELS as Record<string, { terrace?: boolean; style?: string; terraceSourceId?: string } | undefined>)[id]; return Boolean(d?.terrace) && d?.style === 'custom' && !d.terraceSourceId; };
 
 export function isHiddenPost(items: ReadonlyArray<LayoutItem>, index: number): boolean {
   const adj = [items[index - 1], items[index]].filter((x): x is LayoutItem => Boolean(x));
