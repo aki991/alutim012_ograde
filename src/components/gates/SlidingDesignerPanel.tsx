@@ -1,3 +1,4 @@
+import { ChoiceGroup } from '../ui/ChoiceGroup';
 import { useMemo } from 'react';
 import { AlertTriangle, CheckCircle2, Clock, Plus } from 'lucide-react';
 import { resolveSliding, slidingBom, type CheckLevel, type SlidingActuation, type SlidingSpec, type SlidingSupport } from '../../domain/gates/slidingAssembly';
@@ -11,13 +12,9 @@ const LEVEL_ICON = { ok: CheckCircle2, warn: AlertTriangle, error: AlertTriangle
 const fmt = (n: number) => `${Math.round(n).toLocaleString('sr-RS')} mm`;
 
 function Seg<T extends string>({ value, options, onChange, testId }: { value: T; options: [T, string][]; onChange: (v: T) => void; testId: string }) {
-  return (
-    <span className="grid rounded-lg border border-line overflow-hidden" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }} data-testid={testId}>
-      {options.map(([v, l]) => (
-        <button key={v} type="button" data-testid={`${testId}-${v}`} aria-pressed={value === v} className={`py-1.5 text-[12.5px] font-semibold ${value === v ? 'bg-brand-black text-white' : 'bg-white hover:bg-slate-50'}`} onClick={() => onChange(v)}>{l}</button>
-      ))}
-    </span>
-  );
+  const label = testId === 'sl-support' ? 'Oslonac kapije' : testId === 'sl-actuation' ? 'Pogon kapije' : 'Smer otvaranja';
+  return <ChoiceGroup label={label} value={value} onChange={onChange} testId={testId} className="w-full"
+    options={options.map(([v, label]) => ({ value: v, label, testId: `${testId}-${v}` }))} />;
 }
 
 /** Dugmad za postavljanje kliznog okova na kapiju: postavljen deo se bira, nepostavljen se postavlja klikom. */

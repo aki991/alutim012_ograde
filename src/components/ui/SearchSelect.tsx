@@ -1,20 +1,21 @@
 import { Check, ChevronDown, Search } from 'lucide-react';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { normalizeSearch as norm } from '../../utils/search';
 
-export interface SearchOption { value: string; label: string }
+export interface SearchOption { value: string; label: string; content?: ReactNode; testId?: string; sku?: string }
 export interface SearchGroup { label?: string; items: SearchOption[] }
-
-/** mala slova bez dijakritika, „×“ i „x“ su isto (da „40x20“ nađe „40×20×1“) */
-const norm = (s: string): string => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'dj').replace(/×/g, 'x').replace(/,/g, '.');
 
 /**
  * Izbor sa pretragom: klik otvara listu sa poljem za kucanje, pretraga traži sve reči u nazivu (i šifri). Strelice biraju,
  * Enter potvrđuje, Esc zatvara. Lista je u sloju iznad stranice (ne seče je panel sa skrolom ni dijalog).
  */
-export function SearchSelect({ value, onChange, groups, placeholder = '— izaberite —', testId, searchPlaceholder = 'Kucajte za pretragu…' }: {
+export function SearchSelect({ value, onChange, groups, placeholder = '— izaberite —', testId, searchPlaceholder = 'Kucajte za pretragu…',
+  ariaLabel, searchLabel = 'Pretraga', disabled, allowEmpty = true, footer, leading, className = '', id }: {
   value: string; onChange: (v: string) => void; groups: SearchGroup[]; placeholder?: string; testId?: string; searchPlaceholder?: string;
+  ariaLabel?: string; searchLabel?: string; disabled?: boolean; allowEmpty?: boolean; footer?: ReactNode; leading?: ReactNode; className?: string; id?: string;
 }) {
+  const listId = useId();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
@@ -29,7 +30,7 @@ export function SearchSelect({ value, onChange, groups, placeholder = '— izabe
     return groups.map((g) => ({ ...g, items: words.length ? g.items.filter((o) => { const t = norm(o.label); return words.every((w) => t.includes(w)); }) : g.items })).filter((g) => g.items.length);
   }, [groups, query]);
   // prvi red je „bez izbora“ (samo dok se ne kuca pretraga)
-  const flat = useMemo<SearchOption[]>(() => [...(query.trim() ? [] : [{ value: '', label: placeholder }]), ...filtered.flatMap((g) => g.items)], [filtered, query, placeholder]);
+  const flat = useMemo<SearchOption[]>(() => [...(query.trim() || !allowEmpty ? [] : [{ value: '', label: placeholder }]), ...filtered.flatMap((g) => g.items)], [filtered, query, placeholder, allowEmpty]);
 
   const place = () => {
     const r = trigger.current?.getBoundingClientRect();
@@ -61,6 +62,7 @@ export function SearchSelect({ value, onChange, groups, placeholder = '— izabe
     return () => { document.removeEventListener('mousedown', onDown); window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); };
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setActive(0); }, [query]);
+  useEffect(() => { setActive((a) => Math.max(0, Math.min(a, flat.length - 1))); }, [flat.length]);
   useEffect(() => { listRef.current?.querySelector<HTMLElement>('[data-active="true"]')?.scrollIntoView({ block: 'nearest' }); }, [active, open]);
 
   const onKey = (e: React.KeyboardEvent) => {
@@ -77,36 +79,42 @@ export function SearchSelect({ value, onChange, groups, placeholder = '— izabe
     const i = idx;
     const on = o.value === value;
     return (
-      <div key={`${o.value}-${i}`} role="option" aria-selected={on} data-active={i === active} data-testid={testId ? `${testId}-option` : undefined}
+      <div id={`${listId}-${i}`} key={`${o.value}-${i}`} role="option" aria-selected={on} data-id={o.value} data-sku={o.sku} data-active={i === active} data-testid={o.testId ?? (testId ? `${testId}-option` : undefined)}
         className={`flex items-center gap-2 px-3 py-1.5 text-[14px] cursor-pointer ${i === active ? 'bg-primary/10' : ''} ${o.value === '' ? 'text-muted' : ''}`}
         onMouseEnter={() => setActive(i)} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(o.value)}>
-        <span className="flex-1 min-w-0">{o.label}</span>{on && <Check size={14} className="text-primary shrink-0" />}
+        <span className="flex-1 min-w-0 break-words">{o.content ?? o.label}</span>{on && <Check size={14} className="text-primary shrink-0" />}
       </div>
     );
   };
 
   return (
     <>
-      <button ref={trigger} type="button" className="input flex items-center justify-between gap-2 text-left" data-testid={testId} role="combobox" aria-expanded={open} aria-haspopup="listbox" onClick={() => (open ? close() : setOpen(true))}>
+      <button ref={trigger} id={id} type="button" className={`input flex items-center justify-between gap-2 text-left ${className}`} data-testid={testId} role="combobox" aria-label={ariaLabel} title={selected?.label ?? placeholder} disabled={disabled}
+        data-search-select-open={open || undefined} aria-expanded={open} aria-controls={open ? listId : undefined} aria-haspopup="listbox"
+        onKeyDown={(e) => { if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); setOpen(true); } else if (e.key === 'Escape' && open) { e.preventDefault(); e.stopPropagation(); close(); } }}
+        onClick={() => (open ? close() : setOpen(true))}>
+        {leading}
         <span className={`truncate ${selected && value ? '' : 'text-muted'}`}>{selected && value ? selected.label : placeholder}</span>
         <ChevronDown size={16} className="shrink-0 text-muted" />
       </button>
       {open && pos && createPortal(
-        <div ref={popup} className="fixed z-[300] flex flex-col rounded-lg border border-line bg-white shadow-xl overflow-hidden" style={{ left: pos.left, width: pos.width, top: pos.top, bottom: pos.bottom, maxHeight: pos.maxH }} data-search-select-open="true">
+        <div ref={popup} className="select-popup fixed z-[300] flex flex-col overflow-hidden" style={{ left: pos.left, width: pos.width, top: pos.top, bottom: pos.bottom, maxHeight: pos.maxH }} data-search-select-open="true" data-testid={testId ? `${testId}-list` : undefined}>
           <div className="flex items-center gap-2 px-3 py-2 border-b border-line shrink-0">
             <Search size={15} className="text-muted shrink-0" />
-            <input autoFocus data-search-select-open="true" data-testid={testId ? `${testId}-search` : undefined} className="w-full text-[14px] outline-none bg-transparent" placeholder={searchPlaceholder} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onKey} aria-label="Pretraga" />
+            <input autoFocus data-search-select-open="true" data-testid={testId ? `${testId}-search` : undefined} className="input !py-1 min-w-0" placeholder={searchPlaceholder} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onKey} aria-label={searchLabel}
+              role="combobox" aria-expanded="true" aria-controls={listId} aria-activedescendant={flat[active] ? `${listId}-${active}` : undefined} aria-autocomplete="list" />
           </div>
-          <div ref={listRef} role="listbox" className="overflow-auto scroll-thin py-1 min-h-0">
+          <div ref={listRef} id={listId} role="listbox" aria-label={ariaLabel ?? placeholder} className="overflow-auto scroll-thin py-1 min-h-0">
             {filtered.length === 0 && query.trim() ? <div className="px-3 py-3 text-sm text-muted">Nema rezultata za „{query.trim()}“.</div> : null}
-            {query.trim() ? null : row(flat[0])}
+            {query.trim() || !allowEmpty ? null : row(flat[0])}
             {filtered.map((g, gi) => (
-              <div key={g.label ?? gi}>
+              <div key={g.label ?? gi} role={g.label ? 'group' : undefined} aria-label={g.label}>
                 {g.label && <div className="px-3 pt-2 pb-1 text-[12px] font-bold text-slate-700">{g.label}</div>}
                 {g.items.map(row)}
               </div>
             ))}
           </div>
+          {footer}
         </div>,
         document.body,
       )}

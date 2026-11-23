@@ -40,7 +40,7 @@ for (const capped of [false, true]) test(`preneti model ${capped ? 'tarabica' : 
   ];
   await seed(page, [source]);
   await page.goto('/modeli');
-  await page.getByTestId('terrace-model-picker').locator('summary').click();
+  await page.getByTestId('terrace-model-picker').getByRole('button').click();
   await page.getByTestId(`terrace-use-${source.id}`).check();
   await page.getByRole('link', { name: 'Modeli ograda za terase', exact: true }).click();
   await page.getByTestId('custom-model-card').filter({ hasText: source.name }).getByTestId('use-custom-model').click();
@@ -105,7 +105,7 @@ test('označeni dvorišni model je na obe stranice, a kapije uz terasni projekat
   const invalidGate: CustomModel = { ...first, id: 'cm_e2e_terrace_gate', kind: 'gate', name: 'Kapija od terase se ne nudi', leafModelId: native.id };
   await seed(page, [first, second, native, invalidGate]);
   await page.goto('/modeli');
-  await page.getByTestId('terrace-model-picker').locator('summary').click();
+  await page.getByTestId('terrace-model-picker').getByRole('button').click();
   await page.getByTestId(`terrace-use-${first.id}`).check();
   await expect(page.getByTestId(`terrace-use-${second.id}`)).not.toBeChecked();
   await page.getByRole('link', { name: 'Modeli ograda za terase', exact: true }).click();
@@ -121,7 +121,7 @@ test('označeni dvorišni model je na obe stranice, a kapije uz terasni projekat
   await expect(page.getByTestId('gate-model-card').filter({ hasText: invalidGate.name })).toHaveCount(0);
   await page.getByRole('link', { name: 'Modeli ograda', exact: true }).click();
   await expect(page.getByTestId('custom-model-card').filter({ hasText: first.name })).toBeVisible();
-  await page.getByTestId('terrace-model-picker').locator('summary').click();
+  await page.getByTestId('terrace-model-picker').getByRole('button').click();
   await expect(page.getByTestId(`terrace-use-${first.id}`)).toBeChecked();
   await page.getByTestId(`terrace-use-${first.id}`).uncheck();
   await page.getByRole('link', { name: 'Modeli ograda za terase', exact: true }).click();

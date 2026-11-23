@@ -69,7 +69,7 @@ test.describe('prazan projekat (D1/D2)', () => {
     await page.getByTestId('hero-new').click();
     await expect(page.getByTestId('empty-state')).toBeVisible();
     await expect(page.getByTestId('empty-state')).toContainText('Dodajte element iz kataloga da započnete projekat');
-    await expect(page.getByTestId('count-posts')).toHaveText('0 (0)');
+    await expect(page.getByTestId('count-posts')).toHaveText('0');
     await expect(page.getByTestId('panel-price')).toHaveCount(0);
     // prazan projekat nema panel cene ni dugmad; obračun se otvara događajem (npr. sa Početne)
     await page.evaluate(() => window.dispatchEvent(new CustomEvent('open-calc')));
@@ -78,11 +78,11 @@ test.describe('prazan projekat (D1/D2)', () => {
     await page.getByTestId('calc-close').click();
 
     await page.getByTestId('cat-fence-add').click();
-    await expect(page.getByTestId('count-posts')).toHaveText('2 (0)');
+    await expect(page.getByTestId('count-posts')).toHaveText('2');
     await expect(page.getByTestId('empty-state')).toHaveCount(0);
     await page.keyboard.press('Delete');
     await expect(page.getByTestId('count-items')).toHaveText('0');
-    await expect(page.getByTestId('count-posts')).toHaveText('0 (0)');
+    await expect(page.getByTestId('count-posts')).toHaveText('0');
     await expect(page.getByTestId('empty-state')).toBeVisible();
     await page.keyboard.press('Control+z');
     await expect(page.getByTestId('count-items')).toHaveText('1');
@@ -99,7 +99,7 @@ test.describe('prazan projekat (D1/D2)', () => {
     await page.reload();
     await page.getByTestId('tab-front').click();
     await expect(page.getByTestId('empty-state')).toBeVisible();
-    await expect(page.getByTestId('count-posts')).toHaveText('0 (0)');
+    await expect(page.getByTestId('count-posts')).toHaveText('0');
 
     // izveštaji: nova stavka nema vrednost
     await page.goto('/izvestaji');

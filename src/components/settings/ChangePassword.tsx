@@ -50,7 +50,7 @@ function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
       title="Promeni lozinku"
       onClose={() => { if (!busy) onClose(); }}
       footer={done
-        ? <button className="btn btn-primary" onClick={onClose}>Zatvori</button>
+        ? <button className="btn" onClick={onClose}>Zatvori</button>
         : <><button className="btn" disabled={busy} onClick={onClose}>Otkaži</button><button className="btn btn-primary" disabled={busy} data-testid="password-save" onClick={() => void save()}>{busy ? <Loader2 size={16} className="animate-spin" /> : null}Sačuvaj lozinku</button></>}
     >
       {done ? (

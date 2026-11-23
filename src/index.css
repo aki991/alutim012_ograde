@@ -28,22 +28,47 @@ button:disabled { cursor: not-allowed; }
 :focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 
 .card { background: #fff; border: 1px solid var(--color-line); border-radius: 14px; box-shadow: var(--shadow-card); }
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 10px; padding: 9px 16px; font-weight: 600; font-size: 14px; border: 1px solid var(--color-line); background: #fff; color: var(--color-ink); transition: background .12s, border-color .12s; white-space: nowrap; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; border-radius: 8px; padding: 8px 14px; font-weight: 600; font-size: 14px; border: 1px solid var(--color-line); background: #fff; color: var(--color-ink); transition: background .12s, border-color .12s; white-space: nowrap; }
 .btn:hover:not(:disabled) { background: #f1f5f9; }
 .btn:disabled { opacity: .5; }
 .btn-primary { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
 .btn-primary:hover:not(:disabled) { background: var(--color-primary-600); }
-.btn-dark { background: var(--color-brand-black); border-color: var(--color-brand-black); color: #fff; }
-.btn-dark:hover:not(:disabled) { background: #000; }
-.btn-accent { background: var(--color-accent); border-color: var(--color-accent); color: #1a1a1a; box-shadow: 0 3px 10px rgba(255, 194, 71, .35); }
-.btn-accent:hover:not(:disabled) { background: var(--color-accent-600); border-color: var(--color-accent-600); }
+.btn-dark { background: var(--color-primary-50); border-color: var(--color-primary); color: var(--color-primary); }
+.btn-dark:hover:not(:disabled) { background: #fbe2e3; }
+.btn-accent { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+.btn-accent:hover:not(:disabled) { background: var(--color-primary-600); border-color: var(--color-primary-600); }
 .btn-danger { color: #b42318; border-color: #fecdca; }
 .btn-danger:hover:not(:disabled) { background: #fef3f2; }
-.btn-sm { padding: 6px 10px; font-size: 13px; border-radius: 8px; }
-.btn-icon { padding: 7px; border-radius: 8px; }
-.input { width: 100%; border: 1px solid var(--color-line); border-radius: 8px; padding: 7px 10px; font-size: 14px; background: #fff; color: var(--color-ink); }
+.btn[aria-pressed='true'] { background: var(--color-primary-50); border-color: var(--color-primary); color: var(--color-primary); }
+.btn[aria-pressed='true']:hover:not(:disabled) { background: #fbe2e3; }
+.properties-panel .btn { min-width: 0; white-space: normal; }
+.btn-sm { min-height: 32px; padding: 6px 10px; font-size: 13px; border-radius: 8px; }
+.btn-icon { min-width: 34px; min-height: 34px; padding: 7px; border-radius: 8px; }
+.input { width: 100%; min-height: 36px; border: 1px solid var(--color-line); border-radius: 8px; padding: 7px 10px; font-size: 14px; background: #fff; color: var(--color-ink); }
+.input:disabled { background-color: #f8fafc; color: var(--color-muted); cursor: not-allowed; }
+.input[readonly] { background-color: #f1f5f9; color: #475569; }
+select.input { appearance: none; padding-right: 32px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%2364748b' stroke-width='1.8'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; }
 .input:focus { border-color: var(--color-primary); outline: none; box-shadow: 0 0 0 3px rgba(215, 25, 32, .16); }
+.input[data-dirty='true']:not([aria-invalid='true']) { border-color: #f79009; background-color: #fffaeb; }
 .input[aria-invalid='true'] { border-color: #f04438; background: #fffbfa; }
+.number-control { display: inline-flex; flex-direction: column; min-width: 0; width: 100%; vertical-align: middle; }
+.control-error { display: block; color: #b42318; font-size: 12px; line-height: 1.4; padding-top: 3px; }
+.choice-group { display: inline-flex; flex-wrap: wrap; gap: 3px; padding: 3px; border: 1px solid var(--color-line); border-radius: 8px; background: #f8fafc; }
+.choice-option { flex: 1 1 auto; min-width: 0; min-height: 30px; padding: 5px 10px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: #475569; font-size: 13px; font-weight: 500; line-height: 1.35; }
+.choice-option:hover:not(:disabled) { background: #edf2f7; }
+.choice-option[aria-checked='true'], .choice-option[aria-selected='true'] { color: var(--color-primary); background: #fff; border-color: #f3b5b7; font-weight: 600; box-shadow: 0 1px 2px #00000008; }
+.choice-option:disabled { opacity: .5; }
+.scope-field { border: 1px solid var(--color-line); background: #f8fafc; border-radius: 8px; padding: 8px 10px; margin: 6px 0 12px; }
+.switch-label { display: inline-flex; align-items: center; gap: 8px; min-height: 32px; font-size: 13px; cursor: pointer; }
+.switch-label:has(:disabled) { color: var(--color-muted); cursor: not-allowed; }
+.switch-control { appearance: none; flex: 0 0 36px; width: 36px; height: 22px; border: 1px solid #cbd5e1; border-radius: 999px; background: #cbd5e1; position: relative; cursor: pointer; transition: background .15s, border-color .15s; }
+.switch-control::before { content: ''; position: absolute; width: 16px; height: 16px; top: 2px; left: 2px; background: #fff; border-radius: 50%; box-shadow: 0 1px 2px #0002; transition: transform .15s; }
+.switch-control:checked { background: var(--color-primary); border-color: var(--color-primary); }
+.switch-control:checked::before { transform: translateX(14px); }
+.switch-control:disabled { opacity: .5; cursor: not-allowed; }
+input[type='checkbox']:not([role='switch']) { accent-color: var(--color-primary); width: 16px; height: 16px; flex-shrink: 0; cursor: pointer; }
+input[type='checkbox']:disabled { cursor: not-allowed; }
+.select-popup { border: 1px solid var(--color-line); border-radius: 8px; background: #fff; box-shadow: 0 8px 24px #17212e24; }
 .label { font-size: 13px; color: var(--color-muted); }
 /* ćelije tabela su u sloju komponenti, da poravnanje iz klasa (text-right, text-center) važi i za zaglavlje */
 @layer components {

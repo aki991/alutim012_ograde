@@ -1,3 +1,4 @@
+import { ChoiceGroup } from '../ui/ChoiceGroup';
 import { useState } from 'react';
 import { COLOR_CHART, DEFAULT_FAVORITE_COLORS, FAVORITE_COLOR_COUNT, FINISHES, colorHex, colorInfo, type RalColor } from '../../domain/models/catalog';
 import type { Finish } from '../../domain/models/types';
@@ -53,20 +54,17 @@ export function ColorChartModal({ value, finish, favorites, onPick, onFinish, on
           {onFinish && (
             <div className="flex items-center gap-2" data-testid="chart-finish">
               <span className="text-[13px] font-semibold">Završna obrada</span>
-              <span className="inline-flex rounded-lg border border-line overflow-hidden" role="radiogroup" aria-label="Završna obrada">
-                {FINISHES.map((f) => <button key={f.id} type="button" role="radio" aria-checked={finish === f.id} data-testid={`chart-finish-${f.id}`} onClick={() => onFinish(f.id)} className={`px-3 py-1.5 text-[13px] font-semibold ${finish === f.id ? 'bg-brand-black text-white' : 'hover:bg-slate-50'}`}>{f.label}</button>)}
-              </span>
+              <ChoiceGroup label="Završna obrada" value={finish ?? ''} onChange={onFinish}
+                options={FINISHES.map((f) => ({ value: f.id, label: f.label, testId: `chart-finish-${f.id}` }))} />
             </div>
           )}
           <span className="flex-1" />
-          <button className="btn btn-primary" onClick={onClose} data-testid="chart-close">Zatvori</button>
+          <button className="btn" onClick={onClose} data-testid="chart-close">Zatvori</button>
         </div>
       }>
       <div className="flex flex-wrap items-center gap-3 mb-3">
-        <div className="inline-flex rounded-lg border border-line overflow-hidden" role="group" aria-label="Način rada">
-          <button type="button" aria-pressed={!edit} data-testid="chart-mode-pick" className={`px-3 py-1.5 text-[13px] font-semibold ${!edit ? 'bg-brand-black text-white' : 'hover:bg-slate-50'}`} onClick={() => setEdit(false)}>Izaberi boju</button>
-          <button type="button" aria-pressed={edit} data-testid="chart-mode-edit" className={`px-3 py-1.5 text-[13px] font-semibold ${edit ? 'bg-brand-black text-white' : 'hover:bg-slate-50'}`} onClick={() => setEdit(true)}>Uredi brzi izbor</button>
-        </div>
+        <ChoiceGroup label="Način rada" value={edit ? 'edit' : 'pick'} onChange={(v) => setEdit(v === 'edit')}
+          options={[{ value: 'pick', label: 'Izaberi boju', testId: 'chart-mode-pick' }, { value: 'edit', label: 'Uredi brzi izbor', testId: 'chart-mode-edit' }]} />
         <div className="flex items-center gap-2" data-testid="chart-favorites">
           <span className="text-[12.5px] text-slate-600">Brzi izbor (5 boja):</span>
           {favs.map((k, i) => (

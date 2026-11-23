@@ -1,3 +1,4 @@
+import { MultiSelect } from '../../components/ui/MultiSelect';
 import { ListChecks, PencilRuler, Trash2, Wrench } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -100,17 +101,9 @@ export default function ModelsPage({ terrace = false }: { terrace?: boolean }) {
       <PageHeader title={terrace ? 'Modeli ograda za terase' : 'Modeli ograda'}
         subtitle={terrace ? 'Ograde za terase, stepeništa i galerije, uključujući dvorišne modele označene za terase. Ograde za terase nemaju kapije.' : undefined}
         actions={<>{terrace && TERRACE_MODEL_LIST.some((m) => hiddenModels?.includes(m.id)) && <button className="btn" data-testid="restore-terrace-models" onClick={() => { const ids = new Set(TERRACE_MODEL_LIST.map((m) => m.id)); for (const id of ids) if (hiddenModels?.includes(id)) useAppStore.getState().restoreHiddenModels(id); }}>Vrati obrisane modele</button>}<button className="btn btn-primary" data-testid={terrace ? 'btn-create-terrace-model' : 'btn-create-model'} onClick={() => navigate(terrace ? `${drawPath}/${uid('cm')}` : drawPath)}><PencilRuler size={17} />Napravi model</button></>} />
-      {!terrace && <details className="relative mb-5 max-w-xl" data-testid="terrace-model-picker">
-        <summary className="btn cursor-pointer">Modeli koji se koriste i za terase ({terraceIds.length})</summary>
-        <div className="absolute z-20 mt-1 w-full max-h-80 overflow-auto rounded-xl border border-line bg-white p-3 shadow-lg">
-          {allFenceModels(undefined, 'yard').map((m) => <label key={m.id} className="flex items-center gap-2 py-1.5 text-sm">
-            <input type="checkbox" data-testid={`terrace-use-${m.id}`} checked={terraceIds.includes(m.id)} onChange={(e) => useAppStore.getState().updateSettings({
-              terraceModelIds: e.target.checked ? [...new Set([...terraceIds, m.id])] : terraceIds.filter((id) => id !== m.id),
-            })} />{m.name}
-          </label>)}
-          {!allFenceModels(undefined, 'yard').length && <p className="text-sm text-muted">Najpre napravite model ograde.</p>}
-        </div>
-      </details>}
+      {!terrace && <MultiSelect testId="terrace-model-picker" label="Modeli koji se koriste i za terase" values={terraceIds}
+        options={allFenceModels(undefined, 'yard').map((m) => ({ value: m.id, label: m.name, testId: `terrace-use-${m.id}` }))}
+        onChange={(terraceModelIds) => useAppStore.getState().updateSettings({ terraceModelIds })} />}
       {terrace && cardModels.length > 0 && (
         <section className="mb-7" data-testid="custom-terrace-models">
           <h2 className="font-bold text-lg mb-3">Moje ograde za terase (ručno nacrtane)</h2>

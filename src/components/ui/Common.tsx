@@ -79,6 +79,7 @@ export function ActionsMenu({ actions, label = 'Akcije', text, icon, testId }: {
   const ref = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
+  const close = (focus = true) => { setOpen(false); if (focus) btnRef.current?.focus({ preventScroll: true }); };
   // meni se crta preko cele stranice (portal, fixed), pa ga tabela sa skrolom ne seče
   useLayoutEffect(() => {
     if (!open || !btnRef.current) return;
@@ -88,28 +89,41 @@ export function ActionsMenu({ actions, label = 'Akcije', text, icon, testId }: {
     const top = below >= h ? r.bottom + 4 : Math.max(8, r.top - h - 4);
     setPos({ top, left: Math.max(8, r.right - 176) });
   }, [open, actions.length]);
+  useEffect(() => { if (open && pos) menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus({ preventScroll: true }); }, [open, pos]);
   useEffect(() => {
     if (!open) return;
     const down = (e: MouseEvent) => {
       const t = e.target as Node;
       if (ref.current?.contains(t) || menuRef.current?.contains(t)) return;
-      setOpen(false);
+      close(false);
     };
-    const close = () => setOpen(false);
+    const dismiss = () => close(false);
     document.addEventListener('mousedown', down);
-    window.addEventListener('resize', close);
-    window.addEventListener('scroll', close, true);
-    return () => { document.removeEventListener('mousedown', down); window.removeEventListener('resize', close); window.removeEventListener('scroll', close, true); };
+    window.addEventListener('resize', dismiss);
+    window.addEventListener('scroll', dismiss, true);
+    return () => { document.removeEventListener('mousedown', down); window.removeEventListener('resize', dismiss); window.removeEventListener('scroll', dismiss, true); };
   }, [open]);
   return (
     <div className="relative inline-block" ref={ref}>
-      <button ref={btnRef} className={text ? 'btn btn-sm whitespace-nowrap' : 'btn btn-icon !border-transparent'} aria-label={label} aria-haspopup="menu" aria-expanded={open} data-testid={testId} onClick={() => { setPos(null); setOpen((o) => !o); }}>
+      <button type="button" ref={btnRef} className={text ? 'btn btn-sm whitespace-nowrap' : 'btn btn-icon !border-transparent'} aria-label={label} aria-haspopup="menu" aria-expanded={open} data-testid={testId}
+        onKeyDown={(e) => { if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); setOpen(true); } }} onClick={() => { setPos(null); setOpen((o) => !o); }}>
         {text ? <>{icon}{text}</> : <MoreHorizontal size={18} />}
       </button>
       {open && createPortal(
-        <div ref={menuRef} role="menu" className="fixed w-44 card p-1.5 z-[100]" style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999 }}>
+        <div ref={menuRef} role="menu" aria-label={label} data-search-select-open className="select-popup fixed w-44 p-1.5 z-[300]" style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999 }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); return; }
+            if (e.key === 'Tab') { close(); return; }
+            if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const items = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
+            const at = items.indexOf(document.activeElement as HTMLButtonElement);
+            const index = e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1 : (at + (e.key === 'ArrowUp' ? -1 : 1) + items.length) % items.length;
+            items[index]?.focus();
+          }}>
           {actions.map((a) => (
-            <button key={a.label} role="menuitem" className={`w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-slate-50 ${a.danger ? 'text-[#b42318]' : ''}`} onClick={() => { setOpen(false); a.onClick(); }}>
+            <button key={a.label} type="button" role="menuitem" className={`w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-slate-50 ${a.danger ? 'text-[#b42318]' : ''}`} onClick={() => { close(); a.onClick(); }}>
               {a.label}
             </button>
           ))}

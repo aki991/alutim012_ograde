@@ -95,7 +95,7 @@ test('glavni scenario: projektovanje, kalkulacija, čuvanje, izvoz', async ({ pa
   await page.getByTestId('add-kind-sliding').click();
   await page.getByTestId('add-apply').click();
   await expect(page.getByTestId('count-items')).toHaveText('5');
-  await expect(page.getByTestId('count-posts')).toHaveText('6 (4)');
+  await expect(page.getByTestId('count-posts')).toHaveText('6');
   expect(num(await page.getByTestId('total-modular').textContent())).toBe(10460); // spoljne mere 3 × 2000 + 1000 + 4000 minus zajednički stubovi
 
   // 7–8. promeni širinu prvog segmenta i proveri da se crtež promenio
@@ -204,7 +204,7 @@ test('demo projekat Petrović se otvara sa tačnim rasporedom i 11000 mm', async
   await page.getByTestId('recent-row').filter({ hasText: 'Porodična kuća Petrović' }).getByRole('link').click();
   await expect(page.getByTestId('count-items')).toHaveText('5');
   await expect(page.getByTestId('total-modular')).toContainText('11.000');
-  await expect(page.getByTestId('count-posts')).toHaveText('6 (4)');
+  await expect(page.getByTestId('count-posts')).toHaveText('6');
   await expect(page.getByTestId('front-view')).toBeVisible();
   // klik na stub, izmena širine utiče na svetli otvor
   await page.locator('[data-hit="post"]').nth(1).click();
@@ -1007,8 +1007,8 @@ test('stubovi: Ctrl+klik bira više stubova (boja važi za sve izabrane), katalo
   await expect(page.getByTestId('post-color-value')).toHaveText('RAL 5011');
   await posts.nth(1).click();
   await expect(page.getByTestId('post-color-value')).not.toHaveText('RAL 5011');
-  // prekidač „sve stubove" menja i boju svih
-  await expect(page.getByTestId('post-caps-all')).toHaveAttribute('aria-checked', 'true'); // podrazumevano: sve stubove
+  // opseg „sve stubove" menja i boju svih
+  await expect(page.getByTestId('post-caps-all')).toHaveValue('all'); // podrazumevano: sve stubove
   await page.getByTestId('post-color').locator('[data-color="RAL 8017"]').click();
   await posts.nth(0).click();
   await expect(page.getByTestId('post-color-value')).toHaveText('RAL 8017');

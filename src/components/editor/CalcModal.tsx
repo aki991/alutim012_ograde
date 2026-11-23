@@ -34,7 +34,7 @@ export function CalcModal({ project, onClose }: { project: Project; onClose: () 
       footer={
         <>
           <span className="mr-auto text-sm text-muted">Ukupno sa PDV-om:&nbsp;<b className="text-ink text-lg tabular-nums" data-testid="calc-total-footer">{money(price.grossTotal)}</b></span>
-          <button className="btn btn-primary" onClick={onClose} data-testid="calc-close" data-autofocus>Zatvori</button>
+          <button className="btn" onClick={onClose} data-testid="calc-close" data-autofocus>Zatvori</button>
         </>
       }
     >

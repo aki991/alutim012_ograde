@@ -1,3 +1,4 @@
+import { ChoiceGroup } from '../ui/ChoiceGroup';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Clock, Plus, RotateCcw, Trash2, X } from 'lucide-react';
 import { visibleMaterials } from '../../config/features';
@@ -20,13 +21,9 @@ const LEVEL_ICON = { ok: CheckCircle2, warn: AlertTriangle, error: AlertTriangle
 const HW_CATEGORIES = ['okov', 'automatika', 'ostalo', 'stub'];
 
 function Seg<T extends string>({ value, options, onChange, testId }: { value: T; options: [T, string][]; onChange: (v: T) => void; testId: string }) {
-  return (
-    <span className="grid rounded-lg border border-line overflow-hidden" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }} data-testid={testId}>
-      {options.map(([v, l]) => (
-        <button key={v} type="button" data-testid={`${testId}-${v}`} aria-pressed={value === v} className={`py-1.5 text-[12.5px] font-semibold ${value === v ? 'bg-brand-black text-white' : 'bg-white hover:bg-slate-50'}`} onClick={() => onChange(v)}>{l}</button>
-      ))}
-    </span>
-  );
+  const label = testId === 'sl-support' ? 'Oslonac kapije' : testId === 'sl-actuation' ? 'Pogon kapije' : 'Smer otvaranja';
+  return <ChoiceGroup label={label} value={value} onChange={onChange} testId={testId} className="w-full"
+    options={options.map(([v, label]) => ({ value: v, label, testId: `${testId}-${v}` }))} />;
 }
 
 export interface SlidingFormProps {
@@ -330,11 +327,8 @@ function MaterialField({ label, kind, materialId, text, materials, testId, onCha
       {orient && (
         <div className="space-y-1" data-testid={`${testId}-orient`}>
           <div className="text-[11.5px] text-slate-600">Čeona strana cevi {orient.face}×{orient.depth} (okrenuta ka posmatraču)</div>
-          <span className="grid grid-cols-2 rounded-lg border border-line overflow-hidden">
-            {([[0, orient.face], [90, orient.depth]] as [number, number][]).map(([r, v]) => (
-              <button key={r} type="button" aria-pressed={orient.rot === r} data-testid={`${testId}-orient-${r}`} className={`py-1 text-[12.5px] font-semibold ${orient.rot === r ? 'bg-brand-black text-white' : 'bg-white hover:bg-slate-50'}`} onClick={() => orient.onRot(r)}>čeona strana {v} mm</button>
-            ))}
-          </span>
+          <ChoiceGroup label="Čeona strana cevi" value={String(orient.rot)} onChange={(v) => orient.onRot(Number(v))}
+            options={([[0, orient.face], [90, orient.depth]] as [number, number][]).map(([r, v]) => ({ value: String(r), label: `Čeona strana ${v} mm`, testId: `${testId}-orient-${r}` }))} />
           <p className="text-[11px] text-muted">Menja širinu cevi na crtežu, dužine i uglove sečenja u krojnoj listi.</p>
         </div>
       )}

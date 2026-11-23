@@ -35,6 +35,16 @@ async function saved(page: Page): Promise<CustomPart[]> {
 }
 const railDepths = async (page: Page) => (await saved(page)).filter((p) => p.id.startsWith('rail')).map((p) => p.z);
 
+test('strelice u izboru preseka menjaju opciju bez pomeranja izabranog dela', async ({ page }) => {
+  await seed(page);
+  await page.locator('[data-part-id="p2"]').click();
+  const x = await page.getByTestId('part-x').inputValue(); const y = await page.getByTestId('part-y').inputValue();
+  await page.getByTestId('part-face-0').focus(); await page.getByTestId('part-face-0').press('ArrowRight');
+  await expect(page.getByTestId('part-face-90')).toBeChecked();
+  await expect(page.getByTestId('part-x')).toHaveValue(x); await expect(page.getByTestId('part-y')).toHaveValue(y);
+  await expect.poll(async () => (await saved(page)).find((p) => p.id === 'p2')?.rot).toBe(90);
+});
+
 test('postojeće prečke se postavljaju iza tarabica u 3D; izbor sloja, poništi i ponovno otvaranje čuvaju dubinu', async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
   const errors: string[] = []; page.on('pageerror', (e) => errors.push(e.message));

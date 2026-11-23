@@ -26,6 +26,7 @@ export function Modal({ title, onClose, children, footer, width = 480, fullscree
     const onKey = (e: KeyboardEvent) => {
       // Esc u otvorenoj listi za pretragu zatvara samo listu, ne dijalog
       if (e.key === 'Escape' && (e.target as HTMLElement | null)?.closest?.('[data-search-select-open]')) return;
+      if (e.key === 'Escape' && (e.target as HTMLElement | null)?.closest?.('[data-numeric-input][data-dirty="true"], [data-numeric-input][aria-invalid="true"]')) return;
       if (e.key === 'Escape') { e.stopPropagation(); onCloseRef.current(); return; }
       if (e.key !== 'Tab' || !root) return;
       const items = Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((el) => el.offsetParent !== null);

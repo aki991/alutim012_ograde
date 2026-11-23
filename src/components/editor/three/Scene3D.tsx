@@ -1,3 +1,5 @@
+import { ChoiceGroup } from '../../ui/ChoiceGroup';
+import { Switch } from '../../ui/Switch';
 import { isRl10Model, isRl10Post, rl10Corner, rl10Ends, rl10ItemAt, rl10PostInfo } from '../../../domain/models/rl10';
 import { Rl10CornerMesh, Rl10FieldMesh, Rl10JointMesh, Rl10PostMesh } from './Rl10Mesh';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
@@ -779,22 +781,18 @@ function Scene3DInner({ project, drag, onBeginDrag, registerTarget, targetKey, o
 
       {/* gornja traka: režim i kamere */}
       <div className="absolute left-2 top-2 right-2 flex flex-wrap items-start gap-2 pointer-events-none">
-        <div data-overlay className="pointer-events-auto inline-flex rounded-lg border border-line bg-white/95 p-0.5 shadow-sm" role="radiogroup" aria-label="Režim 3D prikaza">
-          <button role="radio" aria-checked={mode === 'view'} data-testid="mode-view" className={`px-2.5 py-1 text-[13px] rounded-md font-medium inline-flex items-center gap-1 ${mode === 'view' ? 'bg-primary text-white' : 'text-slate-600'}`} onClick={() => view.setMode('view')}><Hand size={14} />Pregled</button>
-          <button role="radio" aria-checked={mode === 'edit'} data-testid="mode-edit" className={`px-2.5 py-1 text-[13px] rounded-md font-medium inline-flex items-center gap-1 ${mode === 'edit' ? 'bg-primary text-white' : 'text-slate-600'}`} onClick={() => view.setMode('edit')} disabled={turned} title={turned ? 'Uređivanje prevlačenjem je dostupno samo za pravu ogradu (bez skretanja)' : undefined}><MousePointer2 size={14} />Uređivanje</button>
-        </div>
+        <div data-overlay className="pointer-events-auto"><ChoiceGroup label="Režim 3D prikaza" value={mode} onChange={view.setMode}
+          options={[{ value: 'view', label: <span className="inline-flex items-center gap-1"><Hand size={14} />Pregled</span>, testId: 'mode-view' },
+            { value: 'edit', label: <span className="inline-flex items-center gap-1"><MousePointer2 size={14} />Uređivanje</span>, testId: 'mode-edit', disabled: turned, title: turned ? 'Uređivanje prevlačenjem je dostupno samo za pravu ogradu (bez skretanja)' : undefined }]} /></div>
         <div data-overlay className="pointer-events-auto inline-flex flex-wrap gap-1 rounded-lg border border-line bg-white/95 p-0.5 shadow-sm" aria-label="Kamera">
           {PRESETS.map((pr) => <button key={pr.id} data-testid={`cam-${pr.id}`} className="px-2.5 py-1 text-[13px] rounded-md text-slate-600 hover:bg-slate-100 font-medium" onClick={() => view.requestPreset(pr.id)}>{pr.label}</button>)}
         </div>
         <div data-overlay className="pointer-events-auto inline-flex gap-1 rounded-lg border border-line bg-white/95 p-0.5 shadow-sm">
-          <button className={`px-2.5 py-1 text-[13px] rounded-md font-medium inline-flex items-center gap-1 ${showZones ? 'text-primary' : 'text-slate-500'}`} aria-pressed={showZones} data-testid="toggle-zones" title="Prikaži/sakrij zone otvaranja kapija" onClick={() => view.setShowZones(!showZones)}><Layers size={14} />Zone</button>
+          <Switch label={<span className="inline-flex items-center gap-1"><Layers size={14} />Zone</span>} ariaLabel="Prikaži zone otvaranja kapija" checked={showZones} onChange={view.setShowZones} testId="toggle-zones" />
           <button className="px-2.5 py-1 text-[13px] rounded-md text-slate-600 hover:bg-slate-100 font-medium inline-flex items-center gap-1" data-testid="btn-png" onClick={downloadPng}><Download size={14} />3D slika</button>
         </div>
-        <div data-overlay className="pointer-events-auto inline-flex gap-0.5 rounded-lg border border-line bg-white/95 p-0.5 shadow-sm" role="radiogroup" aria-label="Podloga">
-          {(Object.keys(GROUND_LABELS) as GroundKind[]).map((g) => (
-            <button key={g} role="radio" aria-checked={ground === g} data-testid={`ground-${g}`} className={`px-2.5 py-1 text-[13px] rounded-md font-medium ${ground === g ? 'bg-primary text-white' : 'text-slate-600 hover:bg-slate-100'}`} onClick={() => view.setGround(g)}>{GROUND_LABELS[g]}</button>
-          ))}
-        </div>
+        <div data-overlay className="pointer-events-auto"><ChoiceGroup label="Podloga" value={ground} onChange={view.setGround}
+          options={(Object.keys(GROUND_LABELS) as GroundKind[]).map((g) => ({ value: g, label: GROUND_LABELS[g], testId: `ground-${g}` }))} /></div>
       </div>
 
       {empty && (

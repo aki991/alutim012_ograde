@@ -9,6 +9,18 @@ import type { LayoutItem, Project } from '../models/types';
  */
 export type EditScope = 'one' | 'same' | 'all';
 
+/** Jedan spisak ciljeva za primenu izmena i za broj prikazan uz izbor opsega. */
+export function editScopeTargets(project: Project, id: string, scope: EditScope): string[] {
+  const source = project.items.find((it) => it.id === id);
+  if (!source || (source.kind !== 'fence' && source.kind !== 'gate')) return [];
+  return project.items.filter((it) => {
+    if (it.id === id) return true;
+    if (scope === 'one' || (it.kind !== 'fence' && it.kind !== 'gate')) return false;
+    if (it.kind === 'fence' && it.stair && !(scope === 'all' && source.kind === 'fence')) return false;
+    return it.kind === source.kind || scope === 'all';
+  }).map((it) => it.id);
+}
+
 /** polja koja se prenose na elemente iste vrste (platna na platna, kapije na kapije) */
 const SAME_KIND_KEYS = ['color', 'finish', 'heightMm', 'plinthMm', 'lock', 'hinge', 'swing', 'automation', 'automationType'] as const;
 /** polja koja se prenose i između platna i kapija (zajednička podešavanja izgleda) */
@@ -36,12 +48,11 @@ export function propagateItemChange(prev: Project, next: Project, id: string, sc
   const sameKey = changed(SAME_KIND_KEYS); const crossKey = changed(CROSS_KIND_KEYS);
   if (!Object.keys(sameKey).length && !Object.keys(crossKey).length && !Object.keys(paramPatch).length) return next;
 
+  const targets = new Set(editScopeTargets(next, id, scope));
   const items = next.items.map((it): LayoutItem => {
-    if (it.id === id || (it.kind !== 'fence' && it.kind !== 'gate')) return it;
+    if (it.id === id || !targets.has(it.id) || (it.kind !== 'fence' && it.kind !== 'gate')) return it;
     const stairTarget = 'stair' in it && !!it.stair;
-    if (stairTarget && !(scope === 'all' && kind === 'fence')) return it; // stepenište ima svoje mere i prima izmene samo uz „Platna i stepenište“
     const sameKind = it.kind === kind;
-    if (!sameKind && scope !== 'all') return it;
     const patch: Rec = sameKind ? { ...sameKey } : { ...crossKey };
     const own = (it.params as unknown as Rec);
     const merged: Rec = { ...own, ...paramPatch };

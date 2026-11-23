@@ -1,4 +1,7 @@
+import { ChoiceGroup } from '../ui/ChoiceGroup';
 import { GateModelPicker } from '../gates/GateModelPicker';
+import { ScopeField } from '../forms/ScopeField';
+import { editScopeTargets } from '../../domain/geometry/editScope';
 import { IncompletePriceNotice } from './IncompletePriceNotice';
 import { productionPostCount } from '../../domain/models/productionPosts';
 import { GateFrameBox } from './GateFrameBox';
@@ -132,12 +135,9 @@ function SlatSettings({ id, modelId, widthMm, heightMm, params, gate, clearWidth
               {(hb.gapMin < 0 || hb.lufta === 'bez') && (
                 <div className="flex items-center justify-between gap-2 py-1" data-testid="hbar-lufta">
                   <span className="text-[13px]">Tip prečki</span>
-                  <div className="inline-flex rounded-lg border border-line overflow-hidden">
-                    {([['sa', 'Sa luftom'], ['bez', 'Bez lufta']] as const).map(([v, l]) => (
-                      <button key={v} data-testid={`hbar-lufta-${v}`} aria-pressed={hb.lufta === v} className={`px-2.5 py-1 text-[12px] font-semibold ${hb.lufta === v ? 'bg-brand-black text-white' : 'hover:bg-slate-50'}`}
-                        onClick={() => v !== hb.lufta && setSlat({ lufta: v, hGapMm: v === 'bez' ? Math.min(0, r1(hb.gap)) : Math.max(0, r1(hb.gap)) })}>{l}</button>
-                    ))}
-                  </div>
+                  <ChoiceGroup label="Tip prečki" value={hb.lufta}
+                    options={([['sa', 'Sa luftom'], ['bez', 'Bez lufta']] as const).map(([v, label]) => ({ value: v, label, testId: `hbar-lufta-${v}` }))}
+                    onChange={(v) => v !== hb.lufta && setSlat({ lufta: v, hGapMm: v === 'bez' ? Math.min(0, r1(hb.gap)) : Math.max(0, r1(hb.gap)) })} />
                 </div>
               )}
               <NumberField label="Razmak između prečki" testId="hbar-gap" value={r1(hb.gap)} range={hb.lufta === 'bez' ? { min: Math.min(0, hb.gapMin), max: 0 } : { min: 0, max: 400 }} onCommit={(v) => setSlat({ hGapMm: v })}
@@ -241,14 +241,14 @@ function ProjectBasics({ project }: { project: Project }) {
         onChange={(v) => mutate((p) => ({ ...p, settings: { ...p.settings, totalMode: v, fixedTotalMm: v === 'fixed' && p.settings.totalMode === 'auto' ? layout.totalModularMm || p.settings.fixedTotalMm : p.settings.fixedTotalMm } }))} />
       {s.totalMode === 'fixed' ? (
         <>
-          <NumberField label="Zadata dužina" testId="fixed-total" value={s.fixedTotalMm} range={LIMITS.fixedTotal} onCommit={(v) => mutate((p) => ({ ...p, settings: { ...p.settings, fixedTotalMm: v } }), 'fixed')} />
+          <NumberField label="Zadata dužina (osa–osa)" testId="fixed-total" value={s.fixedTotalMm} range={LIMITS.fixedTotal} onCommit={(v) => mutate((p) => ({ ...p, settings: { ...p.settings, fixedTotalMm: v } }), 'fixed')} />
           {status.state === 'over' && <Banner tone="red"><b>Prekoračenje za {fmtMm(status.diffMm)}.</b> Elementi ({fmtMm(layout.totalModularMm)}) premašuju zadatu dužinu ({fmtMm(s.fixedTotalMm)}). Smanjite elemente ili ih rasporedite automatski.</Banner>}
           {status.state === 'under' && <Banner tone="amber">Slobodan prostor: <b>{fmtMm(status.diffMm)}</b> do zadate dužine. Možete ga ostaviti ili automatski rasporediti.</Banner>}
-          {status.state === 'ok' && <Banner tone="blue">Raspored tačno popunjava zadatu dužinu.</Banner>}
+          {status.state === 'ok' && <Banner tone="blue">Raspored tačno popunjava zadatu dužinu osa–osa.</Banner>}
           <SelectField label="Raspodela" value={s.fillStrategy} testId="fill-strategy" options={[{ value: 'proportional', label: 'Proporcionalno širini' }, { value: 'even', label: 'Ravnomerno' }]} onChange={(v) => mutate((p) => ({ ...p, settings: { ...p.settings, fillStrategy: v } }))} />
-          <div className="flex gap-2 mt-1">
-            <button className="btn btn-sm btn-primary flex-1" data-testid="btn-autofill" disabled={status.state === 'ok'} onClick={doFill}>Automatski rasporedi</button>
-            <button className="btn btn-sm flex-1" data-testid="btn-leave-free" disabled={status.state !== 'under'} onClick={() => setNotice(`Ostavljen slobodan prostor od ${fmtMm((status as { diffMm: number }).diffMm)}.`)}>Ostavi slobodan prostor</button>
+          <div className="grid grid-cols-1 gap-2 mt-1">
+            <button className="btn btn-sm btn-primary w-full" data-testid="btn-autofill" disabled={status.state === 'ok'} title="Prilagođava širine nezaključanih platana i otvora zadatoj dužini. Kapije zadržavaju svoju širinu." onClick={doFill}>Automatski rasporedi</button>
+            <button className="btn btn-sm w-full" data-testid="btn-leave-free" disabled={status.state !== 'under'} title="Zadržava postojeće mere i potvrđuje preostali slobodan prostor porukom. Ne dodaje novi otvor u crtež." onClick={() => setNotice(`Zadržane su postojeće širine. Preostalo je ${fmtMm((status as { diffMm: number }).diffMm)} slobodnog prostora do zadate dužine osa–osa.`)}>Ostavi slobodan prostor</button>
           </div>
         </>
       ) : null}
@@ -575,7 +575,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
         <button className="btn btn-sm btn-danger" data-testid="btn-delete" onClick={st.deleteSelected}><Trash2 size={14} />Obriši</button>
       </div>
       {!terraceFence && <DuplicateMany kind={it.kind} />}
-      {(it.kind === 'fence' || it.kind === 'gate') && <ScopeToggle kind={it.kind} terrace={terraceFence} />}
+      {(it.kind === 'fence' || it.kind === 'gate') && <ScopeToggle project={project} id={id} kind={it.kind} terrace={terraceFence} />}
       {terraceFence && <FieldRotation project={project} index={index} />}
       {body}
     </Section>
@@ -652,7 +652,8 @@ function PostPanel({ project, id }: { project: Project; id: string }) {
       {picked.length > 1 ? (
         <div className="text-[12.5px] text-muted mb-1" data-testid="post-multi-note">Izmene važe za sve izabrane stubove. Ctrl+klik dodaje ili izbacuje stub, Shift+klik bira niz stubova.</div>
       ) : (
-        <ToggleField label="Izmene važe za" testId="post-caps-all" checked={allPosts} onLabel="Sve stubove" offLabel="Samo ovaj stub" onChange={setAllPosts} />
+        <ScopeField testId="post-caps-all" value={allPosts ? 'all' : 'one'} onChange={(v) => setAllPosts(v === 'all')}
+          options={[{ value: 'one', label: 'Samo ovaj stub' }, { value: 'all', label: 'Sve stubove' }]} count={targets.length} />
       )}
       {lp.index > 0 && lp.index < project.items.length ? (
         <div data-testid="post-turn">
@@ -777,8 +778,8 @@ function PriceSummary({ project }: { project: Project }) {
         <span className="text-right"><span className="text-[19px] font-extrabold tabular-nums" data-testid="price-total">{money(price.grossTotal)}</span><span className="block text-[11px] text-muted">sa PDV-om · ≈ {fmtNum(price.grossTotal / settings.currencyRateToEur, 0)} €</span></span>
       </div>
       <div className="grid grid-cols-2 gap-2 mt-3">
-        <button className="btn btn-dark !px-2 !gap-1.5 text-[13px]" data-testid="btn-open-calc" onClick={() => window.dispatchEvent(new CustomEvent('open-calc'))}><Calculator size={16} />Detaljan obračun</button>
-        <button className="btn btn-dark !px-2 !gap-1.5 text-[13px]" data-testid="btn-requisition" title="Trebovanje materijala: sav materijal iz sastavnica, profili u celim šipkama; količine se mogu promeniti pre štampe" onClick={() => setReqOpen(true)}><PackageCheck size={16} />Trebovanje</button>
+        <button className="btn !px-2 !gap-1.5 text-[13px]" data-testid="btn-open-calc" onClick={() => window.dispatchEvent(new CustomEvent('open-calc'))}><Calculator size={16} />Detaljan obračun</button>
+        <button className="btn !px-2 !gap-1.5 text-[13px]" data-testid="btn-requisition" title="Trebovanje materijala: sav materijal iz sastavnica, profili u celim šipkama; količine se mogu promeniti pre štampe" onClick={() => setReqOpen(true)}><PackageCheck size={16} />Trebovanje</button>
       </div>
       {/* dokumenti odmah uz cenu, da se ne skroluje do dna panela */}
       <div className="grid grid-cols-2 gap-2 mt-2">
@@ -801,10 +802,10 @@ export function PropertiesPanel({ project }: { project: Project }) {
   const selection = useAppStore((s) => s.editor.selection);
   const multi = useAppStore((s) => s.editor.multi);
   return (
-    <div className="space-y-4" data-testid="properties">
-      {selection?.type === 'item' && multi.length > 1 && <MultiPanel project={project} ids={multi} />}
-      {selection?.type === 'item' && multi.length < 2 && <ItemPanel project={project} id={selection.id} />}
-      {selection?.type === 'post' && <PostPanel project={project} id={selection.id} />}
+    <div className="properties-panel space-y-4" data-testid="properties">
+      {selection?.type === 'item' && multi.length > 1 && <MultiPanel key={multi.join(':')} project={project} ids={multi} />}
+      {selection?.type === 'item' && multi.length < 2 && <ItemPanel key={selection.id} project={project} id={selection.id} />}
+      {selection?.type === 'post' && <PostPanel key={selection.id} project={project} id={selection.id} />}
       {project.items.length > 0 && <PriceSummary project={project} />}
       <ProjectBasics project={project} />
     </div>
@@ -1057,20 +1058,17 @@ function DuplicateMany({ kind }: { kind: string }) {
 }
 
 /** Opseg izmena podešavanja: samo izabrani element, svi iste vrste (sva platna / sve kapije) ili platna i kapije zajedno. */
-function ScopeToggle({ kind, terrace = false }: { kind: 'fence' | 'gate'; terrace?: boolean }) {
+function ScopeToggle({ project, id, kind, terrace = false }: { project: Project; id: string; kind: 'fence' | 'gate'; terrace?: boolean }) {
   const scope = useAppStore((s) => s.editor.scope ?? 'one');
   const setScope = useAppStore((s) => s.setEditScope);
   const one = kind === 'fence' ? 'Samo ovo platno' : 'Samo ova kapija';
   const same = kind === 'fence' ? 'Sva platna' : 'Sve kapije';
+  const count = editScopeTargets(project, id, scope).length;
   return (
     <div className="mb-2" data-testid="edit-scope">
-      <div className="text-[12.5px] text-muted mb-1">Izmene važe za</div>
-      <div className="flex gap-1 flex-wrap">
-        {([['one', one], ['same', same], ['all', terrace ? 'Platna i stepenište' : 'Platna i kapije']] as const).map(([v, label]) => (
-          <button key={v} type="button" className={`btn btn-sm ${scope === v ? 'btn-primary' : ''}`} aria-pressed={scope === v} data-testid={`edit-scope-${v}`} onClick={() => setScope(v)}>{label}</button>
-        ))}
-      </div>
-      {scope !== 'one' && <div className="text-[11.5px] text-muted mt-1">Boja, završna obrada, visina, rastojanje od poda, razmaci i ostala podešavanja ispune menjaju se na svim izabranim elementima. Širina i mere ostaju svakom svoje.</div>}
+      <ScopeField testId="edit-scope-select" value={scope} onChange={setScope} count={count}
+        options={[{ value: 'one', label: one }, { value: 'same', label: same }, { value: 'all', label: terrace ? 'Platna i stepenište' : 'Platna i kapije' }]}
+        hint={scope === 'one' ? undefined : 'Izgled i podešavanja ispune važe za obuhvaćene elemente. Između platna i kapija prenose se boja, završna obrada i ispuna; visine se prenose samo unutar iste vrste. Širine i mere kapija ostaju svakom elementu svoje.'} />
     </div>
   );
 }

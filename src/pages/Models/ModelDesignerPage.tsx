@@ -2,6 +2,9 @@ import { guidesOf } from '../../domain/models/guides';
 import { defaultTolMm, FENCE_TOL_MM, GATE_TOL_MM, partTolMm } from '../../domain/models/tolerance';
 import { settleModel as settle } from '../../domain/models/settle';
 import { fillHardware, removeParts } from '../../domain/models/terraceHardware';
+import { NumInput } from '../../components/forms/NumInput';
+import { ChoiceGroup } from '../../components/ui/ChoiceGroup';
+import { Switch } from '../../components/ui/Switch';
 import { GlassRailingPanel } from '../../components/designer/GlassRailingPanel';
 import { IncompletePriceNotice } from '../../components/editor/IncompletePriceNotice';
 import { checkDrawing } from '../../domain/models/drawingCheck';
@@ -65,44 +68,19 @@ const Designer3D = lazy(() => import('../../components/designer/Designer3D'));
 type ViewMode = '2d' | '3d' | 'split' | 'presek' | 'skica' | 'mere';
 
 /**
- * Brojčano polje: ukucana vrednost se primenjuje TEK kad se pritisne Enter (Esc vraća staru). Dok se kuca, ništa se ne menja,
+ * Brojčano polje: Enter ili izlazak iz polja potvrđuje unos, Esc vraća staru vrednost. Dok se kuca, ništa se ne menja,
  * pa međuvrednosti (npr. dok se briše 990 da bi se ukucalo novo) ne prave izmene ni greške. Neispravna vrednost se ne primenjuje
  * i polje javlja dozvoljeni opseg.
  */
 function Num({ label, value, onChange, min = -100000, max = 100000, testId, unit = 'mm', readOnly = false, onSame }: { label: string; value: number; onChange: (v: number) => void; min?: number; max?: number; testId?: string; unit?: string; readOnly?: boolean; onSame?: () => void }) {
-  const [text, setText] = useState(String(value));
-  const [err, setErr] = useState<string | null>(null);
-  const last = useRef(value);
-  if (last.current !== value) { last.current = value; if (Number(text.replace(',', '.')) !== value) setText(String(value)); if (err) setErr(null); }
-  const parsed = Number(text.replace(',', '.'));
-  const dirty = text.trim() === '' || !Number.isFinite(parsed) || parsed !== value;
-  const fmtLimit = (n: number) => String(n).replace('.', ',');
-  const commit = () => {
-    if (readOnly) return;
-    if (text.trim() === '' || !Number.isFinite(parsed)) { setErr('Unesite broj.'); return; }
-    if (parsed < min || parsed > max) { setErr(`Dozvoljeno od ${fmtLimit(min)} do ${fmtLimit(max)} ${unit}. Vrednost nije primenjena.`); return; }
-    setErr(null);
-    if (parsed !== value) { last.current = value; onChange(parsed); } else onSame?.();
-  };
-  const showDirty = dirty && !readOnly;
-  return (
-    <div className="py-1 text-[13px]">
-      <label className="flex items-center justify-between gap-2">
-        <span className="text-slate-600">{label}</span>
-        <span className="flex items-center gap-1.5">
-          <input className={`input !w-24 !py-1 text-right tabular-nums ${readOnly ? '!bg-slate-100 text-slate-600' : ''} ${showDirty && !err ? '!border-[#f79009] !bg-[#fffaeb]' : ''}`} inputMode="decimal" data-testid={testId} data-dirty={showDirty ? 'true' : undefined} aria-invalid={err ? true : undefined} value={text} readOnly={readOnly}
-            onChange={(e) => { setText(e.target.value); setErr(null); }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') { e.preventDefault(); commit(); }
-              else if (e.key === 'Escape') { setText(String(value)); setErr(null); e.stopPropagation(); }
-            }} />
-          <span className="text-muted w-7 text-xs">{unit}</span>
-        </span>
-      </label>
-      {err && <p className="text-[11.5px] text-[#b42318] mt-0.5 text-right" role="alert" data-testid={testId ? `${testId}-error` : undefined}>{err}</p>}
-      {!err && showDirty && <p className="text-[11.5px] text-[#b54708] mt-0.5 text-right">Enter za potvrdu · Esc za otkazivanje</p>}
-    </div>
-  );
+  return <label className="flex items-start justify-between gap-2 py-1.5 text-[13px]">
+    <span className="text-slate-600 pt-2">{label}{readOnly && <span className="block text-[11px] text-muted">Izračunato</span>}</span>
+    <span className="w-[132px] shrink-0 flex items-start gap-1.5">
+      <NumInput value={value} testId={testId} ariaLabel={label} required min={min} max={max} unit={unit} readOnly={readOnly} onSame={onSame}
+        onCommit={(v) => { if (v !== null) onChange(v); }} />
+      <span className="text-muted w-7 text-xs pt-2">{unit}</span>
+    </span>
+  </label>;
 }
 
 const AUTO_LABELS: Record<LayoutAuto, string> = { gap: 'razmak između prečki', bottom: 'odstojanje od dna', top: 'odstojanje od vrha' };
@@ -175,11 +153,8 @@ function BarLayoutBox({ model, bar, materials, onApply, onError, title, topLabel
       {!vert && <>
       <div className="flex items-center justify-between gap-2 py-1 text-[13px]">
         <span className="text-slate-600">Tip ograde</span>
-        <span className="inline-flex rounded-lg border border-line overflow-hidden" role="group" aria-label="Tip ograde">
-          {([['sa', 'Sa luftom'], ['bez', 'Bez lufta']] as [Lufta, string][]).map(([v, l]) => (
-            <button key={v} data-testid={`layout-lufta-${v}`} aria-pressed={lufta === v} className={`px-2.5 py-1 text-[12px] font-semibold ${lufta === v ? 'bg-brand-black text-white' : 'hover:bg-slate-50'}`} onClick={() => setLufta(v)}>{l}</button>
-          ))}
-        </span>
+        <ChoiceGroup label="Tip ograde" value={lufta} onChange={setLufta}
+          options={([['sa', 'Sa luftom'], ['bez', 'Bez lufta']] as [Lufta, string][]).map(([v, label]) => ({ value: v, label, testId: `layout-lufta-${v}` }))} />
       </div>
       <p className="text-[11.5px] text-muted mb-1" data-testid="layout-lufta-help">{lufta === 'bez'
         ? 'Bez lufta: između prečki nema procepa, razmak ide od 0 u minus (prečke se uvlače jedna u drugu).'
@@ -204,11 +179,8 @@ function BarLayoutBox({ model, bar, materials, onApply, onError, title, topLabel
         <Num label="Od poda (podignuto)" value={model.liftMm ?? 0} min={0} max={500} testId="layout-lift" onChange={(v) => onApply({ ...model, liftMm: v })} />
       )}
       {vert && (
-        <label className="flex items-center gap-2 py-1.5 text-[13px] cursor-pointer" data-testid="layout-caps-row">
-          <input type="checkbox" data-testid="layout-caps" checked={groupHasCaps(model, bar, materials)}
-            onChange={(e) => { const r = setGroupCaps(model, bar, materials, e.target.checked); if ('error' in r) onError(r.error); else onApply(r.model); }} />
-          <span>Čep na vrhu svake letvice</span>
-        </label>
+        <div data-testid="layout-caps-row"><Switch label="Čep na vrhu svake letvice" testId="layout-caps" checked={groupHasCaps(model, bar, materials)}
+          onChange={(on) => { const r = setGroupCaps(model, bar, materials, on); if ('error' in r) onError(r.error); else onApply(r.model); }} /></div>
       )}
       <p className="text-[11.5px] text-muted">Izmena broja prečki dodaje kopije izabrane prečke ili skida prečke pri dnu. Ako prečke ne staju u {info.free ? 'raspoloživu visinu' : 'visinu bočnih strana'}, izmena se ne primenjuje i obaveštenje navodi razlog.</p>
     </div>
@@ -257,11 +229,8 @@ function FaceChoice({ testPrefix, a, b, firstPressed, secondPressed, mixed, onPi
       <span className="text-slate-600">Čeona strana{sq ? '' : ` cevi ${f(a)}×${f(b)}`}{mixed ? ' (različito)' : ''}</span>
       {sq ? <p className="text-[11.5px] text-muted">Kvadratni presek: nema šta da se okreće.</p> : (
         <>
-          <span className="grid grid-cols-2 rounded-lg border border-line overflow-hidden">
-            {([[0, a, firstPressed], [90, b, second]] as [number, number, boolean][]).map(([r, v, on]) => (
-              <button key={r} data-testid={`${testPrefix}-face-${r}`} aria-pressed={on} className={`py-1 text-[12px] font-semibold ${on ? 'bg-brand-black text-white' : 'hover:bg-slate-50'}`} onClick={() => onPick(r)}>{f(v)} mm</button>
-            ))}
-          </span>
+          <ChoiceGroup label="Čeona strana cevi" value={firstPressed ? '0' : second ? '90' : ''} onChange={(v) => onPick(Number(v))}
+            options={[{ value: '0', label: `${f(a)} mm`, testId: `${testPrefix}-face-0` }, { value: '90', label: `${f(b)} mm`, testId: `${testPrefix}-face-90` }]} />
           <p className="text-[11.5px] text-muted">Stranica okrenuta ka posmatraču (širina cevi na crtežu). Uglovi sečenja ostaju isti, a menjaju se dužine u krojnoj listi.</p>
         </>
       )}
@@ -291,10 +260,8 @@ function Palette({ materials, activeId, onPick, terrace, showAll }: {
       <div className="p-3 border-b border-line">
         <button className={`btn btn-sm w-full mb-2 ${activeId === null ? 'btn-dark' : ''}`} data-testid="designer-tool-select" onClick={() => onPick(null)}><MousePointer2 size={15} />Izbor i pomeranje</button>
         <div className="relative"><Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" /><input className="input !pl-8 !py-1.5" placeholder="Pretraga materijala" aria-label="Pretraga materijala" value={q} onChange={(e) => setQ(e.target.value)} /></div>
-        {FEATURES.terraceFences && <label className="flex items-center gap-1.5 text-[12px] text-muted mt-2" title={terrace ? 'Pored materijala za terase nudi i materijale dvorišnih ograda i kapija' : 'Pored materijala dvorišnih ograda i kapija nudi i materijale za terase'}>
-          <input type="checkbox" data-testid="designer-show-all-materials" checked={showAll.checked} onChange={(e) => showAll.onChange(e.target.checked)} />
-          {terrace ? 'Prikaži i ostale materijale' : 'Prikaži i materijale za terase'}
-        </label>}
+        {FEATURES.terraceFences && <Switch className="mt-2" label={terrace ? 'Prikaži i ostale materijale' : 'Prikaži i materijale za terase'}
+          testId="designer-show-all-materials" checked={showAll.checked} onChange={showAll.onChange} />}
       </div>
       <div className="flex-1 min-h-0 overflow-auto scroll-thin p-2">
         {materials.length === 0 && (
@@ -913,10 +880,8 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
             <Num label="Levo krilo" value={pair.leftMm} min={200} max={20000} testId="designer-width-left" onChange={(v) => setPair({ leftMm: Math.round(v), rightMm: pair.rightMm })} />
             <Num label="Desno krilo" value={pair.rightMm} min={200} max={20000} testId="designer-width-right" onChange={(v) => setPair({ leftMm: pair.leftMm, rightMm: Math.round(v) })} />
             <span className="text-[12.5px] text-muted" data-testid="designer-pair-total">Otvor {pairWidth(pair)} mm</span>
-            <div className="inline-flex rounded-lg border border-line overflow-hidden" role="radiogroup" aria-label="Aktivno krilo (sa ulice)">
-              <span className="px-2 py-1.5 text-[12.5px] font-semibold bg-slate-50">Aktivno krilo</span>
-              {(['left', 'right'] as const).map((sd) => <button key={sd} type="button" role="radio" aria-checked={activeSide === sd} data-testid={`designer-active-${sd}`} className={`px-3 py-1.5 text-[13px] font-semibold ${activeSide === sd ? 'bg-brand-black text-white' : 'bg-white hover:bg-slate-50'}`} onClick={() => setActiveSide(sd)}>{sd === 'left' ? 'Levo' : 'Desno'}</button>)}
-            </div>
+            <ChoiceGroup label="Aktivno krilo (sa ulice)" value={activeSide} onChange={setActiveSide}
+              options={[{ value: 'left', label: 'Levo', testId: 'designer-active-left' }, { value: 'right', label: 'Desno', testId: 'designer-active-right' }]} />
           </>
         ) : <Num label="Širina" value={model.widthMm} min={50} max={20000} testId="designer-width" onChange={(v) => resizeTo(Math.round(v), modelRef.current.heightMm)} />}
         {/* klizna kapija: visina je ukupna visina od tla (do vrha krila), isto kao ograda i stubovi; crtež je krilo, podignuto od tla */}
@@ -928,7 +893,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
             <Num label="Vis." value={posts[k].h} min={200} max={6000} testId={`designer-post-h-${k}`} onChange={(v) => setPost(k, { heightMm: Math.round(v) })} />
           </span>
         ))}
-        <label className="flex items-center gap-1.5 text-[13px]" title="Ukupna širina i visina crteža; mere modela proizlaze iz crteža"><input type="checkbox" checked={showDims} data-testid="designer-dims" onChange={(e) => setShowDims(e.target.checked)} />Kote</label>
+        <Switch label="Kote" checked={showDims} testId="designer-dims" onChange={setShowDims} title="Ukupna širina i visina crteža; mere modela proizlaze iz crteža" />
         <button type="button" className="input !w-auto !py-1.5 inline-flex items-center gap-2" aria-label={`Boja: ${normalizeColorKey(model.color)}. Otvori kartu boja`} data-testid="designer-color" onClick={() => setChartOpen(true)}>
           <span className="w-5 h-5 rounded-full ring-1 ring-black/20" style={{ background: colorHex(model.color) }} />{normalizeColorKey(model.color)}
         </button>
@@ -962,8 +927,8 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
           onClick={() => { if (free) { setFree(false); setCheckOpen(true); } else { setFree(true); setCheckOpen(false); } }}>{free ? 'Normalno crtanje' : 'Slobodno crtanje'}</button>
         {!free && <button type="button" className={`btn btn-sm ${activeProblems?.length ? '!border-[#fda29b] !text-[#b42318]' : ''}`} data-testid="designer-check" aria-pressed={checkOpen} title="Upozorenja za crtež: preklapanja, krive cevi, nejednaki razmaci i problemi na drugim veličinama polja. Upozorenje koje ima smisla možete da prihvatite." onClick={() => setCheckOpen((o) => !o)}><AlertTriangle size={14} />Upozorenja ({activeProblems?.length ?? 0})</button>}
         {!free && model.kind !== 'terrace' && <button type="button" className="btn btn-sm" data-testid="designer-probe" aria-pressed={probeOpen} title="Prikazuje isti model na nekoliko veličina polja (usko, uobičajeno, visoko, široko), po istim pravilima kao u projektu." onClick={() => setProbeOpen((o) => !o)}>Proba veličina</button>}
-        <label className="flex items-center gap-1.5 text-[13px]" title="Ivice i krajevi dela koji crtate, pomerate ili lepite privlače se uz ivice susednih delova i tlo. Držite Alt da privremeno isključite."><input type="checkbox" checked={snapObjects} data-testid="designer-snap" onChange={(e) => setSnapObjects(e.target.checked)} />Privlačenje</label>
-        <label className="flex items-center gap-1.5 text-[13px]" title="Profili se crtaju samo vodoravno ili uspravno"><input type="checkbox" checked={ortho} data-testid="designer-ortho" onChange={(e) => setOrtho(e.target.checked)} />Pod pravim uglom</label>
+        <Switch label="Privlačenje" checked={snapObjects} testId="designer-snap" onChange={setSnapObjects} title="Ivice i krajevi privlače se uz susedne delove i tlo. Držite Alt da privremeno isključite." />
+        <Switch label="Pod pravim uglom" checked={ortho} testId="designer-ortho" onChange={setOrtho} title="Profili se crtaju samo vodoravno ili uspravno" />
         <select className="input !w-auto !py-1.5" aria-label="Korak mreže" value={grid} onChange={(e) => setGrid(Number(e.target.value))}>
           {[1, 5, 10, 50].map((g) => <option key={g} value={g}>korak {g} mm</option>)}
         </select>
@@ -972,11 +937,9 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
         </>}
         <button type="button" className="btn btn-sm" data-testid="toggle-designer-materials" aria-expanded={materialsOpen} aria-controls="designer-materials" onClick={() => setMaterialsOpen((v) => !v)}>{materialsOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}Materijali</button>
         <button type="button" className="btn btn-sm" data-testid="toggle-designer-properties" aria-expanded={propertiesOpen} aria-controls="designer-properties" onClick={() => setPropertiesOpen((v) => !v)}><SlidersHorizontal size={16} />Svojstva</button>
-        <div className="inline-flex rounded-lg border border-line overflow-hidden" role="group" aria-label="Prikaz">
-          {([['2d', '2D'], ['split', '2D + 3D'], ['3d', '3D'], ['presek', 'Presek'], ['skica', 'Skica'], ...(model.kind === 'gate' ? [['mere', 'Mere kapije']] : [])] as [ViewMode, string][]).map(([v, l]) => (
-            <button key={v} data-testid={v === 'mere' ? 'designer-gate-measures' : `designer-view-${v}`} aria-pressed={view === v} className={`px-3 py-1.5 text-[13px] font-semibold ${view === v ? 'bg-brand-black text-white' : 'bg-white hover:bg-slate-50'}`} onClick={() => selectView(v)}>{l}</button>
-          ))}
-        </div>
+        <ChoiceGroup kind="tabs" label="Prikaz" value={view} onChange={selectView}
+          options={([['2d', '2D'], ['split', '2D + 3D'], ['3d', '3D'], ['presek', 'Presek'], ['skica', 'Skica'], ...(model.kind === 'gate' ? [['mere', 'Mere kapije']] : [])] as [ViewMode, string][])
+            .map(([v, label]) => ({ value: v, label, testId: v === 'mere' ? 'designer-gate-measures' : `designer-view-${v}` }))} />
       </div>
 
       {/* traka dorade se vidi samo odmah posle klika na „Doradi“ (i dok dorađen crtež zamenjuje original); kasnije otvaranje crteža je običan model */}
@@ -1119,7 +1082,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
             const rot = common((p) => p.rot);
             const cut = multi.filter((r) => r.part.cut45).length;
             return (
-              <div className="mb-4" data-testid="designer-multi">
+              <div key={ids.join(':')} className="mb-4" data-testid="designer-multi">
                 <div className="text-[13px] font-semibold">Izabrano delova: {multi.length}</div>
                 <div className="text-[11.5px] text-muted mb-2">{sameMat ? (first.material?.name ?? 'Materijal je obrisan iz cenovnika') : 'različiti materijali'}. Izmena važi za sve izabrane delove; polje sa oznakom „različito“ prikazuje vrednost prvog dela.</div>
                 <PartColorField testPrefix="multi" colors={multi.map((r) => r.part.color)} modelColor={model.color} onPick={(c) => change((m) => setPartsColor(m, ids, c))} />
@@ -1151,9 +1114,9 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
                 {linear && !multi.every((r) => r.shape.type === 'linear' && isSymmetricRect(r.shape.section)) && (
                   <div className="grid gap-1 py-1 text-[13px]">
                     <span className="text-slate-600">Okretanje preseka{rot.same ? '' : ' (različito)'}</span>
-                    <span className="grid grid-cols-4 rounded-lg border border-line overflow-hidden">
-                      {[0, 90, 180, 270].map((r) => <button key={r} data-testid={`multi-rot-${r}`} aria-pressed={rot.same && rot.value === r} className={`py-1 text-[12px] font-semibold ${rot.same && rot.value === r ? 'bg-brand-black text-white' : 'hover:bg-slate-50'}`} onClick={() => (multi.some((q) => isFramePart(q.part)) ? rotateFrame(r) : setAll({ rot: r }))}>{r}°</button>)}
-                    </span>
+                    <ChoiceGroup label="Okretanje preseka izabranih delova" value={rot.same ? String(rot.value) : ''}
+                      onChange={(v) => multi.some((q) => isFramePart(q.part)) ? rotateFrame(Number(v)) : setAll({ rot: Number(v) })}
+                      options={[0, 90, 180, 270].map((r) => ({ value: String(r), label: `${r}°`, testId: `multi-rot-${r}` }))} />
                   </div>
                 )}
                 {linear && field('Nagib preseka (koso)', (p) => p.tiltDeg ?? 0, (v) => ({ tiltDeg: v || undefined }), { min: -90, max: 90, unit: '°', testId: 'multi-tilt' })}
@@ -1189,7 +1152,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
             );
           })()}
           {sel && (
-            <div className="mb-4" data-testid="designer-props">
+            <div key={sel.part.id} className="mb-4" data-testid="designer-props">
               <div className="text-[13px] font-medium leading-snug">{sel.material?.name ?? 'Materijal je obrisan iz cenovnika'}</div>
               <div className="text-[11.5px] text-muted mb-2">{sel.shape.type === 'linear' ? `Presek ${sel.shape.section.w} × ${sel.shape.section.h} mm${sel.shape.exact ? '' : ' (približan oblik prema nazivu)'}` : ''}</div>
               {sel.material && !sel.part.glazing && (() => {
@@ -1238,9 +1201,9 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
               {sel.shape.type === 'linear' && !isSymmetricRect(sel.shape.section) && (
                 <div className="grid gap-1 py-1 text-[13px]">
                   <span className="text-slate-600">Okretanje preseka</span>
-                  <span className="grid grid-cols-4 rounded-lg border border-line overflow-hidden">
-                    {[0, 90, 180, 270].map((r) => <button key={r} data-testid={`part-rot-${r}`} aria-pressed={sel.part.rot === r} className={`py-1 text-[12px] font-semibold ${sel.part.rot === r ? 'bg-brand-black text-white' : 'hover:bg-slate-50'}`} onClick={() => (isFramePart(sel.part) ? rotateFrame(r) : patchPart(sel.part.id, { rot: r }))}>{r}°</button>)}
-                  </span>
+                  <ChoiceGroup label="Okretanje preseka" value={String(sel.part.rot)}
+                    onChange={(v) => isFramePart(sel.part) ? rotateFrame(Number(v)) : patchPart(sel.part.id, { rot: Number(v) })}
+                    options={[0, 90, 180, 270].map((r) => ({ value: String(r), label: `${r}°`, testId: `part-rot-${r}` }))} />
                 </div>
               )}
               {sel.shape.type === 'linear' && (

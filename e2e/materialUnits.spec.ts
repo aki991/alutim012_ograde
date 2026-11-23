@@ -29,19 +29,19 @@ test('smislene jedinice, preračun cene i trajno čuvanje posle osvežavanja', a
     const value = await new Promise<Material>((resolve) => { const r = db.transaction('materials').objectStore('materials').get(key); r.onsuccess = () => resolve(r.result); }); db.close(); return value;
   }, id);
   const unit = (row: ReturnType<typeof page.getByTestId>) => row.getByRole('combobox');
-  const price = (row: ReturnType<typeof page.getByTestId>) => row.getByRole('spinbutton', { name: /^Cena:/ });
+  const price = (row: ReturnType<typeof page.getByTestId>) => row.getByRole('textbox', { name: /^Cena:/ });
   const choices = async (row: ReturnType<typeof page.getByTestId>) => unit(row).locator('option').evaluateAll((els) => els.map((el) => (el as HTMLOptionElement).value));
 
   let row = await find(base.name);
   expect(await choices(row)).toEqual(['m', 'kg']);
   await unit(row).selectOption('kg');
-  await expect(price(row)).toHaveValue('257.2');
+  await expect(price(row)).toHaveValue('257,2');
   await price(row).fill('300'); await price(row).press('Tab');
   await expect.poll(async () => (await saved(base.id)).unitPrice).toBeCloseTo(116.64, 10);
   await expect.poll(async () => (await saved(base.id)).priceUnit).toBe('kg');
   await page.reload(); row = await find(base.name);
   await expect(unit(row)).toHaveValue('kg'); await expect(price(row)).toHaveValue('300');
-  await unit(row).selectOption('m'); await expect(price(row)).toHaveValue('116.64');
+  await unit(row).selectOption('m'); await expect(price(row)).toHaveValue('116,64');
   await row.getByTestId('material-edit').click();
   await page.getByRole('combobox', { name: 'Jedinica mere', exact: true }).selectOption('kg');
   await page.getByRole('textbox', { name: 'Cena po kg', exact: true }).fill('350');

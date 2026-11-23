@@ -1,3 +1,4 @@
+import { ChoiceGroup } from '../ui/ChoiceGroup';
 import { Download, ExternalLink, FileText, Loader2, Maximize2, Minimize2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { AppSettings, Customer, Material, Project } from '../../domain/models/types';
@@ -90,11 +91,8 @@ export function PdfPreviewModal({ project, customer, materials, settings, onClos
       {canScope && (
         <div className="flex flex-wrap items-center gap-2 mb-2" data-testid="pdf-scope">
           <span className="text-sm text-muted">Štampa:</span>
-          <span className="inline-flex rounded-lg border border-line overflow-hidden">
-            {(['all', 'gates', 'fence'] as PrintScope[]).map((s) => (
-              <button key={s} type="button" data-testid={`pdf-scope-${s}`} aria-pressed={scope === s} className={`px-3 py-1.5 text-[13px] font-semibold ${scope === s ? 'bg-brand-black text-white' : 'hover:bg-slate-50'}`} onClick={() => setScope(s)}>{PRINT_SCOPE_LABELS[s]}</button>
-            ))}
-          </span>
+          <ChoiceGroup label="Opseg štampe" value={scope} onChange={setScope}
+            options={(['all', 'gates', 'fence'] as PrintScope[]).map((s) => ({ value: s, label: PRINT_SCOPE_LABELS[s], testId: `pdf-scope-${s}` }))} />
         </div>
       )}
       {offcutsStep ? (

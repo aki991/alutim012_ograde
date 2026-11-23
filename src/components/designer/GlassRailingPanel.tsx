@@ -3,6 +3,7 @@ import type { CustomModel, GlassRailingSpec } from '../../domain/models/custom';
 import { glassClampMaterials, glassRailingLayout, railingGlassMaterials } from '../../domain/models/glassRailing';
 import type { Material } from '../../domain/models/types';
 import { NumberField } from '../forms/Fields';
+import { Switch } from '../ui/Switch';
 
 export function GlassRailingPanel({ model, materials, onChange }: {
   model: CustomModel; materials: Material[]; onChange: (fn: (m: CustomModel) => CustomModel) => void;
@@ -19,11 +20,8 @@ export function GlassRailingPanel({ model, materials, onChange }: {
   const apply = (patch: Partial<GlassRailingSpec>) => onChange((m) => ({ ...m, glassRailing: { ...draft, ...patch } }));
   return (
     <div className="mb-4">
-      <label className="flex items-center gap-2 text-[13px] font-semibold py-1">
-        <input type="checkbox" data-testid="glass-railing-mode" checked={!!spec}
-          onChange={(e) => e.target.checked ? apply({}) : onChange((m) => ({ ...m, glassRailing: undefined }))} />
-        Crtam staklenu ogradu
-      </label>
+      <Switch label="Crtam staklenu ogradu" testId="glass-railing-mode" checked={!!spec}
+        onChange={(on) => on ? apply({}) : onChange((m) => ({ ...m, glassRailing: undefined }))} />
       {spec && <section className="rounded-lg border border-line p-2.5 mt-2" data-testid="glass-railing-panel">
       <h2 className="font-bold text-[14px] mb-1">Staklena ograda</h2>
       <p className="text-xs text-muted mb-2">Držači se postavljaju na stubove, po četiri za svako stakleno polje.</p>
@@ -37,11 +35,8 @@ export function GlassRailingPanel({ model, materials, onChange }: {
       </label>
       <button className="btn btn-sm btn-primary w-full mb-2" data-testid="glass-add-clamps" disabled={!layout.parts.length}
         onClick={() => apply({})}>{spec ? 'Osveži držače stakla' : 'Dodaj držače stakla'}</button>
-      <label className="flex items-center gap-2 text-[13px] font-semibold py-1">
-        <input type="checkbox" data-testid="glass-railing-fill" checked={!!spec?.glassMaterialId} disabled={!layout.parts.length || !glasses.length}
-          onChange={(e) => apply({ glassMaterialId: e.target.checked ? glassId : undefined })} />
-        Staklena ograda – popuni staklom
-      </label>
+      <Switch label="Staklena ograda – popuni staklom" testId="glass-railing-fill" checked={!!spec?.glassMaterialId} disabled={!layout.parts.length || !glasses.length}
+        onChange={(on) => apply({ glassMaterialId: on ? glassId : undefined })} />
       <label className="grid gap-1 text-[12.5px] mt-1">
         Vrsta stakla
         <select className="input !py-1 !text-[12px]" data-testid="glass-pane-material" value={glassId}

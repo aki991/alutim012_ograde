@@ -63,3 +63,27 @@ test('crtanje modela: svaki panel se sklapa nezavisno i oslobađa prostor za crt
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
   expect(errors).toEqual([]);
 });
+
+test('fiksna dužina: dugmad ne šire svojstva i zadržavanje prostora ne menja mere', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await page.goto('/podesavanja'); await page.getByTestId('set-advanced').check();
+  await page.getByRole('link', { name: 'Početna', exact: true }).click(); await page.getByTestId('hero-new').click();
+  await page.getByTestId('cat-fence-add').click(); await page.getByTestId('cat-fence-add').click();
+  await page.getByTestId('total-mode').getByRole('radio', { name: 'Fiksna', exact: true }).click();
+  const before = await page.getByTestId('total-modular').innerText();
+  const target = Number(before.replace(/\D/g, '')) + 500;
+  await page.getByTestId('fixed-total').fill(String(target)); await page.getByTestId('fixed-total').press('Enter');
+  await page.getByTestId('btn-leave-free').click();
+  await expect(page.getByTestId('total-modular')).toHaveText(before);
+  await expect(page.getByTestId('panel-basics')).toContainText('Zadržane su postojeće širine.');
+  const drawer = page.getByTestId('props-drawer');
+  for (const width of [1280, 1160, 900, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    expect(await drawer.evaluate((el) => el.scrollWidth - el.clientWidth), `Širina prozora ${width}`).toBeLessThanOrEqual(1);
+  }
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await page.getByTestId('btn-autofill').click();
+  await expect(page.getByTestId('total-modular')).toContainText(target.toLocaleString('sr-RS'));
+  await expect(page.getByTestId('btn-autofill')).toBeDisabled(); await expect(page.getByTestId('btn-leave-free')).toBeDisabled();
+  await drawer.screenshot({ path: 'test-results/fixed-total-controls.png' });
+});

@@ -112,13 +112,13 @@ test('masa u katalogu: cev, specijalni profil, okov, lim i trajno čuvanje ručn
   await expect(page.getByTestId('material-mass')).toHaveText('2,346 kg/kom');
 
   await search.fill(pipe.name);
-  const price = row(pipe.name).getByRole('spinbutton', { name: `Cena: ${pipe.name}` });
+  const price = row(pipe.name).getByRole('textbox', { name: `Cena: ${pipe.name}` });
   await price.fill('456.78');
   await price.press('Tab');
   await expect.poll(async () => (await savedMaterial(pipe.id))?.unitPrice).toBe(456.78);
   await page.reload();
   await search.fill(pipe.name);
-  await expect(price).toHaveValue('456.78');
+  await expect(price).toHaveValue('456,78');
   await expect(row(pipe.name).getByTestId('material-mass')).toHaveText('0,389 kg/m');
 
   const stored = await page.evaluate(async () => {

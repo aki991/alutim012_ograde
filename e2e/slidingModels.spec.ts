@@ -343,6 +343,7 @@ test('rep: okretanje pravougaone cevi (čeona strana), uglovi sečenja ostaju, d
   const errors = trackErrors(page);
   await seedMaterials(page, '/modeli-kapija');
   await page.getByTestId('rework-sliding-samonoseca_rucna').click();
+  await page.getByTestId('designer-save-new').click();
   await page.getByTestId('sl-add-tail').click();
   const polyW = () => overlay(page).locator('[data-sliding-part="tail"] polygon').first().getAttribute('points');
   // kvadratna cev nema izbor čeone strane; pravougaona ima
@@ -385,7 +386,7 @@ test('crtanje modela: pravougaona cev se okreće čeonom stranom (bez biranja ug
   await expect(page.getByTestId('multi-face-90')).toContainText('20 mm');
   const w0 = Number(await page.getByTestId('designer-width').inputValue());
   await page.getByTestId('multi-face-90').click();
-  await expect(page.getByTestId('multi-face-90')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('multi-face-90')).toHaveAttribute('aria-checked', 'true');
   await expect(page.getByTestId('designer-notice')).toHaveCount(0);
   // ram sa užom čeonom stranom menja ukupnu širinu crteža
   expect(Number(await page.getByTestId('designer-width').inputValue())).toBeLessThan(w0);

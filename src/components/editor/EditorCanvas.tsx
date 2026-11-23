@@ -1,3 +1,5 @@
+import { ChoiceGroup } from '../ui/ChoiceGroup';
+import { Switch } from '../ui/Switch';
 import { Image as ImageIcon, Box, Columns2, Download, Eye, List, AlertTriangle, Loader2, PencilRuler, Save, Maximize2, Minimize2, Redo2, Ruler, ScanLine, SlidersHorizontal, Square, Undo2, ZoomIn, ZoomOut } from 'lucide-react';
 import { Component, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import type { DragSource, DragView, DropTarget } from '../../hooks/useDragController';
@@ -370,24 +372,10 @@ export function EditorCanvas({ project, svgRef, areaRef, drag, onBeginDrag, regi
   return (
     <section className="card overflow-hidden" data-testid="canvas-card">
       <div className="flex flex-wrap items-center gap-2 px-3 pt-2 border-b border-line">
-        <div className="flex flex-wrap gap-1 min-w-0 w-full" role="tablist" aria-label="Prikazi">
-          {TABS.filter((t) => t.id !== 'photo' || photoSimEnabled).map((t) => {
-            const active = t.id === view;
-            return (
-              <button
-                key={t.id}
-                role="tab"
-                aria-selected={active}
-                data-testid={`tab-${t.id}`}
-                onClick={() => setView(t.id)}
-                className={`${t.desktopOnly ? 'hidden lg:flex' : 'flex'} shrink-0 items-center gap-2 px-2 2xl:px-3.5 py-2.5 text-[13px] 2xl:text-[14px] font-medium border-b-2 whitespace-nowrap ${active ? 'border-primary text-primary' : 'border-transparent text-slate-600 hover:text-ink'}`}
-              >
-                {/* ikonice samo na širokom ekranu: na 1440 px svih sedam kartica staje u red bez skrolovanja */}
-                <t.icon size={17} className="hidden 2xl:block" />{t.label}
-              </button>
-            );
-          })}
-        </div>
+        <ChoiceGroup kind="tabs" label="Prikazi" value={view} onChange={setView} className="w-full"
+          options={TABS.filter((t) => t.id !== 'photo' || photoSimEnabled).map((t) => ({ value: t.id,
+            label: <span className="inline-flex items-center gap-1.5"><t.icon size={16} className="hidden 2xl:block" />{t.label}</span>,
+            testId: `tab-${t.id}`, className: t.desktopOnly ? 'hidden lg:block' : '' }))} />
         <div className="ml-auto flex items-center gap-1 pb-1.5 relative">
           {show2D && <button className="btn btn-sm btn-accent" data-testid="btn-trace" title="Nacrtajte trasu ograde tačku po tačku" aria-pressed={tracing} onClick={() => { if (!tracing) setView(view === 'split' ? 'split' : 'top'); setTracing((t) => !t); }}><PencilRuler size={15} />Nacrtaj ogradu</button>}
           <button
@@ -415,11 +403,9 @@ export function EditorCanvas({ project, svgRef, areaRef, drag, onBeginDrag, regi
           <span ref={optionsRef} className="contents">
           {show2D && <button className="btn btn-icon" aria-label="Opcije prikaza" aria-expanded={optionsOpen} title="Opcije prikaza" onClick={() => setOptionsOpen((o) => !o)} data-testid="btn-view-options"><SlidersHorizontal size={17} /></button>}
           {optionsOpen && show2D && (
-            <div className="absolute right-0 top-full mt-1 w-56 card p-2 z-30" role="menu">
+            <div className="absolute right-0 top-full mt-1 w-56 select-popup p-2 z-30" aria-label="Opcije prikaza">
               {([['showDimensions', 'Prikaži kote'], ['showGrid', 'Prikaži mrežu'], ['showLabels', 'Prikaži oznake elemenata']] as const).map(([k, label]) => (
-                <label key={k} className="flex items-center gap-2 px-2 py-1.5 text-sm rounded hover:bg-slate-50 cursor-pointer">
-                  <input type="checkbox" checked={s[k]} onChange={() => toggleOpt(k)} data-testid={`opt-${k}`} />{label}
-                </label>
+                <Switch key={k} className="w-full px-2 py-1" label={label} checked={s[k]} onChange={() => toggleOpt(k)} testId={`opt-${k}`} />
               ))}
               <button className="btn btn-sm w-full mt-1" onClick={() => { void exportSvg(project); setOptionsOpen(false); }} data-testid="btn-export-svg"><Download size={15} />Izvezi SVG</button>
             </div>

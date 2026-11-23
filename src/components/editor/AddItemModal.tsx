@@ -1,3 +1,4 @@
+import { ChoiceGroup } from '../ui/ChoiceGroup';
 import { allFenceModels } from '../../domain/models/customRegistry';
 import { ChevronRight } from 'lucide-react';
 import { ElementThumb, type ThumbKind } from './Catalog';
@@ -131,11 +132,8 @@ export function AddItemModal({ project, onClose }: { project: Project; onClose: 
         </label>
         {!kind.concrete && !(kind.fence && isTerraceModel(model)) && (
         <div className="grid gap-1"><span className="label">Tip novog krajnjeg stuba</span>
-          <div className="flex gap-1.5">
-            {([['auto', 'Kao ostali'], ['concrete', 'Betonski'], ['aluminium', 'Aluminijumski']] as const).map(([v, label]) => (
-              <button key={v} type="button" className={`btn btn-sm flex-1 ${post === v ? 'btn-primary' : ''}`} aria-pressed={post === v} data-testid={`add-post-${v}`} onClick={() => setPost(v)}>{label}</button>
-            ))}
-          </div>
+          <ChoiceGroup label="Tip novog krajnjeg stuba" value={post} onChange={setPost}
+            options={([['auto', 'Kao ostali'], ['concrete', 'Betonski'], ['aluminium', 'Aluminijumski']] as const).map(([v, label]) => ({ value: v, label, testId: `add-post-${v}` }))} />
         </div>
         )}
         <p className="text-[12px] text-muted">Element se dodaje na kraj niza ({kind.gate ? GATE_LABELS[kind.gate] : kind.fence ? FENCE_MODELS[model].name : kind.label}).</p>

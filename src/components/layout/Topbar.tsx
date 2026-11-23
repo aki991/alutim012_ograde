@@ -49,7 +49,7 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
             <span className="hidden md:inline">{cloud.status === 'synced' ? 'U bazi' : cloud.status === 'syncing' ? 'Usklađivanje' : cloud.status === 'offline' ? 'Bez veze' : 'Greška baze'}</span>
           </span>
         )}
-        <button className="btn !bg-accent !text-brand-black !border-transparent hover:!brightness-95 !px-3 sm:!px-4" aria-label="Novi projekat" data-testid="topbar-new-project" onClick={() => { setBell(false); setUser(false); navigate(`/editor/${useAppStore.getState().newProject()}`); }}><Plus size={18} /><span className="hidden sm:inline">Novi projekat</span></button>
+        <button className="btn btn-primary !px-3 sm:!px-4" aria-label="Novi projekat" data-testid="topbar-new-project" onClick={() => { setBell(false); setUser(false); navigate(`/editor/${useAppStore.getState().newProject()}`); }}><Plus size={18} /><span className="hidden sm:inline">Novi projekat</span></button>
         <div className="relative" ref={bellRef}>
           <button className="btn btn-icon !border-transparent !bg-transparent !text-white hover:!bg-white/10 relative" aria-label={specs.unread > 0 ? `Obaveštenja (${specs.unread} nepročitano)` : 'Obaveštenja'} onClick={() => { setBell((b) => !b); setUser(false); if (!bell) void specs.reload(); }}>
             <Bell size={20} />
