@@ -113,7 +113,7 @@ export default function ProductionPage() {
           <h2 className="font-bold mb-2">Redosled elemenata</h2>
           <table className="w-full min-w-[560px]"><thead><tr><th className="th">#</th><th className="th">Element</th><th className="th">Model</th><th className="th text-right">Modul</th><th className="th text-right">Svetli otvor</th><th className="th text-right">Visina</th><th className="th text-right">Masa</th></tr></thead>
             <tbody>{project.items.map((it, i) => isSpacer(it) ? null : <tr key={it.id}><td className="td">{itemNumber(project.items, i)}</td><td className="td">{itemLabel(project.items, i)}</td><td className="td text-slate-600">{describeItem(project, i)}</td><td className="td text-right tabular-nums">{fmtNum(it.widthMm, 0)}</td><td className="td text-right tabular-nums">{fmtNum(layout.items[i].clearWidth, 0)}</td><td className="td text-right tabular-nums">{fmtNum(it.heightMm, 0)}</td><td className="td text-right tabular-nums whitespace-nowrap" data-testid="prod-element-mass">{elementMasses[i]}</td></tr>)}</tbody></table>
-          <p className="text-xs text-muted mt-2">Dimenzije u mm. Masa elementa je bez zajedničkih stubova, okova i stakla. Stubova za izradu: {productionPostCount(project, layout)} kom; u ukupnom zbiru računaju se jednom.</p>
+          <p className="text-xs text-muted mt-2">Dimenzije u mm. Masa elementa je bez zajedničkih stubova, okova i stakla. Stubova za izradu: <span data-testid="production-post-count">{productionPostCount(project, layout, specs)}</span> kom (uključujući stubove u modelima ograde); u ukupnom zbiru računaju se jednom.</p>
         </section>
         <section className="card p-4 overflow-x-auto">
           <h2 className="font-bold mb-2">Okovi i automatika</h2>

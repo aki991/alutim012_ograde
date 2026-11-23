@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Sidebar } from '../components/layout/Sidebar';
 import { FEATURES } from '../config/features';
@@ -28,13 +28,17 @@ export default function App() {
   const ready = useAppStore((s) => s.ready);
   const loadError = useAppStore((s) => s.loadError);
   const [menu, setMenu] = useState(false);
+  const [navigationExpanded, setNavigationExpanded] = useState(false);
+  const mainRef = useRef<HTMLElement>(null);
   const { pathname } = useLocation();
+  const drawing = pathname.startsWith('/editor') || pathname.includes('/crtanje');
   const auth = useAuth();
 
   useEffect(() => {
     void useAppStore.getState().init().then(() => startAutosave());
   }, []);
   useEffect(() => setMenu(false), [pathname]);
+  useEffect(() => { mainRef.current?.scrollTo(0, 0); }, [pathname]);
 
   // prijavljen korisnik: podaci se usklađuju sa bazom (lokalna kopija ostaje za rad bez interneta)
   const userId = auth.session?.user.id ?? null;
@@ -55,7 +59,7 @@ export default function App() {
 
   return (
     <div className="h-full flex overflow-hidden">
-      <div className="hidden lg:block h-full"><Sidebar /></div>
+      <div className="hidden lg:block h-full"><Sidebar compact={drawing && !navigationExpanded} onToggle={drawing ? () => setNavigationExpanded((v) => !v) : undefined} /></div>
       {menu && (
         <div className="lg:hidden fixed inset-0 z-[90] flex" data-testid="mobile-menu">
           <div className="h-full shadow-2xl"><Sidebar onNavigate={() => setMenu(false)} /></div>
@@ -65,7 +69,7 @@ export default function App() {
       <div className="flex-1 min-w-0 flex flex-col h-full">
         <Topbar onMenu={() => setMenu(true)} />
         {loadError && <div className="bg-[#fef3f2] text-[#b42318] text-sm px-6 py-2" role="alert">{loadError}</div>}
-        <main className="flex-1 min-h-0 overflow-auto scroll-thin">
+        <main ref={mainRef} className="flex-1 min-h-0 overflow-auto scroll-thin">
           <Routes>
             <Route path="/" element={<DashboardPage />} />
             <Route path="/editor" element={<EditorPage />} />

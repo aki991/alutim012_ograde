@@ -309,6 +309,7 @@ export function buildElementFinishing(project: Project, indices: number[], mater
 export interface PriceRow { label: string; base: string; amount: number; emphasis?: boolean }
 
 export interface PriceBreakdown {
+  unpricedCount: number;
   materialTotal: number;
   coatingTotal: number;
   coatingAreaM2: number;
@@ -394,6 +395,7 @@ export function computePrice(project: Project, materials: Material[], specs?: Mo
     { label: 'Ukupno sa PDV-om', base: '', amount: grossTotal, emphasis: true },
   ];
   return {
+    unpricedCount: bom.filter((l) => l.group !== 'Dodatni materijal' && (l.missingPrice || l.unitPriceNet <= 0)).length,
     materialTotal: mat, coatingTotal, coatingAreaM2: finishing.areaM2, finishing, laborTotal: labor.total, installTotal: inst.total, costBase, profitAmount, sellNet,
     discountAmount, netAfterDiscount, vatAmount, grossTotal, rows,
     fenceAreaM2: labor.areaM2, runningMeters: inst.meters, gateCount: inst.gates,

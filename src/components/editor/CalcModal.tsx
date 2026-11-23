@@ -7,6 +7,7 @@ import { NumberField, PriceInput, SegmentedField, ToggleField } from '../forms/F
 import { Modal } from '../ui/Modal';
 import { LIMITS } from '../../domain/validation/limits';
 import { FinishingSummary } from '../production/FinishingSummary';
+import { IncompletePriceNotice } from './IncompletePriceNotice';
 
 export function CalcModal({ project, onClose }: { project: Project; onClose: () => void }) {
   const materials = useAppStore((s) => s.materials);
@@ -38,6 +39,7 @@ export function CalcModal({ project, onClose }: { project: Project; onClose: () 
       }
     >
       {empty && <div className="rounded-lg bg-slate-50 border border-line px-4 py-6 text-center text-sm text-muted mb-4" data-testid="calc-empty">Projekat je prazan — nema materijala ni cene. Dodajte elemente da biste dobili obračun.</div>}
+      <IncompletePriceNotice count={price.unpricedCount} />
       <div className="grid lg:grid-cols-[minmax(0,1.5fr)_minmax(320px,1fr)] gap-6">
         <div className="min-w-0">
           <h3 className="font-semibold mb-2">Spisak materijala</h3>
@@ -49,7 +51,7 @@ export function CalcModal({ project, onClose }: { project: Project; onClose: () 
                 const mat = materials.find((m) => m.id === l.materialId);
                 return (
                   <tr key={l.key}>
-                    <td className="td !px-2"><div className="font-medium text-[13px] leading-snug break-words">{l.name}</div><div className="text-[11px] text-muted">{l.group}</div></td>
+                    <td className="td !px-2"><div className="font-medium text-[13px] leading-snug break-words">{l.name}</div><div className="text-[11px] text-muted">{l.group}{l.group !== 'Dodatni materijal' && (l.missingPrice || l.unitPriceNet <= 0) && <span className="text-amber-800"> · bez cene</span>}</div></td>
                     <td className="td !px-2 text-right tabular-nums text-[13px]" title={`Geometrijski: ${fmtNum(l.geometricQty, 2)} ${l.unit}`}>{fmtNum(l.purchaseQty, l.unit === 'kom' ? 0 : 2)}<span className="text-muted"> {l.unit}</span></td>
                     <td className="td !px-2 text-right">
                       {mat ? (

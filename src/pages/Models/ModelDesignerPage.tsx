@@ -3,6 +3,7 @@ import { defaultTolMm, FENCE_TOL_MM, GATE_TOL_MM, partTolMm } from '../../domain
 import { settleModel as settle } from '../../domain/models/settle';
 import { fillHardware, removeParts } from '../../domain/models/terraceHardware';
 import { GlassRailingPanel } from '../../components/designer/GlassRailingPanel';
+import { IncompletePriceNotice } from '../../components/editor/IncompletePriceNotice';
 import { checkDrawing } from '../../domain/models/drawingCheck';
 import { checkSizes } from '../../domain/models/sizeCheck';
 import { SizeProbe } from '../../components/designer/SizeProbe';
@@ -21,7 +22,7 @@ import { placeSliding } from '../../domain/gates/slidingLayout';
 import { compPart, partDef } from '../../domain/gates/slidingParts';
 import { createGate } from '../../domain/models/factories';
 import { defaultGateConfig, GATE_TYPE_LABELS } from '../../domain/gates/gateModels';
-import { AlertTriangle, ArrowLeft, Copy, Download, FileText, Link2, MousePointer2, Redo2, Rows3, Search, Trash2, Undo2, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Copy, Download, FileText, Link2, MousePointer2, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Redo2, Rows3, Search, Trash2, Undo2, X } from 'lucide-react';
 import { lazy, Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Designer2D } from '../../components/designer/Designer2D';
@@ -370,6 +371,8 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
   /** ograda za terasu: paleta nudi samo materijale za terase (dvorišne ograde i kapije ih ne nude) */
   const isTerrace = model.kind === 'terrace';
   const [showAllMaterials, setShowAllMaterials] = useState(false);
+  const [materialsOpen, setMaterialsOpen] = useState(() => window.innerWidth >= 1400);
+  const [propertiesOpen, setPropertiesOpen] = useState(true);
   /** „Mere ograde“ (ograda za terasu): mere okova */
   const [measuresOpen, setMeasuresOpen] = useState(false);
   const paletteMaterials = useMemo(() => { const shown = visibleMaterials(allMaterials); return showAllMaterials ? shown : shown.filter((m) => isTerraceMaterial(m) === isTerrace); }, [allMaterials, isTerrace, showAllMaterials]);
@@ -398,6 +401,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   /** izabrani delovi (Ctrl + klik ili okvir za više); jedan izabran deo ima pun panel, više delova zajednički */
   const [selectedIdsRaw, setSelectedIds] = useState<string[]>([]);
+  useEffect(() => { if (selectedIdsRaw.length) setPropertiesOpen(true); }, [selectedIdsRaw]);
   const setSelectedId = useCallback((id: string | null) => setSelectedIds(id ? [id] : []), []);
   const [view, setView] = useState<ViewMode>('2d');
   const [ortho, setOrtho] = useState(true);
@@ -966,6 +970,8 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
         <button className="btn btn-sm btn-icon" aria-label="Poništi" disabled={!hist.past.length} onClick={undo}><Undo2 size={16} /></button>
         <button className="btn btn-sm btn-icon" aria-label="Ponovi izmenu" disabled={!hist.future.length} onClick={redo}><Redo2 size={16} /></button>
         </>}
+        <button type="button" className="btn btn-sm" data-testid="toggle-designer-materials" aria-expanded={materialsOpen} aria-controls="designer-materials" onClick={() => setMaterialsOpen((v) => !v)}>{materialsOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}Materijali</button>
+        <button type="button" className="btn btn-sm" data-testid="toggle-designer-properties" aria-expanded={propertiesOpen} aria-controls="designer-properties" onClick={() => setPropertiesOpen((v) => !v)}><SlidersHorizontal size={16} />Svojstva</button>
         <div className="inline-flex rounded-lg border border-line overflow-hidden" role="group" aria-label="Prikaz">
           {([['2d', '2D'], ['split', '2D + 3D'], ['3d', '3D'], ['presek', 'Presek'], ['skica', 'Skica'], ...(model.kind === 'gate' ? [['mere', 'Mere kapije']] : [])] as [ViewMode, string][]).map(([v, l]) => (
             <button key={v} data-testid={v === 'mere' ? 'designer-gate-measures' : `designer-view-${v}`} aria-pressed={view === v} className={`px-3 py-1.5 text-[13px] font-semibold ${view === v ? 'bg-brand-black text-white' : 'bg-white hover:bg-slate-50'}`} onClick={() => selectView(v)}>{l}</button>
@@ -1050,11 +1056,11 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
       {view === 'mere' && draft && (
         <div className="flex-1 min-h-0"><GateDesignModal projectId={draft.projectId} itemId={draft.itemId} embedded inline onClose={() => selectView('2d')} /></div>
       )}
-      <div className={`flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[250px_minmax(0,1fr)_350px] ${view === 'mere' ? 'hidden' : ''}`}>
-        <aside className="border-r border-line bg-white min-h-0 max-h-[40vh] lg:max-h-none"><Palette materials={paletteMaterials} activeId={activeId} onPick={(m) => { setActiveId(m); if (m) setSelectedId(null); }}
+      <div className={`designer-workspace flex-1 min-h-0 grid grid-cols-1 ${view === 'mere' ? 'hidden' : ''}`} style={{ '--materials-width': materialsOpen ? '240px' : '0px', '--properties-width': propertiesOpen ? '320px' : '0px' } as React.CSSProperties}>
+        <aside id="designer-materials" hidden={!materialsOpen} className="border-r border-line bg-white min-h-0 min-w-0 max-h-[40vh] lg:max-h-none overflow-hidden"><Palette materials={paletteMaterials} activeId={activeId} onPick={(m) => { setActiveId(m); if (m) setSelectedId(null); }}
           terrace={isTerrace} showAll={{ checked: showAllMaterials, onChange: setShowAllMaterials }} /></aside>
 
-        <section className={`min-h-[420px] lg:min-h-0 grid ${view === 'split' ? 'grid-rows-2 xl:grid-rows-1 xl:grid-cols-2' : ''}`}>
+        <section data-testid="designer-drawing" className={`min-w-0 min-h-[420px] lg:min-h-0 grid ${view === 'split' ? 'grid-rows-2 xl:grid-rows-1 xl:grid-cols-2' : ''}`}>
           {view === 'skica' && (
             <div className="min-h-0 flex flex-col bg-white" data-testid="designer-sketch">
               <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-line">
@@ -1089,7 +1095,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
           )}
         </section>
 
-        <aside className="border-l border-line bg-white min-h-0 overflow-auto scroll-thin p-3">
+        <aside id="designer-properties" hidden={!propertiesOpen} className="border-l border-line bg-white min-h-0 min-w-0 overflow-auto scroll-thin p-3">
           {isTerrace && <GlassRailingPanel model={model} materials={materials} onChange={(fn) => change(fn)} />}
           {slSpec && (hwSelValid || (!sel && !multi.length)) && <SlidingDesignerPanel slideId={model.id} spec={slSpec} W={model.widthMm} leafH={model.heightMm} onSpec={patchSliding} selected={hwSelValid} onSelect={setHwSel} />}
           <h2 className="font-bold text-[15px] mb-1">Izabrani deo</h2>
@@ -1298,6 +1304,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
           )}
 
           <h2 className="font-bold text-[15px] mb-1">Spisak materijala</h2>
+          <IncompletePriceNotice count={bom.filter((l) => l.missing).length} />
           {bom.length === 0 ? <p className="text-sm text-muted">Model još nema delova.</p> : (
             <table className="w-full text-[12.5px]" data-testid="designer-bom">
               <tbody>

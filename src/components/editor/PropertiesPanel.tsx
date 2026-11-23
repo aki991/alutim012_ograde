@@ -1,4 +1,6 @@
 import { GateModelPicker } from '../gates/GateModelPicker';
+import { IncompletePriceNotice } from './IncompletePriceNotice';
+import { productionPostCount } from '../../domain/models/productionPosts';
 import { GateFrameBox } from './GateFrameBox';
 import { RequisitionModal } from './RequisitionModal';
 import { ReinforceSettings } from './ReinforceSettings';
@@ -211,6 +213,7 @@ function Rl10Parts({ params }: { params: FenceParams }) {
 
 /* ---------- Osnovne karakteristike projekta ---------- */
 function ProjectBasics({ project }: { project: Project }) {
+  const modelSpecs = useAppStore((s) => s.settings.modelSpecs);
   const { mutate, setNotice } = useAppStore.getState();
   const notice = useAppStore((s) => s.editor.notice);
   const layout = computeLayout(project);
@@ -262,7 +265,8 @@ function ProjectBasics({ project }: { project: Project }) {
           </>
         )}
         <span className="text-muted">Broj polja</span><b className="text-right" data-testid="count-items">{project.items.filter((i) => !isSpacer(i)).length}</b>
-        <span className="text-muted">Stubova (zajedničkih)</span><b className="text-right" data-testid="count-posts">{layout.postCount} ({layout.sharedPostCount})</b>
+        <span className="text-muted">Stubova za izradu</span><b className="text-right" data-testid="count-posts">{productionPostCount(project, layout, modelSpecs)}</b>
+        {layout.postCount > 0 && <><span className="text-muted">Zasebnih oslonaca (zajedničkih)</span><b className="text-right">{layout.postCount} ({layout.sharedPostCount})</b></>}
       </div>
 
       {project.items.some((i) => i.kind === 'fence' && isTerraceModel(i.modelId) && isCustomModel(i.modelId)) && (() => {
@@ -355,7 +359,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
   const layout = useMemo(() => computeLayout(project), [project]);
   if (!it) return null;
   const li = layout.items[index];
-  const label = itemLabel(project.items, index);
+  const label = `${itemLabel(project.items, index)}${it.kind === 'fence' && it.stair ? ' — Stepenište' : ''}`;
   const wRange = widthRangeFor(it);
   const half = postHalfSum(project, index);
 
@@ -482,7 +486,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
                         <div key={which} data-testid={`stair-turn-${which}`}>
                           <NumberField label={label} testId={`field-stair-turn-${which}`} unit="°" step={5} value={turn} range={{ min: -MAX_TURN_DEG, max: MAX_TURN_DEG }}
                             onCommit={(v) => st.patchPost(post.id, { turnDeg: v }, 'turn')}
-                            hint={which === 'end' ? 'Ograda posle stepeništa skreće u stranu: rukohvat ima pravo parče između dve kugle, a prečke kolena' : 'Ugao u osnovi na zglobu na početku stepeništa'} />
+                            hint={which === 'end' ? 'Ograda posle stepeništa skreće u stranu. Rukohvat i prečke spajaju se odgovarajućim ugaonim spojem.' : 'Ugao u osnovi na zglobu na početku stepeništa'} />
                           <div className="flex gap-1.5 pb-1.5 flex-wrap">
                             {[-90, -45, 0, 45, 90].map((a) => <button key={a} className={`btn btn-sm ${turn === a ? 'btn-primary' : ''}`} data-testid={`stair-turn-${which}-${a}`} onClick={() => st.patchPost(post.id, { turnDeg: a })}>{a === 0 ? 'Ravno' : `${a > 0 ? '+' : ''}${a}°`}</button>)}
                           </div>
@@ -761,6 +765,7 @@ function PriceSummary({ project }: { project: Project }) {
   return (
     <>
     <Section title="Kalkulacija cene" testId="panel-price">
+      <IncompletePriceNotice count={price.unpricedCount} />
       <dl className="text-sm divide-y divide-line">
         <div className="flex justify-between py-1.5"><dt>Materijal</dt><dd className="tabular-nums font-semibold">{money(price.materialTotal)}</dd></div>
         <div className="flex justify-between py-1.5"><dt>Rad</dt><dd className="tabular-nums font-semibold">{money(price.laborTotal)}</dd></div>
@@ -934,7 +939,7 @@ function TerraceRodSettings({ id, modelId, widthMm, heightMm, params }: { id: st
         <div className="px-3 pb-2">
           <NumberField label="Broj prečki" testId="rod-count" unit="kom" step={1} value={info.count} range={{ min: 1, max: 40 }} onCommit={(v) => set({ rodCount: Math.round(v) })} />
           <div className="flex items-center justify-between gap-2 py-1" data-testid="rod-gap">
-            <span className="text-[13px]">Razmak između prečki</span><b className="tabular-nums text-[13px]">{info.count > 1 ? `${r1(info.gapMm)} mm` : '—'}</b>
+            <span className="text-[13px]">Razmak između prečki</span><b className="tabular-nums text-[13px]">{info.count > 1 ? `${fmtNum(r1(info.gapMm), 1)} mm` : '—'}</b>
           </div>
           <p className="text-[11.5px] text-muted leading-snug -mt-0.5 mb-1">Od ose do ose susednih prečki; prečke su na jednakom razmaku.</p>
           <RodGapsEditor gaps={info.gaps} given={params.slats?.rodGaps} onSet={(i, v) => { const g = Array.from({ length: info.gaps.length }, (_, k) => params.slats?.rodGaps?.[k] ?? null); g[i] = v; set({ rodGaps: g }); }}

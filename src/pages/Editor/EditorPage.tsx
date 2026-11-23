@@ -1,4 +1,4 @@
-import { Pencil, SlidersHorizontal, X } from 'lucide-react';
+import { ChevronDown, Pencil, Plus, SlidersHorizontal, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { Catalog } from '../../components/editor/Catalog';
@@ -69,7 +69,8 @@ function EditorWorkspace({ navigateAway }: { navigateAway: () => void }) {
   const workspaceRef = useRef<HTMLDivElement | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const [calcOpen, setCalcOpen] = useState(false);
-  const [propsOpen, setPropsOpen] = useState(false);
+  const [propsOpen, setPropsOpen] = useState(() => window.innerWidth >= 1280);
+  const [catalogOpen, setCatalogOpen] = useState(true);
   const [editData, setEditData] = useState(false);
 
   const { drag, begin } = useDragController({
@@ -112,7 +113,7 @@ function EditorWorkspace({ navigateAway }: { navigateAway: () => void }) {
 
   useEffect(() => {
     // klik na element otvara panel svojstava; na užim ekranima kao fioka
-    const openProps = () => { if (window.innerWidth < 1280) setPropsOpen(true); };
+    const openProps = () => setPropsOpen(true);
     window.addEventListener('open-props', openProps);
     return () => window.removeEventListener('open-props', openProps);
   }, []);
@@ -155,11 +156,18 @@ function EditorWorkspace({ navigateAway }: { navigateAway: () => void }) {
           <TextField label="Napomena" multiline value={project.notes} testId="edit-notes" onChange={(v) => useAppStore.getState().mutate((p) => ({ ...p, notes: v, updatedAt: new Date().toISOString() }), 'notes')} />
         </Modal>
       )}
-      <div className={`grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px] max-w-[1600px] mx-auto ${propsOpen ? 'sm:pr-[406px] xl:pr-0' : ''}`} data-props-open={propsOpen}>
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3 max-w-[1920px] mx-auto">
+        <div className="min-w-0"><h1 className="font-bold text-[17px] truncate">{project.name}</h1><span className="text-[12px] text-muted">{customer?.name ?? 'Kupac nije izabran'}</span></div>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className={`btn btn-sm ${catalogOpen ? 'bg-slate-100' : ''}`} data-testid="toggle-catalog" aria-expanded={catalogOpen} aria-controls="project-catalog" onClick={() => setCatalogOpen((v) => !v)}><Plus size={16} />{catalogOpen ? 'Sakrij elemente' : 'Prikaži elemente'}<ChevronDown size={14} className={catalogOpen ? 'rotate-180' : ''} /></button>
+          <button type="button" className="btn btn-sm" aria-expanded={propsOpen} aria-controls="project-properties" data-testid="toggle-props" onClick={() => setPropsOpen((v) => !v)}><SlidersHorizontal size={16} />{propsOpen ? 'Sakrij svojstva' : 'Svojstva'}</button>
+        </div>
+      </div>
+      <div className={`grid gap-4 ${propsOpen ? 'lg:grid-cols-[minmax(0,1fr)_320px]' : ''} max-w-[1920px] mx-auto`} data-props-open={propsOpen}>
         <div className="min-w-0 space-y-4">
           {fullscreen && <button className="btn btn-sm" onClick={toggleFullscreen}><X size={14} />Zatvori pun ekran</button>}
           <EditorCanvas project={project} svgRef={svgRef} areaRef={areaRef} drag={drag} onBeginDrag={begin} registerTarget={registerTarget} fullscreen={fullscreen} onToggleFullscreen={toggleFullscreen} />
-          <Catalog onBeginDrag={begin} />
+          <div id="project-catalog" hidden={!catalogOpen}><Catalog onBeginDrag={begin} /></div>
           <div className="grid gap-4">
             <section className="card p-4 min-w-0" data-testid="project-data">
               <div className="flex items-center justify-between mb-2"><h3 className="font-bold text-[15px]">Podaci o projektu / kupcu</h3>
@@ -176,22 +184,16 @@ function EditorWorkspace({ navigateAway }: { navigateAway: () => void }) {
           </div>
         </div>
 
-        <div className="min-w-0">
-          {/* dugme za otvaranje panela samo na užim ekranima; na širokim je panel uvek otvoren (.btn bi nadjačao xl:hidden, zato omotač) */}
-          <div className="xl:hidden mb-3">
-            <button className="btn w-full" aria-expanded={propsOpen} data-testid="toggle-props" onClick={() => setPropsOpen((o) => !o)}>
-              <SlidersHorizontal size={16} />{propsOpen ? 'Sakrij svojstva' : `Svojstva${selection ? ' (izabran element)' : ''}`}
-            </button>
-          </div>
+        <div id="project-properties" className={propsOpen ? 'min-w-0' : 'hidden'}>
           <div
             data-testid="props-drawer"
             role={propsOpen ? 'complementary' : undefined}
             aria-label="Svojstva"
             className={propsOpen
-              ? 'fixed z-[70] bottom-0 inset-x-0 max-h-[78vh] sm:inset-y-0 sm:left-auto sm:right-0 sm:w-[390px] sm:max-h-none overflow-auto scroll-thin bg-bg p-3 shadow-2xl border-t sm:border-l border-line xl:static xl:z-auto xl:w-auto xl:max-h-[calc(100vh-96px)] xl:sticky xl:top-3 xl:p-0 xl:shadow-none xl:border-0 xl:bg-transparent'
-              : 'hidden xl:block xl:sticky xl:top-3 xl:max-h-[calc(100vh-96px)] xl:overflow-auto scroll-thin'}
+              ? 'fixed z-[70] bottom-0 inset-x-0 max-h-[78vh] sm:inset-y-0 sm:left-auto sm:right-0 sm:w-[340px] sm:max-h-none overflow-auto scroll-thin bg-bg p-3 shadow-2xl border-t sm:border-l border-line lg:static lg:z-auto lg:w-auto lg:max-h-[calc(100vh-96px)] lg:sticky lg:top-3 lg:p-0 lg:shadow-none lg:border-0 lg:bg-transparent'
+              : 'hidden'}
           >
-            <div className="flex items-center justify-between mb-3 xl:hidden">
+            <div className="flex items-center justify-between mb-3">
               <b className="text-[15px]">Svojstva{selection ? ' — izabran element' : ''}</b>
               <button className="btn btn-sm" onClick={() => setPropsOpen(false)} data-testid="close-props" aria-label="Zatvori panel svojstava"><X size={14} />Zatvori</button>
             </div>

@@ -6,6 +6,7 @@ import { FrontView } from '../../components/editor/FrontView';
 import { DemoBadge, EmptyState, Page, PageHeader, StatusPill } from '../../components/ui/Common';
 import { colorText } from '../../domain/models/catalog';
 import { buildBom, computePrice } from '../../domain/pricing/calc';
+import { IncompletePriceNotice } from '../../components/editor/IncompletePriceNotice';
 import { describeItem } from '../../domain/pricing/production';
 import { downloadQuotePdf } from '../../services/pdf';
 import { useAppStore, useListedProjects } from '../../store/useAppStore';
@@ -44,6 +45,7 @@ export default function QuotesPage() {
         <button className="btn btn-primary" data-testid="quote-pdf" disabled={busy} onClick={() => void pdf()}>{busy ? <Loader2 size={17} className="animate-spin" /> : <FileDown size={17} />}Preuzmi PDF ponudu</button>
       } />
       {error && <div role="alert" className="mb-3 rounded-lg bg-[#fef3f2] text-[#b42318] px-4 py-2.5 text-sm">{error}</div>}
+      <IncompletePriceNotice count={price.unpricedCount} />
       <div className="grid gap-5 xl:grid-cols-[320px_1fr]">
         <div className="card p-2 self-start max-h-[70vh] overflow-auto" data-testid="quote-list">
           {sorted.map((p) => (

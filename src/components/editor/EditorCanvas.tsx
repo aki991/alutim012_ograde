@@ -370,7 +370,7 @@ export function EditorCanvas({ project, svgRef, areaRef, drag, onBeginDrag, regi
   return (
     <section className="card overflow-hidden" data-testid="canvas-card">
       <div className="flex flex-wrap items-center gap-2 px-3 pt-2 border-b border-line">
-        <div className="flex gap-1 overflow-x-auto overflow-y-hidden scroll-thin" role="tablist" aria-label="Prikazi">
+        <div className="flex flex-wrap gap-1 min-w-0 w-full" role="tablist" aria-label="Prikazi">
           {TABS.filter((t) => t.id !== 'photo' || photoSimEnabled).map((t) => {
             const active = t.id === view;
             return (
@@ -380,7 +380,7 @@ export function EditorCanvas({ project, svgRef, areaRef, drag, onBeginDrag, regi
                 aria-selected={active}
                 data-testid={`tab-${t.id}`}
                 onClick={() => setView(t.id)}
-                className={`${t.desktopOnly ? 'hidden lg:flex' : 'flex'} items-center gap-2 px-3 2xl:px-3.5 py-2.5 text-[14px] font-medium border-b-2 whitespace-nowrap ${active ? 'border-primary text-primary' : 'border-transparent text-slate-600 hover:text-ink'}`}
+                className={`${t.desktopOnly ? 'hidden lg:flex' : 'flex'} shrink-0 items-center gap-2 px-2 2xl:px-3.5 py-2.5 text-[13px] 2xl:text-[14px] font-medium border-b-2 whitespace-nowrap ${active ? 'border-primary text-primary' : 'border-transparent text-slate-600 hover:text-ink'}`}
               >
                 {/* ikonice samo na širokom ekranu: na 1440 px svih sedam kartica staje u red bez skrolovanja */}
                 <t.icon size={17} className="hidden 2xl:block" />{t.label}

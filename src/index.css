@@ -58,6 +58,14 @@ button:disabled { cursor: not-allowed; }
 .scroll-thin::-webkit-scrollbar { height: 8px; width: 8px; }
 .scroll-thin::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; }
 .touch-none-important { touch-action: none; }
+/* Zatvoren panel zadržava svoje mesto u mreži, bez zauzimanja širine. */
+.designer-workspace > [hidden] { display: none; }
+@media (min-width: 1024px) {
+  .designer-workspace { grid-template-columns: var(--materials-width) minmax(0, 1fr) var(--properties-width); }
+  .designer-workspace > #designer-materials { grid-column: 1; grid-row: 1; }
+  .designer-workspace > section { grid-column: 2; grid-row: 1; }
+  .designer-workspace > #designer-properties { grid-column: 3; grid-row: 1; }
+}
 /* tamnocrvena pozadina sa dijagonalnim prugama (identitet ALU TIM 012) */
 .brand-bg {
   background:
