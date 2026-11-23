@@ -15,8 +15,33 @@ export function railingGlassMaterials(materials: Material[]): Material[] {
     .sort((a, b) => Number(b.sku === 'TER-VSG-66') - Number(a.sku === 'TER-VSG-66') || a.name.localeCompare(b.name, 'sr'));
 }
 
-/** Četiri držača i jedna tabla između svakog para stubova. Staklo ulazi u čeljusti, a telo držača naleže na bočnu stranu stuba. */
-export function glassRailingLayout(model: CustomModel, spec: GlassRailingSpec, materials: Material[]): { parts: CustomPart[]; errors: string[] } {
+export interface GlassEndWidths { start?: number; end?: number }
+
+function glassPosts(model: CustomModel, materials: Material[]) {
+  const byId = new Map(materials.map((m) => [m.id, m]));
+  return model.parts.flatMap((p) => {
+    const m = byId.get(p.materialId); const sh = m && materialShape(m);
+    if (p.hw || p.glazing || sh?.type !== 'linear' || sh.group !== 't_stubovi' || Math.abs(Math.cos(p.angleDeg * Math.PI / 180)) > 0.02) return [];
+    const box = partBounds(p, sh);
+    return box.x1 - box.x0 < 25 ? [] : [{ p, box }];
+  }).sort((a, b) => a.box.x0 - b.box.x0);
+}
+
+/** Najveća nominalna širina do ivice polja, od staklene čeljusti najbližeg stuba; stvarna kosa mera. */
+export function glassEndLimits(model: CustomModel, spec: GlassRailingSpec, materials: Material[], slopeFactor = 1): { start: number; end: number; min: number } {
+  const posts = glassPosts(model, materials);
+  const clamp = materials.find((m) => m.id === spec.clampMaterialId);
+  const shape = clamp && materialShape(clamp);
+  if (!posts.length || shape?.type !== 'piece') return { start: 0, end: 0, min: 1 };
+  const b = solidsBounds(shape.solids); const half = (b.x1 - b.x0) / 2;
+  const factor = Number.isFinite(slopeFactor) ? Math.max(1, slopeFactor) : 1;
+  const limit = (width: number) => Math.floor(Math.max(0, width * factor) * 10) / 10;
+  return { start: limit(posts[0].box.x0 - half), end: limit(model.widthMm - posts[posts.length - 1].box.x1 - half),
+    min: Math.ceil((half * factor + gap(spec.toleranceMm, 0)) * 10) / 10 };
+}
+
+/** Četiri držača između stubova, a dodatno krajnje staklo nose dva držača na jednom stubu. */
+export function glassRailingLayout(model: CustomModel, spec: GlassRailingSpec, materials: Material[], slopeFactor = 1, ends?: GlassEndWidths): { parts: CustomPart[]; errors: string[] } {
   const byId = new Map(materials.map((m) => [m.id, m]));
   const clamp = byId.get(spec.clampMaterialId);
   const shape = clamp && materialShape(clamp);
@@ -26,17 +51,15 @@ export function glassRailingLayout(model: CustomModel, spec: GlassRailingSpec, m
   const glass = spec.glassMaterialId && byId.get(spec.glassMaterialId);
   const sheet = glass ? materialShape(glass) : null;
   if (spec.glassMaterialId && (sheet?.type !== 'sheet' || !sheet.glass)) return { parts: [], errors: ['Izaberite staklo iz cenovnika.'] };
-  const posts = model.parts.flatMap((p) => {
-    const m = byId.get(p.materialId); const sh = m && materialShape(m);
-    if (p.hw || p.glazing || sh?.type !== 'linear' || sh.group !== 't_stubovi' || Math.abs(Math.cos(p.angleDeg * Math.PI / 180)) > 0.02) return [];
-    const box = partBounds(p, sh);
-    if (box.x1 - box.x0 < 25) return [];
-    return [{ p, box }];
-  }).sort((a, b) => a.box.x0 - b.box.x0);
-  if (posts.length < 2) return { parts: [], errors: ['Nacrtajte najmanje dva stuba. Držači i staklo se postavljaju između susednih stubova.'] };
+  const posts = glassPosts(model, materials);
+  if (!posts.length || (posts.length < 2 && !ends?.start && !ends?.end)) return { parts: [], errors: ['Nacrtajte najmanje dva stuba. Držači i staklo se postavljaju između susednih stubova.'] };
 
   const cb = solidsBounds(shape.solids);
   const clampWidth = cb.x1 - cb.x0; const clampHeight = cb.y1 - cb.y0;
+  const tolerance = gap(spec.toleranceMm, 0);
+  // Na stepeništu je širina stvarna kosa ivica, a ne njena horizontalna projekcija.
+  const factor = Number.isFinite(slopeFactor) ? Math.max(1, slopeFactor) : 1;
+  const widthTolerance = tolerance / factor;
   const parts: CustomPart[] = []; const errors: string[] = [];
   for (let i = 0; i < posts.length - 1; i++) {
     const l = posts[i]; const r = posts[i + 1];
@@ -57,17 +80,50 @@ export function glassRailingLayout(model: CustomModel, spec: GlassRailingSpec, m
           lengthMm: 0, angleDeg, rot: 0, glazing: { kind: 'clamp', ...tag } });
       }
     }
-    if (glass) parts.push({ id: `glazing~pane~${key}`, materialId: glass.id, x: mm(x0 + clampWidth / 2), y: mm(bottom), z,
-      lengthMm: mm(x1 - x0 - clampWidth), heightMm: mm(top - bottom), angleDeg: 0, rot: 0, glazing: { kind: 'pane', ...tag } });
+    if (glass) {
+      const width = mm(x1 - x0 - clampWidth - widthTolerance); const height = mm(top - bottom);
+      if (width <= 0 || height <= 0) { errors.push(`Polje ${i + 1}: tolerancija je prevelika za dimenzije stakla.`); continue; }
+      parts.push({ id: `glazing~pane~${key}`, materialId: glass.id, x: mm(x0 + clampWidth / 2 + widthTolerance / 2), y: mm(bottom), z,
+        lengthMm: width, heightMm: height, angleDeg: 0, rot: 0, glazing: { kind: 'pane', ...tag } });
+    }
+  }
+  const limits = glassEndLimits(model, spec, materials, factor);
+  for (const side of ['start', 'end'] as const) {
+    const requested = gap(ends?.[side], 0);
+    if (!requested) continue;
+    const post = posts[side === 'start' ? 0 : posts.length - 1];
+    const neighbor = posts[side === 'start' ? 1 : posts.length - 2] ?? post;
+    const bottom = Math.max(post.box.y0, neighbor.box.y0) + gap(spec.bottomMm, 100);
+    const top = Math.min(post.box.y1, neighbor.box.y1) - gap(spec.topMm, 100);
+    const nominal = Math.min(requested, limits[side]) / factor;
+    const width = mm(nominal - widthTolerance);
+    if (width < clampWidth / 2 || top - bottom < 2 * clampHeight + 10) {
+      errors.push(`${side === 'start' ? 'Početak' : 'Kraj'} platna: nema dovoljno prostora za krajnje staklo i dva držača.`); continue;
+    }
+    const inset = Math.max(clampHeight / 2, Math.min(gap(spec.insetMm, 100), (top - bottom) / 3));
+    const start = side === 'start'; const z = mm(post.p.z);
+    const tag = { left: start ? 'stair-start' : post.p.id, right: start ? post.p.id : 'stair-end', end: side };
+    const key = `${side}~${post.p.id}`;
+    for (const [level, y] of [['bottom', bottom + inset], ['top', top - inset]] as const) {
+      parts.push({ id: `glazing~clamp~end~${key}~${level}`, materialId: clamp.id,
+        x: mm(start ? post.box.x0 + cb.x0 : post.box.x1 - cb.x0), y: mm(y), z,
+        lengthMm: 0, angleDeg: start ? 180 : 0, rot: 0, glazing: { kind: 'clamp', ...tag } });
+    }
+    if (glass) parts.push({ id: `glazing~pane~end~${key}`, materialId: glass.id,
+      x: mm(start ? post.box.x0 - clampWidth / 2 - nominal + widthTolerance / 2 : post.box.x1 + clampWidth / 2 + widthTolerance / 2), y: mm(bottom), z,
+      lengthMm: width, heightMm: mm(top - bottom), angleDeg: 0, rot: 0, glazing: { kind: 'pane', ...tag } });
   }
   return { parts, errors };
 }
 
 /** Menja samo delove koje pravi ova opcija; ponovni poziv ne dodaje kopije. */
-export function syncGlassRailing(model: CustomModel, materials: Material[]): CustomModel {
+export function syncGlassRailing(model: CustomModel, materials: Material[], options?: { toleranceMm?: number; slopeFactor?: number; stairTan?: number; ends?: GlassEndWidths }): CustomModel {
   const own = model.parts.filter((p) => !p.glazing);
   const old = model.parts.filter((p) => p.glazing);
-  const next = model.kind === 'terrace' && model.glassRailing ? glassRailingLayout(model, model.glassRailing, materials).parts : [];
+  const spec = model.glassRailing && options?.toleranceMm !== undefined ? { ...model.glassRailing, toleranceMm: options.toleranceMm } : model.glassRailing;
+  const generated = model.kind === 'terrace' && spec ? glassRailingLayout(model, spec, materials, options?.slopeFactor, options?.ends).parts : [];
+  // Držač naleže ravno na stub. Poništava se smicanje oko njegovog sidra, dok tabla i dalje prati nagib.
+  const next = options?.stairTan ? generated.map((p) => p.glazing?.kind === 'clamp' ? { ...p, unshearTan: options.stairTan } : p) : generated;
   if (JSON.stringify(old) === JSON.stringify(next)) return model;
   return { ...model, parts: [...own, ...next] };
 }

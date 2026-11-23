@@ -200,11 +200,13 @@ export interface HwDims {
   screwsFlange: number;
   /** koleno na uglu: dužina kraka (mm); za toliko se skraćuje svaka cev uz koleno */
   elbowArm: number;
+  /** Od ose kuglastog spoja do kraja cevi; 0 = prema prečniku cevi. */
+  ballArm: number;
 }
 
 export const DEFAULT_HW_DIMS: HwDims = {
   connectorH: 30, connectorNeckD: 24, connectorPlateLen: 44, connectorPlateT: 4, capH: 14, plateH: 8, plateOver: 32, sleeveH: 50, endCapLen: 8,
-  screwsHolder: 1, screwsConnector: 3, screwsFlange: 3, elbowArm: 40,
+  screwsHolder: 1, screwsConnector: 3, screwsFlange: 3, elbowArm: 40, ballArm: 0,
 };
 
 /** Mere okova modela: podrazumevane, sa izmenama iz „Mere ograde“ (neispravne vrednosti se preskaču). */

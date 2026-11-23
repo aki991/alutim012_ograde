@@ -69,6 +69,7 @@ const hasTag = (name: string, tags: string[]): boolean => tags.some((t) => name.
 /** Uloga dela (stub, rukohvat, prečka) u ogradi za terasu, po grupi materijala i položaju; null = nije deo koji nosi okov. */
 export function hwRoleOf(part: CustomPart, shape: MatShape): HwRole | null {
   if (shape.type !== 'linear' || part.hw) return null;
+  if (part.terraceRole) return part.terraceRole;
   const a = (part.angleDeg * Math.PI) / 180;
   const vertical = Math.abs(Math.cos(a)) < 0.02;
   const e = sectionFace(shape.section, 0);
@@ -296,10 +297,14 @@ export function fillHardware(model: CustomModel, materials: Material[]): CustomM
 }
 
 /** Pravila rasporeda stubova modela: odstojanje prvog i poslednjeg stuba od krajeva, najveći razmak i pola širine stuba; null kad model nema stubova. */
-export function postSpec(orig: CustomModel, materials: Material[], over?: { postSpacingMm?: number; postLeftMm?: number; postRightMm?: number }): { left: number; right: number; spacing: number; half: number } | null {
+export function postSpec(orig: CustomModel, materials: Material[], over?: { postSpacingMm?: number; postLeftMm?: number; postRightMm?: number; postMaterialId?: string }): { left: number; right: number; spacing: number; half: number } | null {
   if (orig.kind !== 'terrace') return null;
   const byId = new Map(materials.map((m) => [m.id, m]));
-  const posts = orig.parts.filter((p) => { const m = byId.get(p.materialId); return !!m && !p.hw && hwRoleOf(p, materialShape(m)) === 'post'; });
+  const posts = orig.terraceSourceId ? [] : orig.parts.filter((p) => { const m = byId.get(p.materialId); return !!m && !p.hw && hwRoleOf(p, materialShape(m)) === 'post'; });
+  if (!posts.length) {
+    const template = sharedPostTemplate(orig, materials, over?.postMaterialId);
+    if (template) posts.push(template, { ...template, x: orig.widthMm - template.x });
+  }
   if (!posts.length) return null;
   const box = (p: CustomPart) => partBounds(p, materialShape(byId.get(p.materialId)!));
   const cs = posts.map((p) => { const b = box(p); return { c: (b.x0 + b.x1) / 2, w: b.x1 - b.x0 }; }).sort((a, b) => a.c - b.c);
@@ -308,6 +313,34 @@ export function postSpec(orig: CustomModel, materials: Material[], over?: { post
     left: over?.postLeftMm ?? lay.leftMm ?? cs[0].c, right: over?.postRightMm ?? lay.rightMm ?? orig.widthMm - cs[cs.length - 1].c,
     spacing: over?.postSpacingMm && over.postSpacingMm > 0 ? over.postSpacingMm : lay.spacingMm && lay.spacingMm > 0 ? lay.spacingMm : DEFAULT_POST_SPACING_MM, half: cs[0].w / 2,
   };
+}
+
+/** Kvadratni stubovi za prenetu ispunu; materijal ostaje stvaran profil iz cenovnika. */
+export function sharedPostMaterials(materials: Material[]): Material[] {
+  const square = materials.filter((m) => {
+    const s = materialShape(m);
+    return m.unit === 'm' && s.type === 'linear' && !s.u && !s.section.round && Math.min(s.section.w, s.section.h) >= 25;
+  });
+  const posts = square.filter((m) => m.category === 'stub' || materialShape(m).group === 't_stubovi');
+  return posts.length ? posts : square;
+}
+
+export function sharedPostTemplate(model: CustomModel, materials: Material[], materialId?: string): CustomPart | null {
+  if (!model.terraceSourceId) return null;
+  const choices = sharedPostMaterials(materials);
+  const drawnPost = model.parts.find((p) => {
+    const mat = materials.find((m) => m.id === p.materialId);
+    return mat && hwRoleOf(p, materialShape(mat)) === 'post';
+  });
+  const material = choices.find((m) => m.id === materialId)
+    ?? choices.find((m) => m.id === drawnPost?.materialId)
+    ?? choices.find((m) => /100.?100/.test(m.name)) ?? choices.find((m) => m.sku === 'P-1057') ?? choices[0];
+  if (!material) return null;
+  const shape = materialShape(material);
+  if (shape.type !== 'linear') return null;
+  const face = sectionFace(shape.section, 0).face;
+  return { id: 'terrace-post', materialId: material.id, x: face / 2, y: 0, lengthMm: model.heightMm, angleDeg: 90, rot: 0, z: 0, terraceRole: 'post',
+    ...(drawnPost?.materialId === material.id && drawnPost.hwPick ? { hwPick: drawnPost.hwPick } : {}) };
 }
 
 /** Položaji osa stubova na dužini `width` (mm od početka): jednak razmak od najviše `spacing`, prvi i poslednji na zadatom odstojanju od krajeva. */
@@ -332,6 +365,10 @@ export function layoutPosts(scaled: CustomModel, orig: CustomModel, materials: M
   const roleOf = (p: CustomPart): boolean => { const m = byId.get(p.materialId); return !!m && !p.hw && hwRoleOf(p, materialShape(m)) === 'post'; };
   const center = (p: CustomPart): number => { const b = partBounds(p, materialShape(byId.get(p.materialId)!)); return (b.x0 + b.x1) / 2; };
   const posts = scaled.parts.filter(roleOf).sort((a, b) => center(a) - center(b));
+  if (!posts.length) {
+    const template = sharedPostTemplate(orig, materials, over?.postMaterialId);
+    if (template) posts.push({ ...template, lengthMm: scaled.heightMm });
+  }
   if (!posts.length) return scaled;
   const at = xs ?? postPositions(scaled.widthMm, spec);
   const tpl = posts[0]; const c0 = center(tpl);

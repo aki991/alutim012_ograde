@@ -22,6 +22,7 @@ const SECTIONS: { title: string; fields: Field[] }[] = [
   ] },
   { title: 'Koleno na uglu', fields: [
     { key: 'elbowArm', label: 'Krak kolena', unit: 'mm', hint: 'Samo kad je spoj na uglu koleno: za toliko se skraćuje svaka cev (prečka i rukohvat) uz koleno.' },
+    { key: 'ballArm', label: 'Krak kuglastog zgloba', unit: 'mm', hint: 'Od ose spoja do kraja cevi, po stvarnoj osi cevi. 0 = prema prečniku. Upišite meru okova koji koristite.' },
   ] },
   { title: 'Prsten i kapice prečke', fields: [
     { key: 'rodOffset', label: 'Osa prečke ispred stuba', unit: 'mm', auto: 'poluprečnik prečke + 7', hint: 'Rastojanje ose prečke od prednje ivice stuba. Prazno = prema prečniku prečke. Prečke se same postavljaju na ovo rastojanje.' },
@@ -52,7 +53,7 @@ export function TerraceMeasuresModal({ model, onChange, onClose }: { model: Cust
       <p className="text-[12.5px] text-muted mb-3">Mere okova zavise od materijala koje koristite. Promena se odmah primenjuje na crtež: rukohvat se podiže na visinu veze, stub na debljinu flanše, a prečke se pomeraju na zadato rastojanje od stuba.</p>
       <section className="mb-3" data-testid="terrace-corner-joint">
         <h3 className="font-bold text-[13.5px] mb-1">Spoj prečki i rukohvata na uglu</h3>
-        <p className="text-[11.5px] text-muted leading-snug mb-1">Kuglasti zglob: cevi se sastaju u kugli prečnika cevi, ugao je podesiv. Koleno: svaka cev se skraćuje za krak kolena (vidi „Koleno na uglu“ ispod). Važi za sva skretanja ograde ovog modela.</p>
+        <p className="text-[11.5px] text-muted leading-snug mb-1">Spoj određuje krajeve obe cevi. Kuglasti zglob ima telo i priključke, a koleno neprekinut luk. Krak se meri duž stvarne ose cevi, uključujući stepenište, i odbija se u krojnoj listi.</p>
         <div className="inline-flex rounded-lg border border-line overflow-hidden" role="group" aria-label="Spoj na uglu">
           {([['ball', 'Kuglasti zglob'], ['elbow', 'Koleno']] as const).map(([v, label]) => (
             <button key={v} type="button" data-testid={`corner-joint-${v}`} aria-pressed={(model.cornerJoint ?? 'ball') === v} className={`px-3 py-1.5 text-sm ${(model.cornerJoint ?? 'ball') === v ? 'bg-primary text-white' : 'bg-white hover:bg-slate-50'}`}

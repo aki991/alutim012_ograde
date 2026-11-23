@@ -9,6 +9,7 @@ import { bodyMaterial, boxGeometry, glassMaterial } from '../editor/three/materi
 import type { ResolvedPart } from './PartsSvg';
 import { SlidingParts3D } from '../gates/SlidingParts3D';
 import type { SlidingResult } from '../../domain/gates/slidingAssembly';
+import { CornerJointMesh } from './CornerJointMesh';
 
 /** klizni okov nacrtane kapije: sklop (šina, točkići, rep, vođica …), preslikavanje po smeru otvaranja i odstojanje krila od tla */
 export interface SlidingOverlay3D { res: SlidingResult; X: (x: number) => number; hex: string; groundMm: number }
@@ -85,7 +86,8 @@ function SolidMesh({ s, material }: { s: Solid; material: THREE.Material }) {
   return <mesh geometry={cylGeometry} material={material} position={s.pos} scale={[s.r, s.len, s.r]} rotation={s.axis === 'x' ? [0, 0, Math.PI / 2] : s.axis === 'z' ? [Math.PI / 2, 0, 0] : [0, 0, 0]} castShadow />;
 }
 
-export function PartMesh({ part, shape, hex, materialKey, selected }: { part: CustomPart; shape: MatShape; hex: string; materialKey: string; selected: boolean }) {
+export function PartMesh({ part: source, shape, hex, materialKey, selected }: { part: CustomPart; shape: MatShape; hex: string; materialKey: string; selected: boolean }) {
+  const part = source.tube3d ? { ...source, ...source.tube3d } : source;
   const material = selected ? selectedMaterial : bodyMaterial(hex);
   const matrix = useMemo(() => {
     // osa profila leži u ravni crteža; širina preseka ide upravno na nju (u ravni), a dubina preseka ka posmatraču
@@ -94,6 +96,7 @@ export function PartMesh({ part, shape, hex, materialKey, selected }: { part: Cu
     const n = new THREE.Vector3(-Math.sin(a), Math.cos(a), 0);
     return new THREE.Matrix4().makeBasis(n, new THREE.Vector3(0, 0, 1), dir).setPosition(part.x, part.y, part.z);
   }, [part.angleDeg, part.x, part.y, part.z]);
+  if (part.joint3d) return <group position={[part.x, part.y, part.z]}><CornerJointMesh joint={part.joint3d} material={material} /></group>;
   if (shape.type === 'sheet') {
     const h = part.heightMm ?? 0;
     if (part.bottomSlopeMm) return <SlopedSheet part={part} thick={shape.thick} material={shape.glass && !selected ? glassMaterial : material} />;

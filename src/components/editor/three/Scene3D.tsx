@@ -39,7 +39,7 @@ export interface SceneApi {
   pointerOnPlane(clientX: number, clientY: number): { x: number; y: number } | null;
   snapshot(): string | null;
   screenPointOf(id: string, handle?: 'width' | 'height'): { x: number; y: number } | null;
-  stats(): { calls: number; triangles: number };
+  stats(): { calls: number; triangles: number; jointBalls: number };
 }
 
 declare global {
@@ -341,7 +341,11 @@ function SceneBridge({ layout, centerX, apiRef, onContextLost }: { layout: Proje
         const r = gl.domElement.getBoundingClientRect();
         return { x: r.left + ((v.x + 1) / 2) * r.width, y: r.top + ((1 - v.y) / 2) * r.height };
       },
-      stats: () => ({ calls: gl.info.render.calls, triangles: gl.info.render.triangles }),
+      stats: () => {
+        let jointBalls = 0;
+        scene.traverse((object) => { if (object.userData.jointBall) jointBalls++; });
+        return { calls: gl.info.render.calls, triangles: gl.info.render.triangles, jointBalls };
+      },
     };
     apiRef.current = api;
     window.__aluTest = api;
@@ -487,6 +491,7 @@ export function SceneContent(p: ContentProps) {
           const it = li.item;
           if (isSpacer(it)) return null; // razmaknik između dva stuba kapije
           const mid = s((li.clearStart + li.clearEnd) / 2);
+          const tan = li.axisEnd > li.axisStart ? (li.floorEnd - li.floorStart) / (li.axisEnd - li.axisStart) : 0;
           return (
             <Frame key={it.id} at={plan.items[li.index].start} heading={plan.items[li.index].heading} axisStart={li.axisStart} floor={li.floorStart} tan={li.axisEnd > li.axisStart && !(it.kind === 'fence' && FENCE_MODELS[it.modelId].style === 'rods') ? (li.floorEnd - li.floorStart) / (li.axisEnd - li.axisStart) : 0}>
               {li.plinthMm > 0 && <mesh geometry={boxGeometry} material={concreteMaterial} position={[s((li.plinthX0 + li.plinthX1) / 2), s(li.plinthMm) / 2, 0]} scale={[s(li.plinthX1 - li.plinthX0), s(li.plinthMm), 0.2]} castShadow receiveShadow />}
@@ -494,7 +499,7 @@ export function SceneContent(p: ContentProps) {
               {it.kind === 'fence' && !isRl10Model(it.modelId) && li.floorStart !== li.floorEnd && FENCE_MODELS[it.modelId].style === 'rods' && <SlopedRails li={li} fence={it} />}
               {it.kind === 'fence' && !isRl10Model(it.modelId) && !(li.floorStart !== li.floorEnd && FENCE_MODELS[it.modelId].style === 'rods') && (
                 <group position={[mid, s(li.plinthMm), 0]}>
-                  <PanelBody modelId={it.modelId} widthMm={li.clearWidth} heightMm={it.heightMm} params={it.params} color={it.color} axisWidthMm={li.axisEnd - li.axisStart} skipLeftPost={leftPostShared(project.items, li.index)} />
+                  <PanelBody modelId={it.modelId} widthMm={li.clearWidth} heightMm={it.heightMm} params={{ ...it.params, slats: { ...it.params.slats, stairTan: tan } }} color={it.color} axisWidthMm={li.axisEnd - li.axisStart} skipLeftPost={leftPostShared(project.items, li.index)} />
                 </group>
               )}
               {it.kind === 'gate' && <group position={[0, s(li.plinthMm), 0]}><GateMesh gate={it} li={li} showZones={showZones && !p.still} postWidthMm={Math.max(0, ...layout.posts.map((q) => (q.hidden ? 0 : q.widthMm)))} /></group>}

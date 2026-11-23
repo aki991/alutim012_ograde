@@ -228,15 +228,29 @@ export function frontOverlap(a: CustomPart, b: CustomPart, materials: Material[]
  * naleže na njih bez preklapanja po dubini. Deo koji ništa ne pokriva ostaje kakav jeste.
  */
 export function layerPart(model: Pick<CustomModel, 'parts'>, part: CustomPart, mode: 'behind' | 'front', materials: Material[]): CustomPart {
-  const mine = depthRange(part, materials);
-  if (!mine) return part;
-  const hits = model.parts.filter((o) => o.id !== part.id && !part.guides?.includes(o.id) && !o.guides?.includes(part.id) && frontOverlap(part, o, materials));
-  const ranges = hits.map((o) => depthRange(o, materials)).filter((r): r is { z0: number; z1: number } => !!r);
-  if (!ranges.length) return part;
-  const r1 = (n: number) => Math.round(n * 10) / 10;
-  // a: za koliko je prednja ivica dela ispred njegove ose po dubini (z1 − z), b: koliko je zadnja iza nje
-  const front = mine.z1 - part.z; const back = part.z - mine.z0;
-  return mode === 'behind'
-    ? { ...part, z: r1(Math.min(...ranges.map((r) => r.z0)) - front) }
-    : { ...part, z: r1(Math.max(...ranges.map((r) => r.z1)) + back) };
+  const next = layerParts({ ...model, parts: [...model.parts.filter((p) => p.id !== part.id), part] }, [part.id], mode, materials);
+  return next.parts.find((p) => p.id === part.id) ?? part;
+}
+
+/** Izabrani sklop se pomera zajedno, bez menjanja međusobnih dubina i bez slaganja izabranih delova jednog preko drugog. */
+export function layerParts<T extends Pick<CustomModel, 'parts'>>(model: T, ids: string[], mode: 'behind' | 'front', materials: Material[]): T {
+  const selected = new Set(ids);
+  const fixed = model.parts.filter((p) => !selected.has(p.id));
+  const deltas: number[] = [];
+  for (const part of model.parts.filter((p) => selected.has(p.id) && !p.hw && !p.glazing)) {
+    const mine = depthRange(part, materials);
+    if (!mine) continue;
+    for (const other of fixed) {
+      if (part.guides?.includes(other.id) || other.guides?.includes(part.id) || part.nests?.includes(other.id) || other.nests?.includes(part.id)) continue;
+      if (!frontOverlap(part, other, materials)) continue;
+      const range = depthRange(other, materials);
+      if (range) deltas.push(mode === 'behind' ? range.z0 - mine.z1 : range.z1 - mine.z0);
+    }
+  }
+  if (!deltas.length) return model;
+  const shift = mode === 'behind' ? Math.min(...deltas) : Math.max(...deltas);
+  // Zaokruživanje u slobodan prostor, da ivice nagnutih preseka ne prodru jedna u drugu.
+  const dz = (mode === 'behind' ? Math.floor((shift + 1e-9) * 1000) : Math.ceil((shift - 1e-9) * 1000)) / 1000;
+  if (Math.abs(dz) < 1e-9) return model;
+  return { ...model, parts: model.parts.map((p) => selected.has(p.id) ? { ...p, z: p.z + dz } : p) };
 }

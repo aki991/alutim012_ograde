@@ -2,8 +2,9 @@ import { GateModelPicker } from '../gates/GateModelPicker';
 import { GateFrameBox } from './GateFrameBox';
 import { RequisitionModal } from './RequisitionModal';
 import { ReinforceSettings } from './ReinforceSettings';
-import { postPositions, postSpec } from '../../domain/models/terraceHardware';
-import { allFenceModels, customHBarLayout, customHBarZones, customEndOverhang, customLiftOf, customModelOf, customRodInfo, customRails, customSlatLayout, isCustomModel } from '../../domain/models/customRegistry';
+import { postPositions, postSpec, sharedPostMaterials, sharedPostTemplate } from '../../domain/models/terraceHardware';
+import { allFenceModels, customHBarLayout, customHBarZones, customEndOverhang, customLiftOf, customModelOf, customRodInfo, customRails, customSlatLayout, isCustomModel, scaledModel } from '../../domain/models/customRegistry';
+import { glassEndLimits } from '../../domain/models/glassRailing';
 import { gateLeafPoses } from '../../domain/geometry/gates';
 import { leafHeightOf } from '../../domain/gates/slidingLayout';
 import { AlertTriangle, ArrowLeft, ArrowRight, Copy, Trash2, Calculator, FileDown, Scissors, ClipboardList, PackageCheck, Ruler } from 'lucide-react';
@@ -276,6 +277,8 @@ function ProjectBasics({ project }: { project: Project }) {
               <NumberField label="Krak kolena" testId="project-corner-arm" unit="mm" value={s.cornerArmMm ?? 40} range={{ min: 0, max: 300 }}
                 onCommit={(v) => mutate((p) => ({ ...p, settings: { ...p.settings, cornerArmMm: v }, updatedAt: new Date().toISOString() }), 'corner-arm')} hint="Za toliko se skraćuje svaka cev (prečka i rukohvat) uz koleno" />
             )}
+            {project.items.some((it) => it.kind === 'fence' && it.params.slats?.cornerConnections?.some((c) => c.fitting?.shape.requiresMaterial)) &&
+              <p className="text-[12px] text-[#b42318] mt-1" data-testid="corner-missing-material">Za neke uglove ili prostorne prelaze nije nađen odgovarajući spoj u cenovniku. Krojna lista navodi potreban ugao; dodajte odgovarajući okov u Materijali i cene.</p>}
           </>
         );
       })()}
@@ -422,7 +425,10 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
         </>}
         {isRl10Model(it.modelId) && <Rl10Parts params={it.params} />}
         {isTubesModel(it.modelId) && <TubesParts params={it.params} />}
-        {isTerraceModel(it.modelId) ? (isCustomModel(it.modelId) && <><TerraceRodSettings id={id} modelId={it.modelId} widthMm={li.clearWidth} heightMm={it.heightMm} params={it.params} /><TerracePostSettings id={id} modelId={it.modelId} widthMm={li.clearWidth} params={it.params} stairSteps={stairGroupAt(project.items, index)?.steps} stairUp={(stairGroupAt(project.items, index)?.riseMm ?? 0) >= 0} /></>) : (<>
+        {customModelOf(it.modelId)?.terraceSourceId && <SlatSettings id={id} modelId={it.modelId} widthMm={li.clearWidth} heightMm={it.heightMm} params={it.params} clearWidth={li.clearWidth} />}
+        <GlassToleranceSettings id={id} modelId={it.modelId} params={it.params} widthMm={li.clearWidth} heightMm={it.heightMm}
+          stairTan={stairIn && li.axisEnd > li.axisStart ? (li.floorEnd - li.floorStart) / (li.axisEnd - li.axisStart) : 0} />
+        {isTerraceModel(it.modelId) ? (isCustomModel(it.modelId) && <><TerraceRodSettings id={id} modelId={it.modelId} widthMm={li.clearWidth} heightMm={it.heightMm} params={it.params} /><TerracePostSettings id={id} modelId={it.modelId} widthMm={li.clearWidth} heightMm={it.heightMm} params={it.params} stairSteps={stairGroupAt(project.items, index)?.steps} stairUp={(stairGroupAt(project.items, index)?.riseMm ?? 0) >= 0} /></>) : (<>
         <SlatSettings id={id} modelId={it.modelId} widthMm={li.clearWidth} heightMm={it.heightMm} params={it.params} clearWidth={li.clearWidth} />
         <ReinforceSettings id={id} modelId={it.modelId} widthMm={li.clearWidth} heightMm={it.heightMm} params={it.params} />
         </>)}
@@ -880,6 +886,36 @@ function RodGapsEditor({ gaps, given, onSet, onReset }: { gaps: number[]; given?
   );
 }
 
+/** Tolerancija konkretnog polja; bez izmene nasleđuje meru iz crteža staklenog modela. */
+function GlassToleranceSettings({ id, modelId, params, widthMm, heightMm, stairTan }: { id: string; modelId: FenceModelId; params: FenceParams; widthMm: number; heightMm: number; stairTan: number }) {
+  const materials = useAppStore((s) => s.materials);
+  const model = customModelOf(modelId); const spec = model?.glassRailing;
+  if (!model || !spec?.glassMaterialId) return null;
+  const tolerance = params.slats?.glassToleranceMm ?? spec.toleranceMm ?? 0;
+  const lift = Math.min(Math.max(0, params.liftMm ?? customLiftOf(modelId)), Math.max(0, heightMm - 100));
+  const limits = glassEndLimits(scaledModel(model, widthMm, heightMm - lift, { ...params.slats, stairTan }), { ...spec, toleranceMm: tolerance }, materials, Math.hypot(1, stairTan));
+  const setEnd = (key: 'stairGlassStartMm' | 'stairGlassEndMm', value: number) => useAppStore.getState().patchItemParams(id, { slats: { ...params.slats, [key]: value } }, 'stair-glass');
+  return <div className="mt-2 rounded-lg border border-line px-3 py-2" data-testid="glass-tolerance-settings">
+    <div className="text-[13.5px] font-semibold mb-1">Staklo</div>
+    <NumberField label="Tolerancija stakla" testId="field-glass-tolerance" value={params.slats?.glassToleranceMm ?? spec.toleranceMm ?? 0}
+      range={{ min: 0, max: 100 }} step={0.5} integer={false} onCommit={(v) => useAppStore.getState().patchItemParams(id, { slats: { ...params.slats, glassToleranceMm: v } }, 'glass-tolerance')}
+      hint="2 mm umanjuje širinu za ukupno 2 mm (po 1 mm levo i desno). Visina ostaje ista." />
+    <div className="border-t border-line mt-2 pt-2" data-testid="stair-glass-ends">
+      {(['start', 'end'] as const).map((side) => {
+        const key = side === 'start' ? 'stairGlassStartMm' : 'stairGlassEndMm';
+        const label = side === 'start' ? 'Staklo na početku (levo)' : 'Staklo na kraju (desno)';
+        const max = limits[side]; const value = params.slats?.[key] ?? 0;
+        if (max < limits.min) return <p key={side} className="text-xs text-muted my-2">{label}: nema dovoljno prostora između kraja platna i najbližeg stubića.</p>;
+        return <div key={side}>
+          <ToggleField label={label} testId={`stair-glass-${side}-on`} checked={value > 0} onChange={(on) => setEnd(key, on ? Math.min(max, Math.max(limits.min, 100)) : 0)} />
+          {value > 0 && <NumberField label="Širina stakla" testId={`stair-glass-${side}-width`} value={Math.min(value, max)} range={{ min: limits.min, max }} step={1} integer={false}
+            onCommit={(v) => setEnd(key, v)} hint={`Najviše ${fmtNum(max, 1)} mm do najbližeg stubića. ${stairTan ? 'Mera duž nagiba' : 'Širina'}, pre tolerancije. Staklo nose dva držača na tom stubiću.`} />}
+        </div>;
+      })}
+    </div>
+  </div>;
+}
+
 /** Ograda za terasu, „Raspored prečki“: broj prečki, osa najniže prečke od poda i osa najviše do ose rukohvata; razmak između prečki se računa. */
 function TerraceRodSettings({ id, modelId, widthMm, heightMm, params }: { id: string; modelId: FenceModelId; widthMm: number; heightMm: number; params: FenceParams }) {
   const [open, setOpen] = useState(true);
@@ -915,15 +951,15 @@ function TerraceRodSettings({ id, modelId, widthMm, heightMm, params }: { id: st
  * Ograda za terasu, „Raspored stubova i razmaci“: najveći razmak između stubova (podrazumevano 1000 mm) i odstojanje prvog i poslednjeg
  * stuba od krajeva polja. Važi za ovo polje; bez izmene važi „Mere ograde“ modela.
  */
-function TerracePostSettings({ id, modelId, widthMm, params, stairSteps, stairUp }: { id: string; modelId: FenceModelId; widthMm: number; params: FenceParams; stairSteps?: number; stairUp?: boolean }) {
+function TerracePostSettings({ id, modelId, widthMm, heightMm, params, stairSteps, stairUp }: { id: string; modelId: FenceModelId; widthMm: number; heightMm: number; params: FenceParams; stairSteps?: number; stairUp?: boolean }) {
   const [open, setOpen] = useState(true);
   const materials = useAppStore((s) => s.materials);
   const st = useAppStore.getState();
   const model = customModelOf(modelId);
   const spec = model ? postSpec(model, materials, params.slats) : null;
   if (!model || !spec) return null;
-  const xs = postPositions(widthMm, spec);
-  const actual = xs.length > 1 ? (xs[xs.length - 1] - xs[0]) / (xs.length - 1) : 0;
+  const xs = params.slats?.postXs ?? postPositions(widthMm, spec);
+  const actual = xs.length > 1 ? Math.max(...xs.slice(1).map((x, i) => x - xs[i])) : 0;
   const set = (patch: NonNullable<FenceParams['slats']>) => st.patchItemParams(id, { slats: { ...params.slats, ...patch } }, 'posts');
   const r1 = (v: number) => Math.round(v * 10) / 10;
   return (
@@ -933,18 +969,27 @@ function TerracePostSettings({ id, modelId, widthMm, params, stairSteps, stairUp
       </button>
       {open && (
         <div className="px-3 pb-2">
+          {model.terraceSourceId && <SelectField stacked label="Materijal stubova" testId="terrace-post-material"
+            value={sharedPostTemplate(model, materials, params.slats?.postMaterialId)?.materialId ?? ''}
+            options={sharedPostMaterials(materials).map((m) => ({ value: m.id, label: m.name }))} onChange={(v) => set({ postMaterialId: v })} />}
           <NumberField label="Najveći razmak između stubova" testId="post-spacing" value={r1(spec.spacing)} range={{ min: 100, max: 3000 }} onCommit={(v) => set({ postSpacingMm: v })}
             hint={`Stubova: ${xs.length}, razmak ${Math.round(actual)} mm. Stubovi se ravnomerno raspoređuju, a razmak nije veći od zadatog.`} />
           {params.slats?.freeEnds?.some(Boolean) && (() => {
-            const od = customEndOverhang(modelId);
-            const side = params.slats!.freeEnds![0] ? od?.left : od?.right;
+            const lift = Math.min(Math.max(0, params.liftMm ?? customLiftOf(modelId)), Math.max(0, heightMm - 100));
+            const od = customEndOverhang(modelId, widthMm, heightMm - lift, params.slats);
+            if (!od) return null;
+            const free = params.slats!.freeEnds!;
+            const side = free[0] ? od.left : od.right;
+            const different = free[0] && free[1] && Math.abs(od.left - od.right) > 0.1;
             return (
-              <NumberField label="Od krajnjeg stuba do kraja prečke i rukohvata" testId="post-end-overhang" value={r1(params.slats?.endOverhangMm ?? side ?? 0)} range={{ min: 0, max: 1000 }}
-                onCommit={(v) => set({ endOverhangMm: v })} hint="Važi kad je stepenište krajnja tačka ograde; isto rastojanje za prečke i rukohvat" />
+              <NumberField label="Od krajnjeg stuba do kraja prečke i rukohvata" testId="post-end-overhang" value={r1(side)} range={{ min: 0, max: Math.max(1000, Math.ceil(side)) }} integer={false} step={1}
+                onCommit={(v) => set({ endOverhangMm: v })} hint={`${different ? `Trenutno levo ${fmtNum(od.left, 1)} mm, desno ${fmtNum(od.right, 1)} mm. Unos postavlja oba slobodna kraja. ` : ''}Vodoravna mera od ose krajnjeg stuba. Isto rastojanje za prečke i rukohvat; važi samo za slobodan kraj stepeništa.`} />
             );
           })()}
           {stairSteps ? (
             <>
+              {model.terraceSourceId && <NumberField label="Tarabice iznad gazišta" testId="tread-clearance" value={params.slats?.treadClearanceMm ?? 30}
+                range={{ min: 0, max: 300 }} onCommit={(v) => set({ treadClearanceMm: v })} hint="Ravan donji rez iznad celog gazišta koje tarabica dodiruje; vrh ostaje uz rukohvat." />}
               <SegmentedField label={stairUp ? 'Prvi stub' : 'Stub na dnu stepeništa'} testId="post-first" value={params.slats?.stairFirstFloor ? 'floor' : 'step'} options={[{ value: 'step', label: 'Na prvom stepeniku' }, { value: 'floor', label: 'Na podu' }]}
                 onChange={(v) => set({ stairFirstFloor: v === 'floor' })} />
               {(() => {

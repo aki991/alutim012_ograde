@@ -1,4 +1,5 @@
 import { isRl10Post } from '../models/rl10';
+import { withCornerConnections } from '../geometry/runJoints';
 import { postMaterialLine } from '../models/postTemplates';
 import { buildRl10Sheet, isRl10Item } from './rl10Spec';
 import { itemSlope } from '../geometry/stair';
@@ -126,6 +127,7 @@ export const netUnitPrice = (price: number, pricing: PricingSettings): number =>
 interface Acc { group: BomGroup; materialId: string; qty: number; label?: string; unit?: Material['unit'] }
 
 export function buildBom(project: Project, materials: Material[], specs?: ModelSpecs, physical?: { netLengths?: boolean; includePosts?: boolean }): BomLine[] {
+  project = withCornerConnections(project, materials);
   const layout = computeLayout(project);
   const acc = new Map<string, Acc>();
   const add = (group: BomGroup, originalId: string, qty: number, label?: string, unit?: Material['unit']) => {
@@ -154,7 +156,8 @@ export function buildBom(project: Project, materials: Material[], specs?: ModelS
     if (it.kind === 'gate' && it.sliding) { for (const l of slidingBomLines(it, li.clearWidth, materials)) add(l.group, l.materialId, l.qty, l.label, l.unit); if (!it.sliding.drawnLeaf) continue; }
     // elementi specifikacije modela (podrazumevani ili izmenjeni): količine i dužine po formulama
     const specCtx: SpecContext = ({ modelId, slopeFactor: itemSlope(li).factor, widthMm: it.kind === 'gate' ? gateSpecWidth(it, li.clearWidth) : li.clearWidth, heightMm: it.kind === 'gate' ? leafHeightOf(it) : it.heightMm, axisMm: li.axisEnd - li.axisStart, params: it.params, doubleGate: it.kind === 'gate' && it.gateType === 'double', gate: it.kind === 'gate', leafWidthsMm: it.kind === 'gate' && it.gateType === 'double' ? gateLeafPoses(it, li.clearStart, li.clearEnd, 1).map((q) => q.widthMm) : undefined });
-    for (const ev of evaluateItemParts(modelId, specs, specCtx)) add(ev.part.group, ev.part.materialId, ev.materialQty);
+    for (const ev of evaluateItemParts(modelId, specs, specCtx)) add(ev.part.group, ev.part.materialId, ev.materialQty,
+      ev.part.materialId.startsWith('missing_joint_') ? ev.part.name : undefined);
 
     if (it.kind === 'gate' && it.sliding) {
       // klizni okov je već dodat iz sklopa

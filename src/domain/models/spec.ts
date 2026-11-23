@@ -32,6 +32,8 @@ export interface SpecPart {
   role?: string;
   /** uspravan deo (stub): na stepeništu ne dobija kos rez krajeva */
   vertical?: boolean;
+  /** Cev koja ulazi u spojnicu: rez je upravan na stvarnu osu cevi, bez kosog reza zbog nagiba stepeništa. */
+  squareEnds?: boolean;
 }
 
 export const BOM_GROUPS: BomGroup[] = ['Profili ispune', 'Ramovi', 'Stubovi', 'Nosači i spojnice', 'Vijci', 'Šarke', 'Brave', 'Točkići', 'Automatika', 'Dodatni materijal'];
@@ -227,7 +229,8 @@ export interface EvaluatedPart {
  */
 export function evaluateItemParts(modelId: FenceModelId, specs: ModelSpecs | undefined, c: SpecContext): EvaluatedPart[] {
   if (!hasCustomSpec(modelId, specs)) {
-    const t = terraceEvaluated(modelId, c.widthMm, c.heightMm - (c.params.liftMm ?? customLiftOf(modelId)), c.params.slats, c.slopeFactor ?? 1);
+    const lift = c.params.liftMm ?? customLiftOf(modelId);
+    const t = terraceEvaluated(modelId, c.widthMm, c.heightMm - lift, c.params.slats, c.slopeFactor ?? 1, lift);
     if (t) return t;
   }
   return evaluateItemSpec(specFor(modelId, specs), c);

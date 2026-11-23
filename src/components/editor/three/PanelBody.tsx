@@ -144,7 +144,7 @@ export function PanelBody(props: PanelProps) {
   if (FENCE_MODELS[props.modelId].style === 'custom') {
     // razmak od poda: ispuna se podiže, a visina crteža se smanjuje za toliko
     const up = Math.min(Math.max(0, props.params.liftMm ?? customLiftOf(props.modelId)), Math.max(0, props.heightMm - 100));
-    const resolved = customPartsFor(props.modelId, props.widthMm, props.heightMm - up, colorHex(props.color), props.params.slats);
+    const resolved = customPartsFor(props.modelId, props.widthMm, props.heightMm - up, colorHex(props.color), props.params.slats, up);
     const zMid = props.centerZ ? zExtent(resolved)?.mid ?? 0 : 0;
     return (
       <group position={[-s(props.widthMm) / 2, s(up), -s(zMid)]} scale={s(1)}>

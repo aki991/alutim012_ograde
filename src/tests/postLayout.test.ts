@@ -369,22 +369,24 @@ describe('spoj na prelazu ravno–stepenište (promena nagiba)', () => {
     expect(slatsOf(p, 0)?.cornerBends?.[1]).toBeGreaterThan(20);
     expect(slatsOf(p, 1)?.cornerBends?.[0]).toBeGreaterThan(20);
   });
-  it('kuglasti zglob na prelazu: cevi idu do kraja polja i tu je kugla; kod kolena su cevi kraće za krak', () => {
+  it('prelaz: cevi završavaju na priključku zgloba ili tangenti kolena, a spoj se računa jednom', () => {
     const p = build(mk('cm_bend_b'));
     const flat = customPartsFor('cm_bend_b' as FenceModelId, 1000, 1100, '#999', slatsOf(p, 0) as never);
     const balls = flat.filter((r) => r.part.hw?.kind === 'cornerBall');
     expect(balls.length).toBeGreaterThanOrEqual(3); // dve prečke i rukohvat
     const r1 = flat.find((r) => r.part.id === 'r1')!;
-    expect(r1.part.x + r1.part.lengthMm).toBeCloseTo(1000, 1);
+    expect(r1.part.x + r1.part.lengthMm).toBeCloseTo(1000 - (16 * 0.65 + 8), 1);
     const q = build(mk('cm_bend_c', 'elbow'));
     const e = customPartsFor('cm_bend_c' as FenceModelId, 1000, 1100, '#999', slatsOf(q, 0) as never).find((r) => r.part.id === 'r1')!;
     expect(e.part.x + e.part.lengthMm).toBeCloseTo(1000 - 40, 1);
     const st = customPartsFor('cm_bend_c' as FenceModelId, 1700, 1100, '#999', slatsOf(q, 1) as never);
-    expect(st.some((r) => r.part.hw?.kind === 'cornerArm')).toBe(true);
+    expect(st.some((r) => r.part.hw?.kind === 'cornerArm')).toBe(false);
+    expect(e.part.lengthMm).toBeGreaterThan(0);
   });
 });
 
 import { endOverhangOf, trimFreeEnds } from '../domain/models/terraceHardware';
+import { customEndOverhang } from '../domain/models/customRegistry';
 import { useAppStore } from '../store/useAppStore';
 
 describe('kraj prečki i rukohvata uz krajnji stub; platno pod uglom', () => {
@@ -407,6 +409,24 @@ describe('kraj prečki i rukohvata uz krajnji stub; platno pod uglom', () => {
     const f = (i: number) => (p.items[i] as unknown as { params: { slats?: { freeEnds?: [boolean, boolean] } } }).params.slats?.freeEnds;
     expect(f(0)).toBeUndefined();
     expect(f(1)).toEqual([false, true]);
+  });
+  it.each([1020, -1020])('prepust polja prati stvarni raspored stubova na stepeništu %s, umesto početnih 100 mm iz modela', (riseMm) => {
+    const m = { ...model(), id: 'cm_actual_overhang' }; registerCustomModels([m], mats);
+    expect(customEndOverhang(m.id)).toEqual({ left: 100, right: 100 });
+    const ID = m.id as FenceModelId;
+    const p = withRunPosts(createProject('Prepust', [createFence({ modelId: ID, widthMm: 1000, heightMm: 1100 }),
+      createFence({ modelId: ID, widthMm: 1700, heightMm: 1100, stair: { riseMm, steps: 6, group: 's' } })]), mats);
+    const item = p.items[1]; if (item.kind !== 'fence') throw new Error('Očekivana ograda');
+    const slats = item.params.slats!;
+    const measured = customEndOverhang(ID, 1700, 1100, slats)!;
+    const geometry = customPartsFor(ID, 1700, 1100, '#999', slats);
+    expect(measured.right).toBeCloseTo(endOverhangOf({ ...m, parts: geometry.map((r) => r.part) }, mats)!.right, 5);
+    expect(measured.right).not.toBe(100);
+    const changed = { ...slats, endOverhangMm: 100 };
+    expect(customEndOverhang(ID, 1700, 1100, changed)!.right).toBe(100);
+    const parts = customPartsFor(ID, 1700, 1100, '#999', changed);
+    const rail = parts.find((r) => r.part.id === 'h')!.part;
+    expect(rail.x + rail.lengthMm - Math.max(...slats.postXs!)).toBeCloseTo(100, 5);
   });
   it('„Platno pod uglom“: dodaje se pod uglom i ne spaja se u liniju', () => {
     const m = { ...base(), id: 'cm_angled' };

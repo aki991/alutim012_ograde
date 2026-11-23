@@ -3,6 +3,22 @@ import sharp from 'sharp';
 import { TERRACE_MATERIALS } from '../src/data/terraceMaterials';
 import type { CustomModel } from '../src/domain/models/custom';
 
+test('novo crtanje terasne ograde nema podešavanja ni upozorenja za staklo dok se staklena ograda ne izabere', async ({ page }) => {
+  await page.goto('/modeli-terasa/crtanje');
+  const mode = page.getByTestId('glass-railing-mode');
+  await expect(mode).toBeVisible();
+  await expect(mode).not.toBeChecked();
+  await expect(page.getByTestId('glass-railing-panel')).toHaveCount(0);
+  await expect(page.getByTestId('glass-clamp-material')).toHaveCount(0);
+  await expect(page.getByText('Nacrtajte najmanje dva stuba.', { exact: false })).toHaveCount(0);
+  await mode.check();
+  await expect(page.getByTestId('glass-railing-panel')).toBeVisible();
+  await expect(page.getByTestId('glass-clamp-material')).toBeVisible();
+  await mode.uncheck();
+  await expect(page.getByTestId('glass-railing-panel')).toHaveCount(0);
+  await expect(mode).not.toBeChecked();
+});
+
 test('desni panel: dodaj držače, popuni staklom, promeni mere i ponovo otvori model', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
@@ -31,6 +47,9 @@ test('desni panel: dodaj držače, popuni staklom, promeni mere i ponovo otvori 
     db.close();
   }, { model, glasses: [material('TER-VSG-66'), material('TER-VSG-88')] });
   await page.goto(`/modeli-terasa/crtanje/${model.id}`);
+  await expect(page.getByTestId('glass-railing-panel')).toHaveCount(0);
+  await expect(page.getByTestId('glass-railing-mode')).not.toBeChecked();
+  await page.getByTestId('glass-railing-mode').check();
   await expect(page.getByTestId('glass-railing-panel')).toBeVisible();
   await expect(page.getByTestId('glass-clamp-material')).toHaveValue(material('AK-5205').id);
   const canvas = page.getByTestId('designer-2d');
@@ -44,6 +63,12 @@ test('desni panel: dodaj držače, popuni staklom, promeni mere i ponovo otvori 
   await page.getByTestId('glass-pane-material').selectOption(material('TER-VSG-88').id);
   await page.getByTestId('glass-railing-fill').check();
   await expect(panes).toHaveCount(2);
+  await expect(page.getByTestId('glass-tolerance')).toHaveValue('0');
+  await page.getByTestId('glass-tolerance').fill('2');
+  await page.getByTestId('glass-tolerance').press('Enter');
+  await expect(panes.first().locator('rect')).toHaveAttribute('width', '918');
+  await expect(panes.first().locator('rect')).toHaveAttribute('height', '800');
+  await expect(holders).toHaveCount(8);
   await page.getByTestId('glass-bottom-gap').fill('150');
   await page.getByTestId('glass-bottom-gap').press('Enter');
   await expect(page.getByTestId('glass-bottom-gap')).toHaveValue('150');
@@ -58,9 +83,15 @@ test('desni panel: dodaj držače, popuni staklom, promeni mere i ponovo otvori 
     const settings = await new Promise<{ customModels?: CustomModel[] }>((resolve) => {
       const r = db.transaction('kv').objectStore('kv').get('settings'); r.onsuccess = () => resolve(r.result);
     }); db.close();
-    return settings.customModels?.find((m) => m.id === id)?.glassRailing?.bottomMm;
-  }, model.id)).toBe(150);
+    const spec = settings.customModels?.find((m) => m.id === id)?.glassRailing;
+    return { bottom: spec?.bottomMm, tolerance: spec?.toleranceMm };
+  }, model.id)).toEqual({ bottom: 150, tolerance: 2 });
   await page.reload();
+  await expect(page.getByTestId('glass-railing-mode')).toBeChecked();
+  await expect(page.getByTestId('glass-railing-panel')).toBeVisible();
+  await expect(page.getByTestId('glass-tolerance')).toHaveValue('2');
+  await expect(panes.first().locator('rect')).toHaveAttribute('width', '918');
+  await expect(panes.first().locator('rect')).toHaveAttribute('height', '750');
   await expect(page.getByTestId('glass-railing-fill')).toBeChecked();
   await expect(panes).toHaveCount(2);
   await expect(holders).toHaveCount(8);
@@ -76,6 +107,14 @@ test('desni panel: dodaj držače, popuni staklom, promeni mere i ponovo otvori 
   await expect(panes).toHaveCount(0);
   await expect(holders).toHaveCount(8);
   await page.getByTestId('glass-railing-remove').click();
+  await expect(holders).toHaveCount(0);
+  await expect(page.getByTestId('glass-railing-panel')).toHaveCount(0);
+  await expect(page.getByTestId('glass-railing-mode')).not.toBeChecked();
+  await page.keyboard.press('Control+z');
+  await expect(page.getByTestId('glass-railing-panel')).toBeVisible();
+  await expect(holders).toHaveCount(8);
+  await page.getByTestId('glass-railing-mode').uncheck();
+  await expect(page.getByTestId('glass-railing-panel')).toHaveCount(0);
   await expect(holders).toHaveCount(0);
   expect(errors).toEqual([]);
 });

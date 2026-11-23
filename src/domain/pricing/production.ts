@@ -1,4 +1,5 @@
 import { hasAngledEnds } from './cutEnds';
+import { withCornerConnections } from '../geometry/runJoints';
 import { isRl10Item } from './rl10Spec';
 import { itemSlope } from '../geometry/stair';
 import { gateLeafPoses, gateSpecWidth } from '../geometry/gates';
@@ -47,6 +48,7 @@ export interface CutRow {
  * Kasnije se može proširiti optimizacijom sečenja standardnih šipki.
  */
 export function buildCutList(project: Project, specs?: ModelSpecs, materials?: Material[]): CutRow[] {
+  if (materials) project = withCornerConnections(project, materials);
   const layout = computeLayout(project);
   const rows: CutRow[] = [];
   if (materials) for (const p of buildGlassCutPieces(project, materials)) rows.push({
@@ -113,7 +115,7 @@ export function buildCutList(project: Project, specs?: ModelSpecs, materials?: M
       const key = `${partName}|${ev.part.materialId}|${len}`;
       const cur = group.get(key);
       if (cur) cur.qty += qty;
-      else group.set(key, { element: name, index: li.index, part: partName, profile, lengthMm: len, qty, miter, ...(cutEnds ?? {}), ...(faceMm ? { faceMm } : {}), note: [ev.part.note, miter && !/45/.test(ev.part.note ?? '') ? 'rez 45° na oba kraja' : '', ev.part.vertical ? '' : stairNote].filter(Boolean).join(' · ') || undefined });
+      else group.set(key, { element: name, index: li.index, part: partName, profile, lengthMm: len, qty, miter, ...(cutEnds ?? {}), ...(ev.part.squareEnds ? { ends: [[90], [90]] as [number[], number[]] } : {}), ...(faceMm ? { faceMm } : {}), note: [ev.part.note, miter && !/45/.test(ev.part.note ?? '') ? 'rez 45° na oba kraja' : '', ev.part.squareEnds ? 'Ravan rez 90° na osu cevi; dužina uključuje odbijanje spojnice.' : ev.part.vertical ? '' : stairNote].filter(Boolean).join(' · ') || undefined });
     }
     rows.push(...group.values());
   }

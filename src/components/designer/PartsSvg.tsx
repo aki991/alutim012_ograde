@@ -4,6 +4,7 @@ import { sectionEdgeLines, sectionFace, solidsBounds, type MatShape, type Solid 
 import type { Material } from '../../domain/models/types';
 import { colorHex } from '../../domain/models/catalog';
 import { GATE_POST_EXTRA_MM } from '../../domain/gates/design';
+import { ballJointGeometry, jointControls } from '../../domain/geometry/pipeJoints';
 
 const EDGE = '#0f172a';
 const GLASS = '#9fd3e0';
@@ -21,12 +22,22 @@ function SolidFront({ s, fill, sw }: { s: Solid; fill: string; sw: number }) {
 }
 
 /** Jedan deo modela u pogledu spreda. Crta se unutar grupe sa okrenutom y osom (y nagore). */
-export function PartSvg({ part, shape, hex, selected = false, ghost = false }: { part: CustomPart; shape: MatShape; hex: string; selected?: boolean; ghost?: boolean }) {
+export function PartSvg({ part: source, shape, hex, selected = false, ghost = false }: { part: CustomPart; shape: MatShape; hex: string; selected?: boolean; ghost?: boolean }) {
+  const part = source.tube3d ? { ...source, ...source.tube3d } : source;
   const sw = selected ? 2.2 : 1;
   const stroke = selected ? '#d71920' : EDGE;
   const common = { stroke, strokeOpacity: selected ? 1 : 0.65, strokeWidth: sw, vectorEffect: 'non-scaling-stroke' as const };
   let body;
-  if (shape.type === 'sheet') {
+  if (part.joint3d) {
+    const j = { ...part.joint3d, ...part.joint3d.developed };
+    const ball = j.mode === 'ball' && j.round ? ballJointGeometry(j) : null;
+    const path = (ball ? ball.necks : [jointControls(j)]).map((p) => `M ${p[0][0]} ${p[0][1]} C ${p[1][0]} ${p[1][1]} ${p[2][0]} ${p[2][1]} ${p[3][0]} ${p[3][1]}`).join(' ');
+    body = <g transform={`translate(${part.x} ${part.y})`}>
+      <path d={path} fill="none" stroke={EDGE} strokeWidth={j.faceMm + 1} />
+      <path d={path} fill="none" stroke={hex} strokeWidth={j.faceMm} />
+      {ball && <circle cx={ball.center[0]} cy={ball.center[1]} r={j.faceMm * 0.65} fill={hex} {...common} />}
+    </g>;
+  } else if (shape.type === 'sheet') {
     body = part.bottomSlopeMm ? <polygon points={sheetPoly(part).map(([x, y]) => `${x},${y}`).join(' ')} fill={shape.glass ? GLASS : hex} fillOpacity={shape.glass ? 0.45 : 1} {...common} /> : <rect x={part.x} y={part.y} width={part.lengthMm} height={part.heightMm ?? 0} fill={shape.glass ? GLASS : hex} fillOpacity={shape.glass ? 0.45 : 1} {...common} />;
   } else if (shape.type === 'linear') {
     const { face, u0 } = sectionFace(shape.section, partAngle(part));

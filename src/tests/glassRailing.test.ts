@@ -3,7 +3,11 @@ import { MODEL_MATERIALS } from '../data/modelMaterials';
 import { withTerraceMaterials } from '../data/terraceMaterials';
 import { customBom, newTerraceModel, partBounds, resolveParts, type CustomModel, type CustomPart } from '../domain/models/custom';
 import { registerCustomModels, scaledModel, terraceEvaluated } from '../domain/models/customRegistry';
-import { glassRailingLayout, syncGlassRailing } from '../domain/models/glassRailing';
+import { glassEndLimits, glassRailingLayout, syncGlassRailing } from '../domain/models/glassRailing';
+import { createFence, createProject } from '../domain/models/factories';
+import { withRunPosts } from '../domain/geometry/runPosts';
+import { buildBom } from '../domain/pricing/calc';
+import { buildGlassCutPieces } from '../domain/pricing/glassCutting';
 import { materialShape } from '../domain/models/materialShape';
 import { resizeModel } from '../domain/models/resize';
 import { settleModel } from '../domain/models/settle';
@@ -92,5 +96,89 @@ describe('automatski držači i staklena popuna', () => {
     expect(bad.parts).toHaveLength(0); expect(bad.errors[0]).toContain('nema dovoljno');
     expect(glassRailingLayout(m, { ...m.glassRailing!, glassMaterialId: 'missing' }, materials).parts).toHaveLength(0);
     expect(glassRailingLayout({ ...m, parts: [m.parts[0]] }, m.glassRailing!, materials).errors[0]).toContain('najmanje dva');
+  });
+
+  it.each([2, 2.5])('tolerancija %s mm umanjuje samo širinu, čuva visinu i ne pomera držače', (toleranceMm) => {
+    const nominal = syncGlassRailing(enabled(), materials);
+    const cut = syncGlassRailing({ ...nominal, glassRailing: { ...nominal.glassRailing!, toleranceMm } }, materials);
+    expect(clamps(cut)).toEqual(clamps(nominal));
+    panes(cut).forEach((p, i) => {
+      const n = panes(nominal)[i];
+      expect(p.lengthMm).toBe(n.lengthMm - toleranceMm);
+      expect(p.heightMm).toBe(n.heightMm);
+      expect(p.y).toBe(n.y);
+      expect(p.x + p.lengthMm / 2).toBe(n.x + n.lengthMm / 2);
+      expect(p.y + p.heightMm! / 2).toBe(n.y + n.heightMm! / 2);
+    });
+    expect(syncGlassRailing(cut, materials)).toBe(cut);
+    const restored = JSON.parse(JSON.stringify(cut)) as CustomModel;
+    expect(syncGlassRailing(restored, materials)).toBe(restored);
+    expect(customBom(cut, materials).find((r) => r.sku === 'TER-VSG-66')?.qty).toBeCloseTo(2 * (920 - toleranceMm) * 800 / 1e6, 8);
+  });
+
+  it('tolerancija ostaje u milimetrima pri promeni širine, a podešavanje polja ne menja model', () => {
+    const m = { ...enabled(), glassRailing: { ...enabled().glassRailing!, toleranceMm: 2 } };
+    registerCustomModels([m], materials);
+    for (const tolerance of [undefined, 0, 4]) {
+      const scaled = scaledModel(m, 3200, 1100, { glassToleranceMm: tolerance });
+      expect(panes(scaled)).toHaveLength(3);
+      expect(panes(scaled).every((p) => p.lengthMm === 920 - (tolerance ?? 2) && p.heightMm === 800)).toBe(true);
+      expect(clamps(scaled)).toHaveLength(12);
+    }
+    expect(m.glassRailing.toleranceMm).toBe(2);
+  });
+
+  it('prevelika tolerancija ne pravi nevažeće table i prikazuje razlog', () => {
+    const m = enabled();
+    const result = glassRailingLayout(m, { ...m.glassRailing!, toleranceMm: 1000 }, materials);
+    expect(result.parts.filter((p) => p.glazing?.kind === 'pane')).toHaveLength(0);
+    expect(result.parts.filter((p) => p.glazing?.kind === 'clamp')).toHaveLength(8);
+    expect(result.errors[0]).toContain('tolerancija je prevelika');
+  });
+
+  it.each([0, 0.6, -0.6])('krajnje staklo na nagibu %s ima samo dva držača, zadatu širinu i ne menja ostala polja', (stairTan) => {
+    const m = enabled(); registerCustomModels([m], materials);
+    const factor = Math.hypot(1, stairTan);
+    const slats = { postXs: [250, 1150, 1950], postDrops: [80, 80, 80], stairTan, glassToleranceMm: 2 };
+    const before = scaledModel(m, 2200, 1100, slats);
+    const ends = { start: 180, end: 160 };
+    const withEnds = scaledModel(m, 2200, 1100, { ...slats, stairGlassStartMm: ends.start, stairGlassEndMm: ends.end });
+    expect(withEnds.parts.filter((p) => !p.glazing?.end)).toEqual(before.parts);
+    for (const clamp of clamps(withEnds)) expect(clamp.unshearTan).toBe(stairTan || undefined);
+    for (const pane of panes(withEnds)) expect(pane.unshearTan).toBeUndefined();
+    const extra = panes(withEnds).filter((p) => p.glazing?.end);
+    expect(extra).toHaveLength(2);
+    for (const pane of extra) {
+      const side = pane.glazing!.end!;
+      expect(pane.lengthMm * factor).toBeCloseTo(ends[side] - 2, 2);
+      expect(pane.x).toBeGreaterThanOrEqual(0);
+      expect(pane.x + pane.lengthMm).toBeLessThanOrEqual(2200);
+      const own = clamps(withEnds).filter((p) => p.glazing?.end === side);
+      expect(own).toHaveLength(2);
+      expect(own.every((p) => p.angleDeg === (side === 'start' ? 180 : 0))).toBe(true);
+      const inside = panes(before)[side === 'start' ? 0 : panes(before).length - 1];
+      expect(pane.y).toBe(inside.y); expect(pane.heightMm).toBe(inside.heightMm);
+      expect(own.map((p) => p.y)).toEqual([pane.y + 100, pane.y + pane.heightMm! - 100]);
+    }
+    expect(syncGlassRailing(withEnds, materials, { toleranceMm: 2, slopeFactor: factor, stairTan, ends })).toBe(withEnds);
+    const capped = scaledModel(m, 2200, 1100, { ...slats, stairGlassStartMm: 10000, stairGlassEndMm: 10000 });
+    const limits = glassEndLimits(before, { ...m.glassRailing!, toleranceMm: 2 }, materials, factor);
+    for (const pane of panes(capped).filter((p) => p.glazing?.end)) expect(pane.lengthMm * factor).toBeCloseTo(limits[pane.glazing!.end!] - 2, 2);
+  });
+
+  it.each([0, -1020])('krajnje table i četiri dodatna držača ulaze u trebovanje i krojnu listu, uspon %s', (riseMm) => {
+    const m = enabled(); registerCustomModels([m], materials);
+    const p0 = createProject('Krajnje staklo', [createFence({ modelId: m.id as 'cm_auto_glass', widthMm: 2200, heightMm: 1100,
+      params: { barSizeMm: 0, gapMm: 0, frameMm: 0, slats: { postLeftMm: 200, postRightMm: 200 } },
+      ...(riseMm ? { stair: { riseMm, steps: 6, group: 's' } } : {}) })]);
+    const p = withRunPosts(p0, materials); const before = buildGlassCutPieces(p, materials);
+    const withEnds = withRunPosts({ ...p, items: p.items.map((it) => it.kind === 'fence' ? { ...it, params: { ...it.params,
+      slats: { ...it.params.slats, glassToleranceMm: 2, stairGlassStartMm: 100, stairGlassEndMm: 100 } } } : it) }, materials);
+    const pieces = buildGlassCutPieces(withEnds, materials);
+    expect(pieces).toHaveLength(before.length + 2);
+    expect(pieces.filter((piece) => Math.abs(piece.edgesMm[0] - 98) < 0.01)).toHaveLength(2);
+    for (const piece of pieces) expect(piece.slopeDeg).toBeCloseTo(Math.atan(riseMm / 2200) * 180 / Math.PI, 8);
+    const qty = (project: typeof p) => buildBom(project, materials).find((r) => r.materialId === bySku('AK-5205').id)!.geometricQty;
+    expect(qty(withEnds)).toBe(qty(p) + 4);
   });
 });

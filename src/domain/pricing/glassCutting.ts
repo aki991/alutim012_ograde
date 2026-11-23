@@ -46,7 +46,7 @@ export function buildGlassCutPieces(project: Project, materials: Material[]): Gl
     const up = Math.min(Math.max(0, it.params.liftMm ?? customLiftOf(it.modelId)), Math.max(0, it.heightMm - 100));
     const tan = li.axisEnd > li.axisStart ? (li.floorEnd - li.floorStart) / (li.axisEnd - li.axisStart) : 0;
     let n = 0;
-    for (const r of customPartsFor(it.modelId, li.clearWidth, it.heightMm - up, it.color, it.params.slats)) {
+    for (const r of customPartsFor(it.modelId, li.clearWidth, it.heightMm - up, it.color, { ...it.params.slats, stairTan: tan }, up)) {
       if (r.shape.type !== 'sheet' || !r.shape.glass || r.part.lengthMm <= 0 || !(r.part.heightMm! > 0)) continue;
       const mat = materials.find((m) => m.id === (project.partMaterials?.[r.part.materialId] ?? r.part.materialId)) ?? r.material;
       const polygon = glassPolygon(sheetPoly(r.part).map(([x, y]): GlassPoint => [x, y + tan * x]));

@@ -4,6 +4,8 @@ import type { FenceSection, LayoutItem, Material, Project } from '../models/type
 import { computeLayout } from './layout';
 import { turnAt } from './plan';
 import { stairGroupAt, stepBounds } from './stair';
+import type { SlatOverride } from '../models/gateRefill';
+import { withCornerConnections } from './runJoints';
 
 /**
  * Stubovi ograde za terasu na celoj ravnoj liniji ograde: uzastopna polja istog nacrtanog modela (bez stepeništa) čine jednu liniju, pa se
@@ -17,7 +19,7 @@ export function withRunPosts(project: Project, materials: Material[]): Project {
   const hasAny = project.items.some((it) => it.kind === 'fence' && (it.params.slats?.postXs || isRunItem(it)));
   if (!hasAny) return project;
   const layout = computeLayout(project);
-  type Want = { xs: number[]; drops?: number[]; tan?: number; turns?: [number, number]; bends?: [number, number]; free?: [boolean, boolean]; joint?: 'ball' | 'elbow'; arm?: number };
+  type Want = { xs: number[]; drops?: number[]; tan?: number; treads?: SlatOverride['stairTreads']; turns?: [number, number]; bends?: [number, number]; free?: [boolean, boolean]; joint?: 'ball' | 'elbow'; arm?: number };
   const next = new Map<string, Want | undefined>();
   let i = 0;
   while (i < project.items.length) {
@@ -33,6 +35,9 @@ export function withRunPosts(project: Project, materials: Material[]): Project {
     let drops: number[] | undefined; let tan: number | undefined;
     // stepenište: stubovi su uspravni i stoje po sredini gazišta; duži su naniže do gazišta, a rukohvat ostaje na liniji nagiba
     const g = stairGroupAt(project.items, i);
+    const treadBounds = g && model.terraceSourceId ? stepBounds(layout.items[g.from].axisStart, layout.items[g.to].axisEnd,
+      layout.items[g.from].floorStart, layout.items[g.to].floorEnd,
+      g.dims ?? Array.from({ length: g.steps }, () => ({ treadMm: 1, riseMm: 1 }))) : undefined;
     if (xs && g && g.from === i && g.to === j) {
       const a = layout.items[i]; const b = layout.items[j];
       const dims = g.dims ?? Array.from({ length: g.steps }, () => ({ treadMm: 1, riseMm: 1 }));
@@ -78,13 +83,22 @@ export function withRunPosts(project: Project, materials: Material[]): Project {
     for (let k = i; k <= j; k++) {
       const li = layout.items[k];
       const a = li.clearStart - start; const w = li.clearWidth;
-      if (!spec || !xs) { next.set(project.items[k].id, undefined); continue; }
+      if (!spec || !xs) {
+        // Preneto platno može da koristi projektne stubove. I tada je potreban nagib
+        // za uspravne tarabice i njihove čepove, bez izmišljanja stubova u samoj ispuni.
+        const run = li.axisEnd - li.axisStart;
+        next.set(project.items[k].id, model.terraceSourceId && it.stair && run > 0
+          ? { xs: [], tan: (li.floorEnd - li.floorStart) / run } : undefined);
+        continue;
+      }
       const idx = xs.map((_, n) => n).filter((n) => xs![n] >= a - 0.5 && (xs![n] < a + w - 0.5 || k === j));
       const half = drops ? 0 : spec.half;
       next.set(project.items[k].id, {
         xs: idx.map((n) => Math.round(Math.min(Math.max(xs![n] - a, half), Math.max(half, w - half)) * 10) / 10),
         ...(drops ? { drops: idx.map((n) => drops![n]) } : {}),
         ...(tan !== undefined ? { tan } : {}),
+        ...(treadBounds ? { treads: treadBounds.map((t) => ({ fromMm: t.xa - li.clearStart, toMm: t.xb - li.clearStart,
+          levelMm: (g!.riseMm >= 0 ? t.fa : t.fb) - li.floorStart - (tan ?? 0) * (li.clearStart - li.axisStart) })) } : {}),
         ...(project.settings.cornerJoint ? { joint: project.settings.cornerJoint } : {}),
         ...(project.settings.cornerArmMm !== undefined ? { arm: project.settings.cornerArmMm } : {}),
         ...((): { turns?: [number, number] } => { const t: [number, number] = [turnAt(project, k), turnAt(project, k + 1)]; return t[0] || t[1] ? { turns: t } : {}; })(),
@@ -111,16 +125,16 @@ export function withRunPosts(project: Project, materials: Material[]): Project {
     if (it.kind !== 'fence') return it;
     const want = next.get(it.id);
     const sl = it.params.slats;
-    const have = sl && (sl.postXs || sl.postDrops || sl.stairTan !== undefined || sl.cornerTurns || sl.cornerBends || sl.freeEnds || sl.cornerJoint || sl.cornerArm !== undefined) ? { xs: sl.postXs, drops: sl.postDrops, tan: sl.stairTan, turns: sl.cornerTurns, bends: sl.cornerBends, free: sl.freeEnds, joint: sl.cornerJoint, arm: sl.cornerArm } : null;
-    const w2 = want ? { xs: want.xs, drops: want.drops, tan: want.tan, turns: want.turns, bends: want.bends, free: want.free, joint: want.joint, arm: want.arm } : null;
+    const have = sl && (sl.postXs || sl.postDrops || sl.stairTan !== undefined || sl.stairTreads || sl.cornerTurns || sl.cornerBends || sl.freeEnds || sl.cornerJoint || sl.cornerArm !== undefined) ? { xs: sl.postXs, drops: sl.postDrops, tan: sl.stairTan, treads: sl.stairTreads, turns: sl.cornerTurns, bends: sl.cornerBends, free: sl.freeEnds, joint: sl.cornerJoint, arm: sl.cornerArm } : null;
+    const w2 = want ? { xs: want.xs, drops: want.drops, tan: want.tan, treads: want.treads, turns: want.turns, bends: want.bends, free: want.free, joint: want.joint, arm: want.arm } : null;
     if (JSON.stringify(w2) === JSON.stringify(have)) return it;
     changed = true;
-    const { postXs: _x, postDrops: _d, stairTan: _t, cornerTurns: _c, cornerBends: _b, freeEnds: _f, cornerJoint: _j, cornerArm: _a, ...rest } = it.params.slats ?? {};
-    const slats = want ? { ...rest, postXs: want.xs, ...(want.drops ? { postDrops: want.drops } : {}), ...(want.tan !== undefined ? { stairTan: want.tan } : {}), ...(want.turns ? { cornerTurns: want.turns } : {}), ...(want.bends ? { cornerBends: want.bends } : {}), ...(want.free ? { freeEnds: want.free } : {}), ...(want.joint ? { cornerJoint: want.joint } : {}), ...(want.arm !== undefined ? { cornerArm: want.arm } : {}) } : Object.keys(rest).length ? rest : undefined;
+    const { postXs: _x, postDrops: _d, stairTan: _t, stairTreads: _tr, cornerTurns: _c, cornerBends: _b, freeEnds: _f, cornerJoint: _j, cornerArm: _a, ...rest } = it.params.slats ?? {};
+    const slats = want ? { ...rest, postXs: want.xs, ...(want.drops ? { postDrops: want.drops } : {}), ...(want.tan !== undefined ? { stairTan: want.tan } : {}), ...(want.treads ? { stairTreads: want.treads } : {}), ...(want.turns ? { cornerTurns: want.turns } : {}), ...(want.bends ? { cornerBends: want.bends } : {}), ...(want.free ? { freeEnds: want.free } : {}), ...(want.joint ? { cornerJoint: want.joint } : {}), ...(want.arm !== undefined ? { cornerArm: want.arm } : {}) } : Object.keys(rest).length ? rest : undefined;
     const { slats: _s, ...params } = it.params;
     return { ...it, params: slats ? { ...params, slats } : params };
   });
-  return changed ? { ...project, items } : project;
+  return withCornerConnections(changed ? { ...project, items } : project, materials);
 }
 
 /**
@@ -133,7 +147,7 @@ export function mergeTerraceRuns(project: Project): { project: Project; merged: 
   const own = (it: LayoutItem | undefined): it is FenceSection => !!it && it.kind === 'fence' && customModelOf(it.modelId)?.kind === 'terrace';
   const sig = (it: FenceSection): string => {
     const { slats, ...params } = it.params;
-    const { postXs: _x, postDrops: _d, stairTan: _t, cornerTurns: _c, cornerBends: _b, freeEnds: _f, cornerJoint: _j, cornerArm: _a, ...s } = slats ?? {};
+    const { postXs: _x, postDrops: _d, stairTan: _t, stairTreads: _tr, cornerConnections: _cn, cornerTurns: _c, cornerBends: _b, freeEnds: _f, cornerJoint: _j, cornerArm: _a, ...s } = slats ?? {};
     return JSON.stringify([it.modelId, it.heightMm, it.color, it.finish ?? null, it.plinthMm ?? null, it.plinthWidthMm ?? null, it.materialId, params, s]);
   };
   const items: LayoutItem[] = []; const posts: Project['posts'] = [];

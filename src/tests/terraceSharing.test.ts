@@ -22,7 +22,7 @@ describe('dvorišni modeli dostupni i za terase', () => {
     expect(terraceVariants().map((m) => m.terraceSourceId)).toEqual([yard.id]);
     expect(isStair(createFence({ modelId: alias, stair: { riseMm: -600 } }))).toBe(true);
     const layout = computeLayout(createProject('Deljeni model', [createFence({ modelId: alias })]));
-    expect(layout.postCount).toBe(2);
+    expect(layout.postCount).toBe(0); // fizičke stubove sada računa terasni model
   });
   it('izmena izvora osvežava varijantu; odštiklirana varijanta ostaje dostupna starim projektima', () => {
     const alias = terraceVariantId(yard.id);

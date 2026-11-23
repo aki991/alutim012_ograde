@@ -1,6 +1,7 @@
 import { colorHex } from './catalog';
 import { hwDimsOf, materialOwnColor, materialShape, materialShapeWith, pieceSolids, sectionFace, solidsBounds, type HwDims, type MatShape } from './materialShape';
 import { screwCounts, screwMaterial } from './terraceHardware';
+import type { PipeJointShape } from '../geometry/pipeJoints';
 import type { Material } from './types';
 
 /**
@@ -17,7 +18,13 @@ export type HwKind = 'flange' | 'postCap' | 'connector' | 'holder' | 'rodCap' | 
 
 export interface CustomPart {
   id: string;
-  /** samo prikaz na stepeništu: okov (flanša) se ne iskošava sa poljem nego leži ravno na gazištu; nagib polja (tangens) */
+  /** Stvarni ugaoni spoj, u lokalnim krutim koordinatama; ne deformiše se smicanjem stepeništa. */
+  joint3d?: PipeJointShape;
+  /** Kruta cev na stepeništu: stvarna dužina i nagib, dok x i lengthMm ostaju horizontalne mere polja. */
+  tube3d?: { lengthMm: number; angleDeg: number };
+  /** Uloga generisanog terasnog dela kada njegov materijal pripada dvorišnom cenovniku. */
+  terraceRole?: 'post' | 'rail' | 'rod';
+  /** Prikaz na stepeništu: stub, tarabica i komadni okov ostaju uspravni; nagib polja (tangens). */
   unshearTan?: number;
   /** prečka u bočnim U profilima: tolerancija (mm) — seče se kraće za toliko od dužine na crtežu; bez vrednosti platno 1 mm, kapija 3 mm */
   tolMm?: number;
@@ -86,7 +93,7 @@ export interface CustomPart {
   /** okov koji je aplikacija sama postavila: vrsta i deo na koji naleže (stub / rukohvat / prečka) i drugi deo (stub za prsten prečke) */
   hw?: { kind: HwKind; on: string; at?: string };
   /** Držač ili staklo koje pravi opcija „Staklena ograda“ između dva susedna stuba. */
-  glazing?: { kind: 'clamp' | 'pane'; left: string; right: string };
+  glazing?: { kind: 'clamp' | 'pane'; left: string; right: string; end?: 'start' | 'end' };
 }
 
 /**
@@ -161,6 +168,8 @@ export interface GlassRailingSpec {
   bottomMm?: number;
   topMm?: number;
   insetMm?: number;
+  /** Ukupno skraćenje širine stakla (mm), podjednako levo i desno; visina se ne menja. Bez vrednosti 0. */
+  toleranceMm?: number;
 }
 
 export const DEFAULT_POST_SPACING_MM = 1000;
@@ -373,7 +382,7 @@ export function resolveParts(model: Pick<CustomModel, 'parts' | 'color'> & { hw?
         shape = { ...shape, solids: pieceSolids('end_cap_rect', e.face, e.depth, dims ?? hwDimsOf()) };
       }
     }
-    const hex = material ? partHex(material, model, part) : part.color ? colorHex(part.color) : '#94a3b8';
+    const hex = material ? partHex(material, model, part) : part.joint3d ? colorHex(model.color) : part.color ? colorHex(part.color) : '#94a3b8';
     // veza stub–rukohvat na stepeništu: donji deo (rozeta i vrat) je ravan na stubu, a samo ploča pod rukohvatom prati nagib
     if (part.hw?.kind === 'connector' && part.unshearTan && shape.type === 'piece' && shape.solids.length > 1) {
       const { unshearTan: _u, ...plate } = part;

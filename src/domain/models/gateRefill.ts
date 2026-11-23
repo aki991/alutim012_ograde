@@ -12,10 +12,10 @@ import type { Material } from './types';
 
 /**
  * Da li se model pri promeni veličine polja ili krila računa po pravilima (mere uz ivice, broj i razmak letvica i prečki), a ne razvlači
- * kao slika: svaki model osim modela za terase, bez obzira da li je nastao od modela iz kataloga, nacrtan ručno, kao ograda ili kao kapija.
+ * kao slika: dvorišni modeli, kapije i njihove povezane terasne varijante. Izvorni terasni modeli imaju svoj raspored stubova i prečki.
  * Šta na crtežu postoji (ram, nosači, niz prečki, uspravne letvice) prepoznaje sam crtež: bez takvih delova ništa se ne menja.
  */
-export const refillsVBars = (m: CustomModel): boolean => m.kind !== 'terrace';
+export const refillsVBars = (m: CustomModel): boolean => m.kind !== 'terrace' || !!m.terraceSourceId;
 
 const norm = (a: number): number => ((a % 360) + 360) % 360;
 const isVertical = (p: CustomPart): boolean => norm(p.angleDeg) === 90 || norm(p.angleDeg) === 270;
@@ -47,6 +47,13 @@ export function vBarFill(space: number, bar: number, gap: number, left: number, 
  */
 /** ručno zadate mere letvica na polju ili krilu (mm); mera bez vrednosti ostaje kakva je na crtežu modela */
 export interface SlatOverride {
+  /** Izvedeni spojevi sa susednim poljima; isti krajevi cevi koriste se u prikazu i krojnoj listi. */
+  cornerConnections?: import('../geometry/pipeJoints').PipeConnection[];
+  /** Tolerancija stakla na ovom polju (ukupno umanjenje samo širine); bez vrednosti važi model. */
+  glassToleranceMm?: number;
+  /** Dodatno staklo na početku / kraju platna; na stepeništu širina duž nagiba (0 = bez stakla). */
+  stairGlassStartMm?: number;
+  stairGlassEndMm?: number;
   /** uspravne letvice: odstojanje prve od levog i poslednje od desnog kraja, željeni razmak */
   leftMm?: number; rightMm?: number; gapMm?: number;
   /** vodoravne prečke koje se ponavljaju: odstojanje donje od dna, gornje od vrha ispune i željeni razmak */
@@ -63,6 +70,12 @@ export interface SlatOverride {
   postXs?: number[];
   /** stepenište: za koliko je (mm) svaki stub duži naniže, do gazišta na kome stoji; i nagib polja (tangens) za ravnu flanšu */
   postDrops?: number[]; stairTan?: number;
+  /** Gazišta u lokalnim koordinatama polja; nivo je u odnosu na početak linije nagiba. */
+  stairTreads?: { fromMm: number; toMm: number; levelMm: number }[];
+  /** Zazor donjeg kraja tarabice iznad gazišta (mm). */
+  treadClearanceMm?: number;
+  /** Samo tokom obračuna i prikaza: podizanje ispune ne podiže stubove sa poda. */
+  infillLiftMm?: number;
   /** skretanje trase (stepeni) na levom i desnom kraju polja: prečke ispred stubova se na uglu produžavaju ili skraćuju da se sastave */
   cornerTurns?: [number, number];
   /** promena nagiba na krajevima polja (stepeni, 0 = nema): ravno polje uz stepenište i obrnuto; cevi se sastaju u istoj tački (zglob ili koleno) */
@@ -79,10 +92,12 @@ export interface SlatOverride {
   /** razmak ose između susednih prečki (od donje): zadat razmak (mm) ili null = ravnomerno; ostali razmaci dele ono što preostane */
   rodGaps?: (number | null)[];
   postSpacingMm?: number; postLeftMm?: number; postRightMm?: number;
+  /** Preneti dvorišni model: materijal terasnih stubova. */
+  postMaterialId?: string;
 }
 
 /** najveća grupa uspravnih letvica istog preseka (ram i U vođice nisu letvice); bar 3 letvice */
-function slatGroupOf(model: CustomModel, materials: Material[]): CustomPart | null {
+function slatGroupOf(model: CustomModel, materials: Material[], minCount = 3): CustomPart | null {
   const shapeOf = shapeLookup(materials);
   let best: { bar: CustomPart; n: number } | null = null;
   const seen = new Set<string>();
@@ -96,7 +111,7 @@ function slatGroupOf(model: CustomModel, materials: Material[]): CustomPart | nu
     const g = vBarGroup(model, p, materials);
     if (!g) continue;
     g.bars.forEach((x) => seen.add(x.id));
-    if (g.bars.length >= 3 && (!best || g.bars.length > best.n)) best = { bar: g.bars[0], n: g.bars.length };
+    if (g.bars.length >= minCount && (!best || g.bars.length > best.n)) best = { bar: g.bars[0], n: g.bars.length };
   }
   return best ? best.bar : null;
 }
@@ -112,8 +127,8 @@ export function slatIdsOf(model: CustomModel, materials: Material[]): Set<string
 }
 
 /** Trenutni raspored letvica modela: broj, odstojanje prve i poslednje od ivica i razmak (null kad model nema uspravne letvice). */
-export function slatLayoutOf(model: CustomModel, materials: Material[]): { count: number; left: number; right: number; gap: number } | null {
-  const bar = slatGroupOf(model, materials);
+export function slatLayoutOf(model: CustomModel, materials: Material[], minCount = 3): { count: number; left: number; right: number; gap: number } | null {
+  const bar = slatGroupOf(model, materials, minCount);
   const info = bar && vLayoutInfo(model, bar, materials);
   if (!info || info.mixed) return null;
   return { count: info.count, left: info.top, right: info.bottom, gap: info.gap ?? 0 };

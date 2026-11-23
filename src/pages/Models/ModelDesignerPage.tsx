@@ -8,7 +8,8 @@ import { checkSizes } from '../../domain/models/sizeCheck';
 import { SizeProbe } from '../../components/designer/SizeProbe';
 import { FitBox } from '../../components/designer/FitBox';
 import { hingesAlongEdge, isHingeMaterial, restOnSurface } from '../../domain/models/surface';
-import { layerPart } from '../../domain/models/overlap';
+import { layerPart, layerParts } from '../../domain/models/overlap';
+import { picketSupports, supportsBehindPickets } from '../../domain/models/picketLayers';
 import { ALL_FRAME_SIDES, frameIds, isFramePart, modelWithFrame, modelWithoutFrame, modelWithRotatedFrame, resizeWithFrame } from '../../domain/models/frame';
 import { wantsGateFrame } from '../../domain/models/gateFrame';
 import { addDivider } from '../../domain/models/reinforce';
@@ -46,7 +47,7 @@ import { pickFromModel, resizePair, withPairHardware, withSingleHardware } from 
 
 import { ColorChartModal, normalizeFavorites } from '../../components/forms/ColorChartModal';
 import { CUSTOM_KIND_LABELS, customBom, newCustomModel, newTerraceModel, repeatPart, setPartsColor, type CustomModel, type CustomPart } from '../../domain/models/custom';
-import { groupHasCaps, layoutVBars, setGroupCaps, vBarGroup, vLayoutInfo } from '../../domain/models/vbars';
+import { capsOver, groupHasCaps, layoutVBars, setGroupCaps, vBarGroup, vLayoutInfo } from '../../domain/models/vbars';
 import { attachToGuides, barGroup, barLayoutInfo, gapRange, guideReport, layoutBars, type LayoutAuto } from '../../domain/models/guides';
 import type { Lufta } from '../../domain/models/custom';
 import { checkNewOverlap } from '../../domain/models/overlap';
@@ -508,6 +509,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
   const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
   const sel = parts.find((r) => r.part.id === selectedId) ?? null;
   const multi = selectedIds.length > 1 ? parts.filter((r) => selectedIds.includes(r.part.id)) : [];
+  const supports = useMemo(() => picketSupports(model, materials), [model, materials]);
   const bom = useMemo(() => customBom(model, materials), [model, materials]);
   /** provera crteža (posle slobodnog crtanja ili na dugme); menja se uživo dok se problemi ispravljaju */
   const deferredModel = useDeferredValue(model);
@@ -632,6 +634,18 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
     return r.model;
   };
   const patchPart = (pid: string, patch: Partial<CustomPart>, keep = true) => change((m) => ({ ...m, parts: m.parts.map((p) => (p.id === pid ? { ...p, ...patch, ...('rot' in patch ? { rotLocked: true } : {}) } : p)) }), keep);
+  const applyLayer = (mode: 'behind' | 'front', ids = selectedIds) => {
+    const cur = modelRef.current;
+    const moving = new Set(ids);
+    // Ručno dodati čepovi tarabica prate svoje letvice i pri promeni dubine.
+    for (const p of cur.parts) if (moving.has(p.id) && Math.abs(Math.cos(p.angleDeg * Math.PI / 180)) < 0.02) {
+      const mat = materialsRef.current.find((m) => m.id === p.materialId);
+      if (mat && materialShape(mat).type === 'linear') capsOver(cur, p, materialsRef.current).forEach((c) => moving.add(c.id));
+    }
+    const next = layerParts(cur, [...moving], mode, materialsRef.current);
+    if (next === cur) { setNotice('Izabrani delovi su već na tom sloju ili ne pokrivaju druge profile.'); return; }
+    change(() => next);
+  };
   /** zamena materijala izabranog dela; delovi koji moraju zajedno (suprotni U profil, ostale prečke grupe) menjaju se uz potvrdu */
   const swapMaterial = (ids: string[], materialId: string) => {
     let m = modelRef.current;
@@ -926,11 +940,20 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
         </>}
         <div className="flex-1" />
         {view !== 'mere' && <>
-        <label className="flex items-center gap-1.5 text-[13px]" title="Šta se dešava kad nov deo pokrije postojeći u pogledu spreda: odbija se (crta se pored) ili se stavlja iza / ispred njih po dubini. Tako se crtaju slojevi: letvice ispred, prečke iza njih, cevi iza prečki.">Novi deo preko drugog
-          <select className="input !w-auto !py-1" data-testid="designer-layer" value={layer} onChange={(e) => setLayer(e.target.value as 'off' | 'behind' | 'front')}>
-            <option value="off">ne dozvoli</option><option value="behind">iza postojećih</option><option value="front">ispred postojećih</option>
+        <label className="flex items-center gap-1.5 text-[13px]" title="Izbor odmah pomera označene delove po dubini. Bez označenih delova važi za sledeće dodavanje. Letvice mogu stajati ispred, a nosači iza njih.">{selectedIds.length ? 'Izabrani delovi preko drugih' : 'Novi deo preko drugog'}
+          <select className="input !w-auto !py-1" data-testid="designer-layer" value={selectedIds.length ? '' : layer} onChange={(e) => {
+            const mode = e.target.value as 'off' | 'behind' | 'front'; setLayer(mode);
+            if (mode !== 'off' && selectedIds.length) applyLayer(mode);
+          }}>
+            {selectedIds.length ? <option value="" disabled>Postavi po dubini…</option> : <option value="off">ne dozvoli</option>}
+            <option value="behind">iza postojećih</option><option value="front">ispred postojećih</option>
           </select>
         </label>
+        {supports.length > 0 && <button className="btn" data-testid="designer-supports-behind" title="Postavlja postojeće vodoravne nosače iza tarabica, bez promene njihovih mera."
+          onClick={() => { const cur = modelRef.current; const next = supportsBehindPickets(cur, materialsRef.current);
+            if (next === cur) { setNotice('Prečke su već iza tarabica.'); return; }
+            if (change(() => next)) { setSelectedIds(supports.map((p) => p.id)); setLayer('behind'); }
+          }}>Prečke iza tarabica</button>}
         <button type="button" className={`btn btn-sm ${free ? 'btn-primary' : ''}`} data-testid="designer-free" aria-pressed={free} title="Slobodno crtanje: dozvoljeno je sve (preklapanje delova, proizvoljni uglovi, nejednaki razmaci). Pri povratku na normalno crtanje prikazuje se šta nije u redu."
           onClick={() => { if (free) { setFree(false); setCheckOpen(true); } else { setFree(true); setCheckOpen(false); } }}>{free ? 'Normalno crtanje' : 'Slobodno crtanje'}</button>
         {!free && <button type="button" className={`btn btn-sm ${activeProblems?.length ? '!border-[#fda29b] !text-[#b42318]' : ''}`} data-testid="designer-check" aria-pressed={checkOpen} title="Upozorenja za crtež: preklapanja, krive cevi, nejednaki razmaci i problemi na drugim veličinama polja. Upozorenje koje ima smisla možete da prihvatite." onClick={() => setCheckOpen((o) => !o)}><AlertTriangle size={14} />Upozorenja ({activeProblems?.length ?? 0})</button>}
@@ -1135,6 +1158,11 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
                   </label>
                 )}
                 {field('Dubina (ka napred)', (p) => p.z, (v) => ({ z: v }), { min: -2000, max: 2000, testId: 'multi-z' })}
+                {linear && <div className="flex gap-2 py-1" data-testid="multi-layer-buttons">
+                  {(['behind', 'front'] as const).map((mode) => <button key={mode} className="btn btn-sm flex-1" data-testid={`multi-layer-${mode}`} onClick={() => applyLayer(mode)}>
+                    {mode === 'behind' ? 'Iza ostalih' : 'Ispred ostalih'}
+                  </button>)}
+                </div>}
                 {/* izabrana je cela grupa prečki (isti materijal, jedna iznad druge), možda uz druge delove: raspored prečki važi za grupu */}
                 {(() => {
                   for (const r of multi) {
@@ -1223,7 +1251,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
                 <div className="flex gap-2 py-1" data-testid="part-layer-buttons">
                   {(['behind', 'front'] as const).map((mode) => (
                     <button key={mode} className="btn btn-sm flex-1" data-testid={`part-layer-${mode}`} title={mode === 'behind' ? 'Postavlja deo iza svih delova koje u pogledu spreda pokriva' : 'Postavlja deo ispred svih delova koje u pogledu spreda pokriva'}
-                      onClick={() => { const cur = modelRef.current.parts.find((x) => x.id === sel.part.id); if (!cur) return; const moved = layerPart(modelRef.current, cur, mode, materialsRef.current); if (moved.z === cur.z) { setNotice('Deo ne pokriva nijedan drugi deo, pa nema šta da se slaže.'); return; } patchPart(cur.id, { z: moved.z }); }}>
+                      onClick={() => applyLayer(mode, [sel.part.id])}>
                       {mode === 'behind' ? 'Iza ostalih' : 'Ispred ostalih'}
                     </button>
                   ))}
