@@ -122,6 +122,7 @@ test('prepust na stepeništu prikazuje stvarnu meru i isti unos ne menja geometr
   await seed(page, 'ball', 0, -720, false);
   await page.locator('[data-hit="item"][data-id="field1"]').click({ modifiers: ['Control'] });
   // Aktivira raspored po gazištima i na tek učitanom projektu.
+  await page.getByTestId('post-settings-toggle').click();
   await page.getByTestId('post-spacing').fill('800'); await page.getByTestId('post-spacing').press('Enter');
   const input = page.getByTestId('post-end-overhang');
   await expect(input).toBeVisible();
@@ -140,5 +141,6 @@ test('prepust na stepeništu prikazuje stvarnu meru i isti unos ne menja geometr
   }).toBe(100);
   await page.reload();
   await page.locator('[data-hit="item"][data-id="field1"]').click({ modifiers: ['Control'] });
+  await page.getByTestId('post-settings-toggle').click();
   await expect(page.getByTestId('post-end-overhang')).toHaveValue('100');
 });

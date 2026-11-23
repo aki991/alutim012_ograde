@@ -23,7 +23,7 @@ test('smislene jedinice, preračun cene i trajno čuvanje posle osvežavanja', a
     await new Promise<void>((resolve, reject) => { const tx = db.transaction('materials', 'readwrite'); for (const m of mats) tx.objectStore('materials').put(m); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); }); db.close();
   }, materials);
   await page.goto('/materijali');
-  const find = async (name: string) => { await page.getByRole('textbox', { name: 'Pretraga materijala' }).fill(name); return page.getByTestId('material-row').filter({ has: page.getByText(name, { exact: false }) }).first(); };
+  const find = async (name: string) => { await page.getByTestId('materials-all').click(); await page.getByRole('textbox', { name: 'Pretraga materijala' }).fill(name); return page.getByTestId('material-row').filter({ has: page.getByText(name, { exact: false }) }).first(); };
   const saved = (id: string) => page.evaluate(async (key) => {
     const db = await new Promise<IDBDatabase>((resolve) => { const r = indexedDB.open('alu-tim-012'); r.onsuccess = () => resolve(r.result); });
     const value = await new Promise<Material>((resolve) => { const r = db.transaction('materials').objectStore('materials').get(key); r.onsuccess = () => resolve(r.result); }); db.close(); return value;

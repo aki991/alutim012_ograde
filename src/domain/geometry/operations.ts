@@ -340,6 +340,15 @@ export function updatePost(p: Project, id: string, patch: Partial<Post>): Projec
   return touch(keepClearWidths(p, applyPostRoles({ ...p, posts })));
 }
 
+/** Zadaje stvarnu dužinu stuba, uz dodatak zbog podnožja ili gazišta iz obračuna crteža. */
+export function setPostLengths(p: Project, ids: string[], lengthMm: number): Project {
+  const selected = new Set(ids);
+  const posts = computeLayout(p).posts.filter((lp) => selected.has(lp.post.id) && Math.abs(lp.lengthMm - lengthMm) > 0.01);
+  return posts.reduce((project, lp) => updatePost(project, lp.post.id, {
+    heightMm: lengthMm - (lp.lengthMm - lp.post.heightMm),
+  }), p);
+}
+
 /**
  * „Osnovni stub“: stub se vraća kakav je bio pre prvog šablona (snimak u `basePost`). Stub bez snimka (šablon izabran pre ove
  * mogućnosti) postaje automatski stub kakav se postavlja uz ogradu: metalni, uobičajene širine, visina i boja prate ogradu.

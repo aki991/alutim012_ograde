@@ -1,4 +1,5 @@
 import { ChoiceGroup } from '../ui/ChoiceGroup';
+import { setPostLengths } from '../../domain/geometry/operations';
 import { GateModelPicker } from '../gates/GateModelPicker';
 import { ScopeField } from '../forms/ScopeField';
 import { editScopeTargets } from '../../domain/geometry/editScope';
@@ -7,14 +8,14 @@ import { productionPostCount } from '../../domain/models/productionPosts';
 import { GateFrameBox } from './GateFrameBox';
 import { RequisitionModal } from './RequisitionModal';
 import { ReinforceSettings } from './ReinforceSettings';
-import { postPositions, postSpec, sharedPostMaterials, sharedPostTemplate } from '../../domain/models/terraceHardware';
+import { hwRoleOf, postPositions, postSpec, sharedPostMaterials, sharedPostTemplate } from '../../domain/models/terraceHardware';
 import { allFenceModels, customHBarLayout, customHBarZones, customEndOverhang, customLiftOf, customModelOf, customRodInfo, customRails, customSlatLayout, isCustomModel, scaledModel } from '../../domain/models/customRegistry';
 import { glassEndLimits } from '../../domain/models/glassRailing';
 import { gateLeafPoses } from '../../domain/geometry/gates';
 import { leafHeightOf } from '../../domain/gates/slidingLayout';
-import { AlertTriangle, ArrowLeft, ArrowRight, Copy, Trash2, Calculator, FileDown, Scissors, ClipboardList, PackageCheck, Ruler } from 'lucide-react';
+import { AlertTriangle, Copy, Trash2, Calculator, FileDown, Scissors, ClipboardList, PackageCheck, Ruler } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
-import { autoFillToFixedTotal, changeColor, changeFinish, isTotalLocked, setItemWidthLock, setTotalLock, indexOfItem, resetPostHeights, restoreBasePosts, setAllColors, setAllFinishes, setGatesOwnPosts, setAllPlinths, removeItemPlinths, setItemPlinthHeight, setRl10Params, resetRl10Params, setTubesParams, resetTubesParams, setPlinthWidth, setAllHeights, updateItem, updatePost } from '../../domain/geometry/operations';
+import { autoFillToFixedTotal, changeColor, changeFinish, isTotalLocked, indexOfItem, resetPostHeights, restoreBasePosts, setAllColors, setAllFinishes, setGatesOwnPosts, setAllPlinths, removeItemPlinths, setItemPlinthHeight, setRl10Params, resetRl10Params, setTubesParams, resetTubesParams, setPlinthWidth, setAllHeights, updateItem, updatePost } from '../../domain/geometry/operations';
 import { computeInfill } from '../../domain/geometry/infill';
 import { MAX_TURN_DEG } from '../../domain/geometry/plan';
 import { cornerInfo } from '../../domain/geometry/corner';
@@ -214,6 +215,8 @@ function Rl10Parts({ params }: { params: FenceParams }) {
 /* ---------- Osnovne karakteristike projekta ---------- */
 function ProjectBasics({ project }: { project: Project }) {
   const modelSpecs = useAppStore((s) => s.settings.modelSpecs);
+  const materials = useAppStore((s) => s.materials);
+  useAppStore((s) => s.settings.customModels);
   const { mutate, setNotice } = useAppStore.getState();
   const notice = useAppStore((s) => s.editor.notice);
   const layout = computeLayout(project);
@@ -222,6 +225,18 @@ function ProjectBasics({ project }: { project: Project }) {
   const advanced = useAppStore((st) => Boolean(st.settings.advancedLengths));
   const [confirmClear, setConfirmClear] = useState(false);
   const firstHeight = project.items[0]?.heightMm ?? s.defaultHeightMm;
+  const cornerFence = project.items.find((item): item is FenceSection => {
+    if (item.kind !== 'fence') return false;
+    const model = customModelOf(item.modelId);
+    if (model?.kind !== 'terrace') return false;
+    return model.parts.some((part) => {
+      if (part.hw || Math.abs(Math.sin(part.angleDeg * Math.PI / 180)) > 0.02) return false;
+      const material = materials.find((m) => m.id === part.materialId);
+      if (!material) return false;
+      const role = hwRoleOf(part, materialShape(material));
+      return role === 'rail' || role === 'rod';
+    });
+  });
 
   const doFill = () => {
     const res = autoFillToFixedTotal(project);
@@ -232,13 +247,8 @@ function ProjectBasics({ project }: { project: Project }) {
   return (
     <Section title="Osnovne karakteristike" testId="panel-basics">
       <TextField label="Naziv projekta" value={project.name} testId="project-name" onChange={(v) => mutate((p) => ({ ...p, name: v, updatedAt: new Date().toISOString() }), 'name')} />
- {!advanced && (
-        <ToggleField label="Ukupna dužina" testId="lock-total-toggle" checked={isTotalLocked(project)} onLabel="Zaključana" offLabel="Slobodna" onChange={(v) => mutate((p) => setTotalLock(p, v))} />
-      )}
       {advanced && (
         <>
-      <SegmentedField label="Ukupna dužina" testId="total-mode" value={s.totalMode} options={[{ value: 'auto', label: 'Automatska' }, { value: 'fixed', label: 'Fiksna' }]}
-        onChange={(v) => mutate((p) => ({ ...p, settings: { ...p.settings, totalMode: v, fixedTotalMm: v === 'fixed' && p.settings.totalMode === 'auto' ? layout.totalModularMm || p.settings.fixedTotalMm : p.settings.fixedTotalMm } }))} />
       {s.totalMode === 'fixed' ? (
         <>
           <NumberField label="Zadata dužina (osa–osa)" testId="fixed-total" value={s.fixedTotalMm} range={LIMITS.fixedTotal} onCommit={(v) => mutate((p) => ({ ...p, settings: { ...p.settings, fixedTotalMm: v } }), 'fixed')} />
@@ -269,9 +279,8 @@ function ProjectBasics({ project }: { project: Project }) {
         {layout.postCount > 0 && <><span className="text-muted">Zasebnih oslonaca (zajedničkih)</span><b className="text-right">{layout.postCount} ({layout.sharedPostCount})</b></>}
       </div>
 
-      {project.items.some((i) => i.kind === 'fence' && isTerraceModel(i.modelId) && isCustomModel(i.modelId)) && (() => {
-        const firstFence = project.items.find((i): i is FenceSection => i.kind === 'fence' && isCustomModel(i.modelId));
-        const modelJoint = (firstFence && customModelOf(firstFence.modelId)?.cornerJoint) || 'ball';
+      {cornerFence && (() => {
+        const modelJoint = customModelOf(cornerFence.modelId)?.cornerJoint ?? 'ball';
         const joint = s.cornerJoint ?? modelJoint;
         return (
           <>
@@ -368,9 +377,6 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
     <>
       {!stairIn && <NumberField label="Širina" testId="field-width" value={Math.round(outerWidthMm(project, index))} range={{ min: Math.round(wRange.min + half), max: Math.round(wRange.max + half) }} onCommit={(v) => st.setWidth(id, v, `w:${id}`)}
         hint={isTotalLocked(project) ? 'Ukupna dužina je zaključana: ostala platna se prilagođavaju da zbir ostane isti.' : undefined} />}
-      {!stairIn && it.kind === 'fence' && (
-        <ToggleField label="Širina platna" testId="field-width-lock" checked={Boolean(it.widthLocked)} onLabel="Zaključana" offLabel="Slobodna" onChange={(v) => st.mutate((p) => setItemWidthLock(p, id, v))} />
-      )}
       <NumberField label="Visina" testId="field-height" value={it.heightMm} range={heightRangeFor(it)} onCommit={(v) => (stairIn ? st.mutate((p) => setStairGroup(p, id, { heightMm: v }), `h:${id}`) : st.patchItem(id, { heightMm: v }, 'h'))} />
     </>
   );
@@ -418,13 +424,12 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
         {!isTerraceModel(it.modelId) && <>
         <ToggleField label="Betonsko podnožje" testId="field-item-plinth-on" checked={li.plinthMm > 0} onLabel="Sa podnožjem" offLabel="Bez podnožja" onChange={(v) => (v ? st.patchItem(id, { plinthMm: PLINTH_DEFAULT_MM }) : st.mutate((p) => removeItemPlinths(p, [id])))} />
         {li.plinthMm > 0 && (
-          <NumberField label="Visina podnožja" testId="field-item-plinth" value={li.plinthMm} range={{ min: 50, max: 1200 }} onCommit={(v) => st.mutate((p) => setItemPlinthHeight(p, id, v), `plinth:${id}`)}
-            hint="Ograda i stubovi stoje na podnožju" />
+          <NumberField label="Visina podnožja" testId="field-item-plinth" value={li.plinthMm} range={{ min: 50, max: 1200 }} onCommit={(v) => st.mutate((p) => setItemPlinthHeight(p, id, v), `plinth:${id}`)} />
         )}
         {li.plinthMm > 0 && (
           <NumberField label="Širina podnožja" testId="field-item-plinth-width" value={Math.round(li.plinthX1 - li.plinthX0)} range={{ min: 100, max: Math.round(wRange.max + half) }}
             onCommit={(v) => st.mutate((p) => setPlinthWidth(p, id, v), `plinthw:${id}`)}
-            hint={it.plinthWidthMm ? 'Kraće od polja: centrirano ispod njega' : 'Podrazumevano: ispod polja i stubova. Šire podnožje širi i ogradu (susedni elementi se pomeraju).'} />
+            />
         )}
         </>}
         {isRl10Model(it.modelId) && <Rl10Parts params={it.params} />}
@@ -569,8 +574,6 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
   return (
     <Section title={`Odabran element: ${label}`} testId="panel-item">
       <div className="flex flex-wrap gap-1.5 mb-2" data-testid="item-actions">
-        {!terraceFence && <button className="btn btn-sm" data-testid="btn-move-left" disabled={index === 0} onClick={() => st.moveSelected(-1)}><ArrowLeft size={14} />Pomeri levo</button>}
-        {!terraceFence && <button className="btn btn-sm" data-testid="btn-move-right" disabled={index === project.items.length - 1} onClick={() => st.moveSelected(1)}>Pomeri desno<ArrowRight size={14} /></button>}
         {!terraceFence && <button className="btn btn-sm" data-testid="btn-duplicate" onClick={() => st.duplicateSelected(1)}><Copy size={14} />Dupliraj</button>}
         <button className="btn btn-sm btn-danger" data-testid="btn-delete" onClick={st.deleteSelected}><Trash2 size={14} />Obriši</button>
       </div>
@@ -645,10 +648,8 @@ function PostPanel({ project, id }: { project: Project; id: string }) {
     if (targets.length === 1) st.patchPost(id, patch, key);
     else st.mutate((pr) => targets.reduce((q, pid) => updatePost(q, pid, patch), pr), key ? `${key}:multi` : null);
   };
-  const role = lp.role === 'end' ? 'Krajnji stub' : lp.role === 'gate' ? 'Stub kapije' : 'Međustub (zajednički)';
   return (
     <Section title={picked.length > 1 ? `Izabrano stubova: ${picked.length}` : `Odabran stub: S${lp.index + 1}`} testId="panel-post">
-      <div className="text-[12.5px] text-muted mb-1">{role} · pozicija {fmtMm(lp.x)} · ID {p.id.slice(-6)}</div>
       {picked.length > 1 ? (
         <div className="text-[12.5px] text-muted mb-1" data-testid="post-multi-note">Izmene važe za sve izabrane stubove. Ctrl+klik dodaje ili izbacuje stub, Shift+klik bira niz stubova.</div>
       ) : (
@@ -660,8 +661,8 @@ function PostPanel({ project, id }: { project: Project; id: string }) {
           <NumberField label="Ugao skretanja" testId="field-turn" unit="°" step={5} value={p.turnDeg ?? 0} range={{ min: -MAX_TURN_DEG, max: MAX_TURN_DEG }}
             onCommit={(v) => st.patchPost(id, { turnDeg: v }, 'turn')}
             />
-          <div className="flex gap-1.5 pb-1.5 flex-wrap">
-            {[-90, -45, 0, 45, 90].map((a) => <button key={a} className={`btn btn-sm ${(p.turnDeg ?? 0) === a ? 'btn-primary' : ''}`} data-testid={`turn-${a}`} onClick={() => st.patchPost(id, { turnDeg: a })}>{a === 0 ? 'Ravno' : `${a > 0 ? '+' : ''}${a}°`}</button>)}
+          <div className="grid grid-cols-5 gap-1 pb-1.5">
+            {[-90, -45, 0, 45, 90].map((a) => <button key={a} className={`btn btn-sm min-w-0 !px-1 ${(p.turnDeg ?? 0) === a ? 'btn-primary' : ''}`} data-testid={`turn-${a}`} onClick={() => st.patchPost(id, { turnDeg: a })}>{a === 0 ? 'Ravno' : `${a > 0 ? '+' : ''}${a}°`}</button>)}
           </div>
         </div>
       ) : null}
@@ -718,14 +719,15 @@ function PostPanel({ project, id }: { project: Project; id: string }) {
             </div>
           )}
         {tplMsg && <div className="text-[12px] text-[#067647] mt-1" role="status">{tplMsg}</div>}
-        <div className="text-[11.5px] text-muted mt-1">Šabloni se prave i menjaju u Podešavanjima (Šabloni stubova). Izbor važi za stubove na koje važe izmene.</div>
       </div>
       <SelectField label="Tip" testId="post-type" value={p.type} options={(Object.entries(POST_LABELS) as [typeof p.type, string][]).filter(([value]) => MANUAL_POST_TYPES.includes(value) || value === p.type).map(([value, label]) => ({ value, label }))} onChange={(v) => applyPatch({ type: v })} />
       <NumberField label="Širina preseka" value={p.widthMm} range={LIMITS.postWidth} onCommit={(v) => applyPatch({ widthMm: v }, 'pw')} />
       <div className="flex gap-1.5 pb-1.5">{POST_SIZES.map((s) => <button key={s} className={`btn btn-sm ${p.widthMm === s ? 'btn-primary' : ''}`} onClick={() => applyPatch({ widthMm: s })}>{s}×{s}</button>)}</div>
       {p.type === 'concrete_plinth' && <NumberField label="Visina podnožja" testId="post-plinth" value={p.plinthMm ?? PLINTH_DEFAULT_MM} range={{ min: 100, max: 1200 }} onCommit={(v) => applyPatch({ plinthMm: v }, 'pp')} />}
-      <NumberField label="Visina" value={p.heightMm} range={LIMITS.postHeight} onCommit={(v) => applyPatch({ heightMm: v }, 'ph')}
-        hint={`${p.heightCustom ? 'Ručno zadata' : 'Automatska'} visina iznad podnožja ograde (ne zavisi od visine podnožja). Dužina stuba: ${fmtMm(lp.lengthMm)}${lp.baseMm > 0 ? ' (stoji na podnožju)' : ''}`} />
+      <NumberField label="Visina" testId="post-height" value={lp.lengthMm}
+        range={{ ...LIMITS.postHeight, min: LIMITS.postHeight.min + Math.max(0, ...layout.posts.filter((q) => targets.includes(q.post.id)).map((q) => q.lengthMm - q.post.heightMm)) }}
+        onCommit={(v) => st.mutate((pr) => setPostLengths(pr, targets, v), 'ph')}
+        hint={`${p.heightCustom ? 'Ručno zadata' : 'Automatska'} dužina stuba, kao u krojnoj listi.`} />
       {p.heightCustom && <button className="btn btn-sm mb-1.5" data-testid="post-height-auto" onClick={() => st.mutate((pr) => resetPostHeights(pr, targets))}>Vrati automatsku visinu</button>}
       {/* betonski stub ima boju betona: izbor boje menjao bi boju aluminijumskog stuba koji nije ni postavljen */}
       {!targets.every((tid) => { const t = project.posts.find((x) => x.id === tid)?.type; return t === 'concrete' || t === 'concrete_plinth'; }) && <ColorField testId="post-color" value={p.color} onChange={(c) => applyPatch({ color: c })} finish={p.finish} onFinishChange={(f) => applyPatch({ finish: f })} />}
@@ -958,7 +960,7 @@ function TerraceRodSettings({ id, modelId, widthMm, heightMm, params }: { id: st
  * stuba od krajeva polja. Važi za ovo polje; bez izmene važi „Mere ograde“ modela.
  */
 function TerracePostSettings({ id, modelId, widthMm, heightMm, params, stairSteps, stairUp }: { id: string; modelId: FenceModelId; widthMm: number; heightMm: number; params: FenceParams; stairSteps?: number; stairUp?: boolean }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const materials = useAppStore((s) => s.materials);
   const st = useAppStore.getState();
   const model = customModelOf(modelId);
@@ -1030,17 +1032,17 @@ function FieldRotation({ project, index }: { project: Project; index: number }) 
   return (
     <div className="mb-2" data-testid="field-rotation">
       <NumberField label="Rotacija polja" testId="field-rotation-angle" unit="°" step={5} value={turn} range={{ min: -MAX_TURN_DEG, max: MAX_TURN_DEG }}
-        onCommit={(v) => st.patchPost(post.id, { turnDeg: v }, 'turn')} hint="Ugao prema prethodnom polju: + udesno, − ulevo (gledano odozgo)" />
-      <div className="flex gap-1.5 flex-wrap">
+        onCommit={(v) => st.patchPost(post.id, { turnDeg: v }, 'turn')} />
+      <div className="grid grid-cols-5 gap-1">
         {[-90, -45, 0, 45, 90].map((a) => (
-          <button key={a} className={`btn btn-sm ${turn === a ? 'btn-primary' : ''}`} data-testid={`field-rotation-${a}`} onClick={() => st.patchPost(post.id, { turnDeg: a })}>{a === 0 ? 'Ravno' : `${a > 0 ? '+' : ''}${a}°`}</button>
+          <button key={a} className={`btn btn-sm min-w-0 !px-1 ${turn === a ? 'btn-primary' : ''}`} data-testid={`field-rotation-${a}`} onClick={() => st.patchPost(post.id, { turnDeg: a })}>{a === 0 ? 'Ravno' : `${a > 0 ? '+' : ''}${a}°`}</button>
         ))}
       </div>
     </div>
   );
 }
 
-/** Dodaje više istih elemenata odjednom (npr. 10 istih platna): upiše se broj kopija i klikne „Dodaj“. */
+/** Dodaje zadati broj platana, kapija ili drugih izabranih elemenata. */
 function DuplicateMany({ kind }: { kind: string }) {
   const [n, setN] = useState('2');
   const count = Math.floor(Number(n));
@@ -1048,11 +1050,9 @@ function DuplicateMany({ kind }: { kind: string }) {
   const label = kind === 'fence' ? 'platna' : kind === 'gate' ? 'kapija' : 'elemenata';
   return (
     <div className="flex items-center gap-1.5 mb-2" data-testid="duplicate-many">
-      <span className="text-[12.5px] text-muted">Dodaj još</span>
-      <input className="input !py-1 !w-16 text-center tabular-nums" type="number" min={1} max={50} step={1} value={n} aria-label={`Broj kopija (${label})`} data-testid="duplicate-count"
+      <input className="input !py-1 !w-16 text-center tabular-nums" type="number" min={1} max={50} step={1} value={n} aria-label={kind === 'fence' ? 'Broj platana' : `Broj ${label}`} data-testid="duplicate-count"
         onChange={(e) => setN(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && ok) { e.preventDefault(); useAppStore.getState().duplicateSelected(count); } }} />
-      <span className="text-[12.5px] text-muted">istih {label}</span>
-      <button className="btn btn-sm btn-primary" disabled={!ok} data-testid="btn-duplicate-many" onClick={() => useAppStore.getState().duplicateSelected(count)}><Copy size={14} />Dodaj</button>
+      <button className="btn btn-sm btn-primary" disabled={!ok} data-testid="btn-duplicate-many" onClick={() => useAppStore.getState().duplicateSelected(count)}><Copy size={14} />Dodaj {label}</button>
     </div>
   );
 }
@@ -1067,8 +1067,7 @@ function ScopeToggle({ project, id, kind, terrace = false }: { project: Project;
   return (
     <div className="mb-2" data-testid="edit-scope">
       <ScopeField testId="edit-scope-select" value={scope} onChange={setScope} count={count}
-        options={[{ value: 'one', label: one }, { value: 'same', label: same }, { value: 'all', label: terrace ? 'Platna i stepenište' : 'Platna i kapije' }]}
-        hint={scope === 'one' ? undefined : 'Izgled i podešavanja ispune važe za obuhvaćene elemente. Između platna i kapija prenose se boja, završna obrada i ispuna; visine se prenose samo unutar iste vrste. Širine i mere kapija ostaju svakom elementu svoje.'} />
+        options={[{ value: 'one', label: one }, { value: 'same', label: same }, { value: 'all', label: terrace ? 'Platna i stepenište' : 'Platna i kapije' }]} />
     </div>
   );
 }

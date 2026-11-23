@@ -1,8 +1,10 @@
 import { gateLeafPoses } from '../domain/geometry/gates';
+import { itemSlope } from '../domain/geometry/stair';
+import { developStairSketch } from '../domain/models/stairSketch';
 import { createElement } from 'react';
 import { SketchSvg } from '../components/designer/Sketch';
 import { CUSTOM_KIND_LABELS, type CustomModel } from '../domain/models/custom';
-import { customModelOf, scaledWithReinforce } from '../domain/models/customRegistry';
+import { customLiftOf, customModelOf, scaledWithReinforce } from '../domain/models/customRegistry';
 import { builtinToCustom } from '../domain/models/fromBuiltin';
 import type { AppSettings, Customer, FenceModelId, Material, Project } from '../domain/models/types';
 import { leafHeightOf, slidingH } from '../domain/gates/slidingLayout';
@@ -79,8 +81,11 @@ export function elementModel(project: Project, idx: number, materials: Material[
       // polje je svetli otvor između stubova (kao na crtežu i u krojnoj listi), ne mera osa–osa stubova
       const w = Math.round(li?.clearWidth ?? it.widthMm);
       const src = customModelOf(it.modelId);
-      const model = src ? scaledWithReinforce(src, w, it.heightMm, it.params.slats) : builtinToCustom(it.modelId as FenceModelId, materials, `sk_${idx}`, w, it.heightMm, { miterFrame: true });
-      return { ...model, name: src?.name ?? model.name };
+      const slope = itemSlope(li);
+      const lift = src ? Math.min(Math.max(0, it.params.liftMm ?? customLiftOf(it.modelId)), Math.max(0, it.heightMm - 100)) : 0;
+      const slats = { ...it.params.slats, stairTan: slope.tan || undefined, ...(src?.terraceSourceId && lift ? { infillLiftMm: lift } : {}) };
+      const model = src ? scaledWithReinforce(src, w, it.heightMm - lift, slats) : builtinToCustom(it.modelId as FenceModelId, materials, `sk_${idx}`, w, it.heightMm, { miterFrame: true });
+      return developStairSketch({ ...model, name: src?.name ?? model.name }, materials, slope.tan);
     }
     if (!it.infillModelId || !li) return null;
     let w = Math.round(li.clearWidth); let h = Math.round(leafHeightOf(it));
@@ -156,7 +161,7 @@ export async function projectSketchPages(project: Project, materials: Material[]
     if (!model) return;
     if (it.kind === 'fence') {
       // isti model i ista mera polja (svetli otvor, visina, raspored letvica) crtaju se jednom
-      const key = `${it.modelId}|${model.widthMm}|${model.heightMm}|${JSON.stringify(it.params.slats ?? null)}`;
+      const key = `${it.modelId}|${model.widthMm}|${model.heightMm}|${itemSlope(layout.items[i]).tan}|${JSON.stringify(it.params.slats ?? null)}`;
       const ex = seen.get(key);
       if (ex) { ex.idx.push(i + 1); return; }
       const entry = { idx: [i + 1], model, at: list.length };

@@ -41,6 +41,8 @@ export interface CustomPart {
    * Gornja ivica ostaje vodoravna, a y je najniža tačka donje ivice. Bez vrednosti ploča je pravougaona.
    */
   bottomSlopeMm?: number;
+  /** Razlika visina desne i leve ivice ploče u razvijenom pogledu stepeništa. */
+  sheetShearMm?: number;
   /** ugao u ravni crteža (0 = vodoravno udesno, 90 = uspravno nagore) */
   angleDeg: number;
   /** okretanje preseka oko ose profila (0 / 90 / 180 / 270) */
@@ -111,6 +113,8 @@ export interface PartFit {
 
 export interface CustomModel {
   id: string;
+  /** Samo izvozni razvijen pogled: nagib stepeništa je već primenjen na delove. */
+  stairSketchTan?: number;
   /** Izvorni dvorišni model zajedničke terasne varijante (varijanta se izvodi iz registra). */
   terraceSourceId?: string;
   /** kapija koja još nije sačuvana („Sačuvaj tip kapije“): ne nudi se u spiskovima, a briše se kad se crtanje zatvori bez čuvanja */
@@ -201,9 +205,10 @@ export function setPartsColor(model: CustomModel, ids: string[], color: string |
 }
 
 /** Obris ploče (pravougaonik ili trapez sa kosom donjom ivicom): levo dole, desno dole, desno gore, levo gore. */
-export function sheetPoly(p: Pick<CustomPart, 'x' | 'y' | 'lengthMm' | 'heightMm' | 'bottomSlopeMm'>): [number, number][] {
+export function sheetPoly(p: Pick<CustomPart, 'x' | 'y' | 'lengthMm' | 'heightMm' | 'bottomSlopeMm' | 'sheetShearMm'>): [number, number][] {
   const s = p.bottomSlopeMm ?? 0; const top = p.y + (p.heightMm ?? 0);
-  return [[p.x, p.y + Math.max(0, -s)], [p.x + p.lengthMm, p.y + Math.max(0, s)], [p.x + p.lengthMm, top], [p.x, top]];
+  const shear = p.sheetShearMm ?? 0;
+  return [[p.x, p.y + Math.max(0, -s)], [p.x + p.lengthMm, p.y + Math.max(0, s) + shear], [p.x + p.lengthMm, top + shear], [p.x, top]];
 }
 
 /** Površina ploče (mm²), i kad joj je donja ivica kosa. */
@@ -233,7 +238,10 @@ export const hasAngledEnds = (p: Pick<CustomPart, 'angleDeg' | 'plumbEnds' | 'cu
 
 /** Okvir dela u koordinatama crteža (za izbor, uklapanje pogleda i minijaturu). */
 export function partBounds(p: CustomPart, shape: MatShape): { x0: number; y0: number; x1: number; y1: number } {
-  if (shape.type === 'sheet') return { x0: p.x, y0: p.y, x1: p.x + p.lengthMm, y1: p.y + (p.heightMm ?? 0) };
+  if (shape.type === 'sheet') {
+    const pts = sheetPoly(p);
+    return { x0: p.x, x1: p.x + p.lengthMm, y0: Math.min(...pts.map((q) => q[1])), y1: Math.max(...pts.map((q) => q[1])) };
+  }
   const a = (p.angleDeg * Math.PI) / 180;
   const c = Math.cos(a); const s = Math.sin(a);
   let local: [number, number][];

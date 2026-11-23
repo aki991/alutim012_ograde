@@ -45,6 +45,7 @@ import { allFenceModels } from '../../domain/models/customRegistry';
 import { colorHex, FENCE_MODELS, normalizeColorKey } from '../../domain/models/catalog';
 import { GATE_POST_EXTRA_MM } from '../../domain/gates/design';
 import { extraSpecKey } from '../../domain/models/spec';
+import { modelMaterialIds } from '../../domain/models/materialUsage';
 import { autoGateSpec, pairRoleOf, pairWidth, type PairLayout } from '../../domain/models/pairHardware';
 import { hingeCountFor } from '../../domain/gates/hingeRule';
 import { pickFromModel, resizePair, withPairHardware, withSingleHardware } from '../../domain/models/doubleGateSeed';
@@ -238,36 +239,44 @@ function FaceChoice({ testPrefix, a, b, firstPressed, secondPressed, mixed, onPi
   );
 }
 
-function Palette({ materials, activeId, onPick, terrace, showAll }: {
+function Palette({ materials, usedIds, activeId, onPick, terrace, showAll }: {
   materials: Material[]; activeId: string | null; onPick: (id: string | null) => void;
+  usedIds: Set<string>;
   /** crtanje ograde za terasu: podrazumevano se nude samo materijali za terase */
   terrace: boolean;
   /** izbor „prikaži i ostale materijale“ (dvorišne kod terasa, terasne kod dvorišnih ograda) */
   showAll: { checked: boolean; onChange: (v: boolean) => void };
 }) {
   const [q, setQ] = useState('');
+  const [scope, setScope] = useState<'used' | 'other'>(() => usedIds.size ? 'used' : 'other');
+  const usedCount = materials.filter((m) => usedIds.has(m.id)).length;
   const groups = useMemo(() => {
     const by = new Map<MaterialGroupId, Material[]>();
     for (const m of materials) {
+      if (usedIds.has(m.id) !== (scope === 'used')) continue;
       if (!matchesSearch(`${m.name} ${m.sku}`, q)) continue;
       const g = materialShape(m).group;
       by.set(g, [...(by.get(g) ?? []), m]);
     }
     return MATERIAL_GROUPS.filter((g) => by.has(g.id)).map((g) => ({ ...g, items: by.get(g.id)!.sort(compareMaterials) }));
-  }, [materials, q]);
+  }, [materials, usedIds, scope, q]);
   return (
     <div className="flex flex-col h-full min-h-0" data-testid="designer-palette">
       <div className="p-3 border-b border-line">
         <button className={`btn btn-sm w-full mb-2 ${activeId === null ? 'btn-dark' : ''}`} data-testid="designer-tool-select" onClick={() => onPick(null)}><MousePointer2 size={15} />Izbor i pomeranje</button>
         <div className="relative"><Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" /><input className="input !pl-8 !py-1.5" placeholder="Pretraga materijala" aria-label="Pretraga materijala" value={q} onChange={(e) => setQ(e.target.value)} /></div>
-        {FEATURES.terraceFences && <Switch className="mt-2" label={terrace ? 'Prikaži i ostale materijale' : 'Prikaži i materijale za terase'}
+        <div className="flex flex-wrap gap-1 mt-2" role="group" aria-label="Materijali crteža">
+          <button className={`btn btn-sm ${scope === 'used' ? 'btn-primary' : ''}`} aria-pressed={scope === 'used'} data-testid="designer-materials-used" onClick={() => setScope('used')}>U modelu ({usedCount})</button>
+          <button className={`btn btn-sm ${scope === 'other' ? 'btn-primary' : ''}`} aria-pressed={scope === 'other'} data-testid="designer-materials-other" onClick={() => setScope('other')}>Ostali ({materials.length - usedCount})</button>
+        </div>
+        {scope === 'other' && FEATURES.terraceFences && <Switch className="mt-2" label={terrace ? 'Prikaži i ostale materijale' : 'Prikaži i materijale za terase'}
           testId="designer-show-all-materials" checked={showAll.checked} onChange={showAll.onChange} />}
       </div>
       <div className="flex-1 min-h-0 overflow-auto scroll-thin p-2">
         {materials.length === 0 && (
           <p className="text-sm text-muted p-2" data-testid="designer-no-materials">Cenovnik je prazan. Uvezite materijale na strani <Link className="text-primary font-semibold" to="/materijali">Materijali i cene</Link>, pa će se ovde pojaviti razvrstani po grupama.</p>
         )}
-        {materials.length > 0 && groups.length === 0 && <p className="text-sm text-muted p-2">Nema materijala koji odgovaraju pretrazi.</p>}
+        {materials.length > 0 && groups.length === 0 && <p className="text-sm text-muted p-2">{q.trim() ? 'Nema materijala koji odgovaraju pretrazi.' : scope === 'used' ? 'U modelu još nema materijala. Otvorite „Ostali“ da dodate materijal.' : 'Nema ostalih materijala za izabranu namenu.'}</p>}
         {groups.map((g) => (
           <details key={g.id} open={q.trim() !== '' || g.items.some((m) => m.id === activeId) || undefined} className="mb-1" data-testid={`designer-group-${g.id}`}>
             <summary className="cursor-pointer select-none px-2 py-1.5 rounded-lg hover:bg-slate-50 text-[13px] font-semibold flex items-center justify-between"><span>{g.label}</span><span className="text-muted font-normal">{g.items.length}</span></summary>
@@ -342,7 +351,15 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
   const [propertiesOpen, setPropertiesOpen] = useState(true);
   /** „Mere ograde“ (ograda za terasu): mere okova */
   const [measuresOpen, setMeasuresOpen] = useState(false);
-  const paletteMaterials = useMemo(() => { const shown = visibleMaterials(allMaterials); return showAllMaterials ? shown : shown.filter((m) => isTerraceMaterial(m) === isTerrace); }, [allMaterials, isTerrace, showAllMaterials]);
+  const paletteUsedIds = useMemo(() => {
+    const ids = modelMaterialIds(model, allMaterials);
+    for (const part of settings.modelSpecs?.[extraSpecKey(model.id)] ?? []) if (part.enabled && part.materialId) ids.add(part.materialId);
+    return ids;
+  }, [model, allMaterials, settings.modelSpecs]);
+  const paletteMaterials = useMemo(() => {
+    const shown = visibleMaterials(allMaterials, [...paletteUsedIds]);
+    return showAllMaterials ? shown : shown.filter((m) => paletteUsedIds.has(m.id) || isTerraceMaterial(m) === isTerrace);
+  }, [allMaterials, isTerrace, showAllMaterials, paletteUsedIds]);
   const materials = allMaterials;
   // vrsta crteža ide u stanje adrese (ista adresa, bez ponovnog učitavanja): meni označava „Modeli kapija“ dok se crta kapija
   const navigateKind = useNavigate();
@@ -1020,7 +1037,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
         <div className="flex-1 min-h-0"><GateDesignModal projectId={draft.projectId} itemId={draft.itemId} embedded inline onClose={() => selectView('2d')} /></div>
       )}
       <div className={`designer-workspace flex-1 min-h-0 grid grid-cols-1 ${view === 'mere' ? 'hidden' : ''}`} style={{ '--materials-width': materialsOpen ? '240px' : '0px', '--properties-width': propertiesOpen ? '320px' : '0px' } as React.CSSProperties}>
-        <aside id="designer-materials" hidden={!materialsOpen} className="border-r border-line bg-white min-h-0 min-w-0 max-h-[40vh] lg:max-h-none overflow-hidden"><Palette materials={paletteMaterials} activeId={activeId} onPick={(m) => { setActiveId(m); if (m) setSelectedId(null); }}
+        <aside id="designer-materials" hidden={!materialsOpen} className="border-r border-line bg-white min-h-0 min-w-0 max-h-[40vh] lg:max-h-none overflow-hidden"><Palette materials={paletteMaterials} usedIds={paletteUsedIds} activeId={activeId} onPick={(m) => { setActiveId(m); if (m) setSelectedId(null); }}
           terrace={isTerrace} showAll={{ checked: showAllMaterials, onChange: setShowAllMaterials }} /></aside>
 
         <section data-testid="designer-drawing" className={`min-w-0 min-h-[420px] lg:min-h-0 grid ${view === 'split' ? 'grid-rows-2 xl:grid-rows-1 xl:grid-cols-2' : ''}`}>

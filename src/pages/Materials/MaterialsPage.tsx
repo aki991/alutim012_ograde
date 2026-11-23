@@ -22,6 +22,7 @@ import { downloadCsv } from '../../services/exports';
 import { downloadMaterialsPdf } from '../../services/pdf';
 import { useAppStore } from '../../store/useAppStore';
 import { FEATURES, visibleMaterials } from '../../config/features';
+import { collectMaterialUsage } from '../../domain/models/materialUsage';
 import { uid } from '../../utils/id';
 import { fmtMoney, fromCurrency, toCurrency } from '../../utils/units';
 
@@ -29,9 +30,11 @@ const CATS: Record<MaterialCategory, string> = { profil: 'Profili', stub: 'Stubo
 
 export default function MaterialsPage() {
   const allMaterials = useAppStore((s) => s.materials);
-  // ograde za terase isključene (config/features.ts): materijali za terase se ne prikazuju u listi i izvozu
   const materials = useMemo(() => visibleMaterials(allMaterials), [allMaterials]);
   const settings = useAppStore((s) => s.settings);
+  const projects = useAppStore((s) => s.projects);
+  const usage = useMemo(() => collectMaterialUsage(allMaterials, settings, projects), [allMaterials, settings, projects]);
+  const [usageFilter, setUsageFilter] = useState<'used' | 'unused' | 'all'>('used');
   const { upsertMaterial, removeMaterial } = useAppStore.getState();
   const [q, setQ] = useState('');
   const [cat, setCat] = useState<MaterialCategory | 'all'>('all');
@@ -58,12 +61,12 @@ export default function MaterialsPage() {
     document.addEventListener('pointerdown', close);
     return () => document.removeEventListener('pointerdown', close);
   }, [exportOpen]);
-  const exportCsv = () => { setExportOpen(false); downloadCsv(materialsToRows(materials), `materijali_${new Date().toISOString().slice(0, 10)}.csv`); };
+  const exportCsv = () => { setExportOpen(false); downloadCsv(materialsToRows(list), `materijali_${new Date().toISOString().slice(0, 10)}.csv`); };
   const exportPdf = async () => {
     setExportOpen(false);
     setExporting(true);
     setIoError(null);
-    try { await downloadMaterialsPdf(materials, settings); } catch (e) { setIoError(`PDF nije napravljen: ${(e as Error).message}`); } finally { setExporting(false); }
+    try { await downloadMaterialsPdf(list, settings); } catch (e) { setIoError(`PDF nije napravljen: ${(e as Error).message}`); } finally { setExporting(false); }
   };
   const onFile = async (file: File | undefined) => {
     if (!file) return;
@@ -83,9 +86,13 @@ export default function MaterialsPage() {
     } catch (e) { setIoError((e as Error).message || 'Dokument nije mogao da se pročita.'); } finally { setReading(false); }
   };
 
-  const list = useMemo(() => {
-    return materials.filter((m) => (cat === 'all' || m.category === cat) && (use === 'all' || (use === 'terrace') === isTerraceMaterial(m)) && matchesSearch(`${m.name} ${m.sku}`, q)).sort(compareMaterials);
-  }, [materials, q, cat, use]);
+  const filteredMaterials = useMemo(() => materials.filter((m) =>
+    (cat === 'all' || m.category === cat) &&
+    (use === 'all' || (use === 'terrace' ? isTerraceMaterial(m) || usage.terrace.has(m.id) : !isTerraceMaterial(m) || usage.yard.has(m.id))) &&
+    matchesSearch(`${m.name} ${m.sku}`, q)), [materials, cat, use, usage, q]);
+  const usedIds = use === 'all' ? usage.used : usage[use];
+  const usedCount = filteredMaterials.filter((m) => usedIds.has(m.id)).length;
+  const list = useMemo(() => filteredMaterials.filter((m) => usageFilter === 'all' || usedIds.has(m.id) === (usageFilter === 'used')).sort(compareMaterials), [filteredMaterials, usedIds, usageFilter]);
 
   /** kopija materijala: nov ID, jedinstvena šifra i naziv „(kopija)“; mere, presek i cena se prepisuju, pa se menja samo ono što treba */
   const copyMaterial = (m: Material) => {
@@ -93,9 +100,9 @@ export default function MaterialsPage() {
     let sku = `${m.sku}-K`; for (let n = 2; skus.has(sku.toLowerCase()); n++) sku = `${m.sku}-K${n}`;
     const clone = JSON.parse(JSON.stringify(m)) as Material;
     setIsNew(true);
-    setForm({ ...clone, id: uid('mat'), sku, name: `${m.name} (kopija)`, demo: false });
+    setForm({ ...clone, id: uid('mat'), sku, name: `${m.name} (kopija)`, demo: false, terrace: use === 'terrace' || isTerraceMaterial(clone) });
   };
-  const openNew = () => { setIsNew(true); setForm({ id: uid('mat'), sku: '', name: '', category: 'ostalo', unit: 'kom', unitPrice: 0, wastePercent: 0, demo: false }); };
+  const openNew = () => { setIsNew(true); setForm({ id: uid('mat'), sku: '', name: '', category: 'ostalo', unit: 'kom', unitPrice: 0, wastePercent: 0, demo: false, terrace: use === 'terrace' }); };
   // materijal se razlikuje po nazivu (šifra se ne unosi i ne prikazuje)
   const valid = form && form.name.trim().length > 0 && form.unitPrice >= 0;
   /** mere preseka izabranog materijala koje se mogu menjati; izmena A, B i zida menja i mere u nazivu (npr. 60×60×2 → 60×60×1,5) */
@@ -118,7 +125,7 @@ export default function MaterialsPage() {
 
   return (
     <Page>
-      <PageHeader title="Materijali i cene" subtitle="Cenovnik koji koriste kalkulacija i crtanje modela. Materijali se uvoze iz cenovnika dobavljača ili dodaju ručno."  actions={
+      <PageHeader title="Materijali i cene" subtitle="Materijali odvojeni prema upotrebi u modelima i projektima. Ostali materijali ostaju dostupni za nove modele."  actions={
         <div className="flex flex-wrap gap-2">
           <input ref={fileRef} type="file" accept=".pdf,.xlsx,.csv,.tsv,.txt,application/pdf,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" data-testid="import-file" onChange={(e) => { void onFile(e.target.files?.[0]); e.target.value = ''; }} />
           <button className="btn" data-testid="btn-import-materials" disabled={reading} onClick={() => fileRef.current?.click()}><Upload size={17} />{reading ? 'Čitanje PDF-a…' : 'Uvezi materijale'}</button>
@@ -146,6 +153,12 @@ export default function MaterialsPage() {
             <option value="terrace">Ograde za terase</option>
           </select>}
         </div>
+        <div className="flex flex-wrap gap-2 mb-2" role="group" aria-label="Upotreba materijala">
+          {([['used', 'Koristi se', usedCount], ['unused', 'Ne koristi se', filteredMaterials.length - usedCount], ['all', 'Svi materijali', filteredMaterials.length]] as const).map(([value, label, count]) => (
+            <button key={value} className={`btn btn-sm ${usageFilter === value ? 'btn-primary' : ''}`} data-testid={`materials-${value}`} aria-pressed={usageFilter === value} onClick={() => setUsageFilter(value)}>{label} ({count})</button>
+          ))}
+        </div>
+        <p className="text-xs text-muted mb-4">Upotreba se određuje automatski iz modela, uključenih stavki sastavnica, šablona stubova i sačuvanih projekata{use === 'terrace' ? ' za terase' : use === 'yard' ? ' za dvorišne ograde i kapije' : ''}. Izvoz prati trenutni prikaz.</p>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[820px]" data-testid="materials-table">
             <thead><tr><th className="th">Naziv</th><th className="th">Kategorija</th><th className="th">Jedinica</th><th className="th text-right whitespace-nowrap">Masa</th><th className="th text-right w-[150px]">Cena ({settings.currency}, neto)</th><th className="th text-right w-[90px]">Otpad %</th><th className="th w-24" /></tr></thead>
@@ -157,7 +170,7 @@ export default function MaterialsPage() {
                 const toggle = (e: React.SyntheticEvent) => { if (!(e.target as Element).closest('input,select,button,a')) setOpenId(open ? null : m.id); };
                 return (
                 <Fragment key={m.id}>
-                <tr data-testid="material-row" data-has-drawing={spec ? 'true' : undefined} aria-expanded={open} tabIndex={0}
+                <tr data-testid="material-row" data-usage={usedIds.has(m.id) ? 'used' : 'unused'} data-has-drawing={spec ? 'true' : undefined} aria-expanded={open} tabIndex={0}
                   className={`cursor-pointer hover:bg-slate-50 ${open ? 'bg-primary-50' : ''}`}
                   onClick={toggle} onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); toggle(e); } }}>
                   <td className="td font-medium">{m.name}{m.drawn && <span className="ml-2 text-[11px] font-semibold text-slate-500 align-middle" data-testid="material-drawn-badge">nacrtan presek</span>}<span className="ml-2 inline-flex items-center gap-1 text-[11.5px] font-semibold text-primary align-middle" title="Kliknite na red da vidite crtež i karakteristike"><Ruler size={13} />crtež</span>{FEATURES.terraceFences && isTerraceMaterial(m) && <span className="ml-2 pill !text-[11px] bg-[#eff8ff] text-[#175cd3] align-middle" data-testid="material-terrace-badge">terasa</span>}{m.demo &&<span className="ml-2"><DemoBadge>demo</DemoBadge></span>}</td>
@@ -187,7 +200,7 @@ export default function MaterialsPage() {
                 </Fragment>
                 );
               })}
-              {list.length === 0 && <tr><td className="td text-muted" colSpan={7}>{materials.length === 0 ? 'Lista materijala je prazna. Uvezite cenovnik dobavljača (dugme „Uvezi materijale“) ili dodajte materijal ručno.' : 'Nema materijala koji odgovaraju pretrazi.'}</td></tr>}
+              {list.length === 0 && <tr><td className="td text-muted" colSpan={7}>{materials.length === 0 ? 'Lista materijala je prazna. Uvezite cenovnik dobavljača (dugme „Uvezi materijale“) ili dodajte materijal ručno.' : usageFilter === 'used' ? 'Nema materijala u upotrebi za izabrane filtere. Otvorite „Ne koristi se“ ili „Svi materijali“ za preostali cenovnik.' : 'Nema materijala koji odgovaraju izabranim filterima.'}</td></tr>}
             </tbody>
           </table>
         </div>
@@ -200,7 +213,7 @@ export default function MaterialsPage() {
         <DrawSectionModal initial={drawFor === 'form' ? form?.drawn : undefined} onClose={() => setDrawFor(null)}
           onSave={(d) => {
             if (drawFor === 'form' && form) setForm({ ...form, drawn: d, wallMm: undefined, dims: undefined, unit: form.unit === 'kom' ? 'm' : form.unit });
-            else { setIsNew(true); setForm({ id: uid('mat'), sku: `NAC-${Date.now().toString(36).slice(-5).toUpperCase()}`, name: drawnName(d), category: 'profil', unit: 'm', unitPrice: 0, wastePercent: 0, demo: false, drawn: d }); }
+            else { setIsNew(true); setForm({ id: uid('mat'), sku: `NAC-${Date.now().toString(36).slice(-5).toUpperCase()}`, name: drawnName(d), category: 'profil', unit: 'm', unitPrice: 0, wastePercent: 0, demo: false, terrace: use === 'terrace', drawn: d }); }
             setDrawFor(null);
           }} />
       )}
@@ -208,12 +221,12 @@ export default function MaterialsPage() {
         <TraceSectionModal onClose={() => setTraceFor(null)}
           onSave={(d) => {
             if (traceFor === 'form' && form) setForm({ ...form, drawn: d, wallMm: undefined, dims: undefined, unit: form.unit === 'kom' ? 'm' : form.unit });
-            else { setIsNew(true); setForm({ id: uid('mat'), sku: `NAC-${Date.now().toString(36).slice(-5).toUpperCase()}`, name: drawnName(d), category: 'profil', unit: 'm', unitPrice: 0, wastePercent: 0, demo: false, drawn: d }); }
+            else { setIsNew(true); setForm({ id: uid('mat'), sku: `NAC-${Date.now().toString(36).slice(-5).toUpperCase()}`, name: drawnName(d), category: 'profil', unit: 'm', unitPrice: 0, wastePercent: 0, demo: false, terrace: use === 'terrace', drawn: d }); }
             setTraceFor(null);
           }} />
       )}
       {form && !drawFor && !traceFor && (
-        <Modal title={isNew ? 'Novi materijal' : 'Izmena materijala'} width={780} onClose={() => setForm(null)} footer={<><button className="btn" onClick={() => setForm(null)}>Otkaži</button><button className="btn btn-primary" disabled={!valid} data-testid="material-save" onClick={() => { upsertMaterial({ ...formPricing!, unitCorrection: undefined, massReference: form.massSource === 'manual' ? undefined : formPricing!.massReference, demo: isNew ? false : form.demo }); setForm(null); }}>Sačuvaj</button></>}>
+        <Modal title={isNew ? 'Novi materijal' : 'Izmena materijala'} width={780} onClose={() => setForm(null)} footer={<><button className="btn" onClick={() => setForm(null)}>Otkaži</button><button className="btn btn-primary" disabled={!valid} data-testid="material-save" onClick={() => { upsertMaterial({ ...formPricing!, unitCorrection: undefined, massReference: form.massSource === 'manual' ? undefined : formPricing!.massReference, demo: isNew ? false : form.demo }); if (isNew && usageFilter === 'used') setUsageFilter('unused'); setForm(null); }}>Sačuvaj</button></>}>
           <div className="grid gap-x-5 md:grid-cols-[minmax(0,1fr)_260px]">
           <div>
           <TextField label="Naziv" testId="material-name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} />

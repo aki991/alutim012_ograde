@@ -38,7 +38,7 @@ export function PartSvg({ part: source, shape, hex, selected = false, ghost = fa
       {ball && <circle cx={ball.center[0]} cy={ball.center[1]} r={j.faceMm * 0.65} fill={hex} {...common} />}
     </g>;
   } else if (shape.type === 'sheet') {
-    body = part.bottomSlopeMm ? <polygon points={sheetPoly(part).map(([x, y]) => `${x},${y}`).join(' ')} fill={shape.glass ? GLASS : hex} fillOpacity={shape.glass ? 0.45 : 1} {...common} /> : <rect x={part.x} y={part.y} width={part.lengthMm} height={part.heightMm ?? 0} fill={shape.glass ? GLASS : hex} fillOpacity={shape.glass ? 0.45 : 1} {...common} />;
+    body = part.bottomSlopeMm || part.sheetShearMm ? <polygon points={sheetPoly(part).map(([x, y]) => `${x},${y}`).join(' ')} fill={shape.glass ? GLASS : hex} fillOpacity={shape.glass ? 0.45 : 1} {...common} /> : <rect x={part.x} y={part.y} width={part.lengthMm} height={part.heightMm ?? 0} fill={shape.glass ? GLASS : hex} fillOpacity={shape.glass ? 0.45 : 1} {...common} />;
   } else if (shape.type === 'linear') {
     const { face, u0 } = sectionFace(shape.section, partAngle(part));
     // deo rama: krajevi pod 45° (duža ivica je spoljna), da se ramovi spajaju na uglovima

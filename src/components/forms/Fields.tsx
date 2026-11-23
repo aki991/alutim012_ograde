@@ -112,7 +112,7 @@ export function ColorField({ label = 'Boja', value, onChange, testId, finish, on
       {onFinishChange && (
         <div className="flex items-center justify-between gap-2 mt-2" data-testid={testId ? `${testId}-finish` : undefined}>
           <span className="text-[12px] text-slate-600">Završna obrada</span>
-          <ChoiceGroup label="Završna obrada" value={finish ?? ''} onChange={onFinishChange}
+          <ChoiceGroup label="Završna obrada" value={finish ?? ''} onChange={onFinishChange} className="finish-choices"
             options={FINISHES.map((f) => ({ value: f.id, label: f.label }))} />
         </div>
       )}

@@ -245,10 +245,24 @@ export const MANUAL: ManualChapter[] = [
         ],
       },
       {
+        title: 'Rotacija polja',
+        blocks: [
+          { p: 'Kod ograde za terasu **Rotacija polja** zadaje ugao prema prethodnom polju, gledano odozgo: pozitivan ugao skreće udesno, a negativan ulevo. Izaberite **−90°, −45°, Ravno, +45° ili +90°**, ili upišite ugao ručno. Prvo polje je polazno; skretanje zadajte na sledećem polju.' },
+        ],
+      },
+      {
+        title: 'Ojačanje platna',
+        blocks: [
+          { p: 'Kod ručno nacrtanih modela platno šire od **2,5 m** automatski dobija uspravne cevi koje ga dele na manje delove, širine do 2,5 m. U **Svojstva → Ojačanje (cevi)** uspravne i vodoravne cevi uključujete prekidačima **Da/Ne**. Kada su uspravne cevi uključene, prikazuje se polje **Broj uspravnih cevi**. **Vrati automatski**, kada je dostupno, vraća automatski obračun broja cevi.' },
+          { p: '**Vodoravna cev** deli platno po visini i spaja se sa ramom ili bočnim vođicama. Posle uključivanja zadajte visinu ose od dna ispune u milimetrima. **Materijal cevi** birate iz cenovnika; program predlaže cev prema dubini modela. Ojačanje važi i za krila kapija ručno nacrtanih modela.' },
+        ],
+      },
+      {
         title: 'Raspored ispune',
         blocks: [
           { p: 'U panelu izabranog platna su mere rasporeda: razmak između letvica ili prečki, odstojanje od stubova (od levog stuba do prve letvice, od poslednje do desnog) i od dna i vrha ispune. Broj letvica i prečki se sam preračunava za širinu i visinu polja, sa jednakim razmakom. **Vrati podrazumevane mere** vraća mere iz modela.' },
           { p: '**Podnožje** (betonsko): visina i širina podnožja ispod polja; može se zadati za izabrano polje ili za sve.' },
+          { p: 'Ograda i stubovi stoje na podnožju zadate visine. Podrazumevana širina podnožja obuhvata polje i stubove. Šire podnožje širi i ogradu, pa se susedni elementi pomeraju; kraće podnožje je centrirano ispod polja.' },
         ],
       },
     ],
@@ -279,6 +293,7 @@ export const MANUAL: ManualChapter[] = [
       {
         title: 'Šabloni stubova',
         blocks: [
+          { p: 'Šabloni se menjaju u **Podešavanja → Šabloni stubova**. Izbor šablona u svojstvima važi za stubove obuhvaćene podešavanjem **Izmene važe za**.' },
           { p: 'Šablon je sačuvan stub (tip, presek iz cenovnika, visina, montaža, boja, kapa i dno). Pravi se u **Podešavanja → Šabloni stubova** ili dugmetom **Sačuvaj stub kao šablon** u panelu stuba.' },
           { steps: [
             'Izaberite stub (ili sve stubove).',

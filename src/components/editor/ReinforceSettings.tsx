@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { customLiftOf, customModelOf, customReinforceInfo, isCustomModel } from '../../domain/models/customRegistry';
 import { frameCandidates, suggestFrameMaterial } from '../../domain/models/gateFrame';
-import { autoVerticalCount, MAX_SPAN_MM, type Reinforce } from '../../domain/models/reinforce';
+import { autoVerticalCount, type Reinforce } from '../../domain/models/reinforce';
 import type { FenceModelId, FenceParams } from '../../domain/models/types';
 import { MaterialSelect } from '../../pages/Stock/StockPage';
 import { useAppStore } from '../../store/useAppStore';
@@ -36,9 +36,11 @@ export function ReinforceSettings({ id, modelId, widthMm, heightMm, params }: { 
       </button>
       {open && (
         <div className="px-3 pb-2">
-          <p className="text-[12px] text-muted mb-1">Platno šire od {MAX_SPAN_MM / 1000} m dobija uspravne cevi koje ga dele na manja platna. Vodoravna cev deli platno po visini i spaja se sa ramom.</p>
-          <NumberField label="Uspravne cevi (broj)" testId="reinforce-v" value={vCount} range={{ min: 0, max: 20 }} integer onCommit={(v) => setRf({ vCount: v })}
-            hint={rf.vCount === undefined ? `Automatski: ${auto} (jedna cev na svakih ${MAX_SPAN_MM / 1000} m širine).` : <button className="text-primary font-semibold" onClick={() => setRf({ vCount: undefined })}>Vrati automatski ({auto})</button>} />
+          <ToggleField label="Uspravne cevi" testId="reinforce-v-toggle" checked={vCount > 0} onLabel="Da" offLabel="Ne" onChange={(v) => setRf({ vCount: v ? (auto > 0 ? undefined : 1) : 0 })} />
+          {vCount > 0 && <>
+            <NumberField label="Broj uspravnih cevi" testId="reinforce-v" value={vCount} range={{ min: 1, max: 20 }} unit="" step={1} integer onCommit={(v) => setRf({ vCount: v })} />
+            {rf.vCount !== undefined && auto > 0 && <button className="text-[12px] text-primary font-semibold" onClick={() => setRf({ vCount: undefined })}>Vrati automatski ({auto})</button>}
+          </>}
           <ToggleField label="Vodoravna cev" testId="reinforce-h-toggle" checked={hY !== undefined} onLabel="Da" offLabel="Ne" onChange={(v) => setRf({ hYs: v ? [Math.round(inner / 2)] : [] })} />
           {hY !== undefined && (
             <NumberField label="Visina ose od dna ispune" testId="reinforce-h" value={hY} range={{ min: 0, max: Math.max(100, inner) }} onCommit={(v) => setRf({ hYs: [v] })} hint={`Unutrašnja visina platna: ${inner} mm.`} />

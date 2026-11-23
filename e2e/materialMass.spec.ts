@@ -29,6 +29,7 @@ test('masa u katalogu: cev, specijalni profil, okov, lim i trajno čuvanje ručn
     db.close();
   }, [...catalog, ...DEFAULT_RAILS, ...DEFAULT_PLATES, pipe, piece, glass, lock]);
   await page.goto('/materijali');
+  await page.getByTestId('materials-all').click();
   await expect(page.getByRole('columnheader', { name: 'Masa', exact: true })).toBeVisible();
   await expect(page.getByTestId('materials-table')).not.toContainText('Potreban podatak');
   await expect(page.getByTestId('material-mass-legend')).toContainText('≈');
@@ -47,6 +48,7 @@ test('masa u katalogu: cev, specijalni profil, okov, lim i trajno čuvanje ručn
   const special = row(DEFAULT_RAILS[0].name);
   await expect(special.getByTestId('material-mass')).toHaveText('≈ 2,851 kg/m');
   await page.reload();
+  await page.getByTestId('materials-all').click();
   await search.fill('Rukohvat profilisan');
   await expect(special.getByTestId('material-mass')).toHaveText('≈ 2,851 kg/m');
   await page.screenshot({ path: testInfo.outputPath('masa-specijalni-profil.png'), fullPage: true });
@@ -58,6 +60,7 @@ test('masa u katalogu: cev, specijalni profil, okov, lim i trajno čuvanje ručn
   await expect(special.getByTestId('material-mass')).toHaveText('1,235 kg/m');
   await expect.poll(async () => (await savedMaterial(DEFAULT_RAILS[0].id))?.mass).toBe(1.23456789);
   await page.reload();
+  await page.getByTestId('materials-all').click();
   await search.fill('Rukohvat profilisan');
   await expect(special.getByTestId('material-mass')).toHaveText('1,235 kg/m');
   await special.getByTestId('material-edit').click();
@@ -90,6 +93,7 @@ test('masa u katalogu: cev, specijalni profil, okov, lim i trajno čuvanje ručn
   await page.getByTestId('material-save').click();
   await expect.poll(async () => (await savedMaterial('mat_imp_k100009'))?.mass).toBe(0.123456789);
   await page.reload();
+  await page.getByTestId('materials-all').click();
   await search.fill('Kapa pismo 60');
   await expect(page.getByTestId('material-mass').first()).toHaveText('0,123 kg/kom');
   await expect(page.getByTestId('material-row').first()).toContainText('Kape i završeci');
@@ -117,6 +121,7 @@ test('masa u katalogu: cev, specijalni profil, okov, lim i trajno čuvanje ručn
   await price.press('Tab');
   await expect.poll(async () => (await savedMaterial(pipe.id))?.unitPrice).toBe(456.78);
   await page.reload();
+  await page.getByTestId('materials-all').click();
   await search.fill(pipe.name);
   await expect(price).toHaveValue('456,78');
   await expect(row(pipe.name).getByTestId('material-mass')).toHaveText('0,389 kg/m');

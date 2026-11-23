@@ -28,6 +28,17 @@ async function seed(page: Page, models: CustomModel[], projects: Project[] = [])
   }, { models, projects, materials: [...MODEL_MATERIALS, ...DEFAULT_RAILS, ...TERRACE_MATERIALS] });
 }
 
+async function exportSketchAndWorkorder(page: Page, name: string) {
+  for (const kind of ['sketch', 'workorder']) {
+    await page.getByTestId(`btn-${kind}`).click();
+    await expect(page.getByTestId('pdf-save')).toBeEnabled();
+    const download = page.waitForEvent('download');
+    await page.getByTestId('pdf-save').click();
+    await (await download).saveAs(`test-results/terrace-stair-${name}-${kind}.pdf`);
+    await page.getByTestId('pdf-close').click();
+  }
+}
+
 for (const capped of [false, true]) test(`preneti model ${capped ? 'tarabica' : 'letvica sa rukohvatom'} preračunava ispunu i čuva podešavanja na stepeništu`, async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
   const errors: string[] = []; page.on('pageerror', (e) => errors.push(e.message));
@@ -55,6 +66,7 @@ for (const capped of [false, true]) test(`preneti model ${capped ? 'tarabica' : 
   await expect(page.getByTestId('post-settings')).toBeVisible();
   const posts = art.locator('[data-part-id^="terrace-post"]');
   await expect(posts).toHaveCount(5);
+  await page.getByTestId('post-settings-toggle').click();
   await page.getByTestId('post-spacing').fill('600');
   await page.getByTestId('post-spacing').press('Tab');
   await expect(posts).toHaveCount(8);
@@ -89,6 +101,9 @@ for (const capped of [false, true]) test(`preneti model ${capped ? 'tarabica' : 
   if (capped) expect(await art.locator(':scope > g[transform^="matrix"]').count()).toBe(await posts.count() + 2 * await pickets().count());
   await page.getByTestId('btn-fit').click();
   await page.getByTestId('front-view').screenshot({ path: `test-results/shared-terrace-${capped ? 'pickets' : 'handrail'}-2d.png` });
+  await exportSketchAndWorkorder(page, capped ? 'pickets' : 'handrail');
+  await page.getByTestId('field-stair-dir').getByRole('radio', { name: 'Silazi' }).click();
+  await exportSketchAndWorkorder(page, capped ? 'pickets-down' : 'handrail-down');
   await page.getByTestId('tab-three').click();
   await expect(page.locator('canvas')).toBeVisible();
   const sharp = (await import('sharp')).default;
@@ -155,6 +170,7 @@ test('staklo na stepeništu ima skicu i sve mere i uglove u krojnoj listi i preu
   await page.screenshot({ path: 'test-results/glass-project-controls.png' });
   await expect(page.getByTestId('field-glass-tolerance')).toHaveValue('0');
   // Prvo postavi raspored stubova na gazištima, pa uporedi istu tablu pre i posle tolerancije.
+  await page.getByTestId('post-settings-toggle').click();
   await page.getByTestId('post-spacing').fill('800');
   await page.getByTestId('post-spacing').press('Enter');
   const pane = page.getByTestId('front-view').locator('[data-part-id^="glazing~pane~"] rect').first();
@@ -183,6 +199,9 @@ test('staklo na stepeništu ima skicu i sve mere i uglove u krojnoj listi i preu
   const download = page.waitForEvent('download');
   await page.getByTestId('pdf-save').click();
   await (await download).saveAs('test-results/terrace-glass-cutlist.pdf');
+  await page.getByTestId('pdf-close').click();
+  await page.goto(`/editor/${project.id}`);
+  await exportSketchAndWorkorder(page, 'glass');
   expect(errors).toEqual([]);
 });
 
@@ -203,6 +222,7 @@ for (const stair of [true, false]) test(`početno i završno staklo ${stair ? 's
   await page.goto(`/editor/${project.id}`);
   await page.locator('[data-hit="item"]').first().click({ modifiers: ['Control'] });
   // Promena rasporeda aktivira isti proračun stubova koji se koristi pri crtanju.
+  await page.getByTestId('post-settings-toggle').click();
   await page.getByTestId('post-spacing').fill('800'); await page.getByTestId('post-spacing').press('Enter');
   const front = page.getByTestId('front-view');
   const normalCount = await front.locator('[data-part-id^="glazing~pane~"]').count();

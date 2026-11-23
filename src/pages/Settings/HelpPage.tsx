@@ -23,6 +23,12 @@ const TOPICS: Topic[] = [
     ],
   },
   {
+    title: 'Rotacija polja',
+    items: [
+      <>Kod ograde za terasu <b>Rotacija polja</b> zadaje ugao prema prethodnom polju, gledano odozgo: pozitivan ugao skreće udesno, a negativan ulevo. Izaberite −90°, −45°, Ravno, +45° ili +90°, ili upišite ugao ručno. Prvo polje je polazno; skretanje zadajte na sledećem polju.</>,
+    ],
+  },
+  {
     title: 'Mere i kote',
     items: [
       <>Klik na kotu <b>ukupne dužine</b> ispod crteža menja dužinu cele ograde: sva polja ograde dobijaju istu dužinu (razlika od zaokruživanja je najviše 1 mm), a kapije, otvori i ugaoni spojevi ostaju isti.</>,
@@ -54,6 +60,8 @@ const TOPICS: Topic[] = [
   {
     title: 'Stubovi i uglovi',
     items: [
+      <><b>Podnožje:</b> ograda i stubovi stoje na podnožju zadate visine. Podrazumevana širina podnožja obuhvata polje i stubove. Šire podnožje širi i ogradu, pa se susedni elementi pomeraju; kraće podnožje je centrirano ispod polja.</>,
+      <>Šabloni stubova se prave i menjaju u <b>Podešavanja → Šabloni stubova</b>. Šablon možete sačuvati i dugmetom <b>Sačuvaj stub kao šablon</b> u svojstvima stuba. Izbor šablona važi za stubove obuhvaćene podešavanjem <b>Izmene važe za</b>.</>,
       <>Stubovi se dele između susednih elemenata i računaju se samo jednom. Tip, širinu preseka (demo preseci 80, 100 i 120 mm), visinu i boju menjate klikom na stub.</>,
       <>Širina stuba utiče na svetli otvor susednih elemenata. Betonski stub sa podnožjem ima i visinu podnožja (betonski deo ispod ograde i kapije, između ovog i susednog stuba).</>,
       <><b>Ugao skretanja</b> se zadaje na međustubovima: + skreće udesno, − ulevo (gledano duž trase), 0 je prava ograda. Dužina elemenata se ne menja. Krajnji stubovi nemaju skretanje.</>,
@@ -78,6 +86,13 @@ const TOPICS: Topic[] = [
       <>3D prikaz: levo dugme — orbit, desno — pomeranje, točkić — zoom. U režimu <b>Uređivanje</b> prevlačite elemente i ručke.</>,
       <>Prečice: <b>Delete</b> briše, <b>Ctrl+Z</b> / <b>Ctrl+Shift+Z</b> poništava i ponavlja, <b>Esc</b> poništava selekciju.</>,
       <>Kote i oznake elemenata su podrazumevano isključene: uključite ih u opcijama prikaza (dugme sa klizačima iznad crteža), gde je i izvoz u SVG. Dugme <b>Sačuvaj</b> je uz dugmad za zoom. Projekti se pretražuju na strani <b>Projekti</b>.</>
+    ],
+  },
+  {
+    title: 'Ojačanje platna',
+    items: [
+      <>Kod ručno nacrtanih modela platno šire od <b>2,5 m</b> automatski dobija uspravne cevi koje ga dele na manje delove, širine do 2,5 m. U <b>Svojstva → Ojačanje (cevi)</b> uspravne i vodoravne cevi uključujete prekidačima <b>Da/Ne</b>. Kada su uspravne cevi uključene, prikazuje se polje <b>Broj uspravnih cevi</b>. Dugme <b>Vrati automatski</b>, kada je dostupno, vraća automatski obračun broja cevi.</>,
+      <>Vodoravna cev deli platno po visini i spaja se sa ramom ili bočnim vođicama. Uključite je u odeljku <b>Ojačanje (cevi)</b>, pa zadajte visinu ose od dna ispune u milimetrima. Materijal cevi birate iz cenovnika; program predlaže cev prema dubini modela. Ojačanje važi i za krila kapija ručno nacrtanih modela.</>,
     ],
   },
   {

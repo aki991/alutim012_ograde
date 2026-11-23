@@ -182,6 +182,7 @@ export function buildSketch(model: CustomModel, materials: Material[]): Sketch {
   const whole = (id: string): string => items.find((i) => i.p.id === id)?.p.splitOf ?? id;
   for (const it of items) {
     const g = it.p.guides;
+    if (model.stairSketchTan) continue; // Različite visine polja pripadaju istom kosom sklopu, bez odvojenih ravnih skica.
     if (!g || it.shape.type !== 'linear') continue;
     const k = `${whole(g[0])}|${whole(g[1])}`;
     const e = bays.get(k) ?? { guides: [...g], bars: [], sig: '' };

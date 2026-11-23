@@ -229,7 +229,8 @@ test('fiksna ukupna dužina: upozorenje i automatsko raspoređivanje', async ({ 
   await page.goto('/');
   await enableAdvanced(page);
   await page.getByTestId('recent-row').filter({ hasText: 'Petrović' }).getByRole('link').click();
-  await page.getByTestId('total-mode').getByRole('radio', { name: 'Fiksna' }).click();
+  await showDims(page);
+  if (await page.getByTestId('lock-total').getAttribute('data-locked') !== 'true') await page.getByTestId('lock-total').click();
   await page.getByTestId('fixed-total').fill('10000');
   await expect(page.getByTestId('panel-basics')).toContainText('Prekoračenje za 1.000');
   await page.getByTestId('fixed-total').fill('12000');
@@ -1389,7 +1390,7 @@ test('zaključavanje: ukupna dužina i širina svakog platna; ostala platna se s
   await expect(page.getByTestId('total-modular')).toHaveText(total);
   await page.locator('[data-hit="item"]').nth(1).click();
   await expect(page.getByTestId('panel-item')).toContainText('Platno 2');
-  await expect(page.getByTestId('field-width-lock')).toBeVisible();
+  await expect(page.getByTestId('field-width-lock')).toHaveCount(0);
   await expect(page.getByTestId('field-width')).toHaveValue('2000'); // zaključano platno se nije promenilo
   await page.locator('[data-hit="item"]').nth(2).click();
   await expect(page.getByTestId('panel-item')).toContainText('Platno 3');
