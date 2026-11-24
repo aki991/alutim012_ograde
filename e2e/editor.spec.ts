@@ -297,10 +297,9 @@ test('„Uredi" otvara izmenu podataka projekta; kapija sa betonskim stubom se d
   await page.getByTestId('hero-new').first().click();
   await page.getByTestId('cat-fence-add').click();
   await page.getByTestId('project-edit').click();
-  await page.getByTestId('edit-name').fill('Ograda Test');
-  await page.getByTestId('edit-quote').fill('P-2026-777');
-  await page.getByTestId('project-edit-done').click();
-  await expect(page.getByTestId('project-data')).toContainText('P-2026-777');
+  await page.getByTestId('project-name').fill('Ograda Test');
+  await page.getByTestId('project-quote').fill('P-2026-777');
+  await expect(page.getByTestId('project-quote')).toHaveValue('P-2026-777');
   await page.getByTestId('cat-gate-single-add').click();
   await expect(page.getByTestId('front-view')).toBeVisible();
   await expect(page.getByTestId('count-items')).toHaveText('2');
@@ -323,6 +322,7 @@ test('svi modeli: ograda i kapija se crtaju u 2D i 3D bez grešaka', async ({ pa
   await page.getByTestId('catalog-model').selectOption('h_narrow');
   await page.getByTestId('cat-sliding-klizna_sina_rucna-add').click();
   for (const id of ALL_MODELS.filter((m) => !TERRACE.includes(m))) {
+    await page.getByTestId('props-tab-project').click();
     await page.getByTestId('field-model').selectOption(id);
     await expect(page.getByTestId('field-model')).toHaveValue(id);
   }
@@ -981,6 +981,7 @@ test('ograde za terase: bez kapija i kataloga stubova; model se ne menja dok ima
   await expect(page.getByTestId('cat-gate-sliding')).toBeVisible();
   await page.getByTestId('cat-sliding-klizna_sina_rucna-add').click();
   const items = await page.getByTestId('count-items').textContent();
+  await page.getByTestId('props-tab-project').click();
   await page.getByTestId('field-model').selectOption('rail_black');
   await expect(page.getByTestId('panel-basics')).toContainText('ograde za terase nemaju kapije');
   await expect(page.getByTestId('field-model')).not.toHaveValue('rail_black');
@@ -1200,6 +1201,7 @@ test('RL10 (inox prečke): svaki deo se crta, broj prečki i mere delova se menj
   await page.getByTestId('field-rods').press('Enter');
   await expect(fv.locator('[data-rl10="post"]').first().locator('circle')).toHaveCount(12);
   // mere delova
+  await page.getByTestId('props-tab-project').click();
   await page.getByTestId('rl10-parts-toggle').click();
   await expect(page.getByTestId('rl10-railDiaMm')).toHaveValue('50');
   await page.getByTestId('rl10-railDiaMm').fill('42');
@@ -1247,6 +1249,7 @@ test('uske horizontalne letvice: cevi u U profilima se crtaju, broj cevi prati r
   const rects1 = await page.getByTestId('front-view').getByTestId('tubes-art').locator('rect').count();
   expect(rects1).toBeLessThan(rects0);
   // dimenzije cevi i U profila
+  await page.getByTestId('props-tab-project').click();
   await page.getByTestId('tubes-parts-toggle').click();
   await expect(page.getByTestId('tubes-uDepthMm')).toHaveValue('20');
   await expect(page.getByTestId('tubes-uWallMm')).toHaveValue('1.35');
@@ -1255,6 +1258,7 @@ test('uske horizontalne letvice: cevi u U profilima se crtaju, broj cevi prati r
   await expect(page.getByTestId('tubes-uDepthMm')).toHaveValue('30');
   await page.getByTestId('tubes-reset').click();
   await expect(page.getByTestId('tubes-uDepthMm')).toHaveValue('20');
+  await page.getByTestId('props-tab-element').click();
   await expect(page.getByTestId('field-gap')).toHaveValue('15');
   await page.getByRole('tab', { name: /3D prikaz/ }).click();
   await expect(page.getByTestId('three-canvas')).toBeVisible();

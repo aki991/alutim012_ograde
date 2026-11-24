@@ -5,16 +5,11 @@ import { Catalog } from '../../components/editor/Catalog';
 import { CalcModal } from '../../components/editor/CalcModal';
 import { EditorCanvas } from '../../components/editor/EditorCanvas';
 import { PropertiesPanel } from '../../components/editor/PropertiesPanel';
-import { Field, SelectField, TextField } from '../../components/forms/Fields';
-import { CustomerField } from '../../components/forms/CustomerField';
-import { Modal } from '../../components/ui/Modal';
-import { STATUS_LABELS, projectModelId } from '../../domain/models/catalog';
+import { projectModelId } from '../../domain/models/catalog';
 import { newItemFor } from '../../domain/geometry/newItem';
 import { insertItem, moveItem, setOuterWidth, withConcretePosts } from '../../domain/geometry/operations';
-import type { ProjectStatus } from '../../domain/models/types';
 import { useDragController, type DragSource, type DropTarget } from '../../hooks/useDragController';
 import { useAppStore, useCurrentProject } from '../../store/useAppStore';
-import { fmtDate } from '../../utils/units';
 
 export default function EditorPage() {
   const { id } = useParams();
@@ -58,7 +53,6 @@ function EditorWorkspace({ navigateAway }: { navigateAway: () => void }) {
   void navigateAway;
   const project = useCurrentProject()!;
   const customers = useAppStore((s) => s.customers);
-  const selection = useAppStore((s) => s.editor.selection);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const areaRef = useRef<HTMLDivElement | null>(null);
   const targets = useRef<Record<string, DropTarget>>({});
@@ -71,7 +65,6 @@ function EditorWorkspace({ navigateAway }: { navigateAway: () => void }) {
   const [calcOpen, setCalcOpen] = useState(false);
   const [propsOpen, setPropsOpen] = useState(() => window.innerWidth >= 1280);
   const [catalogOpen, setCatalogOpen] = useState(true);
-  const [editData, setEditData] = useState(false);
 
   const { drag, begin } = useDragController({
     project,
@@ -115,7 +108,8 @@ function EditorWorkspace({ navigateAway }: { navigateAway: () => void }) {
     // klik na element otvara panel svojstava; na užim ekranima kao fioka
     const openProps = () => setPropsOpen(true);
     window.addEventListener('open-props', openProps);
-    return () => window.removeEventListener('open-props', openProps);
+    window.addEventListener('open-project-props', openProps);
+    return () => { window.removeEventListener('open-props', openProps); window.removeEventListener('open-project-props', openProps); };
   }, []);
 
   useEffect(() => {
@@ -145,20 +139,10 @@ function EditorWorkspace({ navigateAway }: { navigateAway: () => void }) {
   return (
     <div ref={workspaceRef} className={fullscreen ? 'fixed inset-0 z-[80] bg-bg overflow-auto p-3' : 'p-3 sm:p-5'} data-testid="editor" data-fullscreen={fullscreen}>
       <div className="md:hidden portrait:flex items-center gap-2 text-[12px] bg-primary-50 text-primary-600 rounded-lg px-3 py-2 mb-3 hidden">Za lakše uređivanje preporučujemo horizontalni (landscape) prikaz telefona.</div>
-      {editData && (
-        <Modal title="Podaci o projektu / kupcu" onClose={() => setEditData(false)} footer={<button className="btn btn-primary" data-testid="project-edit-done" onClick={() => setEditData(false)}>Gotovo</button>}>
-          <TextField label="Naziv projekta" value={project.name} testId="edit-name" onChange={(v) => useAppStore.getState().mutate((p) => ({ ...p, name: v, updatedAt: new Date().toISOString() }), 'name')} />
-          <CustomerField testId="edit-customer" value={project.customerId}
-            onChange={(v) => useAppStore.getState().mutate((p) => ({ ...p, customerId: v, updatedAt: new Date().toISOString() }))} />
-          <SelectField label="Status" testId="edit-status" value={project.status} options={(Object.keys(STATUS_LABELS) as ProjectStatus[]).map((v) => ({ value: v, label: STATUS_LABELS[v] }))}
-            onChange={(v) => useAppStore.getState().mutate((p) => ({ ...p, status: v, updatedAt: new Date().toISOString() }))} />
-          <TextField label="Broj ponude" value={project.quoteNo} testId="edit-quote" onChange={(v) => useAppStore.getState().mutate((p) => ({ ...p, quoteNo: v, updatedAt: new Date().toISOString() }), 'quote')} />
-          <TextField label="Napomena" multiline value={project.notes} testId="edit-notes" onChange={(v) => useAppStore.getState().mutate((p) => ({ ...p, notes: v, updatedAt: new Date().toISOString() }), 'notes')} />
-        </Modal>
-      )}
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3 max-w-[1920px] mx-auto">
         <div className="min-w-0"><h1 className="font-bold text-[17px] truncate">{project.name}</h1><span className="text-[12px] text-muted">{customer?.name ?? 'Kupac nije izabran'}</span></div>
         <div className="flex flex-wrap gap-2">
+          <button type="button" className="btn btn-sm" data-testid="project-edit" onClick={() => window.dispatchEvent(new CustomEvent('open-project-props'))}><Pencil size={14} />Podaci o projektu</button>
           <button type="button" className={`btn btn-sm ${catalogOpen ? 'bg-slate-100' : ''}`} data-testid="toggle-catalog" aria-expanded={catalogOpen} aria-controls="project-catalog" onClick={() => setCatalogOpen((v) => !v)}><Plus size={16} />{catalogOpen ? 'Sakrij elemente' : 'Prikaži elemente'}<ChevronDown size={14} className={catalogOpen ? 'rotate-180' : ''} /></button>
           <button type="button" className="btn btn-sm" aria-expanded={propsOpen} aria-controls="project-properties" data-testid="toggle-props" onClick={() => setPropsOpen((v) => !v)}><SlidersHorizontal size={16} />{propsOpen ? 'Sakrij svojstva' : 'Svojstva'}</button>
         </div>
@@ -168,20 +152,6 @@ function EditorWorkspace({ navigateAway }: { navigateAway: () => void }) {
           {fullscreen && <button className="btn btn-sm" onClick={toggleFullscreen}><X size={14} />Zatvori pun ekran</button>}
           <EditorCanvas project={project} svgRef={svgRef} areaRef={areaRef} drag={drag} onBeginDrag={begin} registerTarget={registerTarget} fullscreen={fullscreen} onToggleFullscreen={toggleFullscreen} />
           <div id="project-catalog" hidden={!catalogOpen}><Catalog onBeginDrag={begin} /></div>
-          <div className="grid gap-4">
-            <section className="card p-4 min-w-0" data-testid="project-data">
-              <div className="flex items-center justify-between mb-2"><h3 className="font-bold text-[15px]">Podaci o projektu / kupcu</h3>
-                <button className="text-sm text-primary font-medium inline-flex items-center gap-1 hover:underline" data-testid="project-edit" onClick={() => setEditData(true)}><Pencil size={13} />Uredi</button></div>
-              <CustomerField testId="project-customer" value={project.customerId}
-                onChange={(v) => useAppStore.getState().mutate((p) => ({ ...p, customerId: v, updatedAt: new Date().toISOString() }))} />
-              {customer && <div className="text-[12.5px] text-muted pb-1">{customer.address} · {customer.phone}</div>}
-              <SelectField label="Status" testId="project-status" value={project.status} options={(Object.keys(STATUS_LABELS) as ProjectStatus[]).map((v) => ({ value: v, label: STATUS_LABELS[v] }))}
-                onChange={(v) => useAppStore.getState().mutate((p) => ({ ...p, status: v, updatedAt: new Date().toISOString() }))} />
-              <Field label="Datum"><span className="text-sm">{fmtDate(project.updatedAt)}</span></Field>
-              <Field label="Broj ponude"><span className="text-sm">{project.quoteNo || '—'}</span></Field>
-              <TextField label="Napomena" multiline value={project.notes} testId="project-notes" onChange={(v) => useAppStore.getState().mutate((p) => ({ ...p, notes: v, updatedAt: new Date().toISOString() }), 'notes')} />
-            </section>
-          </div>
         </div>
 
         <div id="project-properties" className={propsOpen ? 'min-w-0' : 'hidden'}>
@@ -194,7 +164,7 @@ function EditorWorkspace({ navigateAway }: { navigateAway: () => void }) {
               : 'hidden'}
           >
             <div className="flex items-center justify-between mb-3">
-              <b className="text-[15px]">Svojstva{selection ? ' — izabran element' : ''}</b>
+              <b className="text-[15px]">Svojstva</b>
               <button className="btn btn-sm" onClick={() => setPropsOpen(false)} data-testid="close-props" aria-label="Zatvori panel svojstava"><X size={14} />Zatvori</button>
             </div>
             <PropertiesPanel project={project} />

@@ -48,7 +48,7 @@ export function TerraceMeasuresModal({ model, onChange, onClose }: { model: Cust
     return { ...m, hw: Object.keys(hw).length ? hw : undefined };
   });
   return (
-    <Modal title="Mere ograde" width={620} onClose={onClose}
+    <Modal title="Mere okova i spojeva" width={620} onClose={onClose}
       footer={<><button className="btn" data-testid="terrace-measures-reset" disabled={!model.hw} onClick={() => onChange((m) => ({ ...m, hw: undefined }))}>Vrati podrazumevane mere</button><button className="btn btn-primary" data-testid="terrace-measures-close" onClick={onClose}>Gotovo</button></>}>
       <p className="text-[12.5px] text-muted mb-3">Mere okova zavise od materijala koje koristite. Promena se odmah primenjuje na crtež: rukohvat se podiže na visinu veze, stub na debljinu flanše, a prečke se pomeraju na zadato rastojanje od stuba.</p>
       <section className="mb-3" data-testid="terrace-corner-joint">
@@ -76,7 +76,9 @@ export function TerraceMeasuresModal({ model, onChange, onClose }: { model: Cust
           </div>
         ))}
       </section>
-      {SECTIONS.map((s) => (
+      {(['Krojenje, raspored i sastavnica', 'Samo izgled'] as const).map((group, index) => <section key={group} className="mt-4" data-testid={index ? 'hardware-appearance' : 'hardware-production'}>
+      <h2 className="font-bold text-base mb-2">{group}</h2>
+      {SECTIONS.map((s) => ({ ...s, fields: s.fields.filter((f) => f.hint.includes('samo izgled') === Boolean(index)) })).filter((s) => s.fields.length).map((s) => (
         <section key={s.title} className="mb-3" data-testid="terrace-measures-section">
           <h3 className="font-bold text-[13.5px] mb-1">{s.title}</h3>
           {s.fields.map((f) => {
@@ -94,6 +96,7 @@ export function TerraceMeasuresModal({ model, onChange, onClose }: { model: Cust
           })}
         </section>
       ))}
+      </section>)}
     </Modal>
   );
 }

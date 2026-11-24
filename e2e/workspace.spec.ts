@@ -19,6 +19,7 @@ test('radni prostor: sklopivi meni, katalog i svojstva na užem i širem ekranu'
   const canvas = page.getByTestId('canvas-card');
   const wide = (await canvas.boundingBox())!.width;
   await page.getByTestId('toggle-props').click();
+  await page.getByTestId('props-tab-project').click();
   await expect(page.getByTestId('panel-basics')).toBeVisible();
   const docked = (await canvas.boundingBox())!;
   expect(docked.width).toBeLessThan(wide - 300);
@@ -69,7 +70,8 @@ test('fiksna dužina: dugmad ne šire svojstva i zadržavanje prostora ne menja 
   await page.goto('/podesavanja'); await page.getByTestId('set-advanced').check();
   await page.getByRole('link', { name: 'Početna', exact: true }).click(); await page.getByTestId('hero-new').click();
   await page.getByTestId('cat-fence-add').click(); await page.getByTestId('cat-fence-add').click();
-  await page.getByTestId('total-mode').getByRole('radio', { name: 'Fiksna', exact: true }).click();
+  await page.getByTestId('props-tab-project').click();
+  await page.getByTestId('project-total-lock').click();
   const before = await page.getByTestId('total-modular').innerText();
   const target = Number(before.replace(/\D/g, '')) + 500;
   await page.getByTestId('fixed-total').fill(String(target)); await page.getByTestId('fixed-total').press('Enter');

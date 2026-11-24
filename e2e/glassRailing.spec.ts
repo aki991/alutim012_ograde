@@ -5,6 +5,7 @@ import type { CustomModel } from '../src/domain/models/custom';
 
 test('novo crtanje terasne ograde nema podešavanja ni upozorenja za staklo dok se staklena ograda ne izabere', async ({ page }) => {
   await page.goto('/modeli-terasa/crtanje');
+  await page.getByTestId('designer-property-tabs').getByRole('tab', { name: 'Konstrukcija', exact: true }).click();
   const mode = page.getByTestId('glass-railing-mode');
   await expect(mode).toBeVisible();
   await expect(mode).not.toBeChecked();
@@ -47,6 +48,7 @@ test('desni panel: dodaj držače, popuni staklom, promeni mere i ponovo otvori 
     db.close();
   }, { model, glasses: [material('TER-VSG-66'), material('TER-VSG-88')] });
   await page.goto(`/modeli-terasa/crtanje/${model.id}`);
+  await page.getByTestId('designer-property-tabs').getByRole('tab', { name: 'Konstrukcija', exact: true }).click();
   await expect(page.getByTestId('glass-railing-panel')).toHaveCount(0);
   await expect(page.getByTestId('glass-railing-mode')).not.toBeChecked();
   await page.getByTestId('glass-railing-mode').check();
@@ -87,6 +89,7 @@ test('desni panel: dodaj držače, popuni staklom, promeni mere i ponovo otvori 
     return { bottom: spec?.bottomMm, tolerance: spec?.toleranceMm };
   }, model.id)).toEqual({ bottom: 150, tolerance: 2 });
   await page.reload();
+  await page.getByTestId('designer-property-tabs').getByRole('tab', { name: 'Konstrukcija', exact: true }).click();
   await expect(page.getByTestId('glass-railing-mode')).toBeChecked();
   await expect(page.getByTestId('glass-railing-panel')).toBeVisible();
   await expect(page.getByTestId('glass-tolerance')).toHaveValue('2');

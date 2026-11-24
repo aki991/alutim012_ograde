@@ -267,3 +267,125 @@ for (const stair of [true, false]) test(`početno i završno staklo ${stair ? 's
   await expect(page.getByTestId('glass-cut-edges').last()).toContainText('AB 118 mm');
   expect(errors).toEqual([]);
 });
+
+test('faza 3: Element i Projekat imaju odvojena svojstva i prelazak ne menja obračun ni crtež', async ({ page }) => {
+  const errors: string[] = []; page.on('pageerror', (e) => errors.push(e.message));
+  const model = terrace();
+  await seed(page, [model]);
+  await page.goto('/modeli-terasa');
+  await page.getByTestId('custom-model-card').filter({ hasText: model.name }).getByTestId('use-custom-model').click();
+  await page.locator('[data-hit="item"]').first().click({ modifiers: ['Control'] });
+  await expect(page.getByTestId('props-tab-element')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByTestId('field-model')).toBeHidden();
+  await expect(page.getByTestId('panel-basics')).toBeHidden();
+  await expect(page.getByTestId('glass-fill')).toBeVisible();
+  await expect(page.getByTestId('glass-holders')).toContainText('Iz modela');
+  const before = await page.getByTestId('front-view').innerHTML();
+  const price = await page.getByTestId('price-total').innerText();
+  await page.getByTestId('post-settings-toggle').click();
+  await page.getByTestId('props-tab-project').click();
+  await expect(page.getByTestId('panel-item')).toBeHidden();
+  await expect(page.getByTestId('field-model')).toBeVisible();
+  await expect(page.getByTestId('project-customer')).toBeVisible();
+  await page.getByTestId('props-tab-element').click();
+  await expect(page.getByTestId('post-spacing')).toBeVisible();
+  expect(await page.getByTestId('front-view').innerHTML()).toBe(before);
+  await expect(page.getByTestId('price-total')).toHaveText(price);
+  await page.getByTestId('project-edit').click();
+  await expect(page.getByTestId('props-tab-project')).toHaveAttribute('aria-selected', 'true');
+  await page.getByTestId('project-name').fill('Projekat faze 3');
+  await expect(page.getByRole('heading', { name: 'Projekat faze 3', exact: true })).toBeVisible();
+  await page.getByTestId('btn-save').click();
+  await expect(page.getByTestId('btn-save')).toHaveAttribute('data-state', 'saved');
+  await page.reload(); await page.getByTestId('project-edit').click();
+  await expect(page.getByTestId('project-name')).toHaveValue('Projekat faze 3');
+  await page.getByTestId('props-tab-project').press('ArrowLeft');
+  await expect(page.getByTestId('props-tab-element')).toBeFocused();
+  await page.locator('[data-hit="item"]').first().click({ modifiers: ['Control'] });
+  await page.screenshot({ path: 'test-results/phase3-element.png' });
+  expect(errors).toEqual([]);
+});
+
+test('faza 3: ručna tolerancija i razmak stubova vraćaju se na model uz undo i očuvanje drugih mera', async ({ page }) => {
+  const model = terrace();
+  model.glassRailing!.toleranceMm = 3;
+  await seed(page, [model]);
+  await page.goto('/modeli-terasa');
+  await page.getByTestId('custom-model-card').filter({ hasText: model.name }).getByTestId('use-custom-model').click();
+  await page.locator('[data-hit="item"]').first().click({ modifiers: ['Control'] });
+  const tolerance = page.getByTestId('field-glass-tolerance');
+  const source = page.getByTestId('field-glass-tolerance-source');
+  await expect(tolerance).toHaveValue('3'); await expect(source).toContainText('Iz modela');
+  await tolerance.fill('2'); await tolerance.press('Enter');
+  await expect(source).toContainText('Ručni unos');
+  await page.getByTestId('post-settings-toggle').click();
+  const spacing = page.getByTestId('post-spacing'); const initial = await spacing.inputValue();
+  await spacing.fill('600'); await spacing.press('Enter');
+  await source.getByRole('button', { name: 'Vrati vrednost iz modela' }).click();
+  await expect(tolerance).toHaveValue('3'); await expect(source).toContainText('Iz modela');
+  await expect(spacing).toHaveValue('600');
+  await page.getByTestId('btn-undo').click(); await expect(tolerance).toHaveValue('2');
+  await page.getByTestId('btn-redo').click(); await expect(tolerance).toHaveValue('3');
+  await page.getByTestId('post-spacing-source').getByRole('button').click();
+  await expect(spacing).toHaveValue(initial);
+  await expect(tolerance).toHaveValue('3');
+  await page.getByTestId('field-stair-on').click();
+  for (const id of ['field-stair-dir', 'field-stair-run', 'field-stair-rise', 'field-stair-steps', 'field-stair-tread', 'field-stair-riser']) {
+    await expect(page.getByTestId('element-stair').getByTestId(id)).toBeVisible();
+  }
+  await page.getByTestId('field-stair-rise').fill('750'); await page.getByTestId('field-stair-rise').press('Enter');
+  await expect(page.getByTestId('element-stair')).toContainText('Izračunato');
+  await page.getByTestId('props-tab-project').click(); await page.getByTestId('props-tab-element').click();
+  await expect(page.getByTestId('field-stair-rise')).toHaveValue('750');
+  await page.getByTestId('btn-save').click(); await expect(page.getByTestId('btn-save')).toHaveAttribute('data-state', 'saved');
+  await page.reload();
+  // Isti element može da se izabere i iz tabele dimenzija.
+  await page.getByTestId('tab-dims').click();
+  await page.getByTestId('dims-table').locator('tbody tr').first().click();
+  await expect(page.getByTestId('field-glass-tolerance')).toHaveValue('3');
+  await expect(page.getByTestId('field-glass-tolerance-source')).toContainText('Iz modela');
+});
+
+test('faza 3: kartice i dugi nazivi ne šire panel na računaru i telefonu', async ({ page }) => {
+  const model = terrace(); model.name = 'Staklena terasa sa veoma dugim nazivom modela i rukohvatom';
+  await seed(page, [model]); await page.goto('/modeli-terasa');
+  await page.getByTestId('custom-model-card').filter({ hasText: model.name }).getByTestId('use-custom-model').click();
+  await page.locator('[data-hit="item"]').first().click({ modifiers: ['Control'] });
+  for (const width of [1440, 1160, 900, 390]) {
+    await page.setViewportSize({ width, height: 950 });
+    for (const tab of ['element', 'project']) {
+      await page.getByTestId(`props-tab-${tab}`).click();
+      expect(await page.getByTestId('props-drawer').evaluate((el) => el.scrollWidth - el.clientWidth), `${width}: ${tab}`).toBeLessThanOrEqual(1);
+    }
+    await page.getByTestId('close-props').click();
+    await page.getByTestId('project-edit').click();
+    await expect(page.getByTestId('props-tab-project')).toHaveAttribute('aria-selected', 'true');
+  }
+  await page.screenshot({ path: 'test-results/phase3-project-mobile.png' });
+});
+
+test('faza 3: model projekta menja i platno i kapiju nezavisno od lokalnog opsega', async ({ page }) => {
+  const first = yard('cm_phase3_first', 'Model prvi'); const second = yard('cm_phase3_second', 'Model drugi');
+  await seed(page, [first, second]); await page.goto('/modeli');
+  await page.getByTestId('custom-model-card').filter({ hasText: first.name }).getByTestId('use-custom-model').click();
+  await page.getByTestId('cat-gate-pedestrian-add').click();
+  await page.getByTestId('tab-dims').click();
+  await page.getByTestId('dims-table').locator('tbody tr').nth(1).click();
+  await expect(page.getByTestId('panel-item')).toContainText('Mere i boja kapije');
+  await expect(page.getByTestId('field-model')).toBeHidden();
+  await page.getByTestId('edit-scope-select').selectOption('one');
+  const data = async () => page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve) => { const r = indexedDB.open('alu-tim-012'); r.onsuccess = () => resolve(r.result); });
+    const id = location.pathname.split('/').pop()!;
+    const project = await new Promise<Project>((resolve) => { const r = db.transaction('projects').objectStore('projects').get(id); r.onsuccess = () => resolve(r.result); });
+    db.close(); return project.items.map((it) => ({ id: it.id, width: it.widthMm, model: it.kind === 'fence' ? it.modelId : it.kind === 'gate' ? it.infillModelId.split('~gf~')[0] : null }));
+  });
+  await page.getByTestId('btn-save').click(); await expect(page.getByTestId('btn-save')).toHaveAttribute('data-state', 'saved');
+  const before = await data(); expect(before).toHaveLength(2);
+  await page.getByTestId('props-tab-project').click();
+  await page.getByTestId('field-model').selectOption(second.id);
+  await expect.poll(async () => (await data()).map((it) => it.model)).toEqual([second.id, second.id]);
+  expect((await data()).map(({ id, width }) => ({ id, width }))).toEqual(before.map(({ id, width }) => ({ id, width })));
+  await page.getByTestId('btn-undo').click();
+  await expect(page.getByTestId('field-model')).toHaveValue(first.id);
+});

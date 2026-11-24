@@ -349,6 +349,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
   const [showAllMaterials, setShowAllMaterials] = useState(false);
   const [materialsOpen, setMaterialsOpen] = useState(() => window.innerWidth >= 1400);
   const [propertiesOpen, setPropertiesOpen] = useState(true);
+  const [propertyTab, setPropertyTab] = useState<'part' | 'construction' | 'material'>('part');
   /** „Mere ograde“ (ograda za terasu): mere okova */
   const [measuresOpen, setMeasuresOpen] = useState(false);
   const paletteUsedIds = useMemo(() => {
@@ -385,7 +386,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   /** izabrani delovi (Ctrl + klik ili okvir za više); jedan izabran deo ima pun panel, više delova zajednički */
   const [selectedIdsRaw, setSelectedIds] = useState<string[]>([]);
-  useEffect(() => { if (selectedIdsRaw.length) setPropertiesOpen(true); }, [selectedIdsRaw]);
+  useEffect(() => { if (selectedIdsRaw.length) { setPropertiesOpen(true); setPropertyTab('part'); } }, [selectedIdsRaw]);
   const setSelectedId = useCallback((id: string | null) => setSelectedIds(id ? [id] : []), []);
   const [view, setView] = useState<ViewMode>('2d');
   const [ortho, setOrtho] = useState(true);
@@ -513,6 +514,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
   }, false);
   // klizna kapija: klizni okov (točkići, šina, valjci, graničnici …) se crta preko crteža krila i podešava u panelu desno
   const [hwSel, setHwSel] = useState<string | null>(null);
+  useEffect(() => { if (hwSel) { setPropertyTab('part'); setPropertiesOpen(true); } }, [hwSel]);
   const slSpec = model.kind === 'gate' && model.gate?.gateType === 'sliding' ? model.gate.sliding : undefined;
   const slGate = useMemo(() => (slSpec ? { ...createGate('sliding', { sliding: { ...slSpec, drawnLeaf: true }, heightMm: model.heightMm + slSpec.frameBottomY, opening: model.gate?.opening ?? 'right', color: model.color }), id: model.id } : null), [slSpec, model.heightMm, model.gate?.opening, model.color, model.id]);
   const slPlaced = useMemo(() => (slGate ? placeSliding(slGate, { clearStart: 0, clearEnd: model.widthMm, clearWidth: model.widthMm }) : null), [slGate, model.widthMm]);
@@ -856,13 +858,14 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
           <MaterialPicker materials={materials.filter((m) => materialShape(m).type === 'linear')} placeholder="— izaberite profil rama —" testId="frame-material" ariaLabel="Profil rama" onPick={(id) => { if (frameSides.left || frameSides.right || frameSides.top || frameSides.bottom) addFrame(id); }} />
         </Modal>
       )}
-      <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-line bg-white">
+      <section className="border-b border-line bg-white shrink-0" aria-label="Model">
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2"><b className="text-xs text-muted">Model</b>
         <Link to={model.kind === 'gate' ? '/modeli-kapija' : isTerrace ? '/modeli-terasa' : '/modeli'} className="btn btn-sm" data-testid="designer-back"><ArrowLeft size={15} />{model.kind === 'gate' ? 'Modeli kapija' : isTerrace ? 'Modeli ograda za terase' : 'Modeli'}</Link>
         <input className="input !w-56 !py-1.5 font-semibold" aria-label="Naziv modela" data-testid="designer-name" value={model.name} onChange={(e) => change((m) => ({ ...m, name: e.target.value }), false)} />
         {model.kind === 'gate' && model.parts.length > 0 && (model.draft
           ? (!readOnly && <button className="btn btn-sm btn-primary" data-testid="designer-save-gate" title="Tip kapije se dodaje u „Moji tipovi kapija“ tek kad ga sačuvate" onClick={() => { const cur = modelRef.current; const auto = autoGateSpec(cur, materialsRef.current); if (auto?.length) { const st = useAppStore.getState(); const k = extraSpecKey(cur.id); if (!st.settings.modelSpecs?.[k]?.length) st.updateSettings({ modelSpecs: { ...st.settings.modelSpecs, [k]: auto } }); } change((m) => ({ ...m, draft: undefined }), false); }}>Sačuvaj tip kapije</button>)
           : <span className="text-[12.5px] font-semibold text-[#067647]" data-testid="designer-gate-saved">Tip kapije je sačuvan</span>)}
-        {model.kind === 'fence' && !readOnly && <label className="flex items-center gap-1.5 text-[13px]" title="Kapija od ovog modela dobija ram od kvadratne cevi (materijal se bira u projektu). Isključite za modele kao što su tarabice. Model koji već ima ram ne dobija drugi."><input type="checkbox" data-testid="designer-gate-frame" checked={wantsGateFrame(model)} onChange={(e) => change((m) => ({ ...m, gateFrame: e.target.checked }), false)} />Ram na kapiji</label>}
+
         {model.parts.length > 0 && <button className={`btn btn-sm ${readOnly ? 'btn-primary' : ''}`} data-testid="designer-save-new" title="Izmene se čuvaju kao nov model, a model u koji ste ušli ostaje kakav je bio kad ste ga otvorili" onClick={saveAsNew}><Copy size={14} />{model.kind === 'gate' ? 'Sačuvaj kao nov tip kapije' : 'Sačuvaj kao nov model'}</button>}
         {/* ograda za terasu ostaje ograda za terasu (posebna stranica i materijali); ograda i kapija se mogu menjati jedna u drugu */}
         {isTerrace && <span className="pill !text-[12.5px] bg-[#eff8ff] text-[#175cd3]" data-testid="designer-kind-terrace">Ograda za terasu</span>}
@@ -910,36 +913,20 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
             <Num label="Vis." value={posts[k].h} min={200} max={6000} testId={`designer-post-h-${k}`} onChange={(v) => setPost(k, { heightMm: Math.round(v) })} />
           </span>
         ))}
-        <Switch label="Kote" checked={showDims} testId="designer-dims" onChange={setShowDims} title="Ukupna širina i visina crteža; mere modela proizlaze iz crteža" />
         <button type="button" className="input !w-auto !py-1.5 inline-flex items-center gap-2" aria-label={`Boja: ${normalizeColorKey(model.color)}. Otvori kartu boja`} data-testid="designer-color" onClick={() => setChartOpen(true)}>
           <span className="w-5 h-5 rounded-full ring-1 ring-black/20" style={{ background: colorHex(model.color) }} />{normalizeColorKey(model.color)}
         </button>
         {chartOpen && <ColorChartModal value={normalizeColorKey(model.color)} favorites={settings.favoriteColors ?? []} onPick={(k) => change((m) => ({ ...m, color: k }))} onFavorites={(list) => useAppStore.getState().updateSettings({ favoriteColors: list })} onClose={() => setChartOpen(false)} />}
-        {model.kind === 'gate' && !slSpec && <button className="btn btn-sm" data-testid="designer-add-hinges" title="Dodaje šarke duž jedne ivice kapije" onClick={() => setHingeAsk({ side: model.gate?.opening ?? 'right', count: hingeCountFor(pair ? pair.leftMm : model.widthMm, model.heightMm) })}>Dodaj šarke</button>}
-        {isTerrace && <button className="btn btn-sm" data-testid="designer-terrace-measures" title="Mere okova: visina veze stub–rukohvat, podizanje stuba zbog flanše, visina kape, rastojanje prečke od stuba, zavrtnji" onClick={() => setMeasuresOpen(true)}>Mere ograde</button>}
-        {isTerrace && measuresOpen && <TerraceMeasuresModal model={model} onChange={(fn) => change(fn)} onClose={() => setMeasuresOpen(false)} />}
-        {isTerrace && <button className="btn btn-sm btn-primary" data-testid="designer-fill-hw" title="Svakom stubu, rukohvatu i prečki dodaje odgovarajući okov (flanše, veze, prstenove, kapice) na pravo mesto; šta ne treba, odkvačite uz izabran deo" onClick={() => { const before = modelRef.current; const next = fillHardware(before, materialsRef.current); if (next === before) setNotice('Nema šta da se doda: svi delovi već imaju okov ili u cenovniku nema odgovarajućeg okova. Crtajte stubove, rukohvat i prečke, pa kliknite ovo dugme.'); else change(() => next); }}>Dopuni okov</button>}
-        {!isTerrace && <button className="btn btn-sm" data-testid="designer-add-slope" title="Ograda ili kapija na kosom terenu: ispod ispune se dodaju kosi donji profil i ploča (lim) koja popunjava pad" onClick={() => setSlopeAsk(true)}>Dodaj pad</button>}
-        {!isTerrace && <button className="btn btn-sm" data-testid="designer-add-frame" title="Dodaje ram oko platna (uglovi pod 45°)" onClick={() => setFrameAsk(true)}>Dodaj ram</button>}
-        {!isTerrace && !readOnly && <button className="btn btn-sm" data-testid="designer-add-divider" title="Vodoravna kvadratna cev koja deli platno po visini i spaja se sa bočnim stranama. Prečke iznad i ispod nje se raspoređuju posebno (Raspored prečki)." onClick={addDividerTube}>Dodaj ojačanje</button>}
-        {model.parts.some(isFramePart) && <button className="btn btn-sm" data-testid="designer-remove-frame" title="Briše dodat ram; mere modela se vraćaju na mere platna" onClick={removeFrame}><Trash2 size={14} />Obriši ram</button>}
         </>}
-        <div className="flex-1" />
-        {view !== 'mere' && <>
-        <label className="flex items-center gap-1.5 text-[13px]" title="Izbor odmah pomera označene delove po dubini. Bez označenih delova važi za sledeće dodavanje. Letvice mogu stajati ispred, a nosači iza njih.">{selectedIds.length ? 'Izabrani delovi preko drugih' : 'Novi deo preko drugog'}
-          <select className="input !w-auto !py-1" data-testid="designer-layer" value={selectedIds.length ? '' : layer} onChange={(e) => {
-            const mode = e.target.value as 'off' | 'behind' | 'front'; setLayer(mode);
-            if (mode !== 'off' && selectedIds.length) applyLayer(mode);
-          }}>
-            {selectedIds.length ? <option value="" disabled>Postavi po dubini…</option> : <option value="off">ne dozvoli</option>}
-            <option value="behind">iza postojećih</option><option value="front">ispred postojećih</option>
-          </select>
-        </label>
-        {supports.length > 0 && <button className="btn" data-testid="designer-supports-behind" title="Postavlja postojeće vodoravne nosače iza tarabica, bez promene njihovih mera."
-          onClick={() => { const cur = modelRef.current; const next = supportsBehindPickets(cur, materialsRef.current);
-            if (next === cur) { setNotice('Prečke su već iza tarabica.'); return; }
-            if (change(() => next)) { setSelectedIds(supports.map((p) => p.id)); setLayer('behind'); }
-          }}>Prečke iza tarabica</button>}
+      </div><p className="text-xs text-muted px-3 pb-2" data-testid="designer-save-context">{readOnly ? 'Pregled osnovnog modela. Za uređivanje prvo sačuvajte kopiju kao nov tip.' : model.draft ? 'Radna kopija kapije: u biblioteku ulazi tek klikom na „Sačuvaj tip kapije“. Ako izađete pre toga, kopija se uklanja.' : fromDorada && !model.replaces ? 'Uređujete doradu kao zaseban model. Original iz kataloga ostaje dok ne izaberete „Sačuvaj na istom tipu“.' : !openedRef.current && !model.parts.length ? 'Novi model: upis počinje kada nacrtate prvi deo. Prazan crtež se još ne čuva u biblioteci.' : `Uređujete model „${model.name}“. Izmene se automatski upisuju u ovaj model.`} {!readOnly && !model.draft && (openedRef.current ? '„Sačuvaj kao nov model“ prenosi izmene u novi model i vraća otvoreni model na stanje sa početka uređivanja.' : '„Sačuvaj kao nov model“ pravi zasebnu kopiju crteža.')}</p>
+      </section>
+      <div className="flex flex-wrap items-start gap-2 px-3 py-2 border-b border-line bg-white shrink-0">
+        <details data-testid="designer-tools" className="min-w-0 open:w-full"><summary className="btn btn-sm cursor-pointer">Alati</summary><div className="flex flex-wrap items-center gap-2 py-2">
+          <button className="btn btn-sm" onClick={() => setActiveId(null)}>Izbor delova</button>
+          <button className="btn btn-sm" onClick={() => setMaterialsOpen(true)}>Crtanje — izaberi materijal</button>
+          <button className="btn btn-sm" disabled={!selectedIds.length} onClick={copySel}>Kopiraj izbor</button>
+          <button className="btn btn-sm" onClick={pasteClip}>Nalepi kopiju</button>
+          <button className="btn btn-sm" disabled={!selectedIds.length} onClick={() => { setPropertiesOpen(true); setPropertyTab('part'); }}>Ponavljanje dela</button>
         <button type="button" className={`btn btn-sm ${free ? 'btn-primary' : ''}`} data-testid="designer-free" aria-pressed={free} title="Slobodno crtanje: dozvoljeno je sve (preklapanje delova, proizvoljni uglovi, nejednaki razmaci). Pri povratku na normalno crtanje prikazuje se šta nije u redu."
           onClick={() => { if (free) { setFree(false); setCheckOpen(true); } else { setFree(true); setCheckOpen(false); } }}>{free ? 'Normalno crtanje' : 'Slobodno crtanje'}</button>
         {!free && <button type="button" className={`btn btn-sm ${activeProblems?.length ? '!border-[#fda29b] !text-[#b42318]' : ''}`} data-testid="designer-check" aria-pressed={checkOpen} title="Upozorenja za crtež: preklapanja, krive cevi, nejednaki razmaci i problemi na drugim veličinama polja. Upozorenje koje ima smisla možete da prihvatite." onClick={() => setCheckOpen((o) => !o)}><AlertTriangle size={14} />Upozorenja ({activeProblems?.length ?? 0})</button>}
@@ -951,12 +938,25 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
         </select>
         <button className="btn btn-sm btn-icon" aria-label="Poništi" disabled={!hist.past.length} onClick={undo}><Undo2 size={16} /></button>
         <button className="btn btn-sm btn-icon" aria-label="Ponovi izmenu" disabled={!hist.future.length} onClick={redo}><Redo2 size={16} /></button>
-        </>}
-        <button type="button" className="btn btn-sm" data-testid="toggle-designer-materials" aria-expanded={materialsOpen} aria-controls="designer-materials" onClick={() => setMaterialsOpen((v) => !v)}>{materialsOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}Materijali</button>
+        </div></details>
+        <details data-testid="designer-construction-tools" className="min-w-0 open:w-full"><summary className="btn btn-sm cursor-pointer">Konstrukcija</summary><div className="flex flex-wrap items-center gap-2 py-2">
+        {model.kind === 'fence' && !readOnly && <label className="flex items-center gap-1.5 text-[13px]" title="Kapija od ovog modela dobija ram od kvadratne cevi (materijal se bira u projektu). Isključite za modele kao što su tarabice. Model koji već ima ram ne dobija drugi."><input type="checkbox" data-testid="designer-gate-frame" checked={wantsGateFrame(model)} onChange={(e) => change((m) => ({ ...m, gateFrame: e.target.checked }), false)} />Ram na kapiji</label>}
+        {model.kind === 'gate' && !slSpec && <button className="btn btn-sm" data-testid="designer-add-hinges" title="Dodaje šarke duž jedne ivice kapije" onClick={() => setHingeAsk({ side: model.gate?.opening ?? 'right', count: hingeCountFor(pair ? pair.leftMm : model.widthMm, model.heightMm) })}>Dodaj šarke</button>}
+        {isTerrace && <button className="btn btn-sm" data-testid="designer-terrace-measures" title="Mere okova: visina veze stub–rukohvat, podizanje stuba zbog flanše, visina kape, rastojanje prečke od stuba, zavrtnji" onClick={() => setMeasuresOpen(true)}>Mere okova i spojeva</button>}
+        {isTerrace && measuresOpen && <TerraceMeasuresModal model={model} onChange={(fn) => change(fn)} onClose={() => setMeasuresOpen(false)} />}
+        {isTerrace && <button className="btn btn-sm btn-primary" data-testid="designer-fill-hw" title="Svakom stubu, rukohvatu i prečki dodaje odgovarajući okov (flanše, veze, prstenove, kapice) na pravo mesto; šta ne treba, odkvačite uz izabran deo" onClick={() => { const before = modelRef.current; const next = fillHardware(before, materialsRef.current); if (next === before) setNotice('Nema šta da se doda: svi delovi već imaju okov ili u cenovniku nema odgovarajućeg okova. Crtajte stubove, rukohvat i prečke, pa kliknite ovo dugme.'); else change(() => next); }}>Dopuni okov</button>}
+        {!isTerrace && <button className="btn btn-sm" data-testid="designer-add-slope" title="Ograda ili kapija na kosom terenu: ispod ispune se dodaju kosi donji profil i ploča (lim) koja popunjava pad" onClick={() => setSlopeAsk(true)}>Dodaj pad</button>}
+        {!isTerrace && <button className="btn btn-sm" data-testid="designer-add-frame" title="Dodaje ram oko platna (uglovi pod 45°)" onClick={() => setFrameAsk(true)}>Dodaj ram</button>}
+        {!isTerrace && !readOnly && <button className="btn btn-sm" data-testid="designer-add-divider" title="Vodoravna kvadratna cev koja deli platno po visini i spaja se sa bočnim stranama. Prečke iznad i ispod nje se raspoređuju posebno (Raspored prečki)." onClick={addDividerTube}>Dodaj ojačanje</button>}
+        {model.parts.some(isFramePart) && <button className="btn btn-sm" data-testid="designer-remove-frame" title="Briše dodat ram; mere modela se vraćaju na mere platna" onClick={removeFrame}><Trash2 size={14} />Obriši ram</button>}
+</div></details>
+        <div className="flex flex-wrap items-center gap-2 min-w-0" role="group" aria-label="Prikaz"><b className="text-xs text-muted">Prikaz</b>        <button type="button" className="btn btn-sm" data-testid="toggle-designer-materials" aria-expanded={materialsOpen} aria-controls="designer-materials" onClick={() => setMaterialsOpen((v) => !v)}>{materialsOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}Materijali</button>
         <button type="button" className="btn btn-sm" data-testid="toggle-designer-properties" aria-expanded={propertiesOpen} aria-controls="designer-properties" onClick={() => setPropertiesOpen((v) => !v)}><SlidersHorizontal size={16} />Svojstva</button>
         <ChoiceGroup kind="tabs" label="Prikaz" value={view} onChange={selectView}
           options={([['2d', '2D'], ['split', '2D + 3D'], ['3d', '3D'], ['presek', 'Presek'], ['skica', 'Skica'], ...(model.kind === 'gate' ? [['mere', 'Mere kapije']] : [])] as [ViewMode, string][])
             .map(([v, label]) => ({ value: v, label, testId: v === 'mere' ? 'designer-gate-measures' : `designer-view-${v}` }))} />
+        <Switch label="Kote" checked={showDims} testId="designer-dims" onChange={setShowDims} title="Ukupna širina i visina crteža; mere modela proizlaze iz crteža" />
+</div>
       </div>
 
       {/* traka dorade se vidi samo odmah posle klika na „Doradi“ (i dok dorađen crtež zamenjuje original); kasnije otvaranje crteža je običan model */}
@@ -1076,7 +1076,30 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
         </section>
 
         <aside id="designer-properties" hidden={!propertiesOpen} className="border-l border-line bg-white min-h-0 min-w-0 overflow-auto scroll-thin p-3">
-          {isTerrace && <GlassRailingPanel model={model} materials={materials} onChange={(fn) => change(fn)} />}
+          <ChoiceGroup kind="tabs" label="Svojstva modela" value={propertyTab} onChange={setPropertyTab} testId="designer-property-tabs" className="sticky top-0 z-10 w-full bg-white mb-3"
+            options={[{ value: 'part', label: 'Deo' }, { value: 'construction', label: 'Konstrukcija' }, { value: 'material', label: 'Materijal' }]} />
+          <div hidden={propertyTab !== 'construction'} data-testid="designer-construction-panel">
+            <h2 className="font-bold mb-2">Konstrukcija modela</h2>
+            {isTerrace && <GlassRailingPanel model={model} materials={materials} onChange={(fn) => change(fn)} />}
+            <h3 className="font-semibold text-sm mb-2">Položaj po dubini</h3>
+            <div className="flex flex-col gap-2 mb-3">        <label className="flex items-center gap-1.5 text-[13px]" title="Izbor odmah pomera označene delove po dubini. Bez označenih delova važi za sledeće dodavanje. Letvice mogu stajati ispred, a nosači iza njih.">{selectedIds.length ? 'Izabrani delovi preko drugih' : 'Novi deo preko drugog'}
+          <select className="input !w-auto !py-1" data-testid="designer-layer" value={selectedIds.length ? '' : layer} onChange={(e) => {
+            const mode = e.target.value as 'off' | 'behind' | 'front'; setLayer(mode);
+            if (mode !== 'off' && selectedIds.length) applyLayer(mode);
+          }}>
+            {selectedIds.length ? <option value="" disabled>Postavi po dubini…</option> : <option value="off">ne dozvoli</option>}
+            <option value="behind">iza postojećih</option><option value="front">ispred postojećih</option>
+          </select>
+        </label>
+        {supports.length > 0 && <button className="btn" data-testid="designer-supports-behind" title="Postavlja postojeće vodoravne nosače iza tarabica, bez promene njihovih mera."
+          onClick={() => { const cur = modelRef.current; const next = supportsBehindPickets(cur, materialsRef.current);
+            if (next === cur) { setNotice('Prečke su već iza tarabica.'); return; }
+            if (change(() => next)) { setSelectedIds(supports.map((p) => p.id)); setLayer('behind'); }
+          }}>Prečke iza tarabica</button>}
+</div>
+            {!isTerrace && <p className="text-sm text-muted">Ram, ojačanje i pad dodaju se iz grupe „Konstrukcija“ iznad crteža.</p>}
+          </div>
+          <div hidden={propertyTab !== 'part'} data-testid="designer-part-panel">
           {slSpec && (hwSelValid || (!sel && !multi.length)) && <SlidingDesignerPanel slideId={model.id} spec={slSpec} W={model.widthMm} leafH={model.heightMm} onSpec={patchSliding} selected={hwSelValid} onSelect={setHwSel} />}
           <h2 className="font-bold text-[15px] mb-1">Izabrani deo</h2>
           {!sel && !multi.length && <p className="text-sm text-muted mb-4" data-testid="designer-no-selection">Izaberite materijal levo i nacrtajte ga na polju, ili kliknite na nacrtani deo da ga izmenite. Ctrl + klik ili prevlačenje po praznom biraju više delova.</p>}
@@ -1283,6 +1306,8 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
             </div>
           )}
 
+          </div>
+          <div hidden={propertyTab !== 'material'} data-testid="designer-material-panel">
           <h2 className="font-bold text-[15px] mb-1">Spisak materijala</h2>
           <IncompletePriceNotice count={bom.filter((l) => l.missing).length} />
           {bom.length === 0 ? <p className="text-sm text-muted">Model još nema delova.</p> : (
@@ -1298,7 +1323,8 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
               </tbody>
             </table>
           )}
-          <p className="text-[11.5px] text-muted mt-2">Količine su tačne mere sa crteža, bez otpada. Model se čuva automatski.</p>
+          <p className="text-[11.5px] text-muted mt-2">Količine su tačne mere sa crteža, bez otpada.</p>
+          </div>
         </aside>
       </div>
       {pendingSwap && (() => {

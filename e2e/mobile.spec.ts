@@ -25,6 +25,7 @@ test('mobilni prikaz: meni, editor, katalog i svojstva', async ({ page }) => {
   // panel svojstava se otvara po izboru
   await expect(page.getByTestId('panel-basics')).toBeHidden();
   await page.getByTestId('toggle-props').click();
+  await page.getByTestId('props-tab-project').click();
   await expect(page.getByTestId('panel-basics')).toBeVisible();
   await expect(page.getByTestId('count-items')).toHaveText('2');
 

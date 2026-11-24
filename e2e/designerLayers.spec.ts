@@ -24,6 +24,7 @@ async function seed(page: Page, caps = false) {
     db.close();
   }, { model, materials: MODEL_MATERIALS });
   await page.goto(`/modeli/crtanje/${modelId}`);
+  await page.getByTestId('designer-property-tabs').getByRole('tab', { name: 'Konstrukcija', exact: true }).click();
   await expect(page.getByTestId('designer-supports-behind')).toBeVisible();
 }
 async function saved(page: Page): Promise<CustomPart[]> {
@@ -50,6 +51,7 @@ test('postojeće prečke se postavljaju iza tarabica u 3D; izbor sloja, poništi
   const errors: string[] = []; page.on('pageerror', (e) => errors.push(e.message));
   await seed(page);
   // Bez selekcije lista i dalje određuje sloj sledećeg novog dela.
+  await page.getByTestId('designer-property-tabs').getByRole('tab', { name: 'Konstrukcija', exact: true }).click();
   await page.getByTestId('designer-layer').selectOption('front');
   expect(await railDepths(page)).toEqual([0, 0]);
   await page.getByTestId('designer-view-3d').click();
@@ -58,26 +60,33 @@ test('postojeće prečke se postavljaju iza tarabica u 3D; izbor sloja, poništi
   const sharp = (await import('sharp')).default;
   await expect.poll(async () => Math.max(...(await sharp(await canvas.screenshot()).stats()).channels.slice(0, 3).map((c) => c.stdev)), { timeout: 15000 }).toBeGreaterThan(5);
   await canvas.screenshot({ path: 'test-results/picket-depth-before-3d.png' });
+  await page.getByTestId('designer-property-tabs').getByRole('tab', { name: 'Konstrukcija', exact: true }).click();
   await page.getByTestId('designer-supports-behind').click();
   await expect(page.getByTestId('designer-multi')).toContainText('Izabrano delova: 2');
   await expect.poll(() => railDepths(page)).toEqual([-20, -20]);
   await expect(page.getByTestId('multi-z')).toHaveValue('-20');
   await canvas.screenshot({ path: 'test-results/picket-depth-after-3d.png' });
+  await page.getByTestId('designer-tools').locator('summary').click();
   await page.getByRole('button', { name: 'Poništi', exact: true }).click();
   await expect.poll(() => railDepths(page)).toEqual([0, 0]);
   await page.getByRole('button', { name: 'Ponovi izmenu', exact: true }).click();
   await expect.poll(() => railDepths(page)).toEqual([-20, -20]);
   // Ista lista sada odmah pomera označene delove, i pri ponovljenom izboru istog smera.
+  await page.getByTestId('designer-property-tabs').getByRole('tab', { name: 'Konstrukcija', exact: true }).click();
   await page.getByTestId('designer-layer').selectOption('front');
   await expect.poll(() => railDepths(page)).toEqual([20, 20]);
+  await page.getByTestId('designer-property-tabs').getByRole('tab', { name: 'Deo', exact: true }).click();
   await page.getByTestId('multi-layer-behind').click();
   await expect.poll(() => railDepths(page)).toEqual([-20, -20]);
+  await page.getByTestId('designer-property-tabs').getByRole('tab', { name: 'Konstrukcija', exact: true }).click();
   await page.getByTestId('designer-layer').selectOption('front');
   await expect.poll(() => railDepths(page)).toEqual([20, 20]);
+  await page.getByTestId('designer-property-tabs').getByRole('tab', { name: 'Konstrukcija', exact: true }).click();
   await page.getByTestId('designer-layer').selectOption('behind');
   await expect.poll(() => railDepths(page)).toEqual([-20, -20]);
   expect((await saved(page)).filter((p) => p.id.startsWith('p')).every((p) => p.z === 0 && p.lengthMm === 670)).toBe(true);
   await page.reload();
+  await page.getByTestId('designer-property-tabs').getByRole('tab', { name: 'Konstrukcija', exact: true }).click();
   await expect(page.getByTestId('designer-supports-behind')).toBeVisible();
   expect(await railDepths(page)).toEqual([-20, -20]);
   await page.getByTestId('designer-view-3d').click();
@@ -91,9 +100,11 @@ test('promena sloja izabrane tarabice pomera i njen čep', async ({ page }) => {
   await seed(page, true);
   await page.locator('[data-part-id="p2"]').click();
   await expect(page.getByTestId('part-z')).toHaveValue('0');
+  await page.getByTestId('designer-property-tabs').getByRole('tab', { name: 'Konstrukcija', exact: true }).click();
   await page.getByTestId('designer-layer').selectOption('front');
   await expect(page.getByTestId('part-z')).toHaveValue('20');
   await expect.poll(async () => (await saved(page)).filter((p) => p.id === 'p2' || p.id === 'cap2').map((p) => p.z)).toEqual([20, 20]);
+  await page.getByTestId('designer-property-tabs').getByRole('tab', { name: 'Deo', exact: true }).click();
   await page.getByTestId('part-layer-behind').click();
   await expect.poll(async () => (await saved(page)).filter((p) => p.id === 'p2' || p.id === 'cap2').map((p) => p.z)).toEqual([-20, -20]);
   expect((await saved(page)).filter((p) => p.id !== 'p2' && p.id !== 'cap2').every((p) => p.z === 0)).toBe(true);
