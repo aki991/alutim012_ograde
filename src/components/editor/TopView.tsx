@@ -298,7 +298,7 @@ export function TopView({ project, scale, selectedId, selectedPostId, onSelect, 
           </g>
         ))}
         {realItems.length > LEGEND_MAX && <text x={vx + 32 * px} y={vy + vh - 20 * px} fill="#64748b">… još {realItems.length - LEGEND_MAX}</text>}
-        <text x={vx + vw - 12 * px - 4 * px} y={vy + vh - 30 * px} textAnchor="end" fontWeight={700} fill="#17212e">Ukupna dužina: {fmtMm(layout.occupiedMm)}</text>
+        <text x={vx + vw - 12 * px - 4 * px} y={vy + vh - 30 * px} textAnchor="end" fontWeight={700} fill="#17212e">Ukupna dužina: {fmtMm(layout.railingLengthMm)}</text>
         {(() => {
           const L = niceLength(scale);
           const x1 = vx + vw - 12 * px;

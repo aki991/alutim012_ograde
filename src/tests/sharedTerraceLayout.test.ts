@@ -7,8 +7,9 @@ import { builtinToCustom } from '../domain/models/fromBuiltin';
 import { withRunPosts } from '../domain/geometry/runPosts';
 import { createFence, createProject } from '../domain/models/factories';
 import { computeLayout } from '../domain/geometry/layout';
-import { sharedBaySpans } from '../domain/models/sharedTerrace';
+import { hasFreeStairPickets, sharedBaySpans } from '../domain/models/sharedTerrace';
 import { postSpec } from '../domain/models/terraceHardware';
+import { hGuideInfo } from '../domain/models/guides';
 
 const materials = [...MODEL_MATERIALS, ...DEFAULT_RAILS];
 const tube = 'mat_ek_kv000007';
@@ -22,6 +23,12 @@ const source = (capped: boolean): CustomModel => ({
     ...(capped ? Array.from({ length: 6 }, (_, i) => part(`cap${i}`, cap, 100 + i * 200, 980, 0)) : [part('handrail', DEFAULT_RAILS[0].id, 0, 980, 1200)]),
   ],
 });
+const guidedSource = (linked = true): CustomModel => ({
+  ...newCustomModel('Tarabice u profilima'), id: 'cm_shared_guided', widthMm: 1200, heightMm: 1000,
+  parts: [{ ...part('bottom-guide', 'mat_u_60x28', 0, 14, 1200), rot: 90 }, { ...part('top-guide', 'mat_u_60x28', 0, 986, 1200), rot: 270 },
+    ...Array.from({ length: 6 }, (_, i): CustomPart => ({ ...part(`picket${i}`, tube, 100 + i * 200, 3, 994, 90), ...(linked ? { guides: ['bottom-guide', 'top-guide'] } : {}) })),
+  ],
+});
 const bounds = (p: CustomPart) => partBounds(p, materialShape(materials.find((m) => m.id === p.materialId)!));
 const aliasOf = (m: CustomModel) => {
   registerCustomModels([m], materials, [m.id]);
@@ -30,6 +37,42 @@ const aliasOf = (m: CustomModel) => {
 afterEach(() => registerCustomModels([], materials, []));
 
 describe('parametarski raspored dvorišnih modela prenetih na terase', () => {
+  for (const linked of [false, true]) it.each([-1020, 1020])(`tarabice u donjem i gornjem profilu zadržavaju uklapanje na stepeništu (%s mm), veze ${linked}`, (riseMm) => {
+    const original = guidedSource(linked); const alias = aliasOf(original);
+    expect(hasFreeStairPickets(original, materials)).toBe(false);
+    expect(hasFreeStairPickets(source(true), materials)).toBe(true);
+    const prepared = withRunPosts(createProject('Uklopljene tarabice', [createFence({ modelId: alias.id as `cm_${string}`, widthMm: 1700, heightMm: 1000, stair: { riseMm, steps: 6 } })]), materials);
+    const item = prepared.items[0]; if (item.kind !== 'fence') throw new Error('Očekivana ograda');
+    const width = computeLayout(prepared).items[0].clearWidth; const tan = item.params.slats!.stairTan!; const factor = Math.hypot(1, tan);
+    const over = { ...item.params.slats, treadClearanceMm: 70 };
+    const result = scaledModel(alias, width, 1000, over);
+    const pickets = result.parts.filter((p) => p.materialId === tube);
+    expect(pickets.length).toBeGreaterThan(2);
+    for (const p of pickets) {
+      const bay = p.id.match(/~bay\d+$/)![0];
+      const bottom = result.parts.find((g) => g.id === `bottom-guide${bay}`)!;
+      const top = result.parts.find((g) => g.id === `top-guide${bay}`)!;
+      const B = hGuideInfo(bottom, materialShape(materials.find((m) => m.id === bottom.materialId)!))!;
+      const T = hGuideInfo(top, materialShape(materials.find((m) => m.id === top.materialId)!))!;
+      for (const guide of [bottom, top]) {
+        expect(guide.unshearTan).toBe(tan);
+        expect(guide.tube3d?.angleDeg).toBeCloseTo(Math.atan(tan) * 180 / Math.PI, 6);
+        expect(guide.tube3d?.lengthMm).toBeCloseTo(guide.lengthMm * factor, 6);
+      }
+      expect(p.y).toBeGreaterThanOrEqual(bottom.y + (B.backY - bottom.y) * factor - 0.01);
+      expect(p.y).toBeLessThan(bottom.y + (B.mouthY - bottom.y) * factor);
+      expect(p.y + p.lengthMm).toBeGreaterThan(top.y + (T.mouthY - top.y) * factor);
+      expect(p.y + p.lengthMm).toBeLessThanOrEqual(top.y + (T.backY - top.y) * factor + 0.01);
+      expect(p.unshearTan).toBe(tan);
+      expect(p.cutStartDeg).toBeCloseTo(Math.atan(tan) * 180 / Math.PI, 6);
+      expect(p.cutEndDeg).toBeCloseTo(Math.atan(tan) * 180 / Math.PI, 6);
+    }
+    expect(scaledModel(alias, width, 1000, { ...over, treadClearanceMm: 0 }).parts).toEqual(result.parts);
+    const cuts = terraceEvaluated(alias.id, width, 1000, over, factor)!.filter((r) => r.part.materialId === tube);
+    expect(cuts.every((r) => r.part.note?.includes('oba kraja prate nagib profila'))).toBe(true);
+    expect(cuts.flatMap((r) => Array.from({ length: r.qty }, () => r.lengthMm)).sort()).toEqual(pickets.map((p) => Math.round(p.lengthMm)).sort());
+    expect(customModelOf(original.id)).toEqual(original);
+  });
   for (const capped of [false, true]) {
     it(`${capped ? 'tarabice sa čepom' : 'letvice sa rukohvatom'}: broj prati širinu, presek i odstojanja ostaju isti`, () => {
       const original = source(capped);

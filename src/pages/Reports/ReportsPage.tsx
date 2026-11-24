@@ -30,7 +30,7 @@ export default function ReportsPage() {
       const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
       const text = [p.name, p.quoteNo, customers.find((c) => c.id === p.customerId)?.name ?? ''].join(' ').toLocaleLowerCase('sr');
       return !invalidPeriod && (!from || day >= from) && (!to || day <= to) && (status === 'all' || p.status === status) && text.includes(q.trim().toLocaleLowerCase('sr'));
-    }).map((p) => ({ p, price: computePrice(p, materials, specs), len: computeLayout(p).totalModularMm / 1000 }));
+    }).map((p) => ({ p, price: computePrice(p, materials, specs), len: computeLayout(p).railingModularMm / 1000 }));
     const byStatus = (Object.keys(STATUS_LABELS) as ProjectStatus[]).map((s) => {
       const r = rows.filter((x) => x.p.status === s);
       return { status: s, count: r.length, value: r.reduce((a, b) => a + b.price.grossTotal, 0) };

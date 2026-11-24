@@ -1,4 +1,4 @@
-import { computeLayout, isSpacer, outerWidthMm } from '../../domain/geometry/layout';
+import { computeLayout, isSpacer, railingWidthMm } from '../../domain/geometry/layout';
 import { FileDown, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -67,13 +67,13 @@ export default function QuotesPage() {
           {demo && <div className="mt-3"><DemoBadge>Demonstraciona ponuda — ilustrativni podaci</DemoBadge></div>}
           <div className="grid sm:grid-cols-2 gap-4 mt-4 text-sm">
             <div><div className="label uppercase text-[11px] font-semibold">Kupac</div><div className="font-semibold">{customer?.name ?? 'Nije izabran'}</div><div className="text-muted">{customer?.address}</div><div className="text-muted">{[customer?.phone, customer?.email].filter(Boolean).join(' · ')}</div></div>
-            <div><div className="label uppercase text-[11px] font-semibold">Projekat</div><div className="font-semibold">{project.name}</div><div className="text-muted">Ukupna dužina {fmtNum(computeLayout(project).occupiedMm, 0)} mm · {project.items.filter((i) => !isSpacer(i)).length} elemenata</div></div>
+            <div><div className="label uppercase text-[11px] font-semibold">Projekat</div><div className="font-semibold">{project.name}</div><div className="text-muted">Ukupna dužina {fmtNum(computeLayout(project).railingLengthMm, 0)} mm · {project.items.filter((i) => !isSpacer(i)).length} elemenata</div></div>
           </div>
           <div className="mt-5 border border-line rounded-xl bg-white p-2"><FrontView project={project} scale={0.075} className="block w-full h-auto max-h-[340px]" /></div>
           <h3 className="font-bold mt-6 mb-2">Lista elemenata</h3>
           <div className="overflow-x-auto"><table className="w-full min-w-[520px]">
             <thead><tr><th className="th">#</th><th className="th">Element</th><th className="th">Model</th><th className="th text-right">Širina</th><th className="th text-right">Visina</th><th className="th">Boja</th></tr></thead>
-            <tbody>{project.items.map((it, i) => isSpacer(it) ? null : <tr key={it.id}><td className="td">{itemNumber(project.items, i)}</td><td className="td">{itemLabel(project.items, i)}</td><td className="td text-slate-600">{describeItem(project, i)}</td><td className="td text-right tabular-nums whitespace-nowrap">{fmtNum(outerWidthMm(project, i), 0)} mm</td><td className="td text-right tabular-nums whitespace-nowrap">{fmtNum(it.heightMm, 0)} mm</td><td className="td whitespace-nowrap">{it.kind === 'opening' ? '—' : colorText(it.color, it.finish)}</td></tr>)}</tbody>
+            <tbody>{project.items.map((it, i) => isSpacer(it) ? null : <tr key={it.id}><td className="td">{itemNumber(project.items, i)}</td><td className="td">{itemLabel(project.items, i)}</td><td className="td text-slate-600">{describeItem(project, i)}</td><td className="td text-right tabular-nums whitespace-nowrap">{fmtNum(railingWidthMm(project, i), 0)} mm</td><td className="td text-right tabular-nums whitespace-nowrap">{fmtNum(it.heightMm, 0)} mm</td><td className="td whitespace-nowrap">{it.kind === 'opening' ? '—' : colorText(it.color, it.finish)}</td></tr>)}</tbody>
           </table></div>
           <h3 className="font-bold mt-6 mb-2">Materijal ({bom.length} stavki)</h3>
           <div className="overflow-x-auto"><table className="w-full min-w-[520px]">

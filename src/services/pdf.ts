@@ -7,7 +7,7 @@ import { productionPostCount } from '../domain/models/productionPosts';
 import { buildCutList, buildHardwareList, describeItem } from '../domain/pricing/production';
 import { buildLouver08Sheet } from '../domain/pricing/louverSpec';
 import { buildRail04Sheet } from '../domain/pricing/railSpec';
-import { computeLayout, isSpacer, outerWidthMm } from '../domain/geometry/layout';
+import { computeLayout, isSpacer, railingWidthMm } from '../domain/geometry/layout';
 import { itemLabel, itemNumber } from '../utils/labels';
 import { fmtDate, fmtNum } from '../utils/units';
 import { buildMaterialList, materialListRows, materialQtyText } from '../domain/pricing/materialList';
@@ -68,7 +68,7 @@ export async function buildQuotePdfBlob(project: Project, customer: Customer | n
     const it = project.items[i];
     return [
       td(itemNumber(project.items, i), 'center'),
-      { stack: [td(itemLabel(project.items, i), 'left', { bold: true }), { text: `${describeItem(project, i)} · ${fmtNum(outerWidthMm(project, i), 0)} × ${fmtNum(it.heightMm, 0)} mm${it.kind === 'opening' ? '' : ` · ${colorText(it.color, it.finish)}`}`, fontSize: 8, color: MUTED }] },
+      { stack: [td(itemLabel(project.items, i), 'left', { bold: true }), { text: `${describeItem(project, i)} · ${fmtNum(railingWidthMm(project, i), 0)} × ${fmtNum(it.heightMm, 0)} mm${it.kind === 'opening' ? '' : ` · ${colorText(it.color, it.finish)}`}`, fontSize: 8, color: MUTED }] },
       td(money(display.elements[n]), 'right', { bold: true }),
     ];
   });
@@ -93,7 +93,7 @@ export async function buildQuotePdfBlob(project: Project, customer: Customer | n
         margin: [0, 14, 0, 10],
         columns: [
           { width: '50%', stack: [{ text: 'KUPAC', fontSize: 8, color: MUTED, bold: true }, { text: customer?.name ?? 'Nije izabran', bold: true }, { text: customer?.address ?? '', color: MUTED }, { text: [customer?.phone, customer?.email].filter(Boolean).join(' · '), color: MUTED }] },
-          { width: '50%', stack: [{ text: 'PROJEKAT', fontSize: 8, color: MUTED, bold: true }, { text: project.name, bold: true }, { text: `Ukupna dužina: ${fmtNum(layout.occupiedMm, 0)} mm · Elemenata: ${price.elements.length}`, color: MUTED }] },
+          { width: '50%', stack: [{ text: 'PROJEKAT', fontSize: 8, color: MUTED, bold: true }, { text: project.name, bold: true }, { text: `Ukupna dužina: ${fmtNum(layout.railingLengthMm, 0)} mm · Elemenata: ${price.elements.length}`, color: MUTED }] },
         ],
       },
       { image: sketch.dataUrl, fit: [523, 300], alignment: 'center', margin: [0, 0, 0, 10] },

@@ -104,15 +104,15 @@ export function buildCutList(project: Project, specs?: ModelSpecs, materials?: M
       // deo rama sa jednim ugaonim krajem (ram nije oko cele ograde): 45° samo na tom kraju, drugi je ravan
       const mEnds = ev.part.miterEnds;
       const partial = ev.part.group === 'Ramovi' && !!mEnds && !(mEnds[0] && mEnds[1]);
-      const miter = (ev.part.group === 'Ramovi' && !partial) || undefined;
+      const miter = (ev.part.group === 'Ramovi' && !partial && !ev.part.ends) || undefined;
       // deo nacrtanog modela nosi naziv svoje uloge (npr. „Ram — gornja i donja prečka“), da se zna koji je koji deo
       const partName = ev.part.role ?? ev.part.name;
-      const faceMm = miter || (partial && (mEnds![0] || mEnds![1])) ? ev.part.miterMm : undefined;
-      const cutEnds: Pick<CutRow, 'ends' | 'endShape'> | null = partial && (mEnds![0] || mEnds![1])
+      const faceMm = ev.part.cutFaceMm ?? (miter || (partial && (mEnds![0] || mEnds![1])) ? ev.part.miterMm : undefined);
+      const cutEnds: Pick<CutRow, 'ends' | 'endShape'> | null = ev.part.ends ? { ends: ev.part.ends, endShape: ev.part.endShape } : partial && (mEnds![0] || mEnds![1])
         ? { ends: [[mEnds![0] ? 45 : 90], [mEnds![1] ? 45 : 90]], endShape: [mEnds![0] ? [[0, 0], [1, 1]] : [[0, 0], [0, 1]], mEnds![1] ? [[0, 0], [1, 1]] : [[0, 0], [0, 1]]] }
         : null;
       // isti naziv i dužina ne spaja delove od različitih profila (npr. široke i uske prečke): materijal je deo ključa
-      const key = `${partName}|${ev.part.materialId}|${len}`;
+      const key = `${partName}|${ev.part.materialId}|${len}|${miter ?? ''}|${JSON.stringify(cutEnds ?? '')}`;
       const cur = group.get(key);
       if (cur) cur.qty += qty;
       else group.set(key, { element: name, index: li.index, part: partName, profile, lengthMm: len, qty, miter, ...(cutEnds ?? {}), ...(ev.part.squareEnds ? { ends: [[90], [90]] as [number[], number[]] } : {}), ...(faceMm ? { faceMm } : {}), note: [ev.part.note, miter && !/45/.test(ev.part.note ?? '') ? 'rez 45° na oba kraja' : '', ev.part.squareEnds ? 'Ravan rez 90° na osu cevi; dužina uključuje odbijanje spojnice.' : ev.part.vertical ? '' : stairNote].filter(Boolean).join(' · ') || undefined });

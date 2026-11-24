@@ -31,6 +31,8 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Designer2D } from '../../components/designer/Designer2D';
 import { GuideSection } from '../../components/designer/GuideSection';
 import { SideSection } from '../../components/designer/SideSection';
+import { ProfileCutPanel } from '../../components/designer/ProfileCutPanel';
+import { profileCutsError } from '../../domain/models/profileCuts';
 import { PresekView } from '../../components/designer/PresekView';
 import { SlopeModal } from '../../components/designer/SlopeModal';
 import { FEATURES, visibleMaterials } from '../../config/features';
@@ -389,7 +391,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
   useEffect(() => { if (selectedIdsRaw.length) { setPropertiesOpen(true); setPropertyTab('part'); } }, [selectedIdsRaw]);
   const setSelectedId = useCallback((id: string | null) => setSelectedIds(id ? [id] : []), []);
   const [view, setView] = useState<ViewMode>('2d');
-  const [ortho, setOrtho] = useState(true);
+  const [ortho, setOrtho] = useState(false);
   /** privlačenje ivica i krajeva uz susedne delove (Alt pri crtanju privremeno isključuje) */
   const [snapObjects, setSnapObjects] = useState(true);
   /** slobodno crtanje: dozvoljeno je sve (preklapanja, nagnute cevi, nejednaki razmaci); pri povratku se nabraja šta nije u redu */
@@ -449,6 +451,8 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
     if (readOnlyRef.current) { setNotice('Osnovna kapija se ne menja. Kliknite „Sačuvaj kao nov tip kapije“, pa menjajte svoj tip.'); return false; }
     const st = settle(raw, materialsRef.current, norm, freeRef.current);
     const next = st.model;
+    const cutError = profileCutsError(next, materialsRef.current);
+    if (cutError) { setNotice(cutError); return false; }
     // crtež se pomerio ka početku koordinata: pogled ide za njim, pa deo ostaje na istom mestu na ekranu
     if (st.dx !== 0 || st.dy !== 0) setViewShift((v) => ({ dx: st.dx, dy: st.dy, n: v.n + 1 }));
     const bad = freeRef.current || !check ? null : checkNewOverlap(cur, next, materialsRef.current);
@@ -957,6 +961,8 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
             .map(([v, label]) => ({ value: v, label, testId: v === 'mere' ? 'designer-gate-measures' : `designer-view-${v}` }))} />
         <Switch label="Kote" checked={showDims} testId="designer-dims" onChange={setShowDims} title="Ukupna širina i visina crteža; mere modela proizlaze iz crteža" />
 </div>
+        <ChoiceGroup label="Pravac crtanja profila" value={ortho ? 'ortho' : 'free'} onChange={(v) => setOrtho(v === 'ortho')}
+          options={[{ value: 'free', label: 'Slobodan ugao', testId: 'designer-angle-free' }, { value: 'ortho', label: 'Vodoravno / uspravno', testId: 'designer-angle-ortho' }]} />
       </div>
 
       {/* traka dorade se vidi samo odmah posle klika na „Doradi“ (i dok dorađen crtež zamenjuje original); kasnije otvaranje crteža je običan model */}
@@ -1064,6 +1070,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
               overlay={slGate ? (px) => <SlidingAssemblyArt gate={slGate} clearStart={0} clearEnd={model.widthMm} clearWidth={model.widthMm} floorY={slSpec!.frameBottomY} px={px} hex={colorHex(model.color)} noLeaf layer="front" testPct={0} onPartClick={() => undefined} highlight={hwSelValid ? partDef(hwSelValid)?.comps : undefined} /> : pairArt ?? undefined}
               onAdd={(p0) => { const p1 = free ? p0 : restOnSurface(modelRef.current, p0, materialsRef.current); const p = layerRef.current === 'off' ? p1 : layerPart(modelRef.current, p1, layerRef.current, materialsRef.current); const next = { ...modelRef.current, parts: [...modelRef.current.parts, p] }; const fitted = !free && p.angleDeg === 0 ? attach(next, p.id, true) : null; if (change(() => fitted ?? next)) setSelectedId(p.id); }}
               onMoveStart={startMove}
+              onResize={readOnly ? undefined : (part) => change((m) => ({ ...m, parts: m.parts.map((p) => p.id === part.id ? part : p) }))}
               onMove={(moves) => { const at = new Map(moves.map((v) => [v.id, v])); change((m) => ({ ...m, parts: m.parts.map((p) => { const v = at.get(p.id); return v ? { ...p, x: v.x, y: v.y } : p; }) }), false, false, false); }} />
           )}
           {view !== '2d' && view !== 'skica' && view !== 'presek' && (
@@ -1163,7 +1170,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
                 {linear && (
                   <label className="flex items-center justify-between gap-2 py-1 text-[13px]">
                     <span className="text-slate-600">Rez 45° (deo rama){cut > 0 && cut < multi.length ? ' (različito)' : ''}</span>
-                    <input type="checkbox" data-testid="multi-cut45" checked={cut === multi.length} onChange={(e) => setAll({ cut45: e.target.checked || undefined })} />
+                    <input type="checkbox" data-testid="multi-cut45" checked={cut === multi.length} onChange={(e) => setAll({ cut45: e.target.checked || undefined, endCuts: undefined, endTips: undefined })} />
                   </label>
                 )}
                 {field('Dubina (ka napred)', (p) => p.z, (v) => ({ z: v }), { min: -2000, max: 2000, testId: 'multi-z' })}
@@ -1249,12 +1256,7 @@ function Designer({ id, terrace }: { id: string; terrace: boolean }) {
               {sel.shape.type === 'linear' && (
                 <Num label="Nagib preseka (koso)" unit="°" value={sel.part.tiltDeg ?? 0} min={-90} max={90} testId="part-tilt" onChange={(v) => patchPart(sel.part.id, { tiltDeg: v || undefined })} />
               )}
-              {sel.shape.type === 'linear' && (
-                <label className="flex items-center justify-between gap-2 py-1 text-[13px]" title="Deo rama: oba kraja se seku pod 45°; u krojnoj listi dobija oznaku 45°">
-                  <span className="text-slate-600">Rez 45° (deo rama)</span>
-                  <input type="checkbox" data-testid="part-cut45" checked={!!sel.part.cut45} onChange={(e) => patchPart(sel.part.id, { cut45: e.target.checked || undefined })} />
-                </label>
-              )}
+              {sel.shape.type === 'linear' && !sel.part.hw && <ProfileCutPanel model={model} part={sel.part} shape={sel.shape} materials={materials} onApply={(next) => change(() => next)} onError={setNotice} />}
               {!sel.part.hw && !sel.part.glazing && <Num label="Dubina (ka napred)" value={sel.part.z} min={-2000} max={2000} testId="part-z" onChange={(v) => patchPart(sel.part.id, { z: v })} />}
               {!sel.part.hw && sel.shape.type === 'linear' && (
                 <div className="flex gap-2 py-1" data-testid="part-layer-buttons">

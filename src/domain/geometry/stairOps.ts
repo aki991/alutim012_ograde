@@ -12,7 +12,7 @@ import { MAX_FIELDS, MAX_STEPS, STAIR_DEFAULT_RISE_MM, STEP_RISE_MM, isStair, re
  */
 
 export interface StairPatch {
-  /** ukupna spoljna dužina stepeništa (mm), od spoljne ivice prvog do spoljne ivice poslednjeg stuba */
+  /** Projektni horizontalni raspon stepeništa (mm); ograda može da se završi pre njegovog kraja. */
   outerRunMm?: Mm;
   /** ukupna visinska razlika (mm, sa znakom) */
   riseMm?: Mm;
@@ -28,7 +28,7 @@ export interface StairPatch {
   stepDim?: { index: number; treadMm?: number; riseMm?: number };
 }
 
-/** Ukupna spoljna dužina stepeništa za zadati indeks polja. */
+/** Projektni horizontalni raspon stepeništa za zadato polje, nezavisno od mesta krajnjeg stuba modela. */
 export function stairOuterRunMm(p: Project, id: string): number {
   const i = p.items.findIndex((x) => x.id === id);
   const g = stairGroupAt(p.items, i);

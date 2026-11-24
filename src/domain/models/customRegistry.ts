@@ -1,7 +1,10 @@
 import { tolFormula } from './tolerance';
+import { profileCutData } from './profileCuts';
+import { endsLabel } from '../pricing/cutEnds';
+import { setRailingRangeProvider } from '../geometry/layout';
 import { FEATURES } from '../../config/features';
 import { defaultModelId, FENCE_MODEL_LIST, FENCE_MODELS, REMOVED_MODELS, setDefaultModelProvider, setGateFenceResolver, type FenceModelDef } from './catalog';
-import { guideIdsOf, hasAngledEnds, miterEndsOf, partBounds, resolveParts, sheetAreaMm2, type CustomModel, type CustomPart, type ResolvedPart } from './custom';
+import { endCutsKey, guideIdsOf, hasAngledEnds, miterEndsOf, partBounds, resolveParts, sheetAreaMm2, type CustomModel, type CustomPart, type ResolvedPart } from './custom';
 import { applyGuides, barLayoutInfo, guidesOf, scaleWithGuides } from './guides';
 import { anchoredLengthFormula, anchoredModel } from './anchored';
 import { isFramePart, resizeWithFrame } from './frame';
@@ -231,9 +234,12 @@ export function terraceEvaluated(modelId: string, widthMm: number, heightMm: num
       const len = Math.round(p.tube3d?.lengthMm ?? p.lengthMm * (flat ? f : 1));
       const base = baseRoles.get(p.id.split('~')[0]);
       const name = role === 'post' ? 'Stub' : role === 'rail' ? 'Rukohvat' : role === 'rod' ? 'Prečka' : base ?? mat.name;
-      const note = role === 'post' && slats?.postDrops?.length ? 'stepenište: stub je uspravan, dužina = visina polja + razmak do gazišta na kome stoji' : '';
+      const guidedEnds = vertical && Math.abs(p.cutStartDeg ?? 0) > 0.001 && p.cutStartDeg === p.cutEndDeg;
+      const note = role === 'post' && slats?.postDrops?.length ? 'stepenište: stub je uspravan, dužina = visina polja + razmak do gazišta na kome stoji'
+        : guidedEnds ? `stepenište: oba kraja prate nagib profila, ${String(Math.round(Math.abs(p.cutStartDeg!) * 10) / 10).replace('.', ',')}° od vodoravne; dužina je merena duž ivice` : '';
       const squareEnds = (role === 'rail' || role === 'rod') && !p.cut45 && !hasAngledEnds(p);
-      add(`${name}|${mat.id}|${len}|${vertical ? 'v' : 'h'}`, () => ({ id: `ts_${++seqN}`, name, role: name, materialId: mat.id, group: role === 'post' ? 'Stubovi' : 'Profili ispune', qty: '0', lengthMm: String(len), enabled: true, ...(note ? { note } : {}), ...(vertical ? { vertical: true } : {}), ...(squareEnds ? { squareEnds: true } : {}) }), 1, len);
+      const cutData = profileCutData(p, shape);
+      add(`${name}|${mat.id}|${len}|${vertical ? 'v' : 'h'}|${endCutsKey(p)}`, () => ({ id: `ts_${++seqN}`, name, role: name, materialId: mat.id, group: role === 'post' ? 'Stubovi' : 'Profili ispune', qty: '0', lengthMm: String(len), enabled: true, ...(note ? { note } : {}), ...(vertical ? { vertical: true } : {}), ...(squareEnds ? { squareEnds: true } : {}), ...(cutData ?? {}) }), 1, len);
     }
   }
   for (const [sku, n] of screwCounts(sc.parts, MATERIALS, m.hw)) {
@@ -356,7 +362,7 @@ function specKey(m: CustomModel, p: CustomPart, guideIds: Set<string>) {
     miterMm = p.cut45 && shape?.type === 'linear' ? sectionFace(shape.section, p.rot).face : undefined;
     const me = miterEndsOf(p);
     miterEnds = p.cut45 && p.miter && !(me[0] && me[1]) ? me : undefined;
-    key = `${p.materialId}|${lengthMm}|${p.tiltDeg ?? 0}|${p.cut45 ? 45 : p.plumbEnds ? `p${r1(p.angleDeg)}` : 0}|${p.cutStartDeg ?? ''}/${p.cutEndDeg ?? ''}|${miterMm ?? ''}|${role.kind}${miterEnds ? `|${+miterEnds[0]}${+miterEnds[1]}` : ''}`;
+    key = `${p.materialId}|${lengthMm}|${p.tiltDeg ?? 0}|${p.cut45 ? 45 : p.plumbEnds ? `p${r1(p.angleDeg)}` : 0}|${p.cutStartDeg ?? ''}/${p.cutEndDeg ?? ''}|${endCutsKey(p)}|${miterMm ?? ''}|${role.kind}${miterEnds ? `|${+miterEnds[0]}${+miterEnds[1]}` : ''}`;
     if (p.cut45) group = 'Ramovi';
     // prečka u bočnim U profilima: seče se kraće za toleranciju (platno 1 mm, kapija 3 mm, ili ručno upisana)
     if (g && lengthMm) { lengthMm = `${lengthMm}-${tolFormula(m, p)}`; key = `${key}|tol${p.tolMm ?? ''}`; }
@@ -392,17 +398,19 @@ export function customSpec(m: CustomModel): SpecPart[] {
     const sk = specKey(m, p, guideIds);
     const { lengthMm, group, miterMm, miterEnds, mat } = sk;
     // prečke iste vrste u nizu čine jednu stavku (dužina im se razlikuje samo u zaokruživanju)
-    const key = pat && pat.counts.length <= 4 && pat.kinds.has(p.id) ? `${p.materialId}|PAT${pat.kinds.get(p.id)}` : sk.key;
+    const key = pat && pat.counts.length <= 4 && pat.kinds.has(p.id) ? `${p.materialId}|PAT${pat.kinds.get(p.id)}|${endCutsKey(p)}` : sk.key;
     if (slatIds.has(p.id)) slatsIn.set(key, (slatsIn.get(key) ?? 0) + 1);
     if (pat && pat.counts.length <= 4 && pat.kinds.has(p.id)) { const e = patKinds.get(key) ?? { kinds: new Set<number>(), n: 0 }; e.kinds.add(pat.kinds.get(p.id)!); e.n += 1; patKinds.set(key, e); }
     const name = mat?.name ?? 'Deo sa crteža (materijal obrisan)';
     const role = lengthMm ? roles.get(p.id) : undefined;
+    const cutData = mat ? profileCutData(p, materialShape(mat)) : null;
     const cutAngle = p.cutStartDeg ?? p.cutEndDeg;
     const cutFromH = cutAngle === undefined ? 0 : Math.abs(Math.atan(Math.tan((cutAngle * Math.PI) / 180)) * 180 / Math.PI);
     const plumbNote = cutAngle !== undefined && !p.cut45 ? `donji kraj sečen koso (pad terena), pod ${String(Math.round(cutFromH * 10) / 10).replace('.', ',')}° od vodoravne; dužina je duža ivica`
       : p.plumbEnds && !p.cut45 && p.angleDeg % 180 !== 0 ? `kos profil (pad terena): oba kraja sečena uspravno, pod ${String(Math.round(Math.abs(90 - (((p.angleDeg % 180) + 180) % 180)) * 10) / 10).replace('.', ',')}° od ose; dužina je dužina ivice` : null;
     const tilt = p.cut45 && !p.heightMm ? (miterEnds ? `ram: rez 45° samo na ${miterEnds[0] && miterEnds[1] ? 'oba kraja' : miterEnds[0] || miterEnds[1] ? 'jednom kraju (ugao rama), drugi je ravan' : 'ugaonim krajevima — nema ih, ravni rezovi'}; dužina je spoljna mera` : 'ram: rez 45° na oba kraja; dužina je spoljna mera') : p.tiltDeg ? `koso: nagib ${String(Math.round(Math.abs(p.tiltDeg) * 100) / 100).replace('.', ',')}° od ravni ograde` : '';
-    const row = rows.get(key) ?? { id: `cs_${rows.size}`, name, materialId: p.materialId, group, qty: '0', lengthMm, enabled: true, n: 0, area: 0, ...(miterMm ? { miterMm } : {}), ...(miterEnds ? { miterEnds } : {}), ...(role ? { role } : {}), ...(plumbNote ?? tilt ? { note: plumbNote ?? tilt } : {}) };
+    const cutNote = cutData ? `Rezovi na početku / kraju: ${endsLabel(cutData.ends)} prema osi profila; dužina je najveća mera komada.` : null;
+    const row = rows.get(key) ?? { id: `cs_${rows.size}`, name, materialId: p.materialId, group, qty: '0', lengthMm, enabled: true, n: 0, area: 0, ...(miterMm ? { miterMm } : {}), ...(miterEnds ? { miterEnds } : {}), ...(role ? { role } : {}), ...(cutData ?? {}), ...(cutNote ?? plumbNote ?? tilt ? { note: cutNote ?? plumbNote ?? tilt } : {}) };
     row.n += 1; row.area += sheetAreaMm2(p) / 1e6;
     rows.set(key, row);
   }
@@ -500,6 +508,22 @@ setGateFenceResolver((id, prevId) => {
   if (!m || m.kind !== 'gate') return undefined;
   const listed = (key?: string): FenceModelId | undefined => { if (!key) return undefined; const e = effectiveModelId(key); return allFenceModels().some((x) => x.id === e) ? (e as FenceModelId) : undefined; };
   return listed(m.leafModelId) ?? listed(prevId) ?? defaultModelId();
+});
+
+const RAILING_RANGES = new Map<string, { model: CustomModel; materials: Material[]; range: { from: number; to: number } }>();
+setRailingRangeProvider((item, width, tan) => {
+  const model = REG.get(item.modelId);
+  if (model?.kind !== 'terrace' || !tan) return null;
+  const lift = Math.min(Math.max(0, item.params.liftMm ?? model.liftMm ?? 0), Math.max(0, item.heightMm - 100));
+  const slats = { ...item.params.slats, stairTan: tan };
+  const key = `${item.modelId}|${width}|${item.heightMm}|${lift}|${JSON.stringify(slats)}`;
+  const cached = RAILING_RANGES.get(key);
+  if (cached?.model === model && cached.materials === MATERIALS) return cached.range;
+  const boxes = customPartsFor(item.modelId, width, item.heightMm - lift, '#000000', slats, lift).map((r) => partBounds(r.part.tube3d ? { ...r.part, ...r.part.tube3d } : r.part, r.shape));
+  const range = boxes.length ? { from: Math.min(...boxes.map((b) => b.x0)), to: Math.max(...boxes.map((b) => b.x1)) } : { from: 0, to: 0 };
+  if (RAILING_RANGES.size > 200) RAILING_RANGES.clear();
+  RAILING_RANGES.set(key, { model, materials: MATERIALS, range });
+  return range;
 });
 
 // registar modela živi u modulu: pri razvojnoj izmeni ovog fajla (HMR) bi ostao prazan dok se modeli ne promene, pa se stranica ponovo učitava

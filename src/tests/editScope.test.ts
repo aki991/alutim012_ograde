@@ -42,13 +42,13 @@ describe('opseg izmena (sva platna / sve kapije)', () => {
     expect((out.items[1] as FenceSection).params).toEqual({ ...target.params, slats: { postSpacingMm: 600 } });
   });
   it('masovna izmena i poništavanje parametara čuvaju sopstveni prvi i poslednji stub stepeništa', () => {
-    const source = createFence({ params: { barSizeMm: 20, gapMm: 20, frameMm: 40, slats: { gapMm: 20, stairFirstFloor: false, stairLastStep: 6 } } });
-    const target = createFence({ stair: { riseMm: 1200, steps: 6, group: 'g' }, params: { barSizeMm: 20, gapMm: 20, frameMm: 40, slats: { gapMm: 40, stairFirstFloor: true, stairLastStep: 4 } } });
+    const source = createFence({ params: { barSizeMm: 20, gapMm: 20, frameMm: 40, slats: { gapMm: 20, stairFirstFloor: false, stairLastStep: 6, stairLastPost: false } } });
+    const target = createFence({ stair: { riseMm: 1200, steps: 6, group: 'g' }, params: { barSizeMm: 20, gapMm: 20, frameMm: 40, slats: { gapMm: 40, stairFirstFloor: true, stairLastStep: 4, stairLastPost: false } } });
     const p = createProject('t', [source, target]);
-    const next = updateItem(p, source.id, { params: { ...source.params, slats: { gapMm: 30, stairFirstFloor: true, stairLastStep: 5 } } });
-    expect((propagateItemChange(p, next, source.id, 'all').items[1] as FenceSection).params.slats).toEqual({ gapMm: 30, stairFirstFloor: true, stairLastStep: 4 });
+    const next = updateItem(p, source.id, { params: { ...source.params, slats: { gapMm: 30, stairFirstFloor: true, stairLastStep: 5, stairLastPost: true } } });
+    expect((propagateItemChange(p, next, source.id, 'all').items[1] as FenceSection).params.slats).toEqual({ gapMm: 30, stairFirstFloor: true, stairLastStep: 4, stairLastPost: false });
     const { slats: _, ...params } = source.params;
-    expect((propagateItemChange(p, updateItem(p, source.id, { params }), source.id, 'all').items[1] as FenceSection).params.slats).toEqual({ stairFirstFloor: true, stairLastStep: 4 });
+    expect((propagateItemChange(p, updateItem(p, source.id, { params }), source.id, 'all').items[1] as FenceSection).params.slats).toEqual({ stairFirstFloor: true, stairLastStep: 4, stairLastPost: false });
   });
 });
 

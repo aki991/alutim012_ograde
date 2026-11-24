@@ -79,7 +79,7 @@ function boxOf(p: CustomPart, materials: Map<string, Material>): Box | null {
   const L = p.lengthMm; const fc = e.u1 - e.u0;
   const [ma, mb] = miterEndsOf(p);
   const oa = ma ? fc : 0; const ob = mb ? fc : 0;
-  const mitered = !!p.miter && (oa > 0 || ob > 0) && L > oa + ob;
+  const mitered = !p.endCuts && !!p.miter && (oa > 0 || ob > 0) && L > oa + ob;
   const plumb = hasAngledEnds(p);
   const slanted = mitered || plumb;
   const local: [number, number][] = mitered
@@ -88,7 +88,7 @@ function boxOf(p: CustomPart, materials: Map<string, Material>): Box | null {
   const corners = local.map(([lx, ly]) => [p.x + lx * c - ly * s, p.y + lx * s + ly * c] as [number, number]);
   const axes: [number, number][] = [[c, s], [-s, c]];
   if (slanted) {
-    for (let i = 0; i < 4; i++) { const [x1, y1] = corners[i]; const [x2, y2] = corners[(i + 1) % 4]; const d = Math.hypot(x2 - x1, y2 - y1) || 1; axes.push([-(y2 - y1) / d, (x2 - x1) / d]); }
+    for (let i = 0; i < corners.length; i++) { const [x1, y1] = corners[i]; const [x2, y2] = corners[(i + 1) % corners.length]; const d = Math.hypot(x2 - x1, y2 - y1) || 1; axes.push([-(y2 - y1) / d, (x2 - x1) / d]); }
   }
   return { zp: shape.group === 'z', id: p.id, corners, axes, z0: p.z + e.v0, z1: p.z + e.v1, name: m?.name ?? 'deo', dir: [c, s], ox: p.x, oy: p.y, len: p.lengthMm, z: p.z, hull: sectionHull(shape.section, partAngle(p)) };
 }

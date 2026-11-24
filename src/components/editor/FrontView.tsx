@@ -1,4 +1,7 @@
 import { ramInsets } from '../../domain/models/tubes';
+import { customLiftOf, customModelOf, customPartsFor } from '../../domain/models/customRegistry';
+import { partBounds } from '../../domain/models/custom';
+import { terracePostId } from '../../domain/geometry/terracePosts';
 import { isRl10Model, isRl10Post, rl10Ends, rl10ItemAt, rl10PostInfo, rl10Tan } from '../../domain/models/rl10';
 import { Rl10FieldArt, Rl10JointArt, Rl10PostArt } from '../fences/Rl10Art';
 import { isStairPost, stairGroupAt, stairGroupSummary, stairProfile } from '../../domain/geometry/stair';
@@ -76,7 +79,7 @@ export function widthDims(layout: ReturnType<typeof computeLayout>): WidthDim[] 
   const out: WidthDim[] = [];
   for (const li of layout.items) {
     if (isSpacer(li.item)) continue;
-    if (li.clearEnd - li.clearStart > 0.5) out.push({ kind: 'panel', li, x1: li.clearStart, x2: li.clearEnd });
+    if (li.railingEnd - li.railingStart > 0.5) out.push({ kind: 'panel', li, x1: li.railingStart, x2: li.railingEnd });
   }
   layout.posts.forEach((lp, i) => {
     if (!lp.hidden && lp.widthMm > 0.5) out.push({ kind: 'post', x1: lp.x - lp.widthMm / 2, x2: lp.x + lp.widthMm / 2, postIndex: i });
@@ -421,7 +424,7 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
               );
             })()}
             {it.kind === 'fence' && !isRl10Model(it.modelId) && (
-              <InfillArt modelId={it.modelId} x={x} y={y} w={w} h={it.heightMm} frame={it.params.frameMm} barSize={it.params.barSizeMm} gap={it.params.gapMm} lift={it.params.liftMm} slats={{ ...it.params.slats, stairTan: t }} hex={colorHex(it.color)} colorKey={it.color} skipLeftPost={leftPostShared(project.items, li.index) || isStairPost(project.items, li.index)} skipRightPost={isStairPost(project.items, li.index + 1)} sloped={li.floorStart !== li.floorEnd} axis={{ x: li.axisStart, w: li.axisEnd - li.axisStart }} rodCount={rodCountFor(it.modelId, it.params, it.heightMm) ?? undefined} ram={ramInsets(it.modelId, it.params)} uid={it.id} />
+              <InfillArt artRange={[li.railingStart - li.clearStart, li.railingEnd - li.clearStart]} modelId={it.modelId} x={x} y={y} w={w} h={it.heightMm} frame={it.params.frameMm} barSize={it.params.barSizeMm} gap={it.params.gapMm} lift={it.params.liftMm} slats={{ ...it.params.slats, stairTan: t }} hex={colorHex(it.color)} colorKey={it.color} postWidths={[layout.posts[li.index].widthMm, layout.posts[li.index + 1].widthMm]} skipLeftPost={layout.posts[li.index].post.removed || leftPostShared(project.items, li.index) || isStairPost(project.items, li.index)} skipRightPost={layout.posts[li.index + 1].post.removed || isStairPost(project.items, li.index + 1)} sloped={li.floorStart !== li.floorEnd} axis={{ x: li.axisStart, w: li.axisEnd - li.axisStart }} rodCount={rodCountFor(it.modelId, it.params, it.heightMm) ?? undefined} ram={ramInsets(it.modelId, it.params)} uid={it.id} />
             )}
             {/* klizna kapija (sklop) se crta posebno, iza stubova (vidi dole) */}
             {it.kind === 'gate' && !(it.gateType === 'sliding' && it.sliding) && <GateArt gate={it} x={x} y={y} w={w} h={it.heightMm} hex={colorHex(it.color)} px={px} realistic={opts.transparent} showDims={opts.showDimensions && !compact} />}
@@ -447,9 +450,20 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
             )}
             {/* hit područje za selekciju i prevlačenje */}
             {interactive && <rect
-              x={li.axisStart + 0} y={y - 10} width={li.axisEnd - li.axisStart} height={it.heightMm + li.plinthMm + 20}
+              x={li.railingStart} y={y - 10} width={Math.max(1, li.railingEnd - li.railingStart)} height={it.heightMm + li.plinthMm + 20}
               fill="transparent" data-hit="item" data-id={it.id} style={{ cursor: 'grab', touchAction: 'none' }}
             />}
+            {interactive && it.kind === 'fence' && (() => {
+              const up = Math.min(Math.max(0, it.params.liftMm ?? customLiftOf(it.modelId)), Math.max(0, it.heightMm - 100));
+              const posts = customPartsFor(it.modelId, w, it.heightMm - up, colorHex(it.color), { ...it.params.slats, stairTan: t }, up).filter((r) => r.part.terracePostKey !== undefined);
+              return <g transform={`translate(${x} ${y + it.heightMm - up}) scale(1,-1)`}>{posts.map((r) => {
+                const p = r.part; const b = partBounds(p, r.shape); const id = terracePostId(it.id, p.terracePostKey!);
+                return <g key={id} transform={p.unshearTan ? `matrix(1 ${-p.unshearTan} 0 1 0 ${p.unshearTan * p.x})` : undefined}>
+                  <rect data-hit="post" data-id={id} data-testid="terrace-post-hit" x={b.x0} y={b.y0} width={b.x1 - b.x0} height={b.y1 - b.y0}
+                    fill="transparent" stroke={selectedType === 'post' && selectedId === id ? '#d71920' : 'none'} strokeWidth={2 * px} vectorEffect="non-scaling-stroke" style={{ cursor: 'pointer' }} />
+                </g>;
+              })}</g>;
+            })()}
           </g>
         );
       })}
@@ -541,7 +555,7 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
       {selectedIds && selectedIds.length > 1 && layout.items.filter((l) => selectedIds.includes(l.item.id)).map((li) => {
         const y = groundY - Math.max(li.floorStart, li.floorEnd) - li.item.heightMm - li.plinthMm;
         return (
-          <rect key={`ms-${li.item.id}`} data-testid="multi-outline" data-id={li.item.id} x={li.clearStart} y={y} width={Math.max(1, li.clearEnd - li.clearStart)} height={li.item.heightMm + li.plinthMm + Math.abs(li.floorEnd - li.floorStart)} rx={0} fill="#d71920" fillOpacity="0.1" stroke="#d71920" strokeWidth={3 * px} pointerEvents="none" />
+          <rect key={`ms-${li.item.id}`} data-testid="multi-outline" data-id={li.item.id} x={li.railingStart} y={y} width={Math.max(1, li.railingEnd - li.railingStart)} height={li.item.heightMm + li.plinthMm + Math.abs(li.floorEnd - li.floorStart)} rx={0} fill="#d71920" fillOpacity="0.1" stroke="#d71920" strokeWidth={3 * px} pointerEvents="none" />
         );
       })}
       {selectedType === 'item' && selectedId && !(selectedIds && selectedIds.length > 1) && (() => {
@@ -549,7 +563,7 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
         if (!li) return null;
         const y = groundY - Math.max(li.floorStart, li.floorEnd) - li.item.heightMm - li.plinthMm;
         return (
-          <rect data-testid="selection-outline" x={li.clearStart} y={y} width={Math.max(1, li.clearEnd - li.clearStart)} height={li.item.heightMm + li.plinthMm + Math.abs(li.floorEnd - li.floorStart)} rx={0} fill="#d71920" fillOpacity="0.06" stroke="#d71920" strokeWidth={3 * px} pointerEvents="none" />
+          <rect data-testid="selection-outline" x={li.railingStart} y={y} width={Math.max(1, li.railingEnd - li.railingStart)} height={li.item.heightMm + li.plinthMm + Math.abs(li.floorEnd - li.floorStart)} rx={0} fill="#d71920" fillOpacity="0.06" stroke="#d71920" strokeWidth={3 * px} pointerEvents="none" />
         );
       })()}
       {selectedType === 'post' && selectedId && (() => {
@@ -598,8 +612,8 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
               }
               return (
                 <g key={`d-${li.item.id}`} data-testid="dim-panel">
-                  <DimLine x1={d.x1} x2={d.x2} y={dy} text={fmtMm(d.x2 - d.x1)} sub={li.item.kind === 'opening' ? 'otvor' : 'platno'} fs={fs} scale={scale} edit={interactive ? { kind: 'clear', id: li.item.id } : undefined} />
-                  {interactive && (li.item.kind === 'fence' || (li.item.kind === 'opening' && li.item.bendDeg === undefined)) && (
+                  <DimLine x1={d.x1} x2={d.x2} y={dy} text={fmtMm(d.x2 - d.x1)} sub={li.item.kind === 'opening' ? 'otvor' : 'platno'} fs={fs} scale={scale} edit={interactive && Math.abs(d.x2 - d.x1 - li.clearWidth) < 0.1 ? { kind: 'clear', id: li.item.id } : undefined} />
+                  {interactive && Math.abs(d.x2 - d.x1 - li.clearWidth) < 0.1 && (li.item.kind === 'fence' || (li.item.kind === 'opening' && li.item.bendDeg === undefined)) && (
                     <LockIcon x={(d.x1 + d.x2) / 2 + fs * 2.6} y={dy + fs * 0.75} size={fs * 0.62} locked={Boolean((li.item as { widthLocked?: boolean }).widthLocked)} kind="item" id={li.item.id} scale={scale} />
                   )}
                 </g>
@@ -611,7 +625,11 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
           <g data-testid="dim-axis-chain">
             {layout.items.filter((li) => !isSpacer(li.item)).map((li) => {
               // polje ograde za terasu: osa–osa je od sredine prvog do sredine poslednjeg stuba modela
-              const px0 = li.item.kind === 'fence' ? li.item.params.slats?.postXs : undefined;
+              const it = li.item;
+              const ownModel = it.kind === 'fence' && customModelOf(it.modelId)?.kind === 'terrace';
+              const lift = it.kind === 'fence' ? Math.min(Math.max(0, it.params.liftMm ?? customLiftOf(it.modelId)), Math.max(0, it.heightMm - 100)) : 0;
+              const px0 = ownModel && it.kind === 'fence' ? customPartsFor(it.modelId, li.clearWidth, it.heightMm - lift, '#000000', it.params.slats, lift).filter((r) => r.part.terracePostKey !== undefined).map((r) => r.part.x).sort((a, b) => a - b) : undefined;
+              if (ownModel && (!px0 || px0.length < 2)) return null;
               const own = px0 && px0.length > 1;
               const a = own ? li.clearStart + px0[0] : li.axisStart; const b = own ? li.clearStart + px0[px0.length - 1] : li.axisEnd;
               return (
@@ -635,8 +653,8 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
           ))}
 
           {/* ukupna dužina */}
-          <DimLine x1={layout.posts[0].x - layout.posts[0].widthMm / 2} x2={layout.posts[layout.posts.length - 1].x + layout.posts[layout.posts.length - 1].widthMm / 2} y={groundY + 100 * px} text={`${fmtMm(layout.occupiedMm)} (ukupna dužina)`} fs={fs * 1.1} scale={scale} edit={interactive ? { kind: 'total', id: items[0].id } : undefined} />
-          {interactive && (() => {
+          <DimLine x1={layout.railingStartMm} x2={layout.railingEndMm} y={groundY + 100 * px} text={`${fmtMm(layout.railingLengthMm)} (ukupna dužina)`} fs={fs * 1.1} scale={scale} edit={interactive && Math.abs(layout.railingLengthMm - layout.occupiedMm) < 0.1 ? { kind: 'total', id: items[0].id } : undefined} />
+          {interactive && Math.abs(layout.railingLengthMm - layout.occupiedMm) < 0.1 && (() => {
             const x1 = layout.posts[0].x - layout.posts[0].widthMm / 2; const x2 = layout.posts[layout.posts.length - 1].x + layout.posts[layout.posts.length - 1].widthMm / 2;
             const label = `${fmtMm(layout.occupiedMm)} (ukupna dužina)`;
             return <LockIcon x={(x1 + x2) / 2 + (label.length * fs * 1.1 * 0.32) + fs * 1.4} y={groundY + 100 * px - fs * 0.5} size={fs * 0.7} locked={project.settings.totalMode === 'fixed'} kind="total" id={items[0].id} scale={scale} />;

@@ -23,7 +23,7 @@ export function buildQuotePrices(project: Project, materials: Material[], specs?
   const layout = computeLayout(project);
   const indices = project.items.flatMap((it, i) => it.kind === 'opening' ? [] : [i]);
   if (!indices.length) return { elements: [], totalRsd: price.grossTotal };
-  const widths = indices.map((i) => Math.max(0, project.items[i].widthMm));
+  const widths = indices.map((i) => Math.max(0, project.items[i].widthMm - layout.items[i].clearWidth + layout.items[i].railingEnd - layout.items[i].railingStart));
   const quantities = indices.map((index) => {
     const part: Project = { ...project, items: project.items.map((it, i) => i === index || it.kind === 'opening' ? it : { kind: 'opening', id: it.id, widthMm: it.widthMm, heightMm: it.heightMm }) };
     return new Map(buildBom(part, materials, specs, { netLengths: true, includePosts: false }).map((l) => [l.key, l.geometricQty]));
@@ -41,7 +41,7 @@ export function buildQuotePrices(project: Project, materials: Material[], specs?
   indices.forEach((index, n) => {
     const it = project.items[index];
     costs[n] += it.kind === 'gate' ? pr.laborPerGateRsd + pr.installPerGateRsd
-      : it.kind === 'fence' ? layout.items[index].clearWidth * it.heightMm / 1e6 * pr.laborPerM2Rsd : 0;
+      : it.kind === 'fence' ? Math.max(0, layout.items[index].railingEnd - layout.items[index].railingStart) * it.heightMm / 1e6 * pr.laborPerM2Rsd : 0;
   });
   add(shares(price.installTotal - indices.filter((i) => project.items[i].kind === 'gate').length * pr.installPerGateRsd, widths));
   const areas = indices.map((index) => buildElementFinishing(project, [index], materials, specs).areaM2);

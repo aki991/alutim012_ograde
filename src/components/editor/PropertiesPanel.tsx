@@ -1,4 +1,7 @@
 import { ChoiceGroup } from '../ui/ChoiceGroup';
+import { colorHex } from '../../domain/models/catalog';
+import { isTerraceBoundary, parseTerracePostId, patchTerracePost, restoreTerracePosts, setTerracePostsEnabled } from '../../domain/geometry/terracePosts';
+import { hasFreeStairPickets } from '../../domain/models/sharedTerrace';
 import { setPostLengths } from '../../domain/geometry/operations';
 import { CustomerField } from '../forms/CustomerField';
 import { GateModelPicker } from '../gates/GateModelPicker';
@@ -9,8 +12,8 @@ import { productionPostCount } from '../../domain/models/productionPosts';
 import { GateFrameBox } from './GateFrameBox';
 import { RequisitionModal } from './RequisitionModal';
 import { ReinforceSettings } from './ReinforceSettings';
-import { hwRoleOf, postPositions, postSpec, sharedPostMaterials, sharedPostTemplate } from '../../domain/models/terraceHardware';
-import { allFenceModels, customHBarLayout, customHBarZones, customEndOverhang, customLiftOf, customModelOf, customRodInfo, customRails, customSlatLayout, isCustomModel, scaledModel } from '../../domain/models/customRegistry';
+import { hwRoleOf, postSpec, sharedPostMaterials, sharedPostTemplate, terracePostSlots } from '../../domain/models/terraceHardware';
+import { allFenceModels, customHBarLayout, customHBarZones, customEndOverhang, customLiftOf, customModelOf, customPartsFor, customRodInfo, customRails, customSlatLayout, isCustomModel, scaledModel } from '../../domain/models/customRegistry';
 import { glassEndLimits } from '../../domain/models/glassRailing';
 import { gateLeafPoses } from '../../domain/geometry/gates';
 import { leafHeightOf } from '../../domain/gates/slidingLayout';
@@ -20,7 +23,7 @@ import { setTotalLock, autoFillToFixedTotal, changeColor, changeFinish, isTotalL
 import { computeInfill } from '../../domain/geometry/infill';
 import { MAX_TURN_DEG } from '../../domain/geometry/plan';
 import { cornerInfo } from '../../domain/geometry/corner';
-import { computeLayout, isSpacer, outerWidthMm, postHalfSum, totalStatus } from '../../domain/geometry/layout';
+import { computeLayout, isSpacer, outerWidthMm, railingWidthMm, postHalfSum, totalStatus } from '../../domain/geometry/layout';
 import {
   STATUS_LABELS, AUTOMATION_LABELS, FENCE_MODELS, HINGE_LABELS, LOCK_LABELS, MOUNTING_LABELS, POST_LABELS, POST_SIZES, isTerraceModel, maxRods, projectModelId, rodCountFor,
 } from '../../domain/models/catalog';
@@ -290,8 +293,12 @@ function ProjectBasics({ project }: { project: Project }) {
         <ModelSelect value={modelId} onChange={(m) => mutateModel(m)} />
         <p className="text-xs text-muted">Promena modela obuhvata sva platna i kapije, nezavisno od opsega izmena elementa.</p>
       </PropertyGroup>}
+      {project.items.some((it) => it.kind === 'fence' && isTerraceModel(it.modelId)) && <PropertyGroup title="Stubovi terase" testId="project-terrace-posts" help="Zasebni stubovi između platana mogu da se izostave. Nosači tarabica i prečki koji pripadaju nacrtanom modelu ostaju u ispuni. Klikom na pojedinačni stub menjate njegov presek, visinu ili ga brišete.">
+        <ToggleField label="Postavljaj stubove između platana" testId="project-terrace-posts-enabled" checked={project.items.some((it) => it.kind === 'fence' && isTerraceModel(it.modelId) && it.params.slats?.postsEnabled !== false)} onLabel="Sa stubovima" offLabel="Bez stubova" onChange={(v) => mutate((p) => setTerracePostsEnabled(p, v))} />
+        <button className="btn btn-sm" data-testid="restore-terrace-posts" onClick={() => mutate((p) => restoreTerracePosts(p))}>Vrati izostavljene stubove</button>
+      </PropertyGroup>}
       <PropertyGroup title="Ukupna dužina i zaključavanja" testId="project-lengths">
-      <ToggleField label="Zaključaj ukupnu dužinu" testId="project-total-lock" checked={isTotalLocked(project)} onChange={(v) => mutate((p) => setTotalLock(p, v))} />
+      <ToggleField label={Math.abs(layout.railingLengthMm - layout.occupiedMm) > 0.1 ? "Zaključaj raspon trase" : "Zaključaj ukupnu dužinu"} testId="project-total-lock" checked={isTotalLocked(project)} onChange={(v) => mutate((p) => setTotalLock(p, v))} />
       {advanced && (
         <>
       {s.totalMode === 'fixed' ? (
@@ -312,7 +319,7 @@ function ProjectBasics({ project }: { project: Project }) {
       {notice && <Banner tone={notice.startsWith('Nije') ? 'red' : 'blue'}>{notice}</Banner>}
 
       <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[13px] my-2 py-2 border-y border-line" data-testid="length-summary">
-        <span className="text-muted">Ukupna dužina</span><b className="text-right tabular-nums" data-testid="total-length">{fmtMm(layout.occupiedMm)}</b>
+        <span className="text-muted">Ukupna dužina</span><b className="text-right tabular-nums" data-testid="total-length">{fmtMm(layout.railingLengthMm)}</b>
         {advanced && (
           <>
             <span className="text-muted">Modularna dužina (osa–osa)</span><b className="text-right tabular-nums" data-testid="total-modular">{fmtMm(layout.totalModularMm)}</b>
@@ -536,9 +543,10 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
                 <>
                   <SegmentedField label="Smer (gledano s leva nadesno)" testId="field-stair-dir" value={rise > 0 ? 'up' : 'down'} options={[{ value: 'up', label: 'Penje se' }, { value: 'down', label: 'Silazi' }]}
                     onChange={(v) => mutateStair({ riseMm: (v === 'up' ? 1 : -1) * Math.abs(rise) }, 'stair-dir')} />
-                  <NumberField label="Dužina stepeništa" testId="field-stair-run" value={Math.round(outerRun)} range={{ min: 500, max: 20000 }}
+                  <NumberField label="Raspon stepeništa" testId="field-stair-run" value={Math.round(outerRun)} range={{ min: 500, max: 20000 }}
                     onCommit={(v) => mutateStair({ outerRunMm: v }, 'stair-run')}
-                    hint="Ukupno, od spoljne ivice prvog do spoljne ivice poslednjeg stuba" />
+                    help="Horizontalni raspon svih gazišta. Dužina ograde meri se zasebno, do stvarnih krajeva ograde; prazan završetak stepeništa nije deo ograde." />
+                  {Math.abs(li.railingEnd - li.railingStart - li.clearWidth) > 0.1 && <Field label="Dužina ograde" help="Izračunata horizontalna mera do stvarnih krajeva ograde, bez praznog završetka stepeništa."><b data-testid="stair-railing-length">{fmtMm(railingWidthMm(project, index))}</b></Field>}
                   <NumberField label="Visinska razlika" testId="field-stair-rise" value={Math.abs(Math.round(rise))} range={{ min: 50, max: 6000 }}
                     onCommit={(v) => mutateStair({ riseMm: Math.sign(rise || 1) * v }, 'stair-rise')}
                     hint={<><ValueSource source="Izračunato" />Nagib {fmtNum(sl.deg, 1)}° · kosa dužina {fmtMm(Math.round(grp.runMm * sl.factor))}</>} />
@@ -559,7 +567,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
                   {!isCustomModel(it.modelId) && <NumberField label="Broj stubova" testId="field-stair-posts" unit="kom" step={1} value={fields + 1} range={{ min: 2, max: Math.min(MAX_FIELDS, grp.steps + 1) + 1 }}
                     onCommit={(v) => mutateStair({ fields: v - 1 }, 'stair-posts')}
                     hint={`Prvi i poslednji stub su na krajevima, ostali po sredini stepenika. Preporuka: na svaki treći stepenik (${recommendedStairPosts(grp.steps) + 2} stubova)${grp.fieldsCustom ? '' : ' — izabrano automatski'}`}/>}
-                  {customModelOf(it.modelId)?.terraceSourceId && <NumberField label="Tarabice iznad gazišta" testId="tread-clearance" value={it.params.slats?.treadClearanceMm ?? 30}
+                  {(() => { const model = customModelOf(it.modelId); return model?.terraceSourceId && hasFreeStairPickets(model, st.materials); })() && <NumberField label="Tarabice iznad gazišta" testId="tread-clearance" value={it.params.slats?.treadClearanceMm ?? 30}
                     range={{ min: 0, max: 300 }} onCommit={(v) => st.patchItemParams(id, { slats: { ...it.params.slats, treadClearanceMm: v } }, 'tread-clearance')} hint="Ravan donji rez iznad celog gazišta; vrh ostaje uz rukohvat." />}
                   {/* skretanje ograde u osnovi na kraju i na početku stepeništa: ugao se zadaje na zglobu, a stub je pored njega */}
                   {([['end', grp.to + 1, 'Skretanje ograde na kraju stepeništa'], ['start', grp.from, 'Skretanje ograde na početku stepeništa']] as const)
@@ -728,6 +736,40 @@ const MANUAL_POST_TYPES = ['aluminium', 'concrete', 'concrete_plinth'];
 /** vrednost u meniju „Šablon stuba“ koja vraća stub kakav je bio kad je ograda postavljena */
 const BASE_POST = '__base__';
 
+function TerracePostPanel({ project, id }: { project: Project; id: string }) {
+  const [scope, setScope] = useState<'one' | 'all'>('one');
+  const materials = useAppStore((s) => s.materials);
+  const st = useAppStore.getState(); const selected = parseTerracePostId(id)!;
+  const item = project.items.find((it) => it.id === selected.itemId);
+  const layout = computeLayout(project); const li = layout.items.find((l) => l.item.id === selected.itemId);
+  if (!item || item.kind !== 'fence' || !li) return null;
+  const up = Math.min(Math.max(0, item.params.liftMm ?? customLiftOf(item.modelId)), Math.max(0, item.heightMm - 100));
+  const post = customPartsFor(item.modelId, li.clearWidth, item.heightMm - up, colorHex(item.color), item.params.slats, up).find((r) => r.part.terracePostKey === selected.key)?.part;
+  if (!post) return null;
+  const choices = sharedPostMaterials(materials);
+  const apply = (patch: { removed?: boolean; materialId?: string; heightMm?: number }) => {
+    if (scope === 'one') st.mutate((p) => patchTerracePost(p, selected.itemId, selected.key, patch));
+    else if (patch.removed) st.mutate((p) => setTerracePostsEnabled(p, false));
+    else st.mutate((p) => ({ ...p, items: p.items.map((it) => {
+      if (it.kind !== 'fence' || !isTerraceModel(it.modelId)) return it;
+      const model = customModelOf(it.modelId); const slats = it.params.slats ?? {}; const spec = model && postSpec(model, materials, slats);
+      if (!spec) return it;
+      const width = computeLayout(p).items.find((l) => l.item.id === it.id)!.clearWidth;
+      const slots = terracePostSlots(width, spec, materials, { ...slats, postsEnabled: true, postOverrides: undefined });
+      const overrides = { ...slats.postOverrides };
+      for (const slot of slots) overrides[slot.key] = { ...overrides[slot.key], ...patch };
+      return { ...it, params: { ...it.params, slats: { ...slats, ...(patch.materialId ? { postMaterialId: patch.materialId } : {}), postOverrides: overrides } } };
+    }) }));
+    if (patch.removed) st.select(null);
+  };
+  return <Section title={`Odabran stub terase: ${Number(selected.key) + 1}`} testId="panel-terrace-post">
+    <ScopeField testId="terrace-post-scope" value={scope} onChange={setScope} options={[{ value: 'one', label: 'Samo ovaj stub' }, { value: 'all', label: 'Svi stubovi terase' }]} count={scope === 'one' ? 1 : productionPostCount(project)} />
+    <SelectField stacked label="Presek stuba (dimenzije)" testId="terrace-post-section" value={post.materialId} options={choices.map((m) => ({ value: m.id, label: m.name }))} onChange={(materialId) => apply({ materialId })} />
+    <NumberField label="Visina stuba" testId="terrace-post-height" value={post.lengthMm} range={LIMITS.postHeight} onCommit={(heightMm) => apply({ heightMm })} />
+    <button className="btn btn-sm btn-danger mt-2" data-testid="terrace-post-delete" onClick={() => apply({ removed: true })}><Trash2 size={14} />{scope === 'one' ? 'Obriši ovaj stub' : 'Ukloni sve stubove terase'}</button>
+  </Section>;
+}
+
 function PostPanel({ project, id }: { project: Project; id: string }) {
   const [allPosts, setAllPostsState] = useState(applyToAllPosts);
   const setAllPosts = (v: boolean) => { applyToAllPosts = v; setAllPostsState(v); };
@@ -848,6 +890,9 @@ function PostPanel({ project, id }: { project: Project; id: string }) {
           </div>
         );
       })()}
+      {isTerraceBoundary(project, lp.index) && <button className="btn btn-sm btn-danger mt-2" data-testid="post-delete" onClick={() => {
+        st.mutate((pr) => ({ ...pr, posts: pr.posts.map((q, i) => targets.includes(q.id) && isTerraceBoundary(pr, i) ? { ...q, removed: true } : q) })); st.select(null);
+      }}><Trash2 size={14} />{targets.length === 1 ? 'Obriši ovaj stub' : 'Obriši izabrane stubove'}</button>}
     </Section>
   );
 }
@@ -924,7 +969,7 @@ export function PropertiesPanel({ project }: { project: Project }) {
         {!selection && <Section title="Izaberite element"><p className="text-sm text-muted">Kliknite na platno, kapiju ili stub na crtežu da otvorite njegova svojstva.</p></Section>}
         {selection?.type === 'item' && multi.length > 1 && <MultiPanel key={multi.join(':')} project={project} ids={multi} />}
         {selection?.type === 'item' && multi.length < 2 && <ItemPanel key={selection.id} project={project} id={selection.id} />}
-        {selection?.type === 'post' && <PostPanel key={selection.id} project={project} id={selection.id} />}
+        {selection?.type === 'post' && (parseTerracePostId(selection.id) ? <TerracePostPanel key={selection.id} project={project} id={selection.id} /> : <PostPanel key={selection.id} project={project} id={selection.id} />)}
       </div>
       <div role="tabpanel" id={`${tabsId}-project`} aria-labelledby={`${tabsId}-project-tab`} hidden={tab !== 'project'} className="space-y-3">
         <ProjectBasics project={project} />
@@ -1101,7 +1146,7 @@ function TerracePostSettings({ id, modelId, widthMm, params, stairSteps, stairUp
   const model = customModelOf(modelId);
   const spec = model ? postSpec(model, materials, params.slats) : null;
   if (!model || !spec) return null;
-  const xs = params.slats?.postXs ?? postPositions(widthMm, spec);
+  const xs = terracePostSlots(widthMm, spec, materials, params.slats).map((s) => s.x);
   const actual = xs.length > 1 ? Math.max(...xs.slice(1).map((x, i) => x - xs[i])) : 0;
   const set = (patch: NonNullable<FenceParams['slats']>) => st.patchItemParams(id, { slats: { ...params.slats, ...patch } }, 'posts');
   const r1 = (v: number) => Math.round(v * 10) / 10;
@@ -1112,11 +1157,13 @@ function TerracePostSettings({ id, modelId, widthMm, params, stairSteps, stairUp
       </button>
       {open && (
         <div className="px-3 pb-2">
-          {model.terraceSourceId && <SelectField stacked label="Materijal stubova" testId="terrace-post-material"
-            value={sharedPostTemplate(model, materials, params.slats?.postMaterialId)?.materialId ?? ''}
-            options={sharedPostMaterials(materials).map((m) => ({ value: m.id, label: m.name }))} onChange={(v) => set({ postMaterialId: v })} />}
+          <ToggleField label="Postavljaj stubove" testId="terrace-posts-enabled" checked={params.slats?.postsEnabled !== false} onLabel="Sa stubovima" offLabel="Bez stubova" onChange={(postsEnabled) => st.patchItemParams(id, { slats: { ...params.slats, postsEnabled } })} />
+          {Object.values(params.slats?.postOverrides ?? {}).some((p) => p.removed) && <button className="btn btn-sm mb-1" data-testid="restore-item-posts" onClick={() => st.mutate((p) => restoreTerracePosts(p, id))}>Vrati izostavljene stubove</button>}
+          <SelectField stacked label="Materijal stubova (dimenzije)" testId="terrace-post-material"
+            value={params.slats?.postMaterialId ?? sharedPostTemplate(model, materials)?.materialId ?? model.parts.find((p) => { const m = materials.find((m) => m.id === p.materialId); return m && hwRoleOf(p, materialShape(m)) === 'post'; })?.materialId ?? ''}
+            options={sharedPostMaterials(materials).map((m) => ({ value: m.id, label: m.name }))} onChange={(v) => set({ postMaterialId: v, postOverrides: Object.fromEntries(Object.entries(params.slats?.postOverrides ?? {}).map(([k, p]) => [k, { ...p, materialId: undefined }])) })} />
           <SlatNumberField id={id} params={params} overrideKey="postSpacingMm" label="Najveći razmak između stubova" testId="post-spacing" value={r1(spec.spacing)} range={{ min: 100, max: 3000 }} onCommit={(v) => set({ postSpacingMm: v })}
-            hint={`Stubova: ${xs.length}, razmak ${Math.round(actual)} mm. Stubovi se ravnomerno raspoređuju, a razmak nije veći od zadatog.`} />
+            help={`Stubova: ${xs.length}, razmak ${Math.round(actual)} mm. Stubovi se ravnomerno raspoređuju, a razmak nije veći od zadatog.`} />
           {stairSteps ? (
             <>
 
@@ -1125,8 +1172,12 @@ function TerracePostSettings({ id, modelId, widthMm, params, stairSteps, stairUp
               {(() => {
                 const max = Math.max(1, stairSteps - 1);
                 return (
-                  <NumberField label="Poslednji stub na stepeniku br." testId="post-last-step" unit="kom" step={1} value={Math.min(max, Math.round(params.slats?.stairLastStep ?? max))} range={{ min: 1, max }}
-                    onCommit={(v) => set({ stairLastStep: Math.round(v) })} hint={`Stepenici se broje od dna stepeništa (${stairUp ? 'levo' : 'desno'}), od prvog podignutog stepenika; stub stoji na sredini gazišta. Poslednji stepenik pre vrha je ${max}.`} />
+                  <>
+                    <ToggleField label="Poslednji stub na stepeniku" testId="post-last-enabled" checked={params.slats?.stairLastPost !== false} onLabel="Postavljen" offLabel="Bez stuba"
+                      onChange={(v) => st.patchItemParams(id, { slats: { ...params.slats, stairLastPost: v } })} help={`Stepenici se broje od dna stepeništa (${stairUp ? 'levo' : 'desno'}), od prvog podignutog stepenika; stub stoji na sredini gazišta. Poslednji stepenik pre vrha je ${max}.`} />
+                    {params.slats?.stairLastPost !== false && <NumberField label="Na stepeniku br." testId="post-last-step" unit="kom" step={1} value={Math.min(max, Math.round(params.slats?.stairLastStep ?? max))} range={{ min: 1, max }}
+                      onCommit={(v) => set({ stairLastStep: Math.round(v) })} />}
+                  </>
                 );
               })()}
             </>

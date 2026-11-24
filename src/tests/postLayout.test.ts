@@ -30,7 +30,8 @@ describe('raspored stubova ograde za terasu', () => {
 import { withRunPosts } from '../domain/geometry/runPosts';
 import { registerCustomModels } from '../domain/models/customRegistry';
 import { createFence, createProject } from '../domain/models/factories';
-import type { FenceModelId } from '../domain/models/types';
+import type { FenceModelId, FenceSection } from '../domain/models/types';
+import { buildBom } from '../domain/pricing/calc';
 
 describe('stubovi po ravnoj liniji ograde', () => {
   it('jedna linija od više polja: razmak 1 m preko celih 3800 mm, bez dupliranja na spoju', () => {
@@ -176,6 +177,39 @@ describe('prvi i poslednji stub na stepeništu', () => {
     expect(sl.postXs[sl.postXs.length - 1]).toBe(1350); // sredina četvrtog podignutog stepenika
     const ps = customPartsFor(ID, 1800, 1100, '#999', (p.items[0] as unknown as { params: { slats: never } }).params.slats);
     expect(ps.filter((r) => r.part.angleDeg === 90 && !r.part.hw).every((r) => !!r.part.unshearTan)).toBe(true);
+  });
+  it.each([1200, -1200])('izostavljanje poslednjeg stuba čuva ostale položaje i uklanja pripadajući materijal i okov (uspon %i)', (riseMm) => {
+    const m = setHwPick({ ...model(), id: 'cm_stair_without_last' }, 'p1', 'flange', bySku('AK-5036').id);
+    registerCustomModels([m], mats);
+    const item = createFence({ modelId: m.id as FenceModelId, widthMm: 1800, heightMm: 1100, stair: { riseMm, steps: 6, group: 'g' },
+      params: { barSizeMm: 20, gapMm: 20, frameMm: 40, slats: { stairFirstFloor: true, stairLastStep: 4, postSpacingMm: 500 } } });
+    const original = withRunPosts(createProject('t', [item]), mats);
+    const full = (original.items[0] as FenceSection).params.slats!;
+    const without = withRunPosts({ ...original, items: [{ ...item, params: { ...item.params, slats: { ...full, stairLastPost: false } } }] }, mats);
+    const sl = (without.items[0] as FenceSection).params.slats!;
+    const removed = riseMm > 0 ? full.postXs!.length - 1 : 0;
+    expect(sl.postXs).toEqual(full.postXs!.filter((_, i) => i !== removed));
+    expect(sl.postDrops).toEqual(full.postDrops!.filter((_, i) => i !== removed));
+    expect(sl.stairLastStep).toBe(4);
+    expect(withRunPosts(without, mats)).toBe(without);
+    const cuts = (p: typeof original) => buildCutList(p, undefined, mats).filter((r) => r.part === 'Stub').reduce((n, r) => n + r.qty, 0);
+    expect(cuts(without)).toBe(cuts(original) - 1);
+    const quantity = (p: typeof original, materialId: string) => buildBom(p, mats).filter((r) => r.materialId === materialId).reduce((n, r) => n + r.geometricQty, 0);
+    expect(quantity(without, bySku('AK-5036').id)).toBe(quantity(original, bySku('AK-5036').id) - 1);
+    expect(quantity(without, bySku('P-1054').id)).toBeLessThan(quantity(original, bySku('P-1054').id));
+    const restored = withRunPosts({ ...without, items: [{ ...item, params: { ...item.params, slats: { ...sl, stairLastPost: true } } }] }, mats);
+    expect((restored.items[0] as FenceSection).params.slats?.postXs).toEqual(full.postXs);
+  });
+  it('isključen jedini stub se ne vraća kroz podrazumevani raspored', () => {
+    const m = { ...model(), id: 'cm_stair_no_posts' };
+    registerCustomModels([m], mats);
+    const item = createFence({ modelId: m.id as FenceModelId, widthMm: 1800, heightMm: 1100, stair: { riseMm: -1200, steps: 6, group: 'g' },
+      params: { barSizeMm: 20, gapMm: 20, frameMm: 40, slats: { stairLastStep: 1, stairLastPost: false } } });
+    const p = withRunPosts(createProject('t', [item]), mats);
+    const sl = (p.items[0] as FenceSection).params.slats!;
+    expect(sl.postXs).toEqual([]); expect(sl.postDrops).toEqual([]);
+    expect(customPartsFor(item.modelId, 1800, 1100, '#999', sl).some((r) => r.part.angleDeg === 90 && !r.part.hw)).toBe(false);
+    expect(buildCutList(p, undefined, mats).some((r) => r.part === 'Stub')).toBe(false);
   });
 });
 

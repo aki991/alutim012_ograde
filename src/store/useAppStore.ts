@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { isTerraceBoundary, parseTerracePostId, patchTerracePost } from '../domain/geometry/terracePosts';
 import { create } from 'zustand';
 import { isBuiltinMaterial } from '../data/materials';
 import { DEFAULT_CARRIAGES, DEFAULT_PLATES, DEFAULT_RAILS, missingModelMaterials } from '../data/modelMaterials';
@@ -231,7 +232,8 @@ const keepMulti = (multi: string[], p: Project): string[] => {
 /** Selekcija se zadržava posle undo/redo ako element i dalje postoji u projektu. */
 const keepSelection = (sel: Selection, p: Project): Selection => {
   if (!sel) return null;
-  const exists = sel.type === 'item' ? p.items.some((i) => i.id === sel.id) : p.posts.some((x) => x.id === sel.id);
+  const modelPost = sel.type === 'post' ? parseTerracePostId(sel.id) : null;
+  const exists = sel.type === 'item' ? p.items.some((i) => i.id === sel.id) : modelPost ? p.items.some((i) => i.kind === 'fence' && i.id === modelPost.itemId && i.params.slats?.postsEnabled !== false && !i.params.slats?.postOverrides?.[modelPost.key]?.removed) : p.posts.some((x) => x.id === sel.id && !x.removed);
   return exists ? sel : null;
 };
 
@@ -627,9 +629,7 @@ export const useAppStore = create<AppState>((set, get) => {
       const moved = selNow?.type === 'item' ? mg.merged.get(selNow.id) : undefined;
       set((s) => {
         const selection = s.editor.selection;
-        const stillThere =
-          !selection ||
-          (selection.type === 'item' ? next.items.some((i) => i.id === selection.id) : next.posts.some((x) => x.id === selection.id));
+        const stillThere = !selection || !!keepSelection(selection, next);
         return {
           projects: s.projects.map((p) => (p.id === cur.id ? next : p)),
           editor: { ...s.editor, history: recordChange(s.editor.history, cur, key), selection: moved ? { ...selection!, id: moved } as typeof selection : stillThere ? selection : null, multi: keepMulti(s.editor.multi, next) },
@@ -710,6 +710,15 @@ export const useAppStore = create<AppState>((set, get) => {
 
     deleteSelected() {
       const { selection: sel, multi } = get().editor;
+      if (sel?.type === 'post') {
+        const modelPost = parseTerracePostId(sel.id);
+        if (modelPost) get().mutate((p) => patchTerracePost(p, modelPost.itemId, modelPost.key, { removed: true }));
+        else { const p = currentProject(); const index = p?.posts.findIndex((q) => q.id === sel.id) ?? -1;
+          if (!p || index < 0 || !isTerraceBoundary(p, index)) return;
+          get().mutate((pr) => ({ ...pr, posts: pr.posts.map((q) => q.id === sel.id ? { ...q, removed: true } : q) }));
+        }
+        set((s) => ({ editor: { ...s.editor, selection: null, multi: [], multiPosts: [] } })); return;
+      }
       if (!sel || sel.type !== 'item') return;
       const ids = multi.length > 1 ? multi : [sel.id];
       // stepenište se briše ceo (sva polja između stubova)

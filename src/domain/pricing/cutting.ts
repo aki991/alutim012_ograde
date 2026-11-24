@@ -1,6 +1,6 @@
 import { endOffsets, endsLabel, MITER_SHAPE, VIEWS, viewEnds, type PieceView } from './cutEnds';
 import { buildRl10Sheet } from './rl10Spec';
-import { computeLayout, outerWidthMm } from '../geometry/layout';
+import { computeLayout, railingWidthMm } from '../geometry/layout';
 import type { AppSettings, Material, Project } from '../models/types';
 import { materialName, type ModelSpecs } from '../models/spec';
 import { isSymmetricRect, materialShape } from '../models/materialShape';
@@ -234,7 +234,7 @@ function collectPieces(project: Project, specs: ModelSpecs | undefined, material
     const key = String(itemNumber(project.items, index));
     if (!positions.has(key)) {
       const it = project.items[index];
-      positions.set(key, { key, label: itemLabel(project.items, index), detail: `${describeItem(project, index)} · ${Math.round(outerWidthMm(project, index))} × ${Math.round(it.heightMm)} mm` });
+      positions.set(key, { key, label: itemLabel(project.items, index), detail: `${describeItem(project, index)} · ${Math.round(railingWidthMm(project, index))} × ${Math.round(it.heightMm)} mm` });
     }
     return key;
   };
@@ -375,7 +375,7 @@ export function buildCuttingList(project: Project, specs: ModelSpecs | undefined
       const leftoverMm = bars.reduce((s, b) => s + b.leftoverMm, 0);
       const byLen = new Map<string, { lengthMm: number; miter: boolean; ends?: [number[], number[]]; endShape?: [[number, number][], [number, number][]]; qty: number; positions: Set<string> }>();
       for (const p of g.pieces) {
-        const k = `${p.lengthMm}|${p.miter ? 1 : 0}|${p.ends ? JSON.stringify(p.ends) : ''}`;
+        const k = `${p.lengthMm}|${p.miter ? 1 : 0}|${p.ends ? JSON.stringify(p.ends) : ''}|${p.endShape ? JSON.stringify(p.endShape) : ''}`;
         const cur = byLen.get(k) ?? { lengthMm: p.lengthMm, miter: !!p.miter, ends: p.ends, endShape: p.endShape, qty: 0, positions: new Set<string>() };
         cur.qty += 1; cur.positions.add(p.pos);
         byLen.set(k, cur);

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { computeLayout, isSpacer, outerWidthMm } from '../../domain/geometry/layout';
+import { computeLayout, isSpacer, railingWidthMm } from '../../domain/geometry/layout';
 import { FENCE_MODELS, GATE_LABELS, MOUNTING_LABELS, POST_LABELS } from '../../domain/models/catalog';
 import type { Project } from '../../domain/models/types';
 import { buildBom } from '../../domain/pricing/calc';
@@ -29,21 +29,21 @@ export function DimensionsTable({ project }: { project: Project }) {
               <td className="td">{itemNumber(project.items, li.index)}</td>
               <td className="td font-medium">{itemLabel(project.items, li.index)}</td>
               <td className="td text-slate-600">{li.item.kind === 'fence' ? FENCE_MODELS[li.item.modelId].name : li.item.kind === 'gate' ? `${GATE_LABELS[li.item.gateType]} · ${FENCE_MODELS[li.item.infillModelId].name}` : 'Prazan otvor'}</td>
-              <td className="td text-right tabular-nums">{fmtNum(outerWidthMm(project, li.index), 0)} mm</td>
+              <td className="td text-right tabular-nums">{fmtNum(railingWidthMm(project, li.index), 0)} mm</td>
               {advanced && <><td className="td text-right tabular-nums">{fmtNum(li.item.widthMm, 0)} mm</td><td className="td text-right tabular-nums">{fmtNum(li.clearWidth, 0)} mm</td></>}
               <td className="td text-right tabular-nums">{fmtNum(li.item.heightMm, 0)} mm</td>
             </tr>
           ))}
           <tr className="font-semibold bg-slate-50">
             <td className="td" colSpan={3}>Ukupno</td>
-            <td className="td text-right tabular-nums">{fmtNum(layout.occupiedMm, 0)} mm</td>
+            <td className="td text-right tabular-nums">{fmtNum(layout.railingLengthMm, 0)} mm</td>
             {advanced && <><td className="td text-right tabular-nums">{fmtNum(layout.totalModularMm, 0)} mm</td><td className="td text-right tabular-nums">{fmtNum(layout.totalClearMm, 0)} mm</td></>}
             <td className="td" />
           </tr>
         </tbody>
       </table>
       <div className="mt-4 grid sm:grid-cols-2 gap-x-6 gap-y-1 text-sm text-slate-600">
-        <div>Ukupna dužina: <b className="text-ink">{fmtNum(layout.occupiedMm, 0)} mm</b></div>
+        <div>Ukupna dužina: <b className="text-ink">{fmtNum(layout.railingLengthMm, 0)} mm</b></div>
         {advanced && <div>Modularna dužina (osa–osa): <b className="text-ink">{fmtNum(layout.totalModularMm, 0)} mm</b></div>}
         <div>Stubova za izradu: <b className="text-ink" data-testid="dimensions-post-count">{productionPostCount(project, layout, specs)}</b></div>
       </div>

@@ -1,6 +1,6 @@
 import { OrbitControls } from '@react-three/drei';
 import { Canvas } from '@react-three/fiber';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import * as THREE from 'three';
 import type { CustomModel, CustomPart } from '../../domain/models/custom';
 import { hasAngledEnds, linearLocalPoly, partAngle, sheetPoly, zExtent, zExtentTop } from '../../domain/models/custom';
@@ -65,6 +65,26 @@ function PlumbBar({ part, section, material }: { part: CustomPart; section: Sect
   return <mesh geometry={geometry} material={material} castShadow />;
 }
 
+/** Kosi krajevi zadržavaju stvarni šuplji presek cevi ili otvoreni presek U profila. */
+function CutBar({ part, section, material, materialKey, matrix }: { part: CustomPart; section: Section; material: THREE.Material; materialKey: string; matrix: THREE.Matrix4 }) {
+  const geometry = useMemo(() => {
+    const e = sectionFace(section, partAngle(part));
+    const [s0, e0, e1, s1] = linearLocalPoly(part, e.u0, e.u1);
+    const g = extruded(materialKey, section, partAngle(part), part.lengthMm).clone();
+    const pos = g.getAttribute('position');
+    for (let i = 0; i < pos.count; i++) {
+      const u = (pos.getX(i) - e.u0) / e.face;
+      const start = s0[0] + (s1[0] - s0[0]) * u;
+      const end = e0[0] + (e1[0] - e0[0]) * u;
+      pos.setZ(i, start + pos.getZ(i) / part.lengthMm * (end - start));
+    }
+    pos.needsUpdate = true; g.computeVertexNormals(); g.computeBoundingSphere();
+    return g;
+  }, [part, section, materialKey]);
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  return <mesh geometry={geometry} material={material} matrix={matrix} matrixAutoUpdate={false} castShadow />;
+}
+
 /** ploča sa kosom donjom ivicom (pad terena): trapez izvučen po debljini */
 function SlopedSheet({ part, thick, material }: { part: CustomPart; thick: number; material: THREE.Material }) {
   const geometry = useMemo(() => {
@@ -102,6 +122,8 @@ export function PartMesh({ part: source, shape, hex, materialKey, selected }: { 
     if (part.bottomSlopeMm) return <SlopedSheet part={part} thick={shape.thick} material={shape.glass && !selected ? glassMaterial : material} />;
     return <mesh geometry={boxGeometry} material={shape.glass && !selected ? glassMaterial : material} position={[part.x + part.lengthMm / 2, part.y + h / 2, part.z]} scale={[part.lengthMm, h, shape.thick]} />;
   }
+  // kraj sa dva reza (šiljak) se crta kao obris izvučen po dubini; CutBar deformiše presek samo jednim rezom po kraju
+  if (shape.type === 'linear' && part.endCuts && !part.endTips?.some(Boolean)) return <CutBar part={part} section={shape.section} material={material} materialKey={materialKey} matrix={matrix} />;
   if (shape.type === 'linear' && hasAngledEnds(part)) return <PlumbBar part={part} section={shape.section} material={material} />;
   if (shape.type === 'linear') {
     return <mesh geometry={extruded(materialKey, shape.section, partAngle(part), part.lengthMm)} material={material} matrix={matrix} matrixAutoUpdate={false} castShadow />;

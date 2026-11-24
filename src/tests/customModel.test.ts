@@ -68,7 +68,7 @@ describe('ručno nacrtan model', () => {
     const s = materialShape(kv);
     expect(partFromDrag(kv.id, s, 100, 50, 1100, 80, true, 'a')).toMatchObject({ x: 100, y: 50, lengthMm: 1000, angleDeg: 0 });
     expect(partFromDrag(kv.id, s, 100, 900, 120, 100, true, 'a')).toMatchObject({ x: 100, y: 100, lengthMm: 800, angleDeg: 90 });
-    expect(partFromDrag(kv.id, s, 0, 0, 300, 400, false, 'a')).toMatchObject({ lengthMm: 500, angleDeg: 53 });
+    expect(partFromDrag(kv.id, s, 0, 0, 300, 400, false, 'a')).toMatchObject({ lengthMm: 500, angleDeg: 53.13 });
     expect(partFromDrag(kv.id, s, 0, 0, 3, 2, true, 'a')).toBeNull();
     expect(partFromDrag(cap.id, materialShape(cap), 0, 0, 40, 1000, true, 'a')).toMatchObject({ x: 40, y: 1000 });
   });

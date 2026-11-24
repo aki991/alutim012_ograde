@@ -66,6 +66,8 @@ interface InfillProps {
   skipLeftPost?: boolean;
   /** desni stub se crta posebno (uspravan stub uz stepenište) */
   skipRightPost?: boolean;
+  postWidths?: [number, number];
+  artRange?: [number, number];
   /** stepenište: polje se iskosi, pa se crta samo rukohvat i prečke (bez slike sa stubovima) */
   sloped?: boolean;
   /** osa levog i desnog stuba (x, širina); ograde sa rukohvatom se crtaju od ose do ose */
@@ -141,7 +143,7 @@ export function InfillArt(props: InfillProps) {
     const hh = h - up;
     return (
       <g data-testid="custom-art" transform={`translate(${x} ${y + h - up}) scale(1,-1)`} style={{ pointerEvents: 'none' }}>
-        <rect x={0} y={0} width={w} height={hh} fill={GAP_TINT} fillOpacity="0.25" />
+        <rect x={props.artRange?.[0] ?? 0} y={0} width={props.artRange ? Math.max(0, props.artRange[1] - props.artRange[0]) : w} height={hh} fill={GAP_TINT} fillOpacity="0.25" />
         {customPartsFor(modelId, w, hh, hex, props.slats, up).map((r) => (r.part.unshearTan
           // stepenište: flanša leži ravno na gazištu (poništava iskošenje polja)
           ? <g key={r.part.id} transform={`matrix(1 ${-r.part.unshearTan} 0 1 0 ${r.part.unshearTan * r.part.x})`}><PartSvg part={r.part} shape={r.shape} hex={r.hex} /></g>
@@ -155,12 +157,14 @@ export function InfillArt(props: InfillProps) {
     // slika modela u tri dela: stub sa stezaljkama (stalna širina) levo i desno, srednji deo se razvlači
     const k = RAIL_POST_MM / rail.postPx;
     const a = rail.a * k;
+    const leftA = props.postWidths ? rail.a * props.postWidths[0] / rail.postPx : a;
+    const rightA = props.postWidths ? rail.a * props.postWidths[1] / rail.postPx : a;
     const ax = axis?.x ?? x;
     const aw = axis?.w ?? w;
     const parts = [
-      { u0: rail.cL - rail.a, u1: rail.cL + rail.a, px: ax - a, pw: 2 * a },
-      { u0: rail.cL + rail.a, u1: rail.cR - rail.a, px: ax + a, pw: Math.max(0, aw - 2 * a) },
-      { u0: rail.cR - rail.a, u1: rail.cR + rail.a, px: ax + aw - a, pw: 2 * a },
+      { side: 'left', u0: rail.cL - rail.a, u1: rail.cL + rail.a, px: ax - leftA, pw: 2 * leftA },
+      { side: 'infill', u0: rail.cL + rail.a, u1: rail.cR - rail.a, px: ax + (skipLeftPost ? 0 : leftA), pw: Math.max(0, aw - (skipLeftPost ? 0 : leftA) - (skipRightPost ? 0 : rightA)) },
+      { side: 'right', u0: rail.cR - rail.a, u1: rail.cR + rail.a, px: ax + aw - rightA, pw: 2 * rightA },
     ];
     const bands = rodCount ? railBands(rail, h, rodCount) : null;
     if (bands) {
@@ -170,7 +174,7 @@ export function InfillArt(props: InfillProps) {
       return (
         <g>
           {rows.flatMap((b, bi) => parts.filter((_, i) => !(skipLeftPost && i === 0) && !(skipRightPost && i === 2)).map((p, i) => (
-            <svg key={`${bi}-${i}`} x={p.px} y={b.y} width={p.pw} height={b.hMm + 0.6} viewBox={`${p.u0} ${b.v0} ${p.u1 - p.u0} ${b.v1 - b.v0}`} preserveAspectRatio="none" overflow="hidden">
+            <svg key={`${bi}-${i}`} data-rail-part={p.side} x={p.px} y={b.y} width={p.pw} height={b.hMm + 0.6} viewBox={`${p.u0} ${b.v0} ${p.u1 - p.u0} ${b.v1 - b.v0}`} preserveAspectRatio="none" overflow="hidden">
               <image href={MODEL_IMAGES[rail.id]} x={0} y={0} width={rail.imgW} height={rail.imgH} />
             </svg>
           )))}
@@ -180,7 +184,7 @@ export function InfillArt(props: InfillProps) {
     return (
       <g>
         {parts.filter((_, i) => !(skipLeftPost && i === 0) && !(skipRightPost && i === 2)).map((p, i) => (
-          <svg key={i} x={p.px} y={y} width={p.pw} height={h} viewBox={`${p.u0} 0 ${p.u1 - p.u0} ${rail.imgH}`} preserveAspectRatio="none" overflow="hidden">
+          <svg key={i} data-rail-part={p.side} x={p.px} y={y} width={p.pw} height={h} viewBox={`${p.u0} 0 ${p.u1 - p.u0} ${rail.imgH}`} preserveAspectRatio="none" overflow="hidden">
             <image href={MODEL_IMAGES[rail.id]} x={0} y={0} width={rail.imgW} height={rail.imgH} />
           </svg>
         ))}

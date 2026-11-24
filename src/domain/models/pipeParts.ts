@@ -42,7 +42,7 @@ export function rigidTerracePipes(model: CustomModel, materials: Material[], tan
   return { ...model, parts: model.parts.map((p) => {
     if (p.hw && ['flange', 'postCap', 'connector'].includes(p.hw.kind)) return { ...p, unshearTan: tan };
     const mat = byId.get(p.materialId); if (!mat || p.hw || Math.abs(Math.sin(p.angleDeg * Math.PI / 180)) > 0.02) return p;
-    const role = hwRoleOf(p, materialShape(mat));
-    return role === 'rail' || role === 'rod' ? { ...p, unshearTan: tan, tube3d: { lengthMm: p.lengthMm * factor, angleDeg: p.angleDeg + angle } } : p;
+    const shape = materialShape(mat); const role = hwRoleOf(p, shape);
+    return role === 'rail' || role === 'rod' || (shape.type === 'linear' && shape.u) ? { ...p, unshearTan: tan, tube3d: { lengthMm: p.lengthMm * factor, angleDeg: p.angleDeg + angle } } : p;
   }) };
 }

@@ -297,7 +297,7 @@ export function fillHardware(model: CustomModel, materials: Material[]): CustomM
 }
 
 /** Pravila rasporeda stubova modela: odstojanje prvog i poslednjeg stuba od krajeva, najveći razmak i pola širine stuba; null kad model nema stubova. */
-export function postSpec(orig: CustomModel, materials: Material[], over?: { postSpacingMm?: number; postLeftMm?: number; postRightMm?: number; postMaterialId?: string }): { left: number; right: number; spacing: number; half: number } | null {
+export function postSpec(orig: CustomModel, materials: Material[], over?: import('./gateRefill').SlatOverride): { left: number; right: number; spacing: number; half: number } | null {
   if (orig.kind !== 'terrace') return null;
   const byId = new Map(materials.map((m) => [m.id, m]));
   const posts = orig.terraceSourceId ? [] : orig.parts.filter((p) => { const m = byId.get(p.materialId); return !!m && !p.hw && hwRoleOf(p, materialShape(m)) === 'post'; });
@@ -309,9 +309,12 @@ export function postSpec(orig: CustomModel, materials: Material[], over?: { post
   const box = (p: CustomPart) => partBounds(p, materialShape(byId.get(p.materialId)!));
   const cs = posts.map((p) => { const b = box(p); return { c: (b.x0 + b.x1) / 2, w: b.x1 - b.x0 }; }).sort((a, b) => a.c - b.c);
   const lay = orig.postLayout ?? {};
+  const replacement = materials.find((m) => m.id === over?.postMaterialId);
+  const replacementShape = replacement && materialShape(replacement);
+  const half = replacementShape?.type === 'linear' ? sectionFace(replacementShape.section, posts[0].rot).face / 2 : cs[0].w / 2;
   return {
     left: over?.postLeftMm ?? lay.leftMm ?? cs[0].c, right: over?.postRightMm ?? lay.rightMm ?? orig.widthMm - cs[cs.length - 1].c,
-    spacing: over?.postSpacingMm && over.postSpacingMm > 0 ? over.postSpacingMm : lay.spacingMm && lay.spacingMm > 0 ? lay.spacingMm : DEFAULT_POST_SPACING_MM, half: cs[0].w / 2,
+    spacing: over?.postSpacingMm && over.postSpacingMm > 0 ? over.postSpacingMm : lay.spacingMm && lay.spacingMm > 0 ? lay.spacingMm : DEFAULT_POST_SPACING_MM, half,
   };
 }
 
@@ -321,8 +324,18 @@ export function sharedPostMaterials(materials: Material[]): Material[] {
     const s = materialShape(m);
     return m.unit === 'm' && s.type === 'linear' && !s.u && !s.section.round && Math.min(s.section.w, s.section.h) >= 25;
   });
-  const posts = square.filter((m) => m.category === 'stub' || materialShape(m).group === 't_stubovi');
-  return posts.length ? posts : square;
+  return square;
+}
+
+export function terracePostSlots(width: number, spec: NonNullable<ReturnType<typeof postSpec>>, materials: Material[], over?: import('./gateRefill').SlatOverride) {
+  if (over?.postsEnabled === false) return [];
+  return (over?.postXs ?? postPositions(width, spec)).flatMap((x, i) => {
+    const key = over?.postKeys?.[i] ?? String(i); const patch = over?.postOverrides?.[key];
+    if (patch?.removed) return [];
+    const mat = materials.find((m) => m.id === (patch?.materialId ?? over?.postMaterialId)); const sh = mat && materialShape(mat);
+    const half = sh?.type === 'linear' ? sectionFace(sh.section, 0).face / 2 : spec.half;
+    return [{ x, key, index: i, patch, half }];
+  });
 }
 
 export function sharedPostTemplate(model: CustomModel, materials: Material[], materialId?: string): CustomPart | null {
@@ -370,12 +383,18 @@ export function layoutPosts(scaled: CustomModel, orig: CustomModel, materials: M
     if (template) posts.push({ ...template, lengthMm: scaled.heightMm });
   }
   if (!posts.length) return scaled;
-  const at = xs ?? postPositions(scaled.widthMm, spec);
+  const at = terracePostSlots(scaled.widthMm, spec, materials, { ...over, ...(xs ? { postXs: xs } : {}) });
   const tpl = posts[0]; const c0 = center(tpl);
+  const base = tpl.terracePostBase ?? { id: tpl.id, materialId: tpl.materialId, y: tpl.y, lengthMm: tpl.lengthMm, hwPick: tpl.hwPick };
   const ids = new Set(posts.map((p) => p.id));
   // stepenište: stub je uspravan i stoji na gazištu, pa je duži naniže do njega (rukohvat ostaje na liniji nagiba)
   const drops = xs && Math.abs(Math.sin((tpl.angleDeg * Math.PI) / 180) - 1) < 1e-6 ? over?.postDrops : undefined;
-  const fresh = at.map((x, i) => { const d = Math.max(0, drops?.[i] ?? 0); return { ...tpl, id: i === 0 ? tpl.id : `${tpl.id}~${i}`, x: r1(tpl.x + (x - c0)), ...(d ? { y: r1(tpl.y - d), lengthMm: r1(tpl.lengthMm + d) } : {}), ...(drops && over?.stairTan ? { unshearTan: over.stairTan } : {}) }; });
+  const fresh = at.map(({ x, key, index: i, patch }) => {
+    const d = Math.max(0, drops?.[i] ?? 0);
+    const materialId = patch?.materialId ?? over?.postMaterialId ?? base.materialId;
+    return { ...tpl, materialId, hwPick: base.hwPick, terracePostBase: base, terraceRole: 'post' as const, terracePostKey: key, id: key === '0' ? base.id : `${base.id}~${key}`, x: r1(tpl.x + (x - c0)),
+      y: r1(base.y - d), lengthMm: patch?.heightMm ?? r1(base.lengthMm + d), ...(drops && over?.stairTan ? { unshearTan: over.stairTan } : {}) };
+  });
   const rest = scaled.parts.filter((p) => !p.hw && !ids.has(p.id));
   const synced = syncHardware({ ...scaled, parts: [...rest, ...fresh] }, materials);
   // flanša na stepeništu leži ravno na gazištu (ne iskošava se sa poljem)

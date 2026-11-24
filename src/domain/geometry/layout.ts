@@ -1,7 +1,7 @@
 import { closingPostOffset, guideOverhangOf } from '../gates/slidingAssembly';
 import { FENCE_MODELS } from '../models/catalog';
 import { rl10AuxPostShift, rl10JointShift } from '../models/rl10';
-import { PLINTH_DEFAULT_MM, type LayoutItem, Mm, Post, Project } from '../models/types';
+import { PLINTH_DEFAULT_MM, type FenceSection, type LayoutItem, Mm, Post, Project } from '../models/types';
 import { stairGroupAt, stairRise, treadLevelAt } from './stair';
 
 export type PostRole = 'end' | 'intermediate' | 'gate';
@@ -16,6 +16,9 @@ export interface LaidOutItem {
   clearStart: Mm;
   clearEnd: Mm;
   clearWidth: Mm;
+  /** Stvarni krajevi ograde; slobodan deo raspona stepeništa nije deo ograde. */
+  railingStart: Mm;
+  railingEnd: Mm;
   /**
    * Klizno krilo prelazi preko stuba na strani zatvaranja (sa prednje strane): krilo počinje na osi tog stuba, pa prihvatnik i zasun
    * mogu da se montiraju na njega. Toliko (mm) je krilo duže od svetlog otvora; 0 kod ostalih elemenata.
@@ -64,6 +67,11 @@ export interface ProjectLayout {
   totalModularMm: Mm;
   /** Ukupna zauzeta dužina: modularna + po pola krajnjeg stuba sa svake strane */
   occupiedMm: Mm;
+  /** Dužina ograde do stvarnih krajeva, bez praznih završetaka stepeništa. */
+  railingLengthMm: Mm;
+  railingStartMm: Mm;
+  railingEndMm: Mm;
+  railingModularMm: Mm;
   /** Zbir svetlih otvora */
   totalClearMm: Mm;
   /** Broj fizičkih stubova (svaki stub se računa jednom) */
@@ -85,6 +93,9 @@ export const isSpacer = (it: LayoutItem | undefined): boolean => it?.kind === 'o
 /** Prazan otvor je samo razmak između ograda: stub koji graniči samo sa praznim otvorima (ili krajem) se ne postavlja. */
 /** nacrtani model ograde za terasu: stubove crta sam model, pa uz njega nema zasebnog stuba projekta (ugrađeni terasni modeli ih traže) */
 const ownPostsModel = (id: string): boolean => { const d = (FENCE_MODELS as Record<string, { terrace?: boolean; style?: string } | undefined>)[id]; return Boolean(d?.terrace) && d?.style === 'custom'; };
+type RailingRangeProvider = (item: FenceSection, widthMm: number, tan: number) => { from: number; to: number } | null;
+let railingRangeProvider: RailingRangeProvider | undefined;
+export const setRailingRangeProvider = (provider: RailingRangeProvider): void => { railingRangeProvider = provider; };
 
 export function isHiddenPost(items: ReadonlyArray<LayoutItem>, index: number): boolean {
   const adj = [items[index - 1], items[index]].filter((x): x is LayoutItem => Boolean(x));
@@ -118,7 +129,7 @@ export function computeLayout(project: Pick<Project, 'items' | 'posts'>): Projec
   const laidPosts: LaidOutPost[] = [];
   const laidItems: LaidOutItem[] = [];
 
-  const hidden = posts.map((_, i) => isHiddenPost(items, i));
+  const hidden = posts.map((post, i) => Boolean(post.removed) || isHiddenPost(items, i));
   const wOf = (i: number): Mm => (hidden[i] ? 0 : posts[i]?.widthMm ?? 0);
   posts.forEach((post, i) => {
     laidPosts.push({ post, index: i, x: 0, role: postRole(project, i), hidden: hidden[i], widthMm: wOf(i), baseMm: 0, levelMm: 0, topMm: 0, lengthMm: 0, floorMm: 0, lineMm: 0, shiftMm: 0, auxShiftMm: null });
@@ -145,7 +156,7 @@ export function computeLayout(project: Pick<Project, 'items' | 'posts'>): Projec
     // podrazumevano podnožje ide od spoljne ivice levog do spoljne ivice desnog stuba (dopune i ručna širina se primenjuju posle stubova)
     const plinthX0 = axisStart - wOf(i) / 2;
     const plinthX1 = axisEnd + wOf(i + 1) / 2;
-    laidItems.push({ item, index: i, axisStart, axisEnd, clearStart, clearEnd, clearWidth: Math.max(0, clearEnd - clearStart), overlapMm, plinthMm: itemPlinthMm(item, left, right), plinthX0, plinthX1, floorStart: 0, floorEnd: 0 });
+    laidItems.push({ item, index: i, axisStart, axisEnd, clearStart, clearEnd, clearWidth: Math.max(0, clearEnd - clearStart), railingStart: clearStart, railingEnd: clearEnd, overlapMm, plinthMm: itemPlinthMm(item, left, right), plinthX0, plinthX1, floorStart: 0, floorEnd: 0 });
     laidPosts[i].x = axisStart;
     x = axisEnd;
   });
@@ -210,12 +221,29 @@ export function computeLayout(project: Pick<Project, 'items' | 'posts'>): Projec
   const first = wOf(0);
   const last = wOf(posts.length - 1);
   const maxHeightMm = Math.max(0, ...laidItems.map((l) => l.item.heightMm + l.plinthMm), ...laidPosts.map((lp) => lp.topMm));
+  let trimStart = 0; let trimEnd = 0;
+  for (const li of laidItems) {
+    const it = li.item;
+    if (it.kind !== 'fence' || !it.stair || !it.params.slats?.freeEnds?.some(Boolean)) continue;
+    const tan = li.axisEnd > li.axisStart ? (li.floorEnd - li.floorStart) / (li.axisEnd - li.axisStart) : 0;
+    const range = railingRangeProvider?.(it, li.clearWidth, tan);
+    if (!range) continue;
+    if (it.params.slats.freeEnds[0]) li.railingStart = li.clearStart + range.from;
+    if (it.params.slats.freeEnds[1]) li.railingEnd = li.clearStart + range.to;
+    if (li.index === 0) trimStart = li.railingStart - li.clearStart;
+    if (li.index === items.length - 1) trimEnd = li.clearEnd - li.railingEnd;
+  }
+  const railingStartMm = -first / 2 + trimStart;
+  const railingEndMm = totalModularMm + last / 2 - trimEnd;
 
   return {
     items: laidItems,
     posts: laidPosts,
     totalModularMm,
     occupiedMm: totalModularMm + (first + last) / 2,
+    railingStartMm, railingEndMm,
+    railingLengthMm: Math.max(0, railingEndMm - railingStartMm),
+    railingModularMm: Math.max(0, totalModularMm - trimStart - trimEnd),
     totalClearMm: laidItems.reduce((s, i) => s + i.clearWidth - (i.overlapMm ?? 0), 0),
     postCount: hidden.filter((h) => !h).length,
     sharedPostCount: Math.max(0, hidden.slice(1, -1).filter((h) => !h).length),
@@ -227,14 +255,14 @@ export function computeLayout(project: Pick<Project, 'items' | 'posts'>): Projec
 }
 
 /**
- * Spoljna (zauzeta) dužina elementa = osa–osa plus po pola širine susednih stubova. Ovo je mera koju korisnik zadaje i vidi:
- * element od 1000 mm zauzima 1000 mm na terenu. Modularna mera (osa–osa) ostaje u podacima i obračunu.
+ * Spoljna dužina projektnog raspona = osa–osa plus po pola širine susednih stubova.
+ * Kod stepeništa raspon ostaje vezan za gazišta; stvarnu meru ograde daje railingWidthMm.
  * Ugaoni spoj nema svoju spoljnu meru (razmak između dva stuba).
  */
 export function postHalfSum(project: Pick<Project, 'items' | 'posts'>, index: number): Mm {
   const it = project.items[index];
   if (!it || (it.kind === 'opening' && it.bendDeg !== undefined)) return 0;
-  const w = (i: number) => (isHiddenPost(project.items, i) ? 0 : project.posts[i]?.widthMm ?? 0);
+  const w = (i: number) => (project.posts[i]?.removed || isHiddenPost(project.items, i) ? 0 : project.posts[i]?.widthMm ?? 0);
   // klizno krilo prelazi preko oba stuba: dužina krila je osa–osa + deo iza ose stuba vođice (vidi overlapMm), pa je „polovina stubova“ negativna
   if (it.kind === 'gate' && it.gateType === 'sliding' && it.sliding) return -(guideOverhangOf(it.sliding) + closingPostOffset(it.sliding, w(it.opening === 'left' ? index + 1 : index)));
   return (w(index) + w(index + 1)) / 2;
@@ -242,8 +270,14 @@ export function postHalfSum(project: Pick<Project, 'items' | 'posts'>, index: nu
 
 export const outerWidthMm = (project: Pick<Project, 'items' | 'posts'>, index: number): Mm => (project.items[index]?.widthMm ?? 0) + postHalfSum(project, index);
 
+/** Spoljna mera izrađene ograde; mera raspona stepeništa ostaje zasebna. */
+export function railingWidthMm(project: Pick<Project, 'items' | 'posts'>, index: number): Mm {
+  const li = computeLayout(project).items[index];
+  return li ? Math.max(0, outerWidthMm(project, index) - li.clearWidth + li.railingEnd - li.railingStart) : 0;
+}
+
 /** Ukupna zauzeta dužina cele ograde (od spoljne ivice prvog do spoljne ivice poslednjeg stuba). */
-export const occupiedLengthMm = (project: Pick<Project, 'items' | 'posts'>): Mm => computeLayout(project).occupiedMm;
+export const occupiedLengthMm = (project: Pick<Project, 'items' | 'posts'>): Mm => computeLayout(project).railingLengthMm;
 
 export const sumModularWidths = (items: LayoutItem[]): Mm => items.reduce((s, i) => s + i.widthMm, 0);
 

@@ -339,7 +339,7 @@ export function laborCost(project: Project): { total: number; areaM2: number; ga
   let areaM2 = 0;
   let gates = 0;
   for (const li of layout.items) {
-    if (li.item.kind === 'fence') areaM2 += (li.clearWidth * li.item.heightMm) / 1_000_000;
+    if (li.item.kind === 'fence') areaM2 += (Math.max(0, li.railingEnd - li.railingStart) * li.item.heightMm) / 1_000_000;
     else if (li.item.kind === 'gate') gates += 1;
   }
   return { total: areaM2 * p.laborPerM2Rsd + gates * p.laborPerGateRsd, areaM2, gates };
@@ -349,7 +349,7 @@ export function installCost(project: Project): { total: number; meters: number; 
   const p = project.settings.pricing;
   const layout = computeLayout(project);
   const gates = project.items.filter((i) => i.kind === 'gate').length;
-  const meters = layout.totalModularMm / 1000;
+  const meters = layout.railingModularMm / 1000;
   return { total: meters * p.installPerMeterRsd + gates * p.installPerGateRsd, meters, gates };
 }
 

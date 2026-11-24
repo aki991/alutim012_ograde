@@ -39,6 +39,190 @@ async function exportSketchAndWorkorder(page: Page, name: string) {
   }
 }
 
+async function selectFirstFence(page: Page) {
+  const item = page.locator('[data-hit="item"]').first(); const box = (await item.boundingBox())!;
+  const posts = await page.getByTestId('terrace-post-hit').all();
+  const spans = (await Promise.all(posts.map((p) => p.boundingBox()))).filter((p) => p && p.x < box.x + box.width && p.x + p.width > box.x).sort((a, b) => a!.x - b!.x);
+  const edges = [box.x, ...spans.flatMap((p) => [p!.x, p!.x + p!.width]), box.x + box.width];
+  const gaps = Array.from({ length: (edges.length / 2) }, (_, i) => ({ left: edges[i * 2], right: edges[i * 2 + 1] })).sort((a, b) => b.right - b.left - (a.right - a.left));
+  await item.click({ modifiers: ['Control'], position: { x: (gaps[0].left + gaps[0].right) / 2 - box.x, y: box.height / 2 } });
+}
+
+test('poslednji stub stepeništa može da se izostavi, zapamti i vrati; objašnjenja su na ikonama', async ({ page }) => {
+  const errors: string[] = []; page.on('pageerror', (e) => errors.push(e.message));
+  const model = terrace(); model.glassRailing = undefined;
+  await seed(page, [model]); await page.goto('/modeli-terasa');
+  await page.getByTestId('custom-model-card').filter({ hasText: model.name }).getByTestId('use-custom-model').click();
+  await selectFirstFence(page);
+  await page.getByTestId('field-stair-on').click();
+  for (const [id, value] of [['field-stair-run', '1800'], ['field-stair-rise', '1020'], ['field-stair-steps', '6']]) {
+    await page.getByTestId(id).fill(value); await page.getByTestId(id).press('Tab');
+  }
+  await page.getByTestId('field-stair-dir').getByRole('radio', { name: 'Silazi' }).click();
+  await page.getByTestId('post-settings-toggle').click();
+  await page.getByTestId('post-spacing').fill('2000'); await page.getByTestId('post-spacing').press('Tab');
+  await page.getByTestId('post-first').getByRole('radio', { name: 'Na podu' }).click();
+  await page.getByTestId('post-last-step').fill('4'); await page.getByTestId('post-last-step').press('Tab');
+  const art = page.getByTestId('front-view').getByTestId('custom-art').first();
+  const posts = art.locator('[data-part-id^="post"]');
+  await expect(posts).toHaveCount(2);
+  const transforms = await posts.locator('g').evaluateAll((els) => els.map((el) => el.getAttribute('transform')));
+  const settings = page.getByTestId('post-settings');
+  await expect(settings).not.toContainText('Stubova:');
+  await expect(settings).not.toContainText('Stepenici se broje');
+  await expect(settings.getByRole('button', { name: 'Pomoć: Najveći razmak između stubova', exact: true })).toHaveAttribute('title', /Stubova: 2, razmak .*Stubovi se ravnomerno raspoređuju/);
+  await expect(settings.getByRole('button', { name: 'Pomoć: Poslednji stub na stepeniku', exact: true })).toHaveAttribute('title', /Stepenici se broje od dna stepeništa \(desno\).*Poslednji stepenik pre vrha je 5\./);
+  await page.getByTestId('post-last-enabled').uncheck();
+  await expect(posts).toHaveCount(1); await expect(page.getByTestId('post-last-step')).toBeHidden();
+  await page.getByTestId('btn-undo').click(); await expect(posts).toHaveCount(2); await expect(page.getByTestId('post-last-step')).toHaveValue('4');
+  await page.getByTestId('btn-redo').click(); await expect(posts).toHaveCount(1);
+  await page.getByTestId('btn-save').click(); await expect(page.getByTestId('btn-save')).toHaveAttribute('data-state', 'saved');
+  await page.reload(); await page.getByTestId('tab-dims').click(); await page.getByTestId('dims-table').locator('tbody tr').first().click(); await page.getByTestId('tab-front').click();
+  await page.getByTestId('post-settings-toggle').click();
+  await expect(page.getByTestId('post-last-enabled')).not.toBeChecked(); await expect(posts).toHaveCount(1);
+  await page.getByTestId('post-settings').screenshot({ path: 'test-results/stair-without-last-post-settings.png' });
+  await page.getByTestId('post-last-enabled').check(); await expect(posts).toHaveCount(2);
+  await expect(page.getByTestId('post-last-step')).toHaveValue('4');
+  expect(await posts.locator('g').evaluateAll((els) => els.map((el) => el.getAttribute('transform')))).toEqual(transforms);
+  expect(errors).toEqual([]);
+});
+
+test('stubovi terase: izbor preseka, pojedinačno brisanje, čuvanje i isključivanje svih stubova', async ({ page }) => {
+  const errors: string[] = []; page.on('pageerror', (e) => errors.push(e.message));
+  const model = terrace(); model.glassRailing = undefined;
+  await seed(page, [model]); await page.goto('/modeli-terasa');
+  await page.getByTestId('custom-model-card').filter({ hasText: model.name }).getByTestId('use-custom-model').click();
+  await selectFirstFence(page);
+  await page.getByTestId('field-width').fill('3200'); await page.getByTestId('field-width').press('Tab');
+  const hits = page.getByTestId('terrace-post-hit'); await expect(hits).toHaveCount(4);
+  await hits.nth(1).click(); await expect(page.getByTestId('panel-terrace-post')).toBeVisible();
+  await page.getByTestId('terrace-post-section').selectOption('mat_ek_ktf808030');
+  await expect(hits.nth(1)).toHaveAttribute('width', '80');
+  await page.getByTestId('terrace-post-height').fill('950'); await page.getByTestId('terrace-post-height').press('Tab');
+  await expect(hits.nth(1)).toHaveAttribute('height', '950');
+  const untouched = await hits.nth(2).getAttribute('height');
+  await page.getByTestId('terrace-post-delete').click(); await expect(hits).toHaveCount(3);
+  await page.getByTestId('btn-undo').click(); await expect(hits).toHaveCount(4); await expect(hits.nth(1)).toHaveAttribute('height', '950');
+  await page.getByTestId('btn-redo').click(); await expect(hits).toHaveCount(3);
+  await page.getByTestId('btn-save').click(); await expect(page.getByTestId('btn-save')).toHaveAttribute('data-state', 'saved'); await page.reload();
+  await expect(hits).toHaveCount(3); await expect(hits.nth(1)).toHaveAttribute('height', untouched!);
+  await page.getByTestId('project-edit').click(); await page.getByTestId('restore-terrace-posts').click(); await expect(hits).toHaveCount(4);
+  await expect(hits.nth(1)).toHaveAttribute('width', '80'); await expect(hits.nth(1)).toHaveAttribute('height', '950');
+  await page.getByTestId('project-terrace-posts-enabled').uncheck(); await expect(hits).toHaveCount(0);
+  await page.getByTestId('project-terrace-posts-enabled').check(); await expect(hits).toHaveCount(4);
+  await hits.nth(2).click(); await page.getByTestId('terrace-post-scope').selectOption('all');
+  await page.getByTestId('terrace-post-section').selectOption('mat_ek_ktf808030');
+  for (const hit of await hits.all()) expect(Number(await hit.getAttribute('width'))).toBeCloseTo(80, 5);
+  await page.getByTestId('terrace-post-delete').click(); await expect(hits).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('ugrađena terasa: dimenzija stuba menja crtež, a obrisani stub ne ostaje u slici modela', async ({ page }) => {
+  await seed(page, []); await page.goto('/modeli-terasa'); await page.getByTestId('use-model-rail_black').click();
+  const hits = page.locator('[data-hit="post"]'); await expect(hits).toHaveCount(2); await hits.first().click();
+  await page.getByTestId('post-caps-all').selectOption('one');
+  const view = page.getByTestId('front-view'); const left = view.locator('[data-rail-part="left"]'); const oldWidth = Number(await left.first().getAttribute('width'));
+  const width = page.getByLabel('Širina preseka', { exact: true }); const before = Number(await width.inputValue());
+  await width.fill(String(before + 20)); await width.press('Tab');
+  expect(Number(await left.first().getAttribute('width'))).toBeGreaterThan(oldWidth);
+  await page.getByTestId('post-delete').click(); await expect(hits).toHaveCount(1); await expect(left).toHaveCount(0);
+  await page.getByTestId('btn-save').click(); await expect(page.getByTestId('btn-save')).toHaveAttribute('data-state', 'saved'); await page.reload(); await expect(hits).toHaveCount(1);
+  await page.getByTestId('project-edit').click(); await page.getByTestId('restore-terrace-posts').click(); await expect(hits).toHaveCount(2);
+  await page.getByTestId('project-terrace-posts-enabled').uncheck(); await expect(hits).toHaveCount(0);
+  await expect(view.locator('[data-rail-part="left"], [data-rail-part="right"]')).toHaveCount(0);
+});
+
+test('prazan završetak stepeništa nije deo kote, izbora, zbira ni ponude za ogradu', async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  const source = yard('cm_actual_stair_length', 'Tarabice — stvarna dužina');
+  source.parts = [
+    ...[80, 880].map((y, i) => ({ id: `support${i}`, materialId: 'mat_kv_30x20', x: 0, y, lengthMm: 1200, angleDeg: 0, rot: 0, z: -30 })),
+    ...Array.from({ length: 6 }, (_, i) => ({ id: `picket${i}`, materialId: 'mat_ek_kv000007', x: 100 + i * 200, y: 0, lengthMm: 1000, angleDeg: 90, rot: 0, z: 0 })),
+  ];
+  await seed(page, [source]); await page.goto('/modeli'); await page.getByTestId('terrace-model-picker').getByRole('button').click(); await page.getByTestId(`terrace-use-${source.id}`).check();
+  await page.getByRole('link', { name: 'Modeli ograda za terase', exact: true }).click();
+  await page.getByTestId('custom-model-card').filter({ hasText: source.name }).getByTestId('use-custom-model').click(); await selectFirstFence(page);
+  for (const [id, value] of [['field-width', '3500'], ['field-height', '1000']]) { await page.getByTestId(id).fill(value); await page.getByTestId(id).press('Tab'); }
+  await page.getByTestId('post-settings-toggle').click(); await page.getByTestId('terrace-post-material').selectOption('mat_ek_ktf808030');
+  await page.getByTestId('cat-stair-add').click();
+  for (const [id, value] of [['field-stair-run', '1700'], ['field-stair-rise', '1020'], ['field-stair-steps', '6']]) { await page.getByTestId(id).fill(value); await page.getByTestId(id).press('Tab'); }
+  await page.getByTestId('post-settings-toggle').click(); await page.getByTestId('terrace-post-material').selectOption('mat_ek_ktf808030');
+  await expect(page.getByTestId('field-stair-run')).toHaveValue('1700'); await expect(page.getByTestId('stair-railing-length')).toHaveText('1.315 mm');
+  await expect(page.getByTestId('dim-panel').last()).toContainText('1.315 mm');
+  expect(Number(await page.getByTestId('selection-outline').getAttribute('width'))).toBeCloseTo(1315, 1);
+  await page.getByTestId('btn-fit').click(); await page.getByTestId('front-view').screenshot({ path: 'test-results/stair-actual-railing-length.png' });
+  await page.getByTestId('props-tab-project').click(); await expect(page.getByTestId('total-length')).toHaveText('4.815 mm');
+  await page.getByTestId('tab-dims').click(); await expect(page.getByTestId('dims-table')).toContainText('1.315 mm');
+  await page.getByTestId('tab-front').click(); await page.getByTestId('btn-save').click(); await expect(page.getByTestId('btn-save')).toHaveAttribute('data-state', 'saved');
+  await page.reload(); await page.getByTestId('project-edit').click(); await expect(page.getByTestId('total-length')).toHaveText('4.815 mm');
+  await exportSketchAndWorkorder(page, 'actual-length');
+  await page.goto('/ponude'); await expect(page.getByTestId('quote-preview')).toContainText('4.815 mm'); await expect(page.getByTestId('quote-preview')).toContainText('1.315 mm');
+});
+
+test('vertikala iza tarabice ne izlazi ispod nje kada tarabica prelazi preko ivice stepenika', async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  const source = yard('cm_backing_pickets', 'Tarabice sa vertikalom iza');
+  source.parts = [
+    ...Array.from({ length: 6 }, (_, i) => ({ id: `picket${i}`, materialId: 'mat_ek_kv000007', x: 100 + i * 200, y: 0, lengthMm: 980, angleDeg: 90, rot: 0, z: 0 })),
+    ...Array.from({ length: 6 }, (_, i) => ({ id: `cap${i}`, materialId: 'mat_ek_k100018', x: 100 + i * 200, y: 980, lengthMm: 0, angleDeg: 0, rot: 0, z: 0 })),
+    { id: 'behind', materialId: 'mat_kv_30x20', x: 320, y: 0, lengthMm: 980, angleDeg: 90, rot: 0, z: -40 },
+  ];
+  await seed(page, [source]); await page.goto('/modeli'); await page.getByTestId('terrace-model-picker').getByRole('button').click();
+  await page.getByTestId(`terrace-use-${source.id}`).check(); await page.getByRole('link', { name: 'Modeli ograda za terase', exact: true }).click();
+  await page.getByTestId('custom-model-card').filter({ hasText: source.name }).getByTestId('use-custom-model').click(); await selectFirstFence(page);
+  await page.getByTestId('field-height').fill('1000'); await page.getByTestId('field-height').press('Tab');
+  await page.getByTestId('field-stair-on').click();
+  for (const [id, value] of [['field-stair-run', '1800'], ['field-stair-rise', '1020'], ['field-stair-steps', '6']]) {
+    await page.getByTestId(id).fill(value); await page.getByTestId(id).press('Tab');
+  }
+  await page.getByTestId('field-stair-dir').getByRole('radio', { name: 'Silazi' }).click();
+  await page.getByTestId('post-settings-toggle').click(); await page.getByTestId('terrace-posts-enabled').uncheck(); await page.getByTestId('btn-fit').click();
+  const art = page.getByTestId('front-view').getByTestId('custom-art').first();
+  const picket = (await art.locator('[data-part-id="picket1~bay0"]').boundingBox())!;
+  const holder = (await art.locator('[data-part-id="behind~bay0"]').boundingBox())!;
+  expect(holder.x).toBeGreaterThan(picket.x); expect(holder.x + holder.width).toBeLessThan(picket.x + picket.width);
+  expect(holder.y + holder.height).toBeCloseTo(picket.y + picket.height, 0);
+  await page.getByTestId('front-view').screenshot({ path: 'test-results/stair-backing-vertical.png' });
+});
+
+test('tarabice uklopljene u profile ostaju u njima na stepeništu u oba smera', async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  const errors: string[] = []; page.on('pageerror', (e) => errors.push(e.message));
+  const source = yard('cm_e2e_guided_pickets', 'Tarabice u donjem i gornjem profilu');
+  source.parts = [
+    { id: 'bottom-guide', materialId: 'mat_u_60x28', x: 0, y: 14, lengthMm: 1200, angleDeg: 0, rot: 90, z: 0 },
+    { id: 'top-guide', materialId: 'mat_u_60x28', x: 0, y: 986, lengthMm: 1200, angleDeg: 0, rot: 270, z: 0 },
+    ...Array.from({ length: 6 }, (_, i) => ({ id: `picket${i}`, materialId: 'mat_ek_kv000007', x: 100 + i * 200, y: 3, lengthMm: 994, angleDeg: 90, rot: 0, z: 0, guides: ['bottom-guide', 'top-guide'] as [string, string] })),
+  ];
+  await seed(page, [source]); await page.goto('/modeli');
+  await page.getByTestId('terrace-model-picker').getByRole('button').click(); await page.getByTestId(`terrace-use-${source.id}`).check();
+  await page.getByRole('link', { name: 'Modeli ograda za terase', exact: true }).click();
+  await page.getByTestId('custom-model-card').filter({ hasText: source.name }).getByTestId('use-custom-model').click();
+  await selectFirstFence(page);
+  await page.getByTestId('field-stair-on').click();
+  for (const [id, value] of [['field-stair-run', '1700'], ['field-stair-rise', '1020'], ['field-stair-steps', '6']]) {
+    await page.getByTestId(id).fill(value); await page.getByTestId(id).press('Tab');
+  }
+  await expect(page.getByTestId('tread-clearance')).toBeHidden();
+  const art = page.getByTestId('front-view').getByTestId('custom-art').first();
+  const pickets = art.locator('[data-part-id*="~bay"]').filter({ has: page.locator('g[transform*="rotate(90)"]') });
+  await expect.poll(() => pickets.count()).toBeGreaterThan(2);
+  for (const dir of ['Penje se', 'Silazi']) {
+    await page.getByTestId('field-stair-dir').getByRole('radio', { name: dir }).click();
+    expect(await pickets.locator(':scope > g > polygon').count()).toBe(await pickets.count());
+    const guides = art.locator('[data-part-id^="bottom-guide"]'); await expect.poll(() => guides.count()).toBeGreaterThan(0);
+    for (const transform of await guides.locator(':scope > g').evaluateAll((els) => els.map((el) => el.getAttribute('transform')))) expect(transform).toMatch(/rotate\(-?30\.963/);
+    await page.getByTestId('btn-fit').click();
+    await page.getByTestId('front-view').screenshot({ path: `test-results/guided-pickets-stair-${dir === 'Silazi' ? 'down' : 'up'}.png` });
+  }
+  await exportSketchAndWorkorder(page, 'guided-pickets');
+  await page.getByTestId('tab-three').click(); await expect(page.locator('canvas')).toBeVisible();
+  const sharp = (await import('sharp')).default;
+  await expect.poll(async () => Math.max(...(await sharp(await page.locator('canvas').screenshot()).stats()).channels.slice(0, 3).map((c) => c.stdev)), { timeout: 15000 }).toBeGreaterThan(5);
+  await page.locator('canvas').screenshot({ path: 'test-results/guided-pickets-stair-3d.png' });
+  expect(errors).toEqual([]);
+});
+
 for (const capped of [false, true]) test(`preneti model ${capped ? 'tarabica' : 'letvica sa rukohvatom'} preračunava ispunu i čuva podešavanja na stepeništu`, async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
   const errors: string[] = []; page.on('pageerror', (e) => errors.push(e.message));
@@ -57,7 +241,7 @@ for (const capped of [false, true]) test(`preneti model ${capped ? 'tarabica' : 
   await page.getByTestId('custom-model-card').filter({ hasText: source.name }).getByTestId('use-custom-model').click();
   const art = page.getByTestId('front-view').getByTestId('custom-art').first();
   await expect(art).toBeVisible();
-  await art.click({ force: true });
+  await selectFirstFence(page);
   await expect(page.getByTestId('panel-item')).toBeVisible();
   await page.getByTestId('field-width').fill('4000');
   await page.getByTestId('field-width').press('Tab');
@@ -220,7 +404,7 @@ for (const stair of [true, false]) test(`početno i završno staklo ${stair ? 's
   };
   await seed(page, [model], [project]);
   await page.goto(`/editor/${project.id}`);
-  await page.locator('[data-hit="item"]').first().click({ modifiers: ['Control'] });
+  await selectFirstFence(page);
   // Promena rasporeda aktivira isti proračun stubova koji se koristi pri crtanju.
   await page.getByTestId('post-settings-toggle').click();
   await page.getByTestId('post-spacing').fill('800'); await page.getByTestId('post-spacing').press('Enter');
@@ -249,7 +433,7 @@ for (const stair of [true, false]) test(`početno i završno staklo ${stair ? 's
   await expect.poll(() => page.evaluate(() => window.__aluTest?.stats().triangles ?? 0)).toBeGreaterThan(0);
   await page.getByTestId('three-canvas').screenshot({ path: `test-results/${stair ? 'stair' : 'flat'}-glass-ends-three.png` });
   await page.reload();
-  await page.locator('[data-hit="item"]').first().click({ modifiers: ['Control'] });
+  await selectFirstFence(page);
   await expect(page.getByTestId('stair-glass-start-width')).toHaveValue('80');
   await expect(page.getByTestId('stair-glass-end-width')).toHaveValue('120');
   await expect(front.locator('[data-part-id^="glazing~pane~end~"]')).toHaveCount(2);
@@ -274,7 +458,7 @@ test('faza 3: Element i Projekat imaju odvojena svojstva i prelazak ne menja obr
   await seed(page, [model]);
   await page.goto('/modeli-terasa');
   await page.getByTestId('custom-model-card').filter({ hasText: model.name }).getByTestId('use-custom-model').click();
-  await page.locator('[data-hit="item"]').first().click({ modifiers: ['Control'] });
+  await selectFirstFence(page);
   await expect(page.getByTestId('props-tab-element')).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByTestId('field-model')).toBeHidden();
   await expect(page.getByTestId('panel-basics')).toBeHidden();
@@ -301,7 +485,7 @@ test('faza 3: Element i Projekat imaju odvojena svojstva i prelazak ne menja obr
   await expect(page.getByTestId('project-name')).toHaveValue('Projekat faze 3');
   await page.getByTestId('props-tab-project').press('ArrowLeft');
   await expect(page.getByTestId('props-tab-element')).toBeFocused();
-  await page.locator('[data-hit="item"]').first().click({ modifiers: ['Control'] });
+  await selectFirstFence(page);
   await page.screenshot({ path: 'test-results/phase3-element.png' });
   expect(errors).toEqual([]);
 });
@@ -312,7 +496,7 @@ test('faza 3: ručna tolerancija i razmak stubova vraćaju se na model uz undo i
   await seed(page, [model]);
   await page.goto('/modeli-terasa');
   await page.getByTestId('custom-model-card').filter({ hasText: model.name }).getByTestId('use-custom-model').click();
-  await page.locator('[data-hit="item"]').first().click({ modifiers: ['Control'] });
+  await selectFirstFence(page);
   const tolerance = page.getByTestId('field-glass-tolerance');
   const source = page.getByTestId('field-glass-tolerance-source');
   await expect(tolerance).toHaveValue('3'); await expect(source).toContainText('Iz modela');
@@ -350,7 +534,7 @@ test('faza 3: kartice i dugi nazivi ne šire panel na računaru i telefonu', asy
   const model = terrace(); model.name = 'Staklena terasa sa veoma dugim nazivom modela i rukohvatom';
   await seed(page, [model]); await page.goto('/modeli-terasa');
   await page.getByTestId('custom-model-card').filter({ hasText: model.name }).getByTestId('use-custom-model').click();
-  await page.locator('[data-hit="item"]').first().click({ modifiers: ['Control'] });
+  await selectFirstFence(page);
   for (const width of [1440, 1160, 900, 390]) {
     await page.setViewportSize({ width, height: 950 });
     for (const tab of ['element', 'project']) {

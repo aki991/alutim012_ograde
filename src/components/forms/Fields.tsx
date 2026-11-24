@@ -1,4 +1,5 @@
 import { useId, useState, type ReactNode } from 'react';
+import { CircleHelp } from 'lucide-react';
 import { colorInfo, colorText, FINISHES } from '../../domain/models/catalog';
 import type { Finish } from '../../domain/models/types';
 import { useAppStore } from '../../store/useAppStore';
@@ -9,10 +10,13 @@ import { NumInput } from './NumInput';
 import { Switch } from '../ui/Switch';
 import { ChoiceGroup } from '../ui/ChoiceGroup';
 
-export function Field({ label, children, hint, error, htmlFor, stacked }: { label: string; children: ReactNode; hint?: ReactNode; error?: string | null; htmlFor?: string; stacked?: boolean }) {
+export function Field({ label, children, hint, help, error, htmlFor, stacked }: { label: string; children: ReactNode; hint?: ReactNode; help?: string; error?: string | null; htmlFor?: string; stacked?: boolean }) {
   return (
     <div className={`grid ${stacked ? 'grid-cols-1' : 'grid-cols-[minmax(0,0.8fr)_minmax(0,1.45fr)]'} items-center gap-x-3 gap-y-1 py-1.5`}>
-      <label className="label" htmlFor={htmlFor}>{label}</label>
+      {help ? <div className="flex items-center gap-1.5 min-w-0">
+        <label className="label" htmlFor={htmlFor}>{label}</label>
+        <button type="button" className="shrink-0 text-muted hover:text-slate-800 rounded-full focus-visible:outline-2 focus-visible:outline-primary" aria-label={`Pomoć: ${label}`} title={help}><CircleHelp size={16} /></button>
+      </div> : <label className="label" htmlFor={htmlFor}>{label}</label>}
       <div>{children}</div>
       {(hint || error) && (
         <div className={`${stacked ? '' : 'col-span-2'} text-xs leading-snug`}>
@@ -31,16 +35,17 @@ interface NumberFieldProps {
   step?: number;
   onCommit: (v: number) => void;
   hint?: ReactNode;
+  help?: string;
   testId?: string;
   integer?: boolean;
   allowZero?: boolean;
 }
 
 /** Mere se potvrđuju na Enter ili izlazak iz polja; Escape vraća trenutnu prihvaćenu vrednost. */
-export function NumberField({ label, value, range, unit = 'mm', step = 10, onCommit, hint, testId, integer = true, allowZero }: NumberFieldProps) {
+export function NumberField({ label, value, range, unit = 'mm', step = 10, onCommit, hint, help, testId, integer = true, allowZero }: NumberFieldProps) {
   const id = useId();
   const [error, setError] = useState<string | null>(null);
-  return <Field label={label} hint={hint} error={error} htmlFor={id}>
+  return <Field label={label} hint={hint} help={help} error={error} htmlFor={id}>
     <div className="relative">
       <NumInput id={id} value={value} testId={testId} min={allowZero ? 0 : range.min} max={range.max} required integer={integer}
         step={step} unit={unit} className="!pr-12" onError={setError} showError={false} selectOnFocus={false}
@@ -61,9 +66,9 @@ export function SelectField<T extends string>({ label, value, options, onChange,
   );
 }
 
-export function ToggleField({ label, checked, onChange, onLabel = 'Da', offLabel = 'Ne', testId }: { label: string; checked: boolean; onChange: (v: boolean) => void; onLabel?: string; offLabel?: string; testId?: string }) {
+export function ToggleField({ label, checked, onChange, onLabel = 'Da', offLabel = 'Ne', testId, help }: { label: string; checked: boolean; onChange: (v: boolean) => void; onLabel?: string; offLabel?: string; testId?: string; help?: string }) {
   const id = useId();
-  return <Field label={label} htmlFor={id}>
+  return <Field label={label} htmlFor={id} help={help}>
     <Switch id={id} ariaLabel={label} label={checked ? onLabel : offLabel} checked={checked} onChange={onChange} testId={testId} />
   </Field>;
 }

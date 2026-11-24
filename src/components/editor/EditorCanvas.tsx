@@ -1,4 +1,5 @@
 import { ChoiceGroup } from '../ui/ChoiceGroup';
+import { parseTerracePostId } from '../../domain/geometry/terracePosts';
 import { Switch } from '../ui/Switch';
 import { Image as ImageIcon, Box, Columns2, Download, Eye, List, AlertTriangle, Loader2, PencilRuler, Save, Maximize2, Minimize2, Redo2, Ruler, ScanLine, SlidersHorizontal, Square, Undo2, ZoomIn, ZoomOut } from 'lucide-react';
 import { Component, lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
@@ -200,6 +201,7 @@ export function EditorCanvas({ project, svgRef, areaRef, drag, onBeginDrag, regi
         window.dispatchEvent(new CustomEvent('open-props'));
         onBeginDrag({ kind: 'move', id, label: `${idx + 1}. element · ${Math.round(outerWidthMm(project, idx))} mm` }, e);
       } else {
+        if (parseTerracePostId(id)) { select({ type: 'post', id }); window.dispatchEvent(new CustomEvent('open-props')); return; }
         if (e.ctrlKey || e.metaKey) {
           // Ctrl+klik: dodaje stub u izbor ili ga izbacuje
           togglePost(id);

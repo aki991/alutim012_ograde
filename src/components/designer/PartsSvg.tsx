@@ -45,7 +45,7 @@ export function PartSvg({ part: source, shape, hex, selected = false, ghost = fa
     const L = part.lengthMm;
     const [ma, mb] = miterEndsOf(part);
     const oa = ma ? face : 0; const ob = mb ? face : 0;
-    const mit = !!part.miter && (oa > 0 || ob > 0) && L > oa + ob;
+    const mit = !part.endCuts && !!part.miter && (oa > 0 || ob > 0) && L > oa + ob;
     const plumb = hasAngledEnds(part);
     const poly = mit
       ? (part.miter === 'lo' ? [[0, u0], [L, u0], [L - ob, u0 + face], [oa, u0 + face]] : [[oa, u0], [L - ob, u0], [L, u0 + face], [0, u0 + face]]).map((q) => q.join(',')).join(' ')

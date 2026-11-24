@@ -1,5 +1,6 @@
 import { hingeCountFor } from '../gates/hingeRule';
-import { customLiftOf, customModelOf, customPatternCounts, customReinforceRows, customReinforceSplit, customSlatCount, customSpec, terraceEvaluated } from './customRegistry';
+import { customLiftOf, customModelOf, customPatternCounts, customReinforceRows, customReinforceSplit, customSlatCount, customSpec, scaledWithReinforce, terraceEvaluated } from './customRegistry';
+import type { EndShape } from '../pricing/cutEnds';
 import { tubeLengthMm, ramInsets } from './tubes';
 import { computeInfill, summarizeInfill } from '../geometry/infill';
 import { CALC_RULES } from '../pricing/rules';
@@ -28,6 +29,10 @@ export interface SpecPart {
   miterMm?: number;
   /** deo rama sa jednim ugaonim krajem: koji su krajevi pod 45° (početak, kraj); bez vrednosti su oba */
   miterEnds?: [boolean, boolean];
+  /** Ručni rezovi: uglovi prema osi i stvaran oblik oba kraja. */
+  ends?: [number[], number[]];
+  endShape?: EndShape;
+  cutFaceMm?: number;
   /** uloga dela na crtežu (npr. „Ram — gornja i donja prečka“): naziv dela u krojnoj listi i radnom nalogu; bez vrednosti naziv je materijal */
   role?: string;
   /** uspravan deo (stub): na stepeništu ne dobija kos rez krajeva */
@@ -232,6 +237,14 @@ export function evaluateItemParts(modelId: FenceModelId, specs: ModelSpecs | und
     const lift = c.params.liftMm ?? customLiftOf(modelId);
     const t = terraceEvaluated(modelId, c.widthMm, c.heightMm - lift, c.params.slats, c.slopeFactor ?? 1, lift);
     if (t) return t;
+    const custom = customModelOf(modelId);
+    if (custom?.parts.some((p) => p.endCuts || p.autoGuides === false || (p.lengthMm > 0 && !p.heightMm && p.angleDeg % 90 !== 0))) {
+      // Iste stvarne mere i broj komada kao u crtežu, uključujući kose profile i svako krilo zasebno.
+      return (c.leafWidthsMm?.length ? c.leafWidthsMm : [c.widthMm]).flatMap((width, i) => {
+        const scaled = scaledWithReinforce(custom, width, c.heightMm - lift, c.params.slats);
+        return evaluateSpec([...customSpec(scaled), ...extraSpecFor(modelId, specs)], specVars({ ...c, widthMm: width, heightMm: scaled.heightMm, slopeFactor: 1, leafWidthsMm: undefined, leafIndex: i, doubleGate: false }));
+      });
+    }
   }
   return evaluateItemSpec(specFor(modelId, specs), c);
 }
@@ -370,12 +383,15 @@ export const RAM_TUBE_MATERIAL = 'mat_ram_cev';
  */
 export const extraSpecKey = (modelId: string): string => `${modelId}#dodato`;
 
+const extraSpecFor = (modelId: FenceModelId, specs?: ModelSpecs): SpecPart[] => customModelOf(modelId)
+  ? (specs as Record<string, SpecPart[]> | undefined)?.[extraSpecKey(modelId)]?.map((p) => ((p.id === 'pair_hinge' || p.id === 'single_hinge') && p.qty.trim() === '2' ? { ...p, qty: 'HINGES' } : p)) ?? [] : [];
+
 /** Sastavnica modela: izmenjena ili podrazumevana specifikacija; kod nacrtanog modela uz crtež idu i dodati materijali. */
 export const specFor = (modelId: FenceModelId, specs?: ModelSpecs): SpecPart[] => {
   const base = specs?.[modelId] ?? defaultSpec(modelId);
   // šarke upisane ranije sa stalnom količinom 2 računaju se po pravilu (3 za visoko ili široko krilo)
-  const extra = customModelOf(modelId) ? (specs as Record<string, SpecPart[]> | undefined)?.[extraSpecKey(modelId)]?.map((p) => ((p.id === 'pair_hinge' || p.id === 'single_hinge') && p.qty.trim() === '2' ? { ...p, qty: 'HINGES' } : p)) : undefined;
-  return extra?.length ? [...base, ...extra] : base;
+  const extra = extraSpecFor(modelId, specs);
+  return extra.length ? [...base, ...extra] : base;
 };
 
 /** Da li model ima izmenjenu specifikaciju (tada se zamenjuje i detaljna sastavnica modela 04 i 08). */

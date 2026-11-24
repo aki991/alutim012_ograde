@@ -501,7 +501,7 @@ export function SceneContent(p: ContentProps) {
               {it.kind === 'fence' && !isRl10Model(it.modelId) && li.floorStart !== li.floorEnd && FENCE_MODELS[it.modelId].style === 'rods' && <SlopedRails li={li} fence={it} />}
               {it.kind === 'fence' && !isRl10Model(it.modelId) && !(li.floorStart !== li.floorEnd && FENCE_MODELS[it.modelId].style === 'rods') && (
                 <group position={[mid, s(li.plinthMm), 0]}>
-                  <PanelBody modelId={it.modelId} widthMm={li.clearWidth} heightMm={it.heightMm} params={{ ...it.params, slats: { ...it.params.slats, stairTan: tan } }} color={it.color} axisWidthMm={li.axisEnd - li.axisStart} skipLeftPost={leftPostShared(project.items, li.index)} />
+                  <PanelBody itemId={it.id} selectedPostId={p.selectionType === 'post' ? p.selectionId : null} modelId={it.modelId} widthMm={li.clearWidth} heightMm={it.heightMm} params={{ ...it.params, slats: { ...it.params.slats, stairTan: tan } }} color={it.color} axisWidthMm={li.axisEnd - li.axisStart} skipLeftPost={layout.posts[li.index].post.removed || leftPostShared(project.items, li.index)} skipRightPost={layout.posts[li.index + 1].post.removed} />
                 </group>
               )}
               {it.kind === 'gate' && <group position={[0, s(li.plinthMm), 0]}><GateMesh gate={it} li={li} showZones={showZones && !p.still} postWidthMm={Math.max(0, ...layout.posts.map((q) => (q.hidden ? 0 : q.widthMm)))} /></group>}
@@ -512,7 +512,7 @@ export function SceneContent(p: ContentProps) {
               {it.kind === 'opening' && !isCorner(it) && (
                 <mesh geometry={boxGeometry} material={metalMaterial('#94a3b8')} position={[mid, 0.01, 0]} scale={[s(li.clearWidth), 0.02, 0.06]} />
               )}
-              <Hit x={mid} w={s(li.clearWidth)} h={s(it.heightMm + li.plinthMm) + 0.08} depth={0.16} pick={{ kind: 'item', id: it.id }} />
+              <Hit x={s((li.railingStart + li.railingEnd) / 2)} w={s(li.railingEnd - li.railingStart)} h={s(it.heightMm + li.plinthMm) + 0.08} depth={0.16} pick={{ kind: 'item', id: it.id }} />
             </Frame>
           );
         })}
@@ -555,10 +555,10 @@ export function SceneContent(p: ContentProps) {
         })}
 
         {/* označavanje: izabrano, hover, prevlačeni element, mesto ubacivanja */}
-        {selItem && <Frame at={plan.items[selItem.index].start} heading={plan.items[selItem.index].heading} axisStart={selItem.axisStart} floor={Math.min(selItem.floorStart, selItem.floorEnd)}><Highlight x={s((selItem.axisStart + selItem.axisEnd) / 2)} w={s(selItem.axisEnd - selItem.axisStart)} h={s(selItem.item.heightMm + selItem.plinthMm) + 0.1} color="#d71920" opacity={0.1} /></Frame>}
+        {selItem && <Frame at={plan.items[selItem.index].start} heading={plan.items[selItem.index].heading} axisStart={selItem.axisStart} floor={Math.min(selItem.floorStart, selItem.floorEnd)}><Highlight x={s((selItem.railingStart + selItem.railingEnd) / 2)} w={s(selItem.railingEnd - selItem.railingStart)} h={s(selItem.item.heightMm + selItem.plinthMm) + 0.1} color="#d71920" opacity={0.1} /></Frame>}
         {selPost && <group position={[s(plan.posts[selPost.index].at.x + plan.posts[selPost.index].shift.x), 0, s(plan.posts[selPost.index].at.z + plan.posts[selPost.index].shift.z)]} rotation={[0, -plan.posts[selPost.index].supportHeading, 0]}><Highlight x={0} w={s(selPost.post.widthMm) + 0.06} h={s(selPost.topMm) + 0.1} color="#d71920" opacity={0.14} /></group>}
-        {hov && hov.item.id !== p.selectionId && <Frame at={plan.items[hov.index].start} heading={plan.items[hov.index].heading} axisStart={hov.axisStart} floor={Math.min(hov.floorStart, hov.floorEnd)}><Highlight x={s((hov.axisStart + hov.axisEnd) / 2)} w={s(hov.axisEnd - hov.axisStart)} h={s(hov.item.heightMm + hov.plinthMm) + 0.1} color="#60a5fa" opacity={0.07} lines={false} /></Frame>}
-        {dragged && <Frame at={plan.items[dragged.index].start} heading={plan.items[dragged.index].heading} axisStart={dragged.axisStart}><Highlight x={s((dragged.axisStart + dragged.axisEnd) / 2)} w={s(dragged.axisEnd - dragged.axisStart)} h={s(dragged.item.heightMm + dragged.plinthMm) + 0.1} color="#f59e0b" opacity={0.3} /></Frame>}
+        {hov && hov.item.id !== p.selectionId && <Frame at={plan.items[hov.index].start} heading={plan.items[hov.index].heading} axisStart={hov.axisStart} floor={Math.min(hov.floorStart, hov.floorEnd)}><Highlight x={s((hov.railingStart + hov.railingEnd) / 2)} w={s(hov.railingEnd - hov.railingStart)} h={s(hov.item.heightMm + hov.plinthMm) + 0.1} color="#60a5fa" opacity={0.07} lines={false} /></Frame>}
+        {dragged && <Frame at={plan.items[dragged.index].start} heading={plan.items[dragged.index].heading} axisStart={dragged.axisStart}><Highlight x={s((dragged.railingStart + dragged.railingEnd) / 2)} w={s(dragged.railingEnd - dragged.railingStart)} h={s(dragged.item.heightMm + dragged.plinthMm) + 0.1} color="#f59e0b" opacity={0.3} /></Frame>}
         {dropX !== null && (
           <group name="ui-helper" position={[s(dropX), 0, 0]}>
             <mesh geometry={boxGeometry} position={[0, (H + 0.3) / 2, 0]} scale={[0.07, H + 0.3, 0.5]} renderOrder={5}><meshBasicMaterial color="#d71920" transparent opacity={0.85} depthTest={false} /></mesh>
@@ -572,7 +572,7 @@ export function SceneContent(p: ContentProps) {
             <mesh position={[s(selItem.axisEnd), s(selItem.item.heightMm) / 2 + s(selItem.plinthMm), 0.25]} userData={{ pickKind: 'handle', pickId: selItem.item.id, handle: 'width' }} renderOrder={10}>
               <sphereGeometry args={[0.085, 20, 14]} /><meshBasicMaterial color="#d71920" depthTest={false} />
             </mesh>
-            <mesh position={[s((selItem.axisStart + selItem.axisEnd) / 2), s(selItem.item.heightMm + selItem.plinthMm) + 0.12, 0.25]} userData={{ pickKind: 'handle', pickId: selItem.item.id, handle: 'height' }} renderOrder={10}>
+            <mesh position={[s((selItem.railingStart + selItem.railingEnd) / 2), s(selItem.item.heightMm + selItem.plinthMm) + 0.12, 0.25]} userData={{ pickKind: 'handle', pickId: selItem.item.id, handle: 'height' }} renderOrder={10}>
               <sphereGeometry args={[0.085, 20, 14]} /><meshBasicMaterial color="#d71920" depthTest={false} />
             </mesh>
           </group>
@@ -715,7 +715,7 @@ function Scene3DInner({ project, drag, onBeginDrag, registerTarget, targetKey, o
       e.nativeEvent.stopPropagation();
       downRef.current = null;
       if (hit.kind === 'handle') { startResize(hit); return; }
-      if (hit.kind === 'post') { useAppStore.getState().select({ type: 'post', id: hit.id }); return; }
+      if (hit.kind === 'post') { useAppStore.getState().select({ type: 'post', id: hit.id }); window.dispatchEvent(new CustomEvent('open-props')); return; }
       useAppStore.getState().select({ type: 'item', id: hit.id });
       const idx = project.items.findIndex((i) => i.id === hit.id);
       onBeginDrag({ kind: 'move', id: hit.id, label: `${itemLabel(project.items, idx)} · ${project.items[idx]?.widthMm} mm` }, e);
@@ -731,7 +731,7 @@ function Scene3DInner({ project, drag, onBeginDrag, registerTarget, targetKey, o
     if (!d || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 5) return; // pomeranje kamere nije klik
     const st = useAppStore.getState();
     if (!d.hit || d.hit.kind === 'handle') st.select(null);
-    else st.select({ type: d.hit.kind === 'post' ? 'post' : 'item', id: d.hit.id });
+    else { st.select({ type: d.hit.kind === 'post' ? 'post' : 'item', id: d.hit.id }); window.dispatchEvent(new CustomEvent('open-props')); }
   };
 
   const raf = useRef(0);

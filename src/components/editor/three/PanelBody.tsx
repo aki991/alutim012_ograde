@@ -1,7 +1,8 @@
 import { isTubesModel } from '../../../domain/models/tubes';
+import { terracePostId } from '../../../domain/geometry/terracePosts';
 import { TubesWithRam } from './TubesPanel';
 import { customLiftOf, customPartsFor } from '../../../domain/models/customRegistry';
-import { zExtent } from '../../../domain/models/custom';
+import { partBounds, zExtent } from '../../../domain/models/custom';
 import { PartMesh } from '../../designer/Designer3D';
 import { materialKey } from '../../../domain/models/materialShape';
 import { useTexture } from '@react-three/drei';
@@ -18,6 +19,8 @@ import { LouverPanel } from './LouverPanel';
 import { boxGeometry, darkMaterial, glassMaterial, metalMaterial, steelMaterial } from './materials';
 
 export interface PanelProps {
+  itemId?: string;
+  selectedPostId?: string | null;
   modelId: FenceModelId;
   widthMm: number;
   heightMm: number;
@@ -27,6 +30,7 @@ export interface PanelProps {
   axisWidthMm?: number;
   /** levi stub je zajednički sa prethodnim poljem i već je nacrtan */
   skipLeftPost?: boolean;
+  skipRightPost?: boolean;
   /** ručno nacrtan model: sredina dubine (Z) se postavlja u ravan polja (klizno krilo, uz koje stoji okov) */
   centerZ?: boolean;
 }
@@ -106,11 +110,11 @@ function ArtPanel({ url, widthMm, heightMm, tiles, repeat }: { url: string; widt
 }
 
 /** Ograda sa rukohvatom: slika modela u tri dela (stub sa stezaljkama, razvučeni srednji deo, stub), isto kao u 2D. */
-function RailArtPanel({ url, rail, axisWidthMm, heightMm, rodCount }: { url: string; rail: NonNullable<ReturnType<typeof railArt>>; axisWidthMm: number; heightMm: number; rodCount?: number }) {
+function RailArtPanel({ url, rail, axisWidthMm, heightMm, rodCount, skipLeftPost, skipRightPost }: { url: string; rail: NonNullable<ReturnType<typeof railArt>>; axisWidthMm: number; heightMm: number; rodCount?: number; skipLeftPost?: boolean; skipRightPost?: boolean }) {
   const base = useTexture(url);
   const parts = useMemo(() => {
     // samo polje između stubova (osa–osa) kao slika; stubovi sa stezaljkama su prava 3D geometrija (vide se iz svih pravaca)
-    const def = { u0: rail.cL, u1: rail.cR, cx: 0, w: axisWidthMm };
+    const def = { u0: rail.cL + (skipLeftPost ? rail.a : 0), u1: rail.cR - (skipRightPost ? rail.a : 0), cx: 0, w: axisWidthMm };
     // trake odozgo naniže (visine u mm); bez traka celu sliku čini jedna traka
     const bands = (rodCount ? railBands(rail, heightMm, rodCount) : null) ?? [{ v0: rail.top ?? 0, v1: rail.imgH, hMm: heightMm }];
     let top = heightMm;
@@ -124,7 +128,7 @@ function RailArtPanel({ url, rail, axisWidthMm, heightMm, rodCount }: { url: str
       t.needsUpdate = true;
       return { cx: def.cx, w: def.w, cy: b.cy, h: b.hMm, tex: t };
     });
-  }, [base, rail, axisWidthMm, rodCount, heightMm]);
+  }, [base, rail, axisWidthMm, rodCount, heightMm, skipLeftPost, skipRightPost]);
   useLayoutEffect(() => () => parts.forEach((p) => p.tex.dispose()), [parts]);
   return (
     <group>
@@ -149,7 +153,11 @@ export function PanelBody(props: PanelProps) {
     return (
       <group position={[-s(props.widthMm) / 2, s(up), -s(zMid)]} scale={s(1)}>
         {resolved.map((r) => {
-          const mesh = <PartMesh key={r.part.id} part={r.part} shape={r.shape} hex={r.hex} materialKey={r.material ? materialKey(r.material) : 'x'} selected={false} />;
+          const b = partBounds(r.part, r.shape);
+          const mesh = <group key={r.part.id}><PartMesh part={r.part} shape={r.shape} hex={r.hex} materialKey={r.material ? materialKey(r.material) : 'x'} selected={!!props.itemId && r.part.terracePostKey !== undefined && props.selectedPostId === terracePostId(props.itemId, r.part.terracePostKey)} />
+            {props.itemId && r.part.terracePostKey !== undefined && <mesh geometry={boxGeometry} position={[(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, r.part.z]} scale={[b.x1 - b.x0, b.y1 - b.y0, Math.max(40, b.x1 - b.x0)]}
+              userData={{ pickKind: 'post', pickId: terracePostId(props.itemId, r.part.terracePostKey) }}><meshBasicMaterial visible={false} /></mesh>}
+          </group>;
           const t = r.part.unshearTan;
           // stepenište: flanša leži ravno na gazištu (poništava iskošenje polja)
           return t ? <group key={r.part.id} matrixAutoUpdate={false} matrix={new THREE.Matrix4().set(1, 0, 0, 0, -t, 1, 0, t * r.part.x, 0, 0, 1, 0, 0, 0, 0, 1)}>{mesh}</group> : mesh;
@@ -165,7 +173,7 @@ export function PanelBody(props: PanelProps) {
   if (rail && MODEL_IMAGES[rail.id] && props.axisWidthMm) {
     return (
       <Suspense fallback={<ParamPanel {...props} />}>
-        <RailArtPanel url={MODEL_IMAGES[rail.id]} rail={rail} axisWidthMm={props.axisWidthMm} heightMm={props.heightMm} rodCount={rodCountFor(props.modelId, props.params, props.heightMm) ?? undefined} />
+        <RailArtPanel url={MODEL_IMAGES[rail.id]} rail={rail} axisWidthMm={props.axisWidthMm} heightMm={props.heightMm} rodCount={rodCountFor(props.modelId, props.params, props.heightMm) ?? undefined} skipLeftPost={props.skipLeftPost} skipRightPost={props.skipRightPost} />
       </Suspense>
     );
   }

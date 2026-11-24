@@ -97,7 +97,7 @@ function EditorWorkspace({ navigateAway }: { navigateAway: () => void }) {
       if (mod && e.key.toLowerCase() === 'z' && !typing) { e.preventDefault(); if (e.shiftKey) st.redo(); else st.undo(); return; }
       if (mod && e.key.toLowerCase() === 'y' && !typing) { e.preventDefault(); st.redo(); return; }
       if (typing) return;
-      if (e.key === 'Delete' || e.key === 'Backspace') { if (st.editor.selection?.type === 'item') { e.preventDefault(); st.deleteSelected(); } }
+      if (e.key === 'Delete' || e.key === 'Backspace') { if (st.editor.selection) { e.preventDefault(); st.deleteSelected(); } }
       else if (e.key === 'Escape') st.select(null);
     };
     window.addEventListener('keydown', onKey);

@@ -321,7 +321,7 @@ function withConcreteWidth(x: Post, patch: Partial<Post>): Post {
  */
 function keepClearWidths(before: Project, after: Project): Project {
   if (before.items.length !== after.items.length || before.posts.length !== after.posts.length) return after;
-  const eff = (q: Project, i: number) => (isHiddenPost(q.items, i) ? 0 : q.posts[i]?.widthMm ?? 0);
+  const eff = (q: Project, i: number) => (q.posts[i]?.removed || isHiddenPost(q.items, i) ? 0 : q.posts[i]?.widthMm ?? 0);
   let changed = false;
   const items = after.items.map((it, k) => {
     if (isSpacer(it)) return it;

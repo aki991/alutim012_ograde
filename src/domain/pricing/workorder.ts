@@ -1,7 +1,7 @@
 import { gateLeafPoses, gateSpecWidth } from '../geometry/gates';
 import { isStair, stairGroupAt, stairGroupSummary } from '../geometry/stair';
 import { computeInfill } from '../geometry/infill';
-import { computeLayout, outerWidthMm } from '../geometry/layout';
+import { computeLayout, railingWidthMm } from '../geometry/layout';
 import { AUTOMATION_LABELS, colorText, HINGE_LABELS, LOCK_LABELS, MOUNTING_LABELS, POST_LABELS } from '../models/catalog';
 import type { ModelSpecs } from '../models/spec';
 import type { Material, Project } from '../models/types';
@@ -145,7 +145,7 @@ export function buildWorkOrder(project: Project, specs: ModelSpecs | undefined, 
       const bars = leafWs.reduce((n, w) => n + computeInfill(modelId, w, leafH, it.params.frameMm, it.params.barSizeMm, it.params.gapMm, it.params.barCount).bars.filter((b) => b.tone === 'main').length, 0);
       const slatCount = isCustomModel(modelId) ? leafWs.reduce((n, w) => n + customSlatCount(modelId, w, it.kind === 'gate' ? leafHeightOf(it) : it.heightMm, it.params.slats), 0) : 0;
       facts.push(
-        ...(sliding ? [] : [{ label: 'Ukupna širina', value: `${Math.round(outerWidthMm(project, idx))} mm` }, { label: 'Visina', value: `${Math.round(it.heightMm)} mm` }]),
+        ...(sliding ? [] : [{ label: 'Ukupna širina', value: `${Math.round(railingWidthMm(project, idx))} mm` }, { label: 'Visina', value: `${Math.round(it.heightMm)} mm` }]),
         { label: 'Boja', value: colorLabel(it.color, it.finish) },
         ...(bars > 0 && !isCustomModel(modelId) ? [{ label: 'Profila ispune', value: String(bars) }] : []),
         // nacrtan model: broj uspravnih letvica preračunat za stvarnu širinu krila (isti kao na crtežu i u krojnoj listi)
@@ -221,7 +221,7 @@ export function buildWorkOrder(project: Project, specs: ModelSpecs | undefined, 
     elements,
     posts,
     small,
-    summary: { occupiedMm: layout.occupiedMm, elements: project.items.filter((i) => i.kind !== 'opening' && inPrintScope(i, scope)).length, gates, posts: posts.length, maxHeightMm: Math.max(0, ...sp.items.map((it) => it.kind === 'opening' ? 0 : it.heightMm), ...posts.map((p) => p.heightMm)) },
+    summary: { occupiedMm: layout.railingLengthMm, elements: project.items.filter((i) => i.kind !== 'opening' && inPrintScope(i, scope)).length, gates, posts: posts.length, maxHeightMm: Math.max(0, ...sp.items.map((it) => it.kind === 'opening' ? 0 : it.heightMm), ...posts.map((p) => p.heightMm)) },
     positionOfItem: (index) => positionOfItem(cutting.positions, itemNumber(project.items, index) - 1),
   };
 }

@@ -1,6 +1,6 @@
 import { gateLeafPoses } from '../domain/geometry/gates';
 import { computeInfill } from '../domain/geometry/infill';
-import { computeLayout, isSpacer, outerWidthMm } from '../domain/geometry/layout';
+import { computeLayout, isSpacer, railingWidthMm } from '../domain/geometry/layout';
 import type { Project } from '../domain/models/types';
 import { itemLabel } from '../utils/labels';
 import { localToWorld } from '../domain/gates/slidingAssembly';
@@ -182,7 +182,7 @@ export function schemaSvg(project: Project, keyOfItem: (index: number) => string
 
     // naziv i mera na elementu: vodoravno ako staje, inače uspravno
     const name = itemLabel(project.items, li.index);
-    const dim = `${Math.round(outerWidthMm(project, li.index))} × ${Math.round(it.heightMm)}`;
+    const dim = `${Math.round(railingWidthMm(project, li.index))} × ${Math.round(it.heightMm)}`;
     const cx = x + w / 2;
     const ty = y + h / 2 - t * (w / 2);
     const needW = Math.max(name.length * 7.6, dim.length * 6.4) + 12;
@@ -233,8 +233,8 @@ export function schemaSvg(project: Project, keyOfItem: (index: number) => string
 
   // ukupna zauzeta dužina
   const y0 = lowest + 10;
-  out.push(`<line x1="${(ox - maxPost * s / 2).toFixed(1)}" y1="${y0.toFixed(1)}" x2="${(ox + (layout.totalModularMm + maxPost / 2) * s).toFixed(1)}" y2="${y0.toFixed(1)}" stroke="#94a3b8" stroke-width="1"/>`);
-  out.push(`<text x="${(ox + layout.totalModularMm * s / 2).toFixed(1)}" y="${(y0 + 13).toFixed(1)}" text-anchor="middle" font-family="${FONT}" font-size="11.5" fill="#475569">ukupna dužina ${Math.round(layout.occupiedMm)} mm</text>`);
+  out.push(`<line x1="${(ox + layout.railingStartMm * s).toFixed(1)}" y1="${y0.toFixed(1)}" x2="${(ox + layout.railingEndMm * s).toFixed(1)}" y2="${y0.toFixed(1)}" stroke="#94a3b8" stroke-width="1"/>`);
+  out.push(`<text x="${(ox + layout.totalModularMm * s / 2).toFixed(1)}" y="${(y0 + 13).toFixed(1)}" text-anchor="middle" font-family="${FONT}" font-size="11.5" fill="#475569">ukupna dužina ${Math.round(layout.railingLengthMm)} mm</text>`);
 
   return { svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">${out.join('')}</svg>`, width: W, height: H };
 }

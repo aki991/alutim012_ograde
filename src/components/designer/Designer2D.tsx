@@ -1,15 +1,17 @@
 import { Maximize2, Ruler, ZoomIn, ZoomOut } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { extentBounds, partBounds, type CustomModel, type CustomPart } from '../../domain/models/custom';
-import { materialShape, sectionFace, type MatShape } from '../../domain/models/materialShape';
+import { materialShape, type MatShape } from '../../domain/models/materialShape';
 import type { Material } from '../../domain/models/types';
 import { snapBox, snapPoint, snapRefs, type Box, type SnapRefs } from '../../domain/models/snapping';
 import { uid } from '../../utils/id';
+import { profileGrips, resizeProfileByDrag, type ProfileEnd } from '../../domain/models/profileDrag';
 import { PartSvg, type ResolvedPart } from './PartsSvg';
 
 interface View { x: number; y: number; w: number }
 type Drag =
   | { mode: 'draw'; sx: number; sy: number }
+  | { mode: 'resize'; sx: number; sy: number; part: CustomPart; shape: MatShape; end: ProfileEnd; moved: boolean; refs: SnapRefs }
   | { mode: 'move'; sx: number; sy: number; origin: { id: string; x: number; y: number }[]; moved: boolean; /** okvir izabranih delova i ivice ostalih (za privlačenje) */ box: Box | null; refs: SnapRefs }
   | { mode: 'box'; sx: number; sy: number; add: boolean; base: string[] }
   | { mode: 'pan'; cx: number; cy: number; view: View };
@@ -31,6 +33,8 @@ interface Props {
   onMoveStart: () => void;
   /** pomeranje svih izabranih delova odjednom (novi x i y svakog dela) */
   onMove: (moves: { id: string; x: number; y: number }[]) => void;
+  /** Jedna potvrđena izmena po povlačenju krajnje ivice; tokom povlačenja prikazuje se lokalni pregled. */
+  onResize?: (part: CustomPart) => void;
   /** nalepljeni delovi (Ctrl + V) koji prate pokazivač dok se ne postave klikom; null = nema lepljenja */
   /** prikaz kota: ukupna širina i visina crteža (mere modela proizlaze iz crteža) */
   showDims?: boolean;
@@ -80,9 +84,9 @@ function partFromDragRaw(materialId: string, shape: MatShape, sx: number, sy: nu
     if (Math.abs(dx) >= Math.abs(dy)) return Math.abs(dx) < 10 ? null : { ...base, x: Math.min(sx, ex), y: sy, lengthMm: Math.abs(dx), angleDeg: 0 };
     return { ...base, x: sx, y: Math.min(sy, ey), lengthMm: Math.abs(dy), angleDeg: 90 };
   }
-  const len = Math.round(Math.hypot(dx, dy));
+  const len = Math.round(Math.hypot(dx, dy) * 1000) / 1000;
   if (len < 10) return null;
-  return { ...base, x: sx, y: sy, lengthMm: len, angleDeg: Math.round((Math.atan2(dy, dx) * 180) / Math.PI) };
+  return { ...base, x: sx, y: sy, lengthMm: len, angleDeg: Math.round((Math.atan2(dy, dx) * 180000) / Math.PI) / 1000 };
 }
 
 /**
@@ -145,13 +149,15 @@ function DimsLayer({ box, fs }: { box: { x0: number; y0: number; x1: number; y1:
  * Ctrl + klik dodaje ili skida deo iz izbora, prevlačenje po praznom bira sve delove koje okvir dotakne; prevlačenje izabranog
  * dela pomera ceo izbor. Desni (ili srednji) taster pomera papir. Pokazivač je obična strelica.
  */
-export function Designer2D({ parts, active, selectedIds, ortho, gridMm, snapObjects = false, onSelect, onAdd, onMoveStart, onMove, placing, onPlace, showDims = true, viewShift, fitTick = 0, onMoveEnd, overlay, underlay, groundY = 0, extraBounds, onOverlayPick }: Props) {
+export function Designer2D({ parts, active, selectedIds, ortho, gridMm, snapObjects = false, onSelect, onAdd, onMoveStart, onMove, onResize, placing, onPlace, showDims = true, viewShift, fitTick = 0, onMoveEnd, overlay, underlay, groundY = 0, extraBounds, onOverlayPick }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ w: 800, h: 500 });
   const [view, setView] = useState<View>({ x: -200, y: -1700, w: 2400 });
   const drag = useRef<Drag | null>(null);
   const [ghost, setGhost] = useState<CustomPart | null>(null);
+  const [resizePreview, setResizePreview] = useState<CustomPart | null>(null);
+  const visibleParts = useMemo(() => resizePreview ? parts.map((r) => r.part.id === resizePreview.id ? { ...r, part: resizePreview } : r) : parts, [parts, resizePreview]);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   /** linije uz koje je deo privučen (mm, y nagore) */
   const [guides, setGuides] = useState<{ gx: number[]; gy: number[] }>({ gx: [], gy: [] });
@@ -163,6 +169,16 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, snapObje
   const [meas, setMeas] = useState<{ a: { x: number; y: number }; b: { x: number; y: number } | null } | null>(null);
   const [measLive, setMeasLive] = useState<{ x: number; y: number } | null>(null);
   const measureOn = measuring && !active && !placing?.length;
+  const resizable = !active && !placing?.length && !measureOn && onResize && selectedIds.length === 1
+    ? visibleParts.find((r) => r.part.id === selectedIds[0] && r.shape.type === 'linear' && !r.part.hw && !r.part.joint3d && !r.part.tube3d) : null;
+  useEffect(() => {
+    const cancel = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || drag.current?.mode !== 'resize') return;
+      e.preventDefault(); e.stopPropagation(); drag.current = null; setResizePreview(null); setGuides({ gx: [], gy: [] });
+    };
+    window.addEventListener('keydown', cancel, true);
+    return () => window.removeEventListener('keydown', cancel, true);
+  }, []);
   useEffect(() => {
     if (!measuring) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); setMeas(null); setMeasuring(false); } };
@@ -178,7 +194,7 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, snapObje
   const refsFor = (exclude?: Set<string>): SnapRefs => snapRefs(parts.filter((r) => !exclude?.has(r.part.id)).map(boundsOf), -groundY);
   /** okvir crteža (svi delovi): odatle su ukupne mere */
   // kote idu od tla: kod klizne kapije je krilo podignuto od tla, pa visina obuhvata i taj razmak (ukupna visina od dna ograde)
-  const dimsBox = useMemo(() => { const b = extentBounds(parts); return b && groundY > 0 ? { ...b, y0: Math.min(b.y0, -groundY) } : b; }, [parts, groundY]);
+  const dimsBox = useMemo(() => { const b = extentBounds(visibleParts); return b && groundY > 0 ? { ...b, y0: Math.min(b.y0, -groundY) } : b; }, [visibleParts, groundY]);
   // nalepljeni delovi: sredina njihovog okvira stoji na pokazivaču (na mreži)
   const placeOffset = useMemo(() => {
     if (!placing?.length || !cursor) return null;
@@ -280,6 +296,11 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, snapObje
     }
     if (active) { drag.current = { mode: 'draw', sx: snap(p.x, gridMm), sy: snap(p.y, gridMm) }; return; }
     if (e.button !== 0) return;
+    const handle = (e.target as Element).closest('[data-resize-end]');
+    if (handle && resizable) {
+      drag.current = { mode: 'resize', sx: p.x, sy: p.y, part: resizable.part, shape: resizable.shape, end: Number(handle.getAttribute('data-resize-end')) as ProfileEnd, moved: false, refs: refsFor(new Set([resizable.part.id])) };
+      return;
+    }
     const hw = onOverlayPick ? (e.target as Element).closest('[data-sliding-part]')?.getAttribute('data-sliding-part') : null;
     if (hw && hw !== 'leaf') { onOverlayPick!(hw, (e.target as Element).closest('[data-tail-member]')?.getAttribute('data-tail-member') ?? undefined); return; }
     const add = e.ctrlKey || e.metaKey;
@@ -302,6 +323,15 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, snapObje
       drag.current = { mode: 'box', sx: p.x, sy: p.y, add, base: selectedIds };
     }
   };
+  const resizedAt = (d: Extract<Drag, { mode: 'resize' }>, p: { x: number; y: number }, e: { altKey: boolean; shiftKey: boolean }) => {
+    let dx = p.x - d.sx; let dy = p.y - d.sy;
+    const grip = profileGrips(d.part, d.shape)[d.end];
+    const target = snapObjects && !e.altKey ? snapPoint(grip[0] + dx, grip[1] + dy, d.refs, thr) : null;
+    if (target) { dx = target.x - grip[0]; dy = target.y - grip[1]; }
+    const part = resizeProfileByDrag(d.part, d.end, dx, dy, e.shiftKey, target && (target.gx !== null || target.gy !== null) ? 0 : gridMm);
+    const at = part && profileGrips(part, d.shape)[d.end];
+    return { part, gx: target?.gx !== null && target?.gx !== undefined && at && Math.abs(at[0] - target.gx) < 0.01 ? [target.gx] : [], gy: target?.gy !== null && target?.gy !== undefined && at && Math.abs(at[1] - target.gy) < 0.01 ? [target.gy] : [] };
+  };
   const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
     const p = toWorld(e.clientX, e.clientY);
     const sp = { x: snap(p.x, gridMm), y: snap(p.y, gridMm) };
@@ -313,6 +343,9 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, snapObje
     if (d.mode === 'pan') {
       const r = e.currentTarget.getBoundingClientRect();
       setView({ ...d.view, x: d.view.x - ((e.clientX - d.cx) / r.width) * d.view.w, y: d.view.y - ((e.clientY - d.cy) / r.height) * ((d.view.w * r.height) / r.width) });
+    } else if (d.mode === 'resize') {
+      if (!d.moved && Math.hypot(p.x - d.sx, p.y - d.sy) > 2 * view.w / size.w) d.moved = true;
+      if (d.moved) { const r = resizedAt(d, p, e); if (r.part) setResizePreview(r.part); setGuides({ gx: r.gx, gy: r.gy }); }
     } else if (d.mode === 'move') {
       let dx = snap(p.x - d.sx, gridMm); let dy = snap(p.y - d.sy, gridMm);
       if (snapObjects && !e.altKey && d.box) {
@@ -325,7 +358,7 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, snapObje
     } else if (d.mode === 'box') {
       setBox({ x0: Math.min(d.sx, p.x), y0: Math.min(d.sy, p.y), x1: Math.max(d.sx, p.x), y1: Math.max(d.sy, p.y) });
     } else if (active && activeShape) {
-      const r = partFromDragSnapped(active.id, activeShape, d.sx, d.sy, sp.x, sp.y, ortho, 'ghost', refs, thr);
+      const r = partFromDragSnapped(active.id, activeShape, d.sx, d.sy, sp.x, sp.y, ortho || e.shiftKey, 'ghost', refs, thr);
       setGhost(r.part); setGuides({ gx: r.gx, gy: r.gy });
     }
   };
@@ -333,6 +366,12 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, snapObje
     const d = drag.current;
     drag.current = null;
     setGuides({ gx: [], gy: [] });
+    if (d?.mode === 'resize') {
+      const result = d.moved ? resizedAt(d, toWorld(e.clientX, e.clientY), e).part : null;
+      setResizePreview(null);
+      if (result && result !== d.part) onResize?.(result);
+      return;
+    }
     if (d?.mode === 'move' && d.moved) onMoveEnd?.();
     if (d?.mode === 'box') {
       const b = box;
@@ -346,7 +385,7 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, snapObje
     }
     if (d?.mode === 'draw' && active && activeShape) {
       const p = toWorld(e.clientX, e.clientY);
-      const part = partFromDragSnapped(active.id, activeShape, d.sx, d.sy, snap(p.x, gridMm), snap(p.y, gridMm), ortho, uid('part'), snapObjects && !e.altKey ? refsFor() : null, thr).part;
+      const part = partFromDragSnapped(active.id, activeShape, d.sx, d.sy, snap(p.x, gridMm), snap(p.y, gridMm), ortho || e.shiftKey, uid('part'), snapObjects && !e.altKey ? refsFor() : null, thr).part;
       if (part) onAdd(part);
       setGhost(null);
     }
@@ -362,19 +401,19 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, snapObje
   }
   const fs = view.w / 70; // veličina slova prati zum, pa su natpisi iste veličine na ekranu
   const ghostLabel = ghost && activeShape && activeShape.type !== 'piece'
-    ? (activeShape.type === 'sheet' ? `${ghost.lengthMm} × ${ghost.heightMm} mm` : `${ghost.lengthMm} mm${activeShape.type === 'linear' ? ` · širina ${sectionFace(activeShape.section, 0).face} mm` : ''}`)
+    ? (activeShape.type === 'sheet' ? `${ghost.lengthMm} × ${ghost.heightMm} mm` : `${Number(ghost.lengthMm.toFixed(1))} mm · ${Number(ghost.angleDeg.toFixed(2))}°`)
     : null;
 
   return (
     <div ref={wrapRef} className="relative h-full w-full bg-[#eef2f6] overflow-hidden select-none" style={{ touchAction: 'none' }} data-testid="designer-2d">
       <svg ref={svgRef} className="absolute inset-0 w-full h-full" viewBox={`${view.x} ${view.y} ${view.w} ${vh}`} style={{ cursor: active || placing || measureOn ? 'crosshair' : 'default' }}
-        onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={() => { setCursor(null); setGuides({ gx: [], gy: [] }); if (!drag.current) setGhost(null); }} onPointerCancel={() => { drag.current = null; setBox(null); }} onContextMenu={(e) => e.preventDefault()}>
+        onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={() => { setCursor(null); setGuides({ gx: [], gy: [] }); if (!drag.current) setGhost(null); }} onPointerCancel={() => { drag.current = null; setBox(null); setResizePreview(null); setGuides({ gx: [], gy: [] }); }} onContextMenu={(e) => e.preventDefault()}>
         {lines}
         <line x1={view.x} y1={groundY} x2={view.x + view.w} y2={groundY} stroke="#64748b" strokeWidth={1.5} vectorEffect="non-scaling-stroke" data-testid="designer-ground" />
         {showDims && dimsBox && <DimsLayer box={dimsBox} fs={fs} />}
         {underlay && <g data-testid="designer-underlay">{underlay(view.w / size.w)}</g>}
         <g transform="scale(1,-1)">
-          {parts.map((r) => <PartSvg key={r.part.id} part={r.part} shape={r.shape} hex={r.hex} selected={selected.has(r.part.id)} />)}
+          {visibleParts.map((r) => <PartSvg key={r.part.id} part={r.part} shape={r.shape} hex={r.hex} selected={selected.has(r.part.id)} />)}
           {box && <rect data-testid="designer-select-box" x={box.x0} y={box.y0} width={box.x1 - box.x0} height={box.y1 - box.y0} fill="#2563eb" fillOpacity={0.08} stroke="#2563eb" strokeWidth={1} strokeDasharray="5 4" vectorEffect="non-scaling-stroke" pointerEvents="none" />}
           {ghost && activeShape && <PartSvg part={ghost} shape={activeShape} hex="#d71920" ghost />}
           {guides.gx.map((x) => <line key={`gx${x}`} data-testid="designer-snap-guide" x1={x} x2={x} y1={-(view.y + vh)} y2={-view.y} stroke="#d946ef" strokeWidth={1} strokeDasharray="5 4" vectorEffect="non-scaling-stroke" pointerEvents="none" />)}
@@ -403,6 +442,11 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, snapObje
           );
         })()}
         {overlay && <g data-testid="designer-overlay">{overlay(view.w / size.w)}</g>}
+        {resizable && <g transform="scale(1,-1)" data-testid="designer-resize-handles">
+          {profileGrips(resizable.part, resizable.shape).map(([x, y], end) => <circle key={end} cx={x} cy={y} r={7 * view.w / size.w} fill="white" stroke="#d71920" strokeWidth={2} vectorEffect="non-scaling-stroke" data-testid={`designer-resize-${end === 0 ? 'start' : 'end'}`} data-resize-end={end} style={{ cursor: 'grab' }}>
+            <title>{end === 0 ? 'Početna' : 'Krajnja'} ivica: povucite za promenu dužine; Shift menja i nagib</title>
+          </circle>)}
+        </g>}
         {ghost && ghostLabel && <text x={ghost.x + fs} y={-(ghost.y + (ghost.heightMm ?? 0)) - fs * 1.2} fontSize={fs} fill="#d71920" fontWeight="700" data-testid="designer-ghost-label">{ghostLabel}</text>}
       </svg>
       <div className="absolute left-3 bottom-3 text-[12px] bg-white/90 border border-line rounded-lg px-2.5 py-1 tabular-nums text-slate-700" data-testid="designer-cursor">
@@ -418,9 +462,13 @@ export function Designer2D({ parts, active, selectedIds, ortho, gridMm, snapObje
         </div>
       ) : active && (
         <div className="absolute left-3 top-3 right-28 text-[12.5px] bg-white/95 border border-line rounded-lg px-3 py-1.5 text-slate-700" data-testid="designer-hint">
-          <b>{active.name}</b> — {activeShape?.type === 'piece' ? 'kliknite na mesto gde deo treba da stoji.' : activeShape?.type === 'sheet' ? 'povucite mišem pravougaonik ploče.' : 'povucite mišem od početka do kraja profila.'} Esc: kraj crtanja.
+          <b>{active.name}</b> — {activeShape?.type === 'piece' ? 'kliknite na mesto gde deo treba da stoji.' : activeShape?.type === 'sheet' ? 'povucite mišem pravougaonik ploče.' : `povucite od početka do kraja profila. ${ortho ? 'Vodoravno/uspravno.' : 'Slobodan ugao; Shift: vodoravno/uspravno.'}`} Esc: kraj crtanja.
         </div>
       )}
+      {resizable && <div className="absolute left-3 top-3 right-44 text-[12px] bg-white/95 border border-line rounded-lg px-3 py-1.5 text-slate-700 pointer-events-none" data-testid="designer-resize-hint">
+        {resizePreview ? <b>{Number(resizePreview.lengthMm.toFixed(1)).toLocaleString('sr-Latn-RS')} mm · {Number(resizePreview.angleDeg.toFixed(2)).toLocaleString('sr-Latn-RS')}° · </b> : null}
+        Povucite kružić na kraju profila za promenu dužine. Shift: menja i nagib. Esc: otkaži povlačenje.
+      </div>}
       <div className="absolute right-3 top-3 flex gap-1.5">
         <button className={`btn btn-sm ${measuring ? 'btn-dark' : ''}`} data-testid="designer-measure-toggle" aria-pressed={measuring} title="Metar: meri rastojanje između dve tačke na crtežu"
           onClick={() => { setMeasuring((m) => !m); setMeas(null); setMeasLive(null); }}><Ruler size={15} />Metar</button>

@@ -16,6 +16,9 @@ export type Lufta = 'sa' | 'bez';
  */
 export type HwKind = 'flange' | 'postCap' | 'connector' | 'holder' | 'rodCap' | 'railCap' | 'cornerBall' | 'cornerArm';
 
+/** Drugi rez na kraju profila (vidi `CustomPart.endTips`). */
+export interface EndTip { deg: number; at: number }
+
 export interface CustomPart {
   id: string;
   /** Stvarni ugaoni spoj, u lokalnim krutim koordinatama; ne deformiše se smicanjem stepeništa. */
@@ -24,6 +27,10 @@ export interface CustomPart {
   tube3d?: { lengthMm: number; angleDeg: number };
   /** Uloga generisanog terasnog dela kada njegov materijal pripada dvorišnom cenovniku. */
   terraceRole?: 'post' | 'rail' | 'rod';
+  /** Stalno mesto u generisanom rasporedu stubova; ostaje isto kada se drugi stub izostavi. */
+  terracePostKey?: string;
+  /** Osnova pre pojedinačnih izmena i spuštanja do gazišta; ponovni raspored ne sabira iste izmene. */
+  terracePostBase?: Pick<CustomPart, 'id' | 'materialId' | 'y' | 'lengthMm' | 'hwPick'>;
   /** Prikaz na stepeništu: stub, tarabica i komadni okov ostaju uspravni; nagib polja (tangens). */
   unshearTan?: number;
   /** prečka u bočnim U profilima: tolerancija (mm) — seče se kraće za toliko od dužine na crtežu; bez vrednosti platno 1 mm, kapija 3 mm */
@@ -62,6 +69,8 @@ export interface CustomPart {
   tiltDeg?: number;
   /** prečka uklopljena u dve bočne U vođice (ID levog i desnog U profila): ne može da izađe van njihovog kanala */
   guides?: [string, string];
+  /** Ručno povučena krajnja ivica: profil zadržava zadatu meru, bez ponovnog automatskog uklapanja u U vođice. */
+  autoGuides?: false;
   /**
    * Tip ograde sa prečkama pod uglom: „sa luftom“ (razmak 0 … najviše koliko staje, vidi se procep) ili „bez lufta“
    * (procepa nema: razmak 0 … najmanji mogući, negativan kad se nagnute prečke uvlače jedna u drugu). Bez vrednosti: „sa luftom“.
@@ -84,6 +93,13 @@ export interface CustomPart {
    */
   cutStartDeg?: number;
   cutEndDeg?: number;
+  /** Ručni rezovi na početku/kraju ose: 90 = ravan, 45 i 135 = suprotni smerovi reza 45°. Dužina je najveća mera komada; rezovi skidaju materijal ka unutra. */
+  endCuts?: [number, number];
+  /**
+   * Kraj sečen sa dva reza (šiljak, npr. kosa cev uklopljena u ugao rama): `endCuts[kraj]` je rez na strani u0, a ovde je ugao drugog
+   * reza (strana u1) i mesto vrha preko širine preseka (0 = strana u0, 1 = strana u1). Bez vrednosti kraj ima jedan rez.
+   */
+  endTips?: [EndTip | null, EndTip | null];
   /** pomeraj po dubini (mm, + ka posmatraču) */
   z: number;
   /** pravilo promene veličine dela (vidi `PartFit`); bez vrednosti je automatsko */
@@ -218,8 +234,37 @@ export const sheetAreaMm2 = (p: Pick<CustomPart, 'lengthMm' | 'heightMm' | 'bott
  * Obris profila u lokalnim koordinatama (osa po x, presek po y od u0 do u1). Profil sa uspravno sečenim krajevima (`plumbEnds`)
  * je paralelogram: uspravna linija kroz kraj ose je u lokalnim koordinatama pomerena za u · tg(ugao).
  */
-export function linearLocalPoly(p: Pick<CustomPart, 'lengthMm' | 'angleDeg' | 'plumbEnds' | 'cutStartDeg' | 'cutEndDeg'>, u0: number, u1: number): [number, number][] {
+type LinearCutPart = Pick<CustomPart, 'lengthMm' | 'angleDeg' | 'plumbEnds' | 'cutStartDeg' | 'cutEndDeg' | 'endCuts' | 'endTips'>;
+
+/**
+ * Ivice oba kraja profila u lokalnim koordinatama: tačke [x, u] od strane u0 ka strani u1. Ravan ili kos rez ima dve tačke,
+ * kraj sa dva reza (šiljak) tri.
+ */
+export function linearEndLines(p: LinearCutPart, u0: number, u1: number): { start: [number, number][]; end: [number, number][] } {
   const L = p.lengthMm;
+  if (p.endCuts) {
+    const slope = (deg: number) => Math.abs(deg - 90) < 1e-9 ? 0 : 1 / Math.tan(deg * Math.PI / 180);
+    const line = (e: 0 | 1): [number, number][] => {
+      const k0 = slope(p.endCuts![e]); const tip = p.endTips?.[e];
+      if (!tip) return [[u0 * k0, u0], [u1 * k0, u1]];
+      const ut = u0 + tip.at * (u1 - u0);
+      return [[(u0 - ut) * k0, u0], [0, ut], [(u1 - ut) * slope(tip.deg), u1]];
+    };
+    const s = line(0); const e = line(1);
+    const s0 = Math.min(...s.map((q) => q[0])); const e0 = Math.max(...e.map((q) => q[0]));
+    return { start: s.map(([x, u]) => [x - s0, u]), end: e.map(([x, u]) => [L + x - e0, u]) };
+  }
+  const [a, b, c, d] = linearLocalPoly(p, u0, u1);
+  return { start: [a, d], end: [b, c] };
+}
+
+export function linearLocalPoly(p: LinearCutPart, u0: number, u1: number): [number, number][] {
+  const L = p.lengthMm;
+  if (p.endCuts) {
+    // redosled: početak u0, kraj u0, (vrh kraja), kraj u1, početak u1, (vrh početka)
+    const { start, end } = linearEndLines(p, u0, u1);
+    return [start[0], ...end, ...start.slice(1).reverse()];
+  }
   // linija reza pod uglom φ (u ravni crteža) u lokalnim koordinatama: tačka sa poprečnom koordinatom u je na x = u · ctg(φ − ugao ose)
   const k = (deg: number | undefined): number => {
     if (deg === undefined) return 0;
@@ -233,8 +278,12 @@ export function linearLocalPoly(p: Pick<CustomPart, 'lengthMm' | 'angleDeg' | 'p
 }
 
 /** profil sa bar jednim kosim rezom kraja (obris nije pravougaonik) */
-export const hasAngledEnds = (p: Pick<CustomPart, 'angleDeg' | 'plumbEnds' | 'cutStartDeg' | 'cutEndDeg'>): boolean =>
-  (!!p.plumbEnds && p.angleDeg % 180 !== 0) || p.cutStartDeg !== undefined || p.cutEndDeg !== undefined;
+export const hasAngledEnds = (p: Pick<CustomPart, 'angleDeg' | 'plumbEnds' | 'cutStartDeg' | 'cutEndDeg' | 'endCuts'>): boolean =>
+  !!p.endCuts || (!!p.plumbEnds && p.angleDeg % 180 !== 0) || p.cutStartDeg !== undefined || p.cutEndDeg !== undefined;
+
+/** Ključ ručnih rezova (jedan ili dva reza po kraju) za grupisanje istih komada. */
+export const endCutsKey = (p: Pick<CustomPart, 'endCuts' | 'endTips'>): string =>
+  !p.endCuts ? '' : p.endCuts.join('/') + (p.endTips?.some(Boolean) ? `|v${p.endTips.map((t) => t ? `${t.deg}@${t.at}` : '-').join('/')}` : '');
 
 /** Okvir dela u koordinatama crteža (za izbor, uklapanje pogleda i minijaturu). */
 export function partBounds(p: CustomPart, shape: MatShape): { x0: number; y0: number; x1: number; y1: number } {

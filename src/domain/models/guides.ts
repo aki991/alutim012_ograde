@@ -233,7 +233,7 @@ export function orientGuides(model: CustomModel, materials: Material[]): CustomM
   const parts = model.parts.map((p) => {
     const s = shapeOf(p);
     // vodoravni U profil je vođica samo ako je neka uspravna prečka uklopljena u njega: donja gleda nagore, gornja nadole
-    if (p.rotLocked) return p; // ručno okrenut profil ostaje kako je okrenut
+    if (p.rotLocked || p.endCuts) return p; // ručno okrenut ili zasečen profil ostaje kako je postavljen
     if (s && isHGuideCandidate(p, s) && role.has(p.id)) {
       const dirY = role.get(p.id) === 1 ? 1 : -1;
       const rotH = (norm(p.angleDeg) === 0) === (dirY === 1) ? 90 : 270;
@@ -262,7 +262,7 @@ export function autoAttachBars(model: CustomModel, materials: Material[]): Custo
   let out = model;
   for (const p of model.parts) {
     // deo rama (dodat dugmetom „Dodaj ram“) nije prečka: ne uklapa se samo u bočne U profile
-    if (p.cut45 && p.miter) continue;
+    if ((p.cut45 && p.miter) || p.endCuts || p.autoGuides === false) continue;
     // vodoravno ojačanje se spaja sa bočnim stranama, ne ulazi u U profile kao prečka
     if (p.divider) continue;
     if (p.guides || norm(p.angleDeg) % 90 !== 0) continue;
@@ -306,7 +306,7 @@ export function attachToGuides(model: CustomModel, barId: string, materials: Mat
   if (!l || !r || l.p.id === r.p.id) return { error: 'Nisu pronađena dva uspravna U profila uz krajeve prečke. Nacrtajte bočne U profile i prečku između njih.' };
   // kanal leve vođice gleda udesno, desne ulevo: za ugao ose 90° to je okretanje 270° (levo) i 90° (desno), za 270° obrnuto
   const face = (p: CustomPart, dirX: 1 | -1) => ({ ...p, tiltDeg: undefined, rotLocked: undefined, rot: (norm(p.angleDeg) === 90) === (dirX === 1) ? 270 : 90 });
-  let next: CustomModel = { ...model, parts: model.parts.map((p) => (p.id === l.p.id ? face(p, 1) : p.id === r.p.id ? face(p, -1) : p.id === b.id ? { ...b, guides: [l.p.id, r.p.id] as [string, string] } : p)) };
+  let next: CustomModel = { ...model, parts: model.parts.map((p) => (p.id === l.p.id ? face(p, 1) : p.id === r.p.id ? face(p, -1) : p.id === b.id ? { ...b, autoGuides: undefined, guides: [l.p.id, r.p.id] as [string, string] } : p)) };
   const placed = next.parts.find((p) => p.id === b.id)!;
   const g = guidesOf(next, placed, materials);
   if (!g) return { error: 'Bočni U profili su preblizu jedan drugom.' };
@@ -342,7 +342,7 @@ function attachVBarToGuides(model: CustomModel, input: CustomPart, shape: Extrac
   if (!lo || !hi || lo.p.id === hi.p.id) return { error: 'Nisu pronađena dva vodoravna U profila uz krajeve prečke (gore i dole). Nacrtajte U profile i uspravnu prečku između njih.' };
   // kanal donje vođice gleda nagore, gornje nadole
   const face = (p: CustomPart, dirY: 1 | -1) => ({ ...p, tiltDeg: undefined, rotLocked: undefined, rot: (norm(p.angleDeg) === 0) === (dirY === 1) ? 90 : 270 });
-  let next: CustomModel = { ...model, parts: model.parts.map((p) => (p.id === lo.p.id ? face(p, 1) : p.id === hi.p.id ? face(p, -1) : p.id === b.id ? { ...b, guides: [lo.p.id, hi.p.id] as [string, string] } : p)) };
+  let next: CustomModel = { ...model, parts: model.parts.map((p) => (p.id === lo.p.id ? face(p, 1) : p.id === hi.p.id ? face(p, -1) : p.id === b.id ? { ...b, autoGuides: undefined, guides: [lo.p.id, hi.p.id] as [string, string] } : p)) };
   const placed = next.parts.find((p) => p.id === b.id)!;
   const g = hGuidesOf(next, placed, materials);
   if (!g) return { error: 'U profili su preblizu jedan drugom.' };

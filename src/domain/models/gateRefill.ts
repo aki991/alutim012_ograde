@@ -68,6 +68,8 @@ export interface SlatOverride {
   rails?: Record<string, number>;
   /** ograda za terasu: položaji osa stubova u ovom polju (mm od levog kraja); računa se sam za celu ravnu liniju ograde */
   postXs?: number[];
+  /** Ključevi izvedenog rasporeda pre izostavljanja krajnjeg stuba stepeništa. */
+  postKeys?: string[];
   /** stepenište: za koliko je (mm) svaki stub duži naniže, do gazišta na kome stoji; i nagib polja (tangens) za ravnu flanšu */
   postDrops?: number[]; stairTan?: number;
   /** Gazišta u lokalnim koordinatama polja; nivo je u odnosu na početak linije nagiba. */
@@ -86,6 +88,8 @@ export interface SlatOverride {
   cornerJoint?: 'ball' | 'elbow'; cornerArm?: number;
   /** stepenište: prvi stub stoji na podu (na početku stepeništa), a ne na prvom stepeniku; i broj stepenika na kome stoji poslednji stub */
   stairFirstFloor?: boolean; stairLastStep?: number;
+  /** Poslednji stub na zadatom stepeniku; false izostavlja stub i njegov okov, bez pomeranja ostalih stubova. */
+  stairLastPost?: boolean;
   /** ograda za terasu, „Raspored stubova i razmaci“ ovog polja: najveći razmak stubova i odstojanje prvog / poslednjeg stuba od krajeva (mm); bez vrednosti važi model */
   /** ograda za terasu, „Raspored prečki“ ovog polja: broj prečki, osa najniže prečke od poda i osa najviše prečke od ose rukohvata (mm) */
   rodCount?: number; rodBottomMm?: number; rodTopMm?: number;
@@ -94,6 +98,10 @@ export interface SlatOverride {
   postSpacingMm?: number; postLeftMm?: number; postRightMm?: number;
   /** Preneti dvorišni model: materijal terasnih stubova. */
   postMaterialId?: string;
+  /** Zasebni stubovi terase; nosači koji pripadaju ispuni ostaju u modelu. */
+  postsEnabled?: boolean;
+  /** Pojedinačni stub po rednom mestu u rasporedu, pre izostavljanja drugih stubova. */
+  postOverrides?: Record<string, { removed?: boolean; materialId?: string; heightMm?: number }>;
 }
 
 /** najveća grupa uspravnih letvica istog preseka (ram i U vođice nisu letvice); bar 3 letvice */

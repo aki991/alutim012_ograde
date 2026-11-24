@@ -147,6 +147,8 @@ export type LayoutItem = FenceSection | Gate | Opening;
 
 export interface Post {
   id: string;
+  /** Korisnik je izostavio ovaj stub; trasa i spoj susednih platana ostaju sačuvani. */
+  removed?: boolean;
   type: PostType;
   widthMm: Mm;
   heightMm: Mm;

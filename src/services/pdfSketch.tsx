@@ -85,7 +85,12 @@ export function elementModel(project: Project, idx: number, materials: Material[
       const lift = src ? Math.min(Math.max(0, it.params.liftMm ?? customLiftOf(it.modelId)), Math.max(0, it.heightMm - 100)) : 0;
       const slats = { ...it.params.slats, stairTan: slope.tan || undefined, ...(src?.terraceSourceId && lift ? { infillLiftMm: lift } : {}) };
       const model = src ? scaledWithReinforce(src, w, it.heightMm - lift, slats) : builtinToCustom(it.modelId as FenceModelId, materials, `sk_${idx}`, w, it.heightMm, { miterFrame: true });
-      return developStairSketch({ ...model, name: src?.name ?? model.name }, materials, slope.tan);
+      const developed = developStairSketch({ ...model, name: src?.name ?? model.name }, materials, slope.tan);
+      if (li && Math.abs(li.railingEnd - li.railingStart - li.clearWidth) > 0.1) {
+        const offset = li.railingStart - li.clearStart;
+        return { ...developed, widthMm: Math.max(1, li.railingEnd - li.railingStart), parts: developed.parts.map((p) => ({ ...p, x: p.x - offset })) };
+      }
+      return developed;
     }
     if (!it.infillModelId || !li) return null;
     let w = Math.round(li.clearWidth); let h = Math.round(leafHeightOf(it));

@@ -1,5 +1,7 @@
 import { partTolMm } from './tolerance';
-import { partAngle, partBounds, type CustomModel, type CustomPart } from './custom';
+import { profileCutData } from './profileCuts';
+import { endsLabel } from '../pricing/cutEnds';
+import { endCutsKey, partAngle, partBounds, type CustomModel, type CustomPart } from './custom';
 import { hwRoleOf } from './terraceHardware';
 import { barLayoutInfo, guideReport, type BarLayoutValues } from './guides';
 import { materialShape, rotateDeg, type MatShape } from './materialShape';
@@ -156,17 +158,18 @@ export function buildSketch(model: CustomModel, materials: Material[]): Sketch {
     const { p, shape, mat } = it;
     // prečka u bočnim U profilima: dužina za sečenje je kraća za toleranciju
     const cutLen = p.lengthMm - partTolMm(model, p, materials);
-    const key = [p.materialId, r1(cutLen), r1(p.angleDeg), p.rot % 180, p.tiltDeg ?? 0, p.heightMm ?? '', p.cut45 ? 45 : 0, p.cut45 && p.miterEnds ? p.miterEnds.map(Number).join('') : ''].join('|');
+    const key = [p.materialId, r1(cutLen), r1(p.angleDeg), p.rot % 180, p.tiltDeg ?? 0, p.heightMm ?? '', p.cut45 ? 45 : 0, p.cut45 && p.miterEnds ? p.miterEnds.map(Number).join('') : '', endCutsKey(p)].join('|');
     let pos = keyOf.get(key);
     if (!pos) {
       const tilt = p.tiltDeg ? `nagib ${fmtNum(Math.abs(p.tiltDeg), 2)}°` : '';
       const axis = it.orient === 'o' ? `ugao ${fmtNum(p.angleDeg, 1)}°` : '';
+      const cuts = profileCutData(p, shape);
       pos = {
         no: positions.length + 1, color: POSITION_COLORS[positions.length % POSITION_COLORS.length], materialId: p.materialId,
         name: mat?.name ?? 'Materijal je obrisan iz cenovnika', sku: mat?.sku ?? '—', kind: shape.type,
         section: shape.type === 'linear' ? `${fmtNum(shape.section.w, 1)} × ${fmtNum(shape.section.h, 1)}` : shape.type === 'sheet' ? `debljina ${fmtNum(shape.thick, 0)}` : '—',
         length: shape.type === 'linear' ? fmtNum(cutLen, 1) : shape.type === 'sheet' ? `${fmtNum(p.lengthMm, 0)} × ${fmtNum(p.heightMm ?? 0, 0)}` : '—',
-        angle: [axis, tilt, p.cut45 && shape.type === 'linear' ? (p.miterEnds && !(p.miterEnds[0] && p.miterEnds[1]) ? (p.miterEnds[0] || p.miterEnds[1] ? 'rez 45° na jednom kraju' : '') : 'rez 45°') : ''].filter(Boolean).join(', ') || '—', count: 0, firstId: p.id, partIds: [],
+        angle: [axis, tilt, cuts ? `rezovi ${endsLabel(cuts.ends)}` : p.cut45 && shape.type === 'linear' ? (p.miterEnds && !(p.miterEnds[0] && p.miterEnds[1]) ? (p.miterEnds[0] || p.miterEnds[1] ? 'rez 45° na jednom kraju' : '') : 'rez 45°') : ''].filter(Boolean).join(', ') || '—', count: 0, firstId: p.id, partIds: [],
       };
       keyOf.set(key, pos); positions.push(pos);
     }
