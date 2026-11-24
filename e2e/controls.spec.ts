@@ -49,6 +49,7 @@ test('crtanje modela koristi istu potvrdu mera i pretragu menija sa tastaturom',
   const width = page.getByTestId('designer-width'); const before = await width.inputValue();
   await width.fill('2200'); await width.press('Escape'); await width.press('Tab'); await expect(width).toHaveValue(before);
   await width.fill('2200'); await width.press('Tab'); await expect(width).toHaveValue('2200');
+  await page.getByTestId('designer-tools').locator('summary').click();
   await page.getByRole('button', { name: 'Poništi', exact: true }).click(); await expect(width).toHaveValue(before);
   await page.goto('/'); await page.getByTestId('hero-new').click();
   const trigger = page.getByTestId('catalog-model-button'); await trigger.press('ArrowDown');

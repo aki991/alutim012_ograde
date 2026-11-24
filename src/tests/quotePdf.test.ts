@@ -8,6 +8,8 @@ vi.mock('../services/pdfHeader', () => ({ BRAND_RED: '#d71920', loadHeaderLogos:
 vi.mock('pdfmake/build/pdfmake', () => ({ default: { addVirtualFileSystem: vi.fn(), setFonts: vi.fn(), createPdf: (def: any) => { definitions.push(def); return { getBlob: async () => new Blob(['pdf']) }; } } }));
 vi.mock('pdfmake/build/vfs_fonts', () => ({ default: {} }));
 import { buildQuotePdfBlob } from '../services/pdf';
+import { computePrice } from '../domain/pricing/calc';
+import { buildQuotePrices, quoteDisplayAmounts } from '../domain/pricing/quote';
 
 describe('PDF ponude ne otkriva internu kalkulaciju', () => {
   beforeEach(() => { definitions.length = 0; front.mockClear(); });
@@ -26,5 +28,25 @@ describe('PDF ponude ne otkriva internu kalkulaciju', () => {
     expect(rows).toHaveLength(3);
     const parseRsd = (text: string) => Number(text.replace(/[^0-9-]/g, ''));
     expect(rows.reduce((sum: number, row: any[]) => sum + parseRsd(row[2].text), 0)).toBe(parseRsd(tables[1].table.body[0][1].text));
+  });
+  it('označava nepotpunu kalkulaciju sa nultim cenama bez izmene iznosa ponude', async () => {
+    const p = finishingProject();
+    const settings = { ...createSeedData().settings, modelSpecs: { h_white: FINISHING_SPECS.h_white! } };
+    const materials = FINISHING_MATERIALS.map((m) => ({ ...m, unitPrice: 0 }));
+    const count = computePrice(p, materials, settings.modelSpecs).unpricedCount;
+    expect(count).toBeGreaterThan(0);
+    await buildQuotePdfBlob(p, null, materials, settings);
+    const def = definitions[0];
+    expect(JSON.stringify(def.content)).toContain(`OBRAČUN NIJE POTPUN — stavki sa nedostupnom ili nultom cenom: ${count}`);
+    const total = def.content.filter((node: any) => node.table).at(-1).table.body[0][1].text;
+    const amounts = quoteDisplayAmounts(buildQuotePrices(p, materials, settings.modelSpecs), settings.currency, settings.currencyRateToEur);
+    expect(Number(total.replace(/[^0-9-]/g, ''))).toBe(amounts.total);
+  });
+  it('ne dodaje upozorenje kada sve stavke imaju unetu pozitivnu cenu', async () => {
+    const p = finishingProject();
+    const settings = { ...createSeedData().settings, modelSpecs: { h_white: FINISHING_SPECS.h_white! } };
+    expect(computePrice(p, FINISHING_MATERIALS, settings.modelSpecs).unpricedCount).toBe(0);
+    await buildQuotePdfBlob(p, null, FINISHING_MATERIALS, settings);
+    expect(JSON.stringify(definitions[0].content)).not.toContain('OBRAČUN NIJE POTPUN');
   });
 });

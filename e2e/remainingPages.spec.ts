@@ -65,3 +65,25 @@ test('faza 6: detalj kupca, grupe menija i pomoć podešavanja su dostupni', asy
  for (const width of [1440, 1160, 390]) { await page.setViewportSize({ width, height: 950 }); await page.goto('/podesavanja'); expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1); }
  await page.screenshot({ path: 'test-results/phase6-settings.png' }); expect(errors).toEqual([]);
 });
+
+test('povezane stranice zadržavaju izabrani projekat i jasno prikazuju nulte cene', async ({ page }) => {
+ await seed(page); await page.goto('/editor/proj_phase6_a');
+ const nav = page.getByTestId('main-navigation');
+ await nav.getByRole('link', { name: 'Ponude', exact: true }).click();
+ await expect(page.getByTestId('quote-preview')).toContainText('O-101');
+ await nav.getByRole('link', { name: 'Proizvodnja', exact: true }).click();
+ const project = page.getByRole('combobox', { name: 'Projekat', exact: true });
+ await expect(project).toHaveValue('proj_phase6_a');
+ await project.selectOption('proj_phase6_b');
+ await nav.getByRole('link', { name: 'Ponude', exact: true }).click();
+ await expect(page.getByTestId('quote-preview')).toContainText('O-102');
+ await expect(page.getByTestId('incomplete-price')).toContainText('nultom cenom');
+ await expect(page.getByTestId('quote-preview')).toContainText('spoljne mere elemenata');
+ await page.getByTestId('quote-list').getByRole('button').filter({ hasText: 'O-103' }).click();
+ await expect(page.getByTestId('quote-preview')).toContainText('O-103');
+ await nav.getByRole('link', { name: 'Proizvodnja', exact: true }).click();
+ await expect(project).toHaveValue('proj_phase6_c');
+ await page.reload(); await expect(project).toHaveValue('proj_phase6_c');
+ await nav.getByRole('link', { name: 'Ponude', exact: true }).click();
+ await expect(page.getByTestId('quote-preview')).toContainText('O-103');
+});

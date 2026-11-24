@@ -17,7 +17,7 @@ import { buildLouver08Sheet, FILL_PROFILES, GUIDE_PROFILES } from '../../domain/
 import { buildRail04Sheet } from '../../domain/pricing/railSpec';
 import { downloadCsv, safeFilename } from '../../services/exports';
 import { downloadProductionPdf } from '../../services/pdf';
-import { useAppStore, useListedProjects } from '../../store/useAppStore';
+import { currentProjectId, useAppStore, useListedProjects } from '../../store/useAppStore';
 import { itemLabel, itemNumber } from '../../utils/labels';
 import { fmtNum } from '../../utils/units';
 
@@ -28,8 +28,9 @@ export default function ProductionPage() {
   const specs = useAppStore((s) => s.settings.modelSpecs);
   const settings = useAppStore((s) => s.settings);
   const patchProject = useAppStore((s) => s.patchProject);
-  const [id, setId] = useState<string>(projects.find((p) => p.status === 'u_izradi')?.id ?? projects[0]?.id ?? '');
-  const project = projects.find((p) => p.id === id) ?? projects[0];
+  useAppStore((s) => s.editor.projectId);
+  const openProject = useAppStore((s) => s.openProject);
+  const project = projects.find((p) => p.id === currentProjectId()) ?? projects[0];
   const customer = customers.find((c) => c.id === project?.customerId) ?? null;
   const cuts = useMemo(() => (project ? buildCutList(project, specs, materials) : []), [project, specs, materials]);
   const hw = useMemo(() => (project ? buildHardwareList(project, materials) : []), [project, materials]);
@@ -103,7 +104,7 @@ export default function ProductionPage() {
         <b>Okvirna geometrijska specifikacija.</b> Nije finalna proizvodna dokumentacija; raspored komada na šipke je u krojnoj listi ispod. Stvarne mere zavise od sistema profila i procedura proizvođača.
       </div>
       <div className="card p-4 mb-5 grid gap-x-6 sm:grid-cols-3">
-        <SelectField label="Projekat" value={project.id} options={projects.map((p) => ({ value: p.id, label: p.name }))} onChange={setId} />
+        <SelectField label="Projekat" value={project.id} options={projects.map((p) => ({ value: p.id, label: `${p.name} · ${p.quoteNo || p.id}` }))} onChange={openProject} />
         <SelectField label="Status" testId="prod-status" value={project.status} options={(Object.keys(STATUS_LABELS) as ProjectStatus[]).map((s) => ({ value: s, label: STATUS_LABELS[s] }))} onChange={(v) => patchProject(project.id, { status: v })} />
         <div className="py-1.5 text-sm"><span className="label">Kupac:</span> {customer?.name ?? '—'}</div>
       </div>

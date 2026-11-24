@@ -98,7 +98,7 @@ export function BomTable({ project, compact }: { project: Project; compact?: boo
           {rows.map((l) => (
             <tr key={l.key}>
               <td className="td text-slate-600">{l.group}</td>
-              <td className="td">{l.name}{l.group !== 'Dodatni materijal' && (l.missingPrice || l.unitPriceNet <= 0) && <span className="block text-[12px] text-amber-800">Bez cene</span>}</td>
+              <td className="td">{l.name}{l.group !== 'Dodatni materijal' && (l.missingPrice || l.unitPriceNet <= 0) && <span className="block text-[12px] text-amber-800">{l.missingPrice ? 'Materijal nije u cenovniku' : 'Cena 0 — proveriti'}</span>}</td>
               <td className="td text-right tabular-nums" title="Geometrijska količina iz crteža">{fmtNum(l.geometricQty, l.unit === 'kom' ? 0 : 2)}</td>
               <td className="td">{l.unit}</td>
               {!compact && <td className="td text-right tabular-nums" title="Sa otpadom / zaokruženo">{fmtNum(l.purchaseQty, l.unit === 'kom' ? 0 : 2)}</td>}

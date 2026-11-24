@@ -1,6 +1,6 @@
 import { computeLayout, isSpacer, outerWidthMm } from '../../domain/geometry/layout';
 import { FileDown, Loader2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { FrontView } from '../../components/editor/FrontView';
 import { DemoBadge, EmptyState, Page, PageHeader, StatusPill } from '../../components/ui/Common';
@@ -9,7 +9,7 @@ import { buildBom, computePrice } from '../../domain/pricing/calc';
 import { IncompletePriceNotice } from '../../components/editor/IncompletePriceNotice';
 import { describeItem } from '../../domain/pricing/production';
 import { downloadQuotePdf } from '../../services/pdf';
-import { useAppStore, useListedProjects } from '../../store/useAppStore';
+import { currentProjectId, useAppStore, useListedProjects } from '../../store/useAppStore';
 import { itemLabel, itemNumber } from '../../utils/labels';
 import { fmtDate, fmtMoney, fmtNum } from '../../utils/units';
 
@@ -17,6 +17,8 @@ export default function QuotesPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const projects = useListedProjects();
+  useAppStore((s) => s.editor.projectId);
+  const openProject = useAppStore((s) => s.openProject);
   const customers = useAppStore((s) => s.customers);
   const materials = useAppStore((s) => s.materials);
   const specs = useAppStore((s) => s.settings.modelSpecs);
@@ -26,7 +28,8 @@ export default function QuotesPage() {
   const money = (n: number) => fmtMoney(n, settings.currency, settings.currencyRateToEur);
 
   const sorted = useMemo(() => [...projects].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)), [projects]);
-  const project = projects.find((p) => p.id === id) ?? sorted[0];
+  const project = projects.find((p) => p.id === id) ?? projects.find((p) => p.id === currentProjectId()) ?? sorted[0];
+  useEffect(() => { if (id && project) openProject(project.id); }, [id, project?.id, openProject]);
   const customer = customers.find((c) => c.id === project?.customerId) ?? null;
   const price = useMemo(() => (project ? computePrice(project, materials, specs) : null), [project, materials, specs]);
   const bom = useMemo(() => (project ? buildBom(project, materials, specs) : []), [project, materials, specs]);
@@ -58,7 +61,7 @@ export default function QuotesPage() {
 
         <article className="card p-6 sm:p-8 min-w-0" data-testid="quote-preview">
           <header className="flex flex-wrap justify-between gap-4 border-b border-line pb-4">
-            <div><div className="text-2xl font-extrabold">{settings.companyName}</div><div className="text-sm text-muted">Ograde i kapije po meri</div></div>
+            <div><div className="text-2xl font-extrabold">{settings.companyName}</div><div className="text-sm text-muted">Ograde i kapije po meri</div><div className="text-xs text-muted">{[settings.companyInfo?.address, settings.companyInfo?.phone, settings.companyInfo?.email, settings.companyInfo?.pib ? `PIB: ${settings.companyInfo.pib}` : ''].filter(Boolean).join(' · ')}</div></div>
             <div className="text-right"><div className="text-xl font-bold text-primary">PONUDA</div><div className="text-sm">Broj: <b>{project.quoteNo || '—'}</b></div><div className="text-sm">Datum: {fmtDate(new Date().toISOString())}</div></div>
           </header>
           {demo && <div className="mt-3"><DemoBadge>Demonstraciona ponuda — ilustrativni podaci</DemoBadge></div>}
@@ -83,7 +86,7 @@ export default function QuotesPage() {
           </tbody></table>
           <div className="mt-3 rounded-xl bg-primary-50 px-4 py-3 flex justify-between items-baseline max-w-[640px]"><b>UKUPNO ZA UPLATU</b><b className="text-xl tabular-nums" data-testid="quote-total">{money(price.grossTotal)}</b></div>
           {project.notes && <p className="text-sm mt-4"><b>Napomena:</b> {project.notes}</p>}
-          <p className="text-xs text-muted mt-4">Širine su modularni rasponi (osa–osa stubova); stvarne proizvodne mere zavise od sistema profila. Ova ponuda ne sadrži PIB, matični broj ni bankovni račun jer stvarni podaci firme nisu uneti.</p>
+          <p className="text-xs text-muted mt-4">Širine u tabeli su spoljne mere elemenata. Zajednički stubovi se u ukupnoj dužini računaju jednom. Stvarne proizvodne mere zavise od sistema profila.</p>
         </article>
       </div>
     </Page>

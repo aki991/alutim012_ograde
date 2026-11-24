@@ -51,7 +51,7 @@ export function CalcModal({ project, onClose }: { project: Project; onClose: () 
                 const mat = materials.find((m) => m.id === l.materialId);
                 return (
                   <tr key={l.key}>
-                    <td className="td !px-2"><div className="font-medium text-[13px] leading-snug break-words">{l.name}</div><div className="text-[11px] text-muted">{l.group}{l.group !== 'Dodatni materijal' && (l.missingPrice || l.unitPriceNet <= 0) && <span className="text-amber-800"> · bez cene</span>}</div></td>
+                    <td className="td !px-2"><div className="font-medium text-[13px] leading-snug break-words">{l.name}</div><div className="text-[11px] text-muted">{l.group}{l.group !== 'Dodatni materijal' && (l.missingPrice || l.unitPriceNet <= 0) && <span className="text-amber-800"> · {l.missingPrice ? 'materijal nije u cenovniku' : 'cena 0 — proveriti'}</span>}</div></td>
                     <td className="td !px-2 text-right tabular-nums text-[13px]" title={`Geometrijski: ${fmtNum(l.geometricQty, 2)} ${l.unit}`}>{fmtNum(l.purchaseQty, l.unit === 'kom' ? 0 : 2)}<span className="text-muted"> {l.unit}</span></td>
                     <td className="td !px-2 text-right">
                       {mat ? (

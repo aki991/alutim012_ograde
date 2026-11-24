@@ -1,3 +1,4 @@
+import { computePrice } from '../domain/pricing/calc';
 import { buildRl10Sheet } from '../domain/pricing/rl10Spec';
 import { colorText, FENCE_MODELS, STATUS_LABELS } from '../domain/models/catalog';
 import type { AppSettings, Customer, Material, Project } from '../domain/models/types';
@@ -51,6 +52,7 @@ export async function renderBlob(pdfMake: any, def: any): Promise<Blob> {
 
 export async function buildQuotePdfBlob(project: Project, customer: Customer | null, materials: Material[], settings: AppSettings): Promise<Blob> {
   const pdfMake = await getPdfMake();
+  const incomplete = computePrice(project, materials, settings.modelSpecs).unpricedCount;
   const price = buildQuotePrices(project, materials, settings.modelSpecs);
   const display = quoteDisplayAmounts(price, settings.currency, settings.currencyRateToEur);
   const layout = computeLayout(project);
@@ -95,6 +97,7 @@ export async function buildQuotePdfBlob(project: Project, customer: Customer | n
         ],
       },
       { image: sketch.dataUrl, fit: [523, 300], alignment: 'center', margin: [0, 0, 0, 10] },
+      incomplete ? { text: `OBRAČUN NIJE POTPUN — stavki sa nedostupnom ili nultom cenom: ${incomplete}. Prikazani iznos uključuje samo unete cene; proverite nulte cene.`, color: '#93370d', fillColor: '#fffaeb', bold: true, margin: [0, 6, 0, 8] } : {},
       { text: 'Cena elemenata ograde', style: 'h2' },
       {
         table: { headerRows: 1, dontBreakRows: true, widths: [24, '*', 110], body: [[th('R.br.', 'center'), th('Element'), th('Cena sa PDV-om', 'right')], ...itemRows] },

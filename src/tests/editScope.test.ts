@@ -24,6 +24,32 @@ describe('opseg izmena (sva platna / sve kapije)', () => {
     const out = propagateItemChange(p, updateItem(p, id, { color: 'RAL 9005' } as Partial<FenceSection>), id, 'all');
     expect((out.items[2] as Gate).color).toBe('RAL 9005');
   });
+  it('masovna izmena razmaka čuva ostala pojedinačna podešavanja svakog polja', () => {
+    const source = createFence({ params: { barSizeMm: 20, gapMm: 20, frameMm: 40, slats: { gapMm: 20, postSpacingMm: 1000 } } });
+    const target = createFence({ widthMm: 1800, params: { barSizeMm: 30, gapMm: 40, frameMm: 60, slats: { gapMm: 40, postSpacingMm: 600 } } });
+    const p = createProject('t', [source, target]);
+    const next = updateItem(p, source.id, { params: { ...source.params, slats: { ...source.params.slats, gapMm: 30 } } });
+    const out = propagateItemChange(p, next, source.id, 'same');
+    expect(out.items[1]).toEqual({ ...target, params: { ...target.params, slats: { gapMm: 30, postSpacingMm: 600 } } });
+    expect(p.items[1]).toEqual(target);
+  });
+  it('vraćanje podešavanja na model uklanja samo promenjeni ključ i čuva druge izuzetke', () => {
+    const source = createFence({ params: { barSizeMm: 20, gapMm: 20, frameMm: 40, slats: { gapMm: 20 } } });
+    const target = createFence({ params: { barSizeMm: 20, gapMm: 20, frameMm: 40, slats: { gapMm: 40, postSpacingMm: 600 } } });
+    const p = createProject('t', [source, target]);
+    const { slats: _, ...params } = source.params;
+    const out = propagateItemChange(p, updateItem(p, source.id, { params }), source.id, 'same');
+    expect((out.items[1] as FenceSection).params).toEqual({ ...target.params, slats: { postSpacingMm: 600 } });
+  });
+  it('masovna izmena i poništavanje parametara čuvaju sopstveni prvi i poslednji stub stepeništa', () => {
+    const source = createFence({ params: { barSizeMm: 20, gapMm: 20, frameMm: 40, slats: { gapMm: 20, stairFirstFloor: false, stairLastStep: 6 } } });
+    const target = createFence({ stair: { riseMm: 1200, steps: 6, group: 'g' }, params: { barSizeMm: 20, gapMm: 20, frameMm: 40, slats: { gapMm: 40, stairFirstFloor: true, stairLastStep: 4 } } });
+    const p = createProject('t', [source, target]);
+    const next = updateItem(p, source.id, { params: { ...source.params, slats: { gapMm: 30, stairFirstFloor: true, stairLastStep: 5 } } });
+    expect((propagateItemChange(p, next, source.id, 'all').items[1] as FenceSection).params.slats).toEqual({ gapMm: 30, stairFirstFloor: true, stairLastStep: 4 });
+    const { slats: _, ...params } = source.params;
+    expect((propagateItemChange(p, updateItem(p, source.id, { params }), source.id, 'all').items[1] as FenceSection).params.slats).toEqual({ stairFirstFloor: true, stairLastStep: 4 });
+  });
 });
 
 import { setGatesOwnPosts } from '../domain/geometry/operations';
