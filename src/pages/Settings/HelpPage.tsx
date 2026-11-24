@@ -1,5 +1,7 @@
+import { useLocation } from 'react-router-dom';
+import { QUICK_HELP } from '../../components/help/ContextHelp';
 import { BookOpen } from 'lucide-react';
-import { isValidElement, useState, type ReactNode } from 'react';
+import { isValidElement, useEffect, useState, type ReactNode } from 'react';
 import { ManualDownloadButton, ManualViewer } from '../../components/help/ManualViewer';
 import { FEATURES } from '../../config/features';
 import { Page, PageHeader } from '../../components/ui/Common';
@@ -34,7 +36,7 @@ const TOPICS: Topic[] = [
       <>Klik na kotu <b>ukupne dužine</b> ispod crteža menja dužinu cele ograde: sva polja ograde dobijaju istu dužinu (razlika od zaokruživanja je najviše 1 mm), a kapije, otvori i ugaoni spojevi ostaju isti.</>,
       <>Kliknite na <b>kotu</b> širine iznad elementa ili na kotu <b>H</b> (visina) da promenite meru. Dozvoljeni opseg piše u prozoru; van opsega se javlja poruka.</>,
       <>Mera elementa je njegova <b>ukupna (spoljna) dužina</b>: element od 1000 mm zauzima 1000 mm na terenu, zajedno sa po pola širine susednih stubova. <b>Ukupna dužina</b> ograde računa zajednički stub samo jednom.</>,
-      <>Modularna dužina (osa–osa stubova), zbir svetlih otvora i fiksna ukupna dužina dostupni su kad u <b>Podešavanjima → Napredne opcije</b> uključite <b>Napredni prikaz dužina</b>; tada se prikazuju i položaji stubova po osama.</>,
+      <>Modularna dužina (osa–osa stubova), zbir svetlih otvora i fiksna ukupna dužina dostupni su kad u <b>Podešavanjima → Prikaz i rad</b> uključite <b>Napredni prikaz dužina</b>; tada se prikazuju i položaji stubova po osama.</>,
       <>U naprednom prikazu režim <b>Fiksna</b> zadaje ukupnu dužinu; kapije se pri raspodeli ne šire automatski, menjaju se samo segmenti ograde i otvori.</>,
       <><b>Visina (svi)</b> postavlja visinu svih elemenata odjednom.</>,
       <>Letvice i paneli imaju stalnu dimenziju: veća visina daje više letvica, a ne deblje. Letvice susednih polja različite visine leže u istim linijama od tla.</>,
@@ -52,7 +54,7 @@ const TOPICS: Topic[] = [
   {
     title: 'Simulacija na fotografiji',
     items: [
-      <>Tab <b>Simulacija</b> iznad crteža (uključuje se i isključuje u <b>Podešavanjima → Napredne opcije</b>): učitajte sliku dvorišta ili kuće sa računara, ili je fotografišite telefonom. Ograda iz projekta se postavlja na sliku.</>,
+      <>Tab <b>Simulacija</b> iznad crteža (uključuje se i isključuje u <b>Podešavanjima → Prikaz i rad</b>): učitajte sliku dvorišta ili kuće sa računara, ili je fotografišite telefonom. Ograda iz projekta se postavlja na sliku.</>,
       <>Četiri kružića su uglovi ograde: povucite ih da se ograda poklopi sa stubovima na slici (perspektiva). Prevlačenjem same ograde pomera se cela.</>,
       <><b>Vrati položaj</b> vraća ogradu na sredinu, <b>Zameni sliku</b> učitava drugu, <b>Preuzmi sliku</b> čuva sliku sa ogradom (JPG). Slika i položaj se čuvaju uz projekat; izmene ograde se odmah vide na slici.</>,
     ],
@@ -189,6 +191,8 @@ const TOPICS: Topic[] = [
 ];
 
 export default function HelpPage() {
+  const { hash } = useLocation();
+  useEffect(() => { if (hash) document.getElementById(decodeURIComponent(hash.slice(1)))?.scrollIntoView({ block: 'start' }); }, [hash]);
   const [manual, setManual] = useState(false);
   return (
     <Page>
@@ -210,9 +214,11 @@ export default function HelpPage() {
       <nav className="card p-4 mb-5" aria-label="Sadržaj pomoći" data-testid="help-toc">
         <div className="text-[13px] font-semibold text-muted mb-2">Sadržaj</div>
         <div className="flex flex-wrap gap-2">
+          {Object.entries(QUICK_HELP).map(([id, t]) => <a key={id} href={`#vodic-${id}`} className="btn btn-sm">{t.title}</a>)}
           {TOPICS.map((t, i) => <a key={t.title} href={`#tema-${i}`} className="btn btn-sm" onClick={(e) => { e.preventDefault(); document.getElementById(`tema-${i}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>{t.title}</a>)}
         </div>
       </nav>
+      <div className="grid gap-5 lg:grid-cols-2 mb-5">{Object.entries(QUICK_HELP).map(([id, t]) => <section key={id} id={`vodic-${id}`} className="card p-5 scroll-mt-4"><h2 className="font-bold mb-2">{t.title}</h2><p className="text-sm text-slate-700 leading-relaxed">{t.text}</p></section>)}</div>
       <div className="grid gap-5 lg:grid-cols-2 items-start" data-testid="help-topics">
         {TOPICS.map((t, i) => (
           <section key={t.title} id={`tema-${i}`} className="card p-5 scroll-mt-4">

@@ -81,10 +81,10 @@ export default function ProjectsPage() {
               <tbody>
                 {list.map((p) => (
                   <tr key={p.id} data-testid="project-row">
-                    <td className="td"><button className="flex items-center gap-3 text-left font-medium hover:text-primary max-w-[320px]" onClick={() => navigate(`/editor/${p.id}`)}><ProjectThumb project={p} width={72} /><span className="truncate">{p.name}</span></button></td>
+                    <td className="td"><button className="flex items-center gap-3 text-left font-medium hover:text-primary max-w-[320px]" onClick={() => navigate(`/editor/${p.id}`)}><ProjectThumb project={p} width={72} /><span className="min-w-0"><span className="block truncate">{p.name}</span><span className="block text-xs text-muted mt-1">{customerName(p.customerId)} · {p.quoteNo || p.id} · {fmtDate(p.updatedAt)}</span></span></button></td>
                     <td className="td text-slate-600">{customerName(p.customerId)}</td>
                     <td className="td"><StatusPill status={p.status} /></td>
-                    <td className="td tabular-nums text-slate-600">{fmtM(computeLayout(p).totalModularMm)}</td>
+                    <td className="td tabular-nums text-slate-600 whitespace-nowrap">{fmtM(computeLayout(p).totalModularMm)}</td>
                     <td className="td text-slate-600">{fmtDate(p.updatedAt)}</td>
                     <td className="td">
                       <ActionsMenu text="Materijal" icon={<FileSpreadsheet size={15} />} label={`Spisak materijala: ${p.name}`} testId="project-materials" actions={[

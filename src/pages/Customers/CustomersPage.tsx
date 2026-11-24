@@ -22,6 +22,7 @@ export default function CustomersPage() {
     const t = q.trim().toLowerCase();
     return customers.filter((c) => !t || [c.name, c.phone, c.email, c.address].some((x) => x.toLowerCase().includes(t)));
   }, [customers, q]);
+  const activeCustomer = customers.find((c) => c.id === openId);
   const linked = (id: string) => projects.filter((p) => p.customerId === id);
 
   return (
@@ -37,8 +38,8 @@ export default function CustomersPage() {
                 <tbody>
                   {list.map((c) => (
                     <tr key={c.id} className={openId === c.id ? 'bg-primary-50' : ''} data-testid="customer-row">
-                      <td className="td"><button className="font-medium text-left hover:text-primary" onClick={() => setOpenId(openId === c.id ? null : c.id)}>{c.name}</button><div className="text-xs text-muted">{c.address}</div></td>
-                      <td className="td text-slate-600 whitespace-nowrap">{c.phone}</td><td className="td text-slate-600 whitespace-nowrap">{c.email}</td><td className="td">{linked(c.id).length}</td>
+                      <td className="td"><button className="font-medium text-left hover:text-primary" aria-expanded={openId === c.id} aria-controls="customer-detail" onClick={() => { setOpenId(openId === c.id ? null : c.id); document.getElementById('customer-detail')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }}>{c.name}</button><div className="text-xs text-muted">{c.address}</div></td>
+                      <td className="td text-slate-600 whitespace-nowrap">{c.phone}</td><td className="td text-slate-600 whitespace-nowrap">{c.email}</td><td className="td"><button className="text-primary underline" aria-label={`Projekti kupca ${c.name}`} onClick={() => { setOpenId(c.id); document.getElementById('customer-detail')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }}>{linked(c.id).length}</button></td>
                       <td className="td text-right whitespace-nowrap"><button className="btn btn-sm" onClick={() => { setIsNew(false); setForm(c); }}>Izmeni</button> <button className="btn btn-sm btn-danger" onClick={() => setDel(c)}>Obriši</button></td>
                     </tr>
                   ))}
@@ -47,11 +48,13 @@ export default function CustomersPage() {
             </div>
           )}
         </div>
-        <aside className="card p-4 self-start" data-testid="customer-projects">
-          <h2 className="font-bold mb-2">Povezani projekti</h2>
+        <aside id="customer-detail" aria-label="Detalj kupca" className="card p-4 self-start min-w-0" data-testid="customer-projects">
+          <h2 className="font-bold mb-2">{activeCustomer?.name ?? 'Detalj kupca'}</h2>
+          {activeCustomer && <div className="text-sm text-muted mb-3 break-words"><p>{activeCustomer.address}</p><p>{activeCustomer.phone}</p><p>{activeCustomer.email}</p></div>}
+          <h3 className="font-semibold text-sm mb-2">Povezani projekti{activeCustomer ? ` (${linked(activeCustomer.id).length})` : ''}</h3>
           {!openId ? <p className="text-sm text-muted">Kliknite na kupca da vidite njegove projekte.</p> : (
             linked(openId).length === 0 ? <p className="text-sm text-muted">Kupac nema povezanih projekata.</p> : (
-              <ul className="divide-y divide-line">{linked(openId).map((p) => <li key={p.id} className="py-2 flex items-center justify-between gap-2"><Link className="font-medium hover:text-primary truncate" to={`/editor/${p.id}`}>{p.name}</Link><span className="flex items-center gap-2 shrink-0"><StatusPill status={p.status} /><span className="text-xs text-muted">{fmtDate(p.updatedAt)}</span></span></li>)}</ul>
+              <ul className="divide-y divide-line">{linked(openId).map((p) => <li key={p.id} className="py-2 flex flex-wrap items-center justify-between gap-2"><Link className="font-medium hover:text-primary truncate" to={`/editor/${p.id}`}>{p.name}<span className="block text-xs text-muted">{p.quoteNo || p.id}</span></Link><span className="flex items-center gap-2 shrink-0"><StatusPill status={p.status} /><span className="text-xs text-muted">{fmtDate(p.updatedAt)}</span></span></li>)}</ul>
             )
           )}
         </aside>

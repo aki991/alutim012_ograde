@@ -22,6 +22,7 @@ const MAIN: Item[] = [
   { to: '/proizvodnja', label: 'Proizvodnja', icon: Wrench },
   { to: '/izvestaji', label: 'Izveštaji', icon: BarChart3 },
 ];
+const GROUPS = [{ title: 'Rad', paths: ['/', '/projekti'] }, { title: 'Biblioteka', paths: ['/modeli', '/modeli-kapija', '/modeli-terasa', '/materijali'] }, { title: 'Poslovanje i radionica', paths: ['/kupci', '/ponude', '/proizvodnja', '/magacin', '/izvestaji'] }];
 const SECONDARY: Item[] = [
   { to: '/podesavanja', label: 'Podešavanja', icon: Settings },
   { to: '/pomoc', label: 'Pomoć', icon: CircleHelp },
@@ -57,9 +58,10 @@ export function Sidebar({ onNavigate, compact = false, onToggle }: { onNavigate?
       {compact ? <div className="text-center font-extrabold text-accent py-4 text-sm" aria-label="ALU TIM 012">012</div> : <div className="px-5 pt-6 pb-6"><Logo /></div>}
       {onToggle && <button type="button" className={`mx-2 mb-3 flex items-center justify-center gap-2 rounded-lg h-9 ${idle}`} onClick={onToggle} aria-label={compact ? 'Proširi glavni meni' : 'Suzi glavni meni'} aria-expanded={!compact} data-testid="toggle-navigation" title={compact ? 'Proširi glavni meni' : 'Suzi glavni meni'}>{compact ? <PanelLeftOpen size={19} /> : <><PanelLeftClose size={19} /><span className="text-sm">Suzi meni</span></>}</button>}
       <nav className={`${compact ? 'px-2' : 'px-3'} shrink-0`}>
-        <div className="flex flex-col gap-1">
-          {renderItem(MAIN[0])}
-          <button
+        {GROUPS.map((group, i) => <section key={group.title} aria-label={group.title} className="mb-3">
+          <h2 className={compact ? 'sr-only' : 'text-[10px] uppercase tracking-wider text-slate-400 px-4 mb-1'}>{group.title}</h2>
+          <div className="flex flex-col gap-1">{group.paths.map((path) => { const item = MAIN.find((it) => it.to === path); return item ? renderItem(item) : null; })}
+          {i === 0 && <button
             type="button"
             data-testid="nav-current-project"
             aria-label="Trenutni projekat" title={compact ? 'Trenutni projekat' : undefined}
@@ -68,11 +70,10 @@ export function Sidebar({ onNavigate, compact = false, onToggle }: { onNavigate?
           >
             <PencilRuler size={20} strokeWidth={1.8} className="shrink-0" />
             <span className={compact ? 'sr-only' : ''}>Trenutni projekat</span>
-          </button>
-          {MAIN.slice(1).map(renderItem)}
-        </div>
+          </button>}
+          </div></section>)}
         <div className="my-5 mx-3 border-t border-white/10" />
-        <div className="flex flex-col gap-1">{SECONDARY.map(renderItem)}</div>
+        <section aria-label="Administracija"><h2 className={compact ? 'sr-only' : 'text-[10px] uppercase tracking-wider text-slate-400 px-4 mb-1'}>Administracija</h2><div className="flex flex-col gap-1">{SECONDARY.map(renderItem)}</div></section>
       </nav>
       {/* ukrasna slika samo kad ima mesta: na nižem ekranu bi se sekla na dnu menija */}
       <div className={`relative flex-1 min-h-[160px] mt-4 overflow-hidden [@media(max-height:960px)]:hidden ${compact ? 'hidden' : ''}`} aria-hidden="true" data-testid="sidebar-photo">

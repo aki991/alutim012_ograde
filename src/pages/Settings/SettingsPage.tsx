@@ -1,3 +1,4 @@
+import { ContextHelp } from '../../components/help/ContextHelp';
 import { useEffect, useState } from 'react';
 import { NumberField, SegmentedField, TextField, ToggleField } from '../../components/forms/Fields';
 import { Page, PageHeader } from '../../components/ui/Common';
@@ -59,20 +60,29 @@ export default function SettingsPage() {
   return (
     <Page>
       <PageHeader title="Podešavanja" subtitle="Opšta podešavanja aplikacije i podrazumevane vrednosti za nove projekte." />
-      {/* parovi kartica slične visine u istom redu: firma i kalkulacija, pa sečenje i napredne opcije */}
-      <div className="grid gap-5 lg:grid-cols-2 items-start">
-        <section className="card p-5">
-          <h2 className="font-bold mb-2">Firma i korisnik</h2>
+      <nav aria-label="Celine podešavanja" className="card p-3 flex flex-wrap gap-2 mb-5">{[['company', 'Firma'], ['account', 'Nalog'], ['pricing', 'Kalkulacija'], ['cutting', 'Sečenje'], ['display', 'Prikaz'], ['data', 'Podaci']].map(([id, title]) => <a className="btn btn-sm" key={id} href={`#settings-${id}`}>{title}</a>)}</nav>
+      <div className="space-y-6">
+        <section id="settings-company" aria-label="Firma" className="scroll-mt-4" data-testid="settings-company">
+          <div className="flex items-center justify-between gap-2 mb-3"><h2 className="font-bold text-lg">Firma</h2><ContextHelp topic="company" /></div>
+          <div className="grid gap-4 lg:grid-cols-2 items-start">        <section className="card p-5">
+          <h2 className="font-bold mb-2">Podaci firme</h2>
           <TextField label="Naziv firme" testId="set-company" value={settings.companyName} onChange={(v) => update({ companyName: v })} />
           <TextField label="Adresa" testId="set-company-address" value={settings.companyInfo?.address ?? ''} onChange={(v) => update({ companyInfo: { ...settings.companyInfo, address: v } })} />
           <TextField label="Telefon" testId="set-company-phone" value={settings.companyInfo?.phone ?? ''} onChange={(v) => update({ companyInfo: { ...settings.companyInfo, phone: v } })} />
           <TextField label="Email firme" testId="set-company-email" value={settings.companyInfo?.email ?? ''} onChange={(v) => update({ companyInfo: { ...settings.companyInfo, email: v } })} />
           <TextField label="PIB" testId="set-company-pib" value={settings.companyInfo?.pib ?? ''} onChange={(v) => update({ companyInfo: { ...settings.companyInfo, pib: v } })} />
-          {auth.enabled && !auth.guest ? <AccountName /> : <TextField label="Korisnik" value={settings.userName} onChange={(v) => update({ userName: v })} />}
-          <SegmentedField label="Valuta" value={settings.currency === 'EUR' ? 'EUR' : 'RSD'} options={[{ value: 'RSD', label: 'RSD' }, { value: 'EUR', label: 'EUR' }]} onChange={(v) => update({ currency: v })} />
-          <NumberField label="Kurs (RSD za 1 €)" unit="RSD" value={settings.currencyRateToEur} range={{ min: 1, max: 1000 }} integer={false} step={0.1} onCommit={(v) => update({ currencyRateToEur: v })} />
+
+        </section></div>
         </section>
-        <section className="card p-5">
+        <section id="settings-account" aria-label="Nalog i zaposleni" className="scroll-mt-4" data-testid="settings-account">
+          <div className="flex items-center justify-between gap-2 mb-3"><h2 className="font-bold text-lg">Nalog i zaposleni</h2><ContextHelp topic="account" /></div>
+          <div className="grid gap-4 lg:grid-cols-2 items-start"><div className="card p-5">          {auth.enabled && !auth.guest ? <AccountName /> : <TextField label="Korisnik" value={settings.userName} onChange={(v) => update({ userName: v })} />}</div>
+{auth.enabled && !auth.guest && canManageAccounts(auth.role) && <UsersAdmin />}</div>
+        </section>
+        <section id="settings-pricing" aria-label="Kalkulacija" className="scroll-mt-4" data-testid="settings-pricing">
+          <div className="flex items-center justify-between gap-2 mb-3"><h2 className="font-bold text-lg">Kalkulacija</h2><ContextHelp topic="pricing" /></div>
+          <div className="grid gap-4 lg:grid-cols-2 items-start"><div className="card p-5"><h3 className="font-bold mb-2">Valuta i kurs</h3>          <SegmentedField label="Valuta" value={settings.currency === 'EUR' ? 'EUR' : 'RSD'} options={[{ value: 'RSD', label: 'RSD' }, { value: 'EUR', label: 'EUR' }]} onChange={(v) => update({ currency: v })} />
+          <NumberField label="Kurs (RSD za 1 €)" unit="RSD" value={settings.currencyRateToEur} range={{ min: 1, max: 1000 }} integer={false} step={0.1} onCommit={(v) => update({ currencyRateToEur: v })} /></div>        <section className="card p-5">
           <h2 className="font-bold mb-2">Podrazumevana kalkulacija (novi projekti)</h2>
           <SegmentedField label="Zarada" value={pr.profitMode} options={[{ value: 'margin', label: 'Marža' }, { value: 'markup', label: 'Uvećanje' }]} onChange={(v) => setPr({ profitMode: v })} />
           <NumberField label={pr.profitMode === 'margin' ? 'Marža' : 'Uvećanje'} unit="%" value={pr.profitPercent} range={{ min: 0, max: 99 }} allowZero integer={false} step={1} onCommit={(v) => setPr({ profitPercent: v })} />
@@ -81,13 +91,15 @@ export default function SettingsPage() {
           <ToggleField label="Cene su bruto" checked={pr.pricesIncludeVat} onLabel="Sa PDV-om" offLabel="Bez PDV-a" onChange={(v) => setPr({ pricesIncludeVat: v })} />
           <NumberField label="Rad po m²" unit="RSD/m²" value={pr.laborPerM2Rsd} range={{ min: 0, max: 100000 }} allowZero onCommit={(v) => setPr({ laborPerM2Rsd: v })} />
           <NumberField label="Montaža po m" unit="RSD/m" value={pr.installPerMeterRsd} range={{ min: 0, max: 100000 }} allowZero onCommit={(v) => setPr({ installPerMeterRsd: v })} />
-        </section>
-        <section className="card p-5" data-testid="set-coating">
+        </section>        <section className="card p-5" data-testid="set-coating">
           <h2 className="font-bold mb-1">Plastificiranje</h2>
           <NumberField label="Cena plastificiranja po m²" testId="set-coating-rate" unit="RSD/m²" value={pr.coatingPerM2Rsd ?? 0} range={{ min: 0, max: 100000 }} allowZero integer={false} step={10} onCommit={(v) => setPr({ coatingPerM2Rsd: v })} />
           <p className="text-sm text-muted">Neto cena po razvijenoj površini materijala, sa stubovima. Promena važi za postojeće i nove projekte; za pojedinačan projekat može se promeniti u Kalkulaciji. Uključuje se u trošak pre zarade, popusta i PDV-a. Vrednost 0 isključuje trošak plastificiranja.</p>
+        </section></div>
         </section>
-        <section className="card p-5" data-testid="set-cutting">
+        <section id="settings-cutting" aria-label="Sečenje i proizvodnja" className="scroll-mt-4" data-testid="settings-cutting">
+          <div className="flex items-center justify-between gap-2 mb-3"><h2 className="font-bold text-lg">Sečenje i proizvodnja</h2><ContextHelp topic="cutting" /></div>
+          <div className="grid gap-4 lg:grid-cols-2 items-start">        <section className="card p-5" data-testid="set-cutting">
           <h2 className="font-bold mb-1">Sečenje materijala (krojna lista)</h2>
           <p className="text-sm text-muted mb-2">Širina testere se dodaje na svaki rez, pa utiče na to koliko komada staje u jednu šipku i koliki je ostatak.</p>
           <NumberField label="Širina testere" testId="set-kerf" value={cutOptions(settings).kerfMm} range={{ min: 0, max: 50 }} allowZero integer={false} step={0.5} onCommit={(v) => update({ cutting: { ...cutOptions(settings), kerfMm: v } })} hint="Debljina lista testere (rez). Uobičajeno 2–4 mm." />
@@ -95,15 +107,19 @@ export default function SettingsPage() {
           <p className="text-[12px] text-muted -mt-1 mb-2">Kad je uključena, komadi sa istim kosim uglom (npr. ram pod 45°) se raspoređuju tako da dele rez: jedan rez za dva komada, pa se manje materijala baca. Kad je isključena, svaki komad ima svoje rezove.</p>
           <NumberField label="Dužina nabavne šipke" testId="set-stock" value={cutOptions(settings).stockMm} range={{ min: 500, max: 20000 }} onCommit={(v) => update({ cutting: { ...cutOptions(settings), stockMm: v } })} hint="Dužina cele šipke kako stiže od dobavljača (najčešće 6000 mm)." />
           <NumberField label="Najkraći ostatak za magacin" testId="set-minkeep" value={cutOptions(settings).minKeepMm ?? 500} range={{ min: 0, max: 20000 }} allowZero onCommit={(v) => update({ cutting: { ...cutOptions(settings), minKeepMm: v } })} hint="Kad projekat pređe u „U izradi“ ili „Završeno“, ostaci cevi iz krojne liste ove dužine ili duži (mm) idu u magacin, npr. 500 ili 300. Kraći komadi su otpad." />
+        </section><PostTemplatesSection /></div>
         </section>
-        <section className="card p-5">
-          <h2 className="font-bold mb-2">Napredne opcije</h2>
+        <section id="settings-display" aria-label="Prikaz i rad" className="scroll-mt-4" data-testid="settings-display">
+          <div className="flex items-center justify-between gap-2 mb-3"><h2 className="font-bold text-lg">Prikaz i rad</h2><ContextHelp topic="display" /></div>
+          <div className="grid gap-4 lg:grid-cols-2 items-start">        <section className="card p-5">
+          <h2 className="font-bold mb-2">Opcije prikaza</h2>
           <ToggleField label="Napredni prikaz dužina" checked={Boolean(settings.advancedLengths)} onLabel="Uključen" offLabel="Isključen" onChange={(v) => update({ advancedLengths: v })} testId="set-advanced" />
           <ToggleField label="Simulacija na fotografiji" checked={settings.photoSimEnabled !== false} onLabel="Uključena" offLabel="Isključena" onChange={(v) => update({ photoSimEnabled: v })} testId="set-photosim" />
+        </section></div>
         </section>
-        <PostTemplatesSection />
-        {auth.enabled && !auth.guest && canManageAccounts(auth.role) && <UsersAdmin />}
-        <section className="card p-5 lg:col-span-2">
+        <section id="settings-data" aria-label="Podaci" className="scroll-mt-4" data-testid="settings-data">
+          <div className="flex items-center justify-between gap-2 mb-3"><h2 className="font-bold text-lg">Podaci</h2><ContextHelp topic="data" /></div>
+          <div className="grid gap-4 lg:grid-cols-2 items-start">        <section className="card p-5 lg:col-span-2">
           <h2 className="font-bold mb-1">Podaci</h2>
           <div className="flex flex-wrap gap-2">
             <button className="btn" onClick={() => void saveNow()}>Sačuvaj sada</button>
@@ -116,6 +132,7 @@ export default function SettingsPage() {
           </details>
           {appVersion && <p className="text-sm text-muted mt-3" data-testid="app-version">Verzija aplikacije: {appVersion}</p>}
           {done && <p role="status" className="text-sm text-[#067647] mt-3">Podaci su obrisani i vraćeni probni podaci.</p>}
+        </section></div>
         </section>
       </div>
       {confirm && <ConfirmDialog title="Brisanje svih podataka" danger confirmLabel="Obriši sve" message="Svi projekti, kupci, materijali, modeli i podešavanja biće obrisani i zamenjeni početnim podacima, a kad je baza uključena brišu se i u bazi, za sve korisnike. Ovo se ne može poništiti." onCancel={() => setConfirm(false)} onConfirm={async () => { await resetDemo(); setConfirm(false); setDone(true); }} />}

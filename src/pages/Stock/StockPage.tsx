@@ -1,3 +1,4 @@
+import { ContextHelp } from '../../components/help/ContextHelp';
 import { Plus, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -36,6 +37,9 @@ export default function StockPage() {
   const full = cutOptions(settings).stockMm;
   const [form, setForm] = useState({ materialId: '', lengthMm: String(full), qty: '1', note: '' });
   const [del, setDel] = useState<StockItem | null>(null);
+  const [query, setQuery] = useState('');
+  const [kind, setKind] = useState('all');
+  const [availability, setAvailability] = useState('all');
   const [clearAll, setClearAll] = useState(false);
   const byId = useMemo(() => new Map(materials.map((m) => [m.id, m])), [materials]);
   const len = Number(form.lengthMm.replace(',', '.')); const qty = Number(form.qty);
@@ -54,12 +58,21 @@ export default function StockPage() {
   // komadi koje su projekti izabrali u krojnoj listi, a još nisu „U izradi“ (tada se skidaju sa stanja)
   const projects = useAppStore((s) => s.projects);
   const reserved = useMemo(() => stockReservations(projects, undefined, settings.stockBookings), [projects, settings.stockBookings]);
-  const rows = [...stock].sort((a, b) => (byId.get(a.materialId)?.name ?? '').localeCompare(byId.get(b.materialId)?.name ?? '', 'sr', { numeric: true }) || b.lengthMm - a.lengthMm);
+  const rows = stock.filter((s) => {
+    const text = [byId.get(s.materialId)?.name, byId.get(s.materialId)?.sku, s.note].join(' ').toLocaleLowerCase('sr');
+    const held = reserved.get(s.id)?.qty ?? 0;
+    return text.includes(query.trim().toLocaleLowerCase('sr')) && (kind === 'all' || (kind === 'full' ? s.lengthMm >= full : s.lengthMm < full)) && (availability === 'all' || (availability === 'free' ? s.qty > held : held > 0));
+  }).sort((a, b) => (byId.get(a.materialId)?.name ?? '').localeCompare(byId.get(b.materialId)?.name ?? '', 'sr', { numeric: true }) || b.lengthMm - a.lengthMm);
   const totalM = stock.reduce((s, i) => s + (i.lengthMm * i.qty) / 1000, 0);
 
+  const heldCount = [...reserved.values()].reduce((n, r) => n + r.qty, 0);
+  const freeCount = stock.reduce((n, s) => n + Math.max(0, s.qty - (reserved.get(s.id)?.qty ?? 0)), 0);
+  const shortage = stock.some((s) => (reserved.get(s.id)?.qty ?? 0) > s.qty) || [...reserved.keys()].some((id) => !stock.some((s) => s.id === id));
   return (
     <Page>
-      <PageHeader title="Magacin" subtitle="Materijal na stanju: cele šipke i ostaci. Ostaci se odavde biraju pre pravljenja krojne liste, da se prvo iskoriste." />
+      <PageHeader title="Magacin" subtitle="Cele šipke i ostaci, sa rezervacijama po projektu." actions={<ContextHelp topic="stock" />} />
+      <div className="grid sm:grid-cols-3 gap-3 mb-4" data-testid="stock-summary">{[['Na stanju', stock.reduce((n, s) => n + s.qty, 0)], ['Rezervisano', heldCount], ['Slobodno', freeCount]].map(([label, count]) => <section className="card p-4" key={label}><h2 className="text-sm text-muted">{label}</h2><b className="text-xl tabular-nums">{count} kom</b></section>)}</div>
+      {shortage && <p role="alert" className="p-3 mb-4 bg-amber-50 text-amber-800 rounded-lg">Rezervacije premašuju raspoloživo stanje za pojedine stavke. Proverite rezervacije projekata.</p>}
       <section className="card p-4 mb-5" data-testid="stock-add">
         <h2 className="font-bold mb-2">Dodaj na stanje</h2>
         {materials.length === 0 ? (
@@ -73,7 +86,7 @@ export default function StockPage() {
             <button className="btn btn-primary" data-testid="stock-add-btn" disabled={!valid} onClick={add}><Plus size={17} />Dodaj</button>
           </div>
         )}
-        <p className="text-xs text-muted mt-2">Cela šipka je {fmtNum(full, 0)} mm (menja se u Podešavanjima). Kraći komad je ostatak. Kad projekat pređe u „U izradi“ ili „Završeno“, ostaci iz njegove krojne liste od {fmtNum(cutOptions(settings).minKeepMm ?? 500, 0)} mm i duži se sami dodaju ovde. Komad koji izaberete iz magacina u krojnoj listi je rezervisan za taj projekat (drugi projekti ga ne nude), a kad kliknete „Potvrdi sečenje“ ili projekat pređe u „U izradi“ skida se sa stanja. Ako se status vrati na „Nacrt“ ili „Ponuda“, to se povlači.</p>
+        <p className="text-xs text-muted mt-2">Cela šipka: {fmtNum(full, 0)} mm. Za pravila rezervacija i knjiženja otvorite Pomoć.</p>
       </section>
 
       <section className="card p-4">
@@ -84,9 +97,14 @@ export default function StockPage() {
             <button className="btn btn-sm btn-danger" data-testid="stock-clear" disabled={stock.length === 0} onClick={() => setClearAll(true)}><Trash2 size={14} />Obriši sve</button>
           </div>
         </div>
+        <div className="flex flex-wrap gap-3 mb-4" role="search">
+          <input className="input flex-1 min-w-0" aria-label="Pretraga magacina" placeholder="Materijal, šifra ili napomena" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <select className="input !w-auto" aria-label="Vrsta komada" value={kind} onChange={(e) => setKind(e.target.value)}><option value="all">Sve vrste</option><option value="full">Cele šipke</option><option value="offcut">Ostaci</option></select>
+          <select className="input !w-auto" aria-label="Raspoloživost" value={availability} onChange={(e) => setAvailability(e.target.value)}><option value="all">Sve stavke</option><option value="free">Slobodno</option><option value="reserved">Rezervisano</option></select>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[840px]" data-testid="stock-table">
-            <thead><tr><th className="th">Materijal</th><th className="th text-right">Dužina (mm)</th><th className="th">Vrsta</th><th className="th text-right w-[110px]">Komada</th><th className="th text-right">Ukupno (m)</th><th className="th">Rezervisano</th><th className="th">Napomena</th><th className="th w-12" /></tr></thead>
+            <thead><tr><th className="th">Materijal</th><th className="th text-right">Dužina (mm)</th><th className="th">Vrsta</th><th className="th text-right w-[110px]">Komada</th><th className="th text-right">Ukupno (m)</th><th className="th">Rezervisano</th><th className="th text-right">Slobodno (kom)</th><th className="th">Napomena</th><th className="th w-12" /></tr></thead>
             <tbody>
               {rows.map((s) => {
                 const m = byId.get(s.materialId);
@@ -100,14 +118,15 @@ export default function StockPage() {
                     <td className="td text-[13px]" data-testid="stock-reserved">{(() => {
                       const r = reserved.get(s.id);
                       if (!r) return <span className="text-muted">—</span>;
-                      return <><b className={r.qty > s.qty ? 'text-[#b42318]' : 'text-primary'}>{r.qty} kom</b> <span className="text-slate-600">{r.projects.map((p) => `${p.name}${r.projects.length > 1 ? ` (${p.qty})` : ''}`).join(', ')}</span>{r.qty > s.qty && <span className="block text-[11.5px] text-[#b42318] font-semibold">više nego na stanju</span>}</>;
+                      return <><b className={r.qty > s.qty ? 'text-[#b42318]' : 'text-primary'}>{r.qty} kom</b> <span className="text-slate-600">{r.projects.map((p) => <Link className="underline mr-2" key={p.id} to={`/editor/${p.id}`}>{p.name} ({p.qty})</Link>)}</span>{r.qty > s.qty && <span className="block text-[11.5px] text-[#b42318] font-semibold">više nego na stanju</span>}</>;
                     })()}</td>
+                    <td className="td text-right font-semibold tabular-nums" data-testid="stock-free">{Math.max(0, s.qty - (reserved.get(s.id)?.qty ?? 0))}</td>
                     <td className="td text-slate-600">{s.note ?? ''}</td>
                     <td className="td text-right"><button className="btn btn-sm btn-icon btn-danger" aria-label="Obriši stavku" onClick={() => setDel(s)}><Trash2 size={14} /></button></td>
                   </tr>
                 );
               })}
-              {rows.length === 0 && <tr><td className="td text-muted" colSpan={9}>Magacin je prazan. Dodajte šipke i ostatke koje imate na stanju.</td></tr>}
+              {rows.length === 0 && <tr><td className="td text-muted" colSpan={9}>{stock.length ? 'Nema stavki za izabrane filtere.' : 'Magacin je prazan. Dodajte šipke i ostatke koje imate na stanju.'}</td></tr>}
             </tbody>
           </table>
         </div>

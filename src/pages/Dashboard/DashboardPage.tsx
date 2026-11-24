@@ -9,7 +9,7 @@ import type { FenceModelDef } from '../../domain/models/catalog';
 import { allFenceModels, customModelOf, effectiveModelId } from '../../domain/models/customRegistry';
 import { computePrice } from '../../domain/pricing/calc';
 import type { Project } from '../../domain/models/types';
-import { useAppStore, useListedProjects } from '../../store/useAppStore';
+import { currentProjectId, useAppStore, useListedProjects } from '../../store/useAppStore';
 import { fmtDate, fmtMoney } from '../../utils/units';
 
 /** koliko modela se prikazuje u „Popularnim modelima“ */
@@ -53,7 +53,7 @@ export default function DashboardPage() {
       offersValue: offers.reduce((s, p) => s + computePrice(p, materials, specs).grossTotal, 0),
       done: scope.filter((p) => p.status === 'zavrseno').length,
     };
-  }, [projects, customers, materials, period]);
+  }, [projects, customers, materials, specs, period]);
 
   // spisak se osvežava kad se modeli nacrtaju, dorade ili obrišu
   const customModels = useAppStore((s) => s.settings.customModels);
@@ -64,7 +64,7 @@ export default function DashboardPage() {
   const recent = [...projects].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 4);
   const customerName = (id: string | null) => customers.find((c) => c.id === id)?.name ?? '—';
   const startNew = (opts?: Parameters<typeof newProject>[0]) => navigate(`/editor/${newProject(opts)}`);
-  const lastProject = recent[0];
+  const lastProject = projects.find((p) => p.id === currentProjectId()) ?? recent[0];
 
   const features = [
     { icon: PencilRuler, color: 'bg-blue-50 text-blue-600', title: 'Projektovanje', text: 'Unos dimenzija i automatski 2D crtež ograde ili kapije.', onClick: () => (lastProject ? navigate(`/editor/${lastProject.id}`) : startNew()) },
@@ -76,18 +76,73 @@ export default function DashboardPage() {
   return (
     <div className="p-4 sm:p-6 max-w-[1400px] mx-auto space-y-6">
       {/* hero */}
-      <section className="relative overflow-hidden rounded-[18px] card min-h-[260px] sm:min-h-[318px]" data-testid="hero">
+      <section className="relative overflow-hidden rounded-[18px] card min-h-[150px]" data-testid="hero">
         <img src={PHOTOS['horizontal-02'].full} alt="" className="absolute inset-0 w-full h-full object-cover object-[70%_40%]" />
         <div className="absolute inset-0 bg-gradient-to-r from-white via-white/92 to-white/10 sm:via-white/80" />
-        <div className="relative p-6 sm:p-12 max-w-[720px]">
-          <h1 className="text-[34px] sm:text-[46px] leading-[1.08] font-extrabold tracking-tight">Novi projekat,<br />ponuda ili radni nalog</h1>
+        <div className="relative p-5 sm:p-6 max-w-[900px]">
+          <h1 className="text-[24px] sm:text-[28px] leading-[1.08] font-extrabold tracking-tight">Nastavite rad ili napravite novi projekat</h1>
           <p className="text-[15px] sm:text-lg text-slate-600 mt-4 max-w-[520px]">Izaberite kupca i model ograde, unesite mere i dobijate crtež, spisak materijala, cenu i krojnu listu.</p>
-          <div className="flex flex-wrap gap-3 mt-7">
-            <button className="btn btn-primary !px-6 !py-3.5 text-[15px]" data-testid="hero-new" onClick={() => startNew()}><Plus size={19} />Novi projekat</button>
-            <button className="btn !px-6 !py-3.5 text-[15px] bg-white" data-testid="hero-projects" onClick={() => navigate('/projekti')}><FolderOpen size={19} />Pogledaj projekte</button>
+          <div className="flex flex-wrap gap-3 mt-4">
+            {lastProject && <Link className="btn btn-primary !px-5 !py-2" to={`/editor/${lastProject.id}`} title={`${lastProject.name} · ${lastProject.quoteNo || lastProject.id}`} data-testid="continue-project"><PencilRuler size={18} />Nastavi poslednji projekat</Link>}
+            <button className={`btn ${!lastProject ? 'btn-primary' : ''} !px-6 !py-2 text-[15px]`} data-testid="hero-new" onClick={() => startNew()}><Plus size={19} />Novi projekat</button>
+            <button className="btn !px-6 !py-2 text-[15px] bg-white" data-testid="hero-projects" onClick={() => navigate('/projekti')}><FolderOpen size={19} />Pogledaj projekte</button>
           </div>
         </div>
       </section>
+
+      <div className="grid gap-5 xl:grid-cols-[1.55fr_1fr]">
+        {/* nedavni projekti */}
+        <section className="card p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-bold">Nedavni projekti</h2>
+            <Link to="/projekti" className="text-sm font-medium text-primary inline-flex items-center gap-1">Svi projekti <ArrowRight size={14} /></Link>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px]">
+              <thead><tr><th className="th rounded-l-lg">Naziv projekta</th><th className="th">Kupac</th><th className="th">Status</th><th className="th">Datum</th><th className="th rounded-r-lg w-12"><span className="sr-only">Akcije</span></th></tr></thead>
+              <tbody>
+                {recent.map((p) => (
+                  <tr key={p.id} data-testid="recent-row">
+                    <td className="td">
+                      <Link to={`/editor/${p.id}`} className="flex items-center gap-3 font-medium hover:text-primary min-w-0">
+                        <ProjectThumb project={p} width={44} /><span className="min-w-0"><span className="block truncate">{p.name}</span><span className="block text-xs text-muted">{p.quoteNo || p.id}</span></span>
+                      </Link>
+                    </td>
+                    <td className="td text-slate-600">{customerName(p.customerId)}</td>
+                    <td className="td"><StatusPill status={p.status} /></td>
+                    <td className="td text-slate-600">{fmtDate(p.updatedAt)}</td>
+                    <td className="td"><ActionsMenu actions={[{ label: 'Otvori', onClick: () => navigate(`/editor/${p.id}`) }, { label: 'Dupliraj', onClick: () => { const id = copyProject(p.id); if (id) navigate(`/editor/${id}`); } }, { label: 'Obriši', danger: true, onClick: () => setToDelete(p.id) }]} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {/* statistika */}
+        <section className="card p-5" data-testid="stats">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-bold">Brzi statistički pregled</h2>
+            <select className="input !w-auto !py-1.5 text-[13px]" aria-label="Period" value={period} onChange={(e) => setPeriod(e.target.value as 'month' | 'all')}>
+              <option value="all">Svi projekti</option><option value="month">Ovaj mesec</option>
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { icon: ClipboardList, tint: 'bg-blue-50 text-blue-600', v: String(stats.active), l: 'Aktivnih projekata', id: 'stat-active' },
+              { icon: Users, tint: 'bg-blue-50 text-blue-600', v: String(stats.customers), l: 'Kupaca', id: 'stat-customers' },
+              { icon: Wallet, tint: 'bg-green-50 text-green-600', v: fmtMoney(stats.offersValue, settings.currency, settings.currencyRateToEur), l: 'Vrednost ponuda', id: 'stat-offers' },
+              { icon: CheckCircle2, tint: 'bg-blue-50 text-blue-600', v: String(stats.done), l: 'Završenih projekata', id: 'stat-done' },
+            ].map((s) => (
+              <div key={s.l} className="border border-line rounded-xl p-4 flex flex-col items-start gap-2 min-w-0">
+                <span className={`w-10 h-10 rounded-xl grid place-items-center shrink-0 ${s.tint}`}><s.icon size={21} strokeWidth={1.7} /></span>
+                {/* vrednost u jednom redu, bez sečenja (npr. 216.191 RSD): kartica je uspravna pa vrednost ima celu širinu */}
+                <div className="min-w-0 w-full"><div className="text-[20px] font-bold leading-tight whitespace-nowrap tabular-nums" data-testid={s.id}>{s.v}</div><div className="text-[13px] text-muted">{s.l}</div></div>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
 
       {/* funkcionalne kartice */}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -130,59 +185,6 @@ export default function DashboardPage() {
         )}
       </section>
 
-      <div className="grid gap-5 xl:grid-cols-[1.55fr_1fr]">
-        {/* nedavni projekti */}
-        <section className="card p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-bold">Nedavni projekti</h2>
-            <Link to="/projekti" className="text-sm font-medium text-primary inline-flex items-center gap-1">Svi projekti <ArrowRight size={14} /></Link>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px]">
-              <thead><tr><th className="th rounded-l-lg">Naziv projekta</th><th className="th">Kupac</th><th className="th">Status</th><th className="th">Datum</th><th className="th rounded-r-lg w-12"><span className="sr-only">Akcije</span></th></tr></thead>
-              <tbody>
-                {recent.map((p) => (
-                  <tr key={p.id} data-testid="recent-row">
-                    <td className="td">
-                      <Link to={`/editor/${p.id}`} className="flex items-center gap-3 font-medium hover:text-primary min-w-0">
-                        <ProjectThumb project={p} width={44} /><span className="truncate">{p.name}</span>
-                      </Link>
-                    </td>
-                    <td className="td text-slate-600">{customerName(p.customerId)}</td>
-                    <td className="td"><StatusPill status={p.status} /></td>
-                    <td className="td text-slate-600">{fmtDate(p.updatedAt)}</td>
-                    <td className="td"><ActionsMenu actions={[{ label: 'Otvori', onClick: () => navigate(`/editor/${p.id}`) }, { label: 'Dupliraj', onClick: () => { const id = copyProject(p.id); if (id) navigate(`/editor/${id}`); } }, { label: 'Obriši', danger: true, onClick: () => setToDelete(p.id) }]} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        {/* statistika */}
-        <section className="card p-5" data-testid="stats">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-bold">Brzi statistički pregled</h2>
-            <select className="input !w-auto !py-1.5 text-[13px]" aria-label="Period" value={period} onChange={(e) => setPeriod(e.target.value as 'month' | 'all')}>
-              <option value="all">Svi projekti</option><option value="month">Ovaj mesec</option>
-            </select>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { icon: ClipboardList, tint: 'bg-blue-50 text-blue-600', v: String(stats.active), l: 'Aktivnih projekata', id: 'stat-active' },
-              { icon: Users, tint: 'bg-blue-50 text-blue-600', v: String(stats.customers), l: 'Kupaca', id: 'stat-customers' },
-              { icon: Wallet, tint: 'bg-green-50 text-green-600', v: fmtMoney(stats.offersValue, settings.currency, settings.currencyRateToEur), l: 'Vrednost ponuda', id: 'stat-offers' },
-              { icon: CheckCircle2, tint: 'bg-blue-50 text-blue-600', v: String(stats.done), l: 'Završenih projekata', id: 'stat-done' },
-            ].map((s) => (
-              <div key={s.l} className="border border-line rounded-xl p-4 flex flex-col items-start gap-2 min-w-0">
-                <span className={`w-10 h-10 rounded-xl grid place-items-center shrink-0 ${s.tint}`}><s.icon size={21} strokeWidth={1.7} /></span>
-                {/* vrednost u jednom redu, bez sečenja (npr. 216.191 RSD): kartica je uspravna pa vrednost ima celu širinu */}
-                <div className="min-w-0 w-full"><div className="text-[20px] font-bold leading-tight whitespace-nowrap tabular-nums" data-testid={s.id}>{s.v}</div><div className="text-[13px] text-muted">{s.l}</div></div>
-              </div>
-            ))}
-          </div>
-        </section>
-      </div>
 
       {toDelete && (
         <ConfirmDialog title="Brisanje projekta" danger confirmLabel="Obriši" message="Projekat će biti trajno obrisan iz lokalne baze. Nastaviti?" onCancel={() => setToDelete(null)} onConfirm={() => { removeProject(toDelete); setToDelete(null); }} />
