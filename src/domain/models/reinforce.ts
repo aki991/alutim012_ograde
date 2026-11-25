@@ -23,7 +23,13 @@ export const autoVerticalCount = (widthMm: number): number => (widthMm > MAX_SPA
 
 export interface ReinforceRow { key: string; name: string; materialId: string; qty: number; lengthMm: number; role: string }
 
-export interface ReinforcePlan { parts: CustomPart[]; rows: ReinforceRow[]; inner: { x0: number; y0: number; x1: number; y1: number }; materialId: string | null; vCount: number; /** širina uspravne cevi u prednjem pogledu (mm) */ tubeW: number; /** ID-ovi vodoravnih delova koje uspravne cevi seku i njihovi komadi (početak, kraj ose) */ cuts: Map<string, [number, number][]> }
+export interface ReinforcePlan {
+  parts: CustomPart[]; rows: ReinforceRow[]; inner: { x0: number; y0: number; x1: number; y1: number }; materialId: string | null; vCount: number;
+  /** širina uspravne cevi u prednjem pogledu (mm) */ tubeW: number;
+  /** koliko dužine prečke odnosi jedna uspravna cev sa svojim U profilima (širina cevi + oba U profila − ulazak prečke u njih) */ gapW: number;
+  /** ID-ovi vodoravnih delova koje uspravne cevi seku i njihovi komadi (početak, kraj ose) */ cuts: Map<string, [number, number][]>;
+  /** U vođice svakog komada prečke (leva, desna), kad platno ima bočne U profile */ pieceGuides: Map<string, [string, string][]>;
+}
 
 const r1 = (n: number): number => Math.round(n * 10) / 10;
 
@@ -116,10 +122,50 @@ export function planReinforce(scaled: CustomModel, cfg: Reinforce | undefined, m
   const centers = Array.from({ length: vCount }, (_, i) => sx0 + ((sx1 - sx0) * (i + 1)) / (vCount + 1));
   centers.forEach((xc, i) => parts.push({ id: `rf_v${i + 1}`, materialId: mat.id, x: r1(xc + mid), y: r1(inner.y0), lengthMm: r1(ih), angleDeg: 90, rot: 0, z: 0 }));
   if (vCount) rows.push({ key: 'v', name: 'Ojačanje — uspravna cev', materialId: mat.id, qty: vCount, lengthMm: r1(ih), role: 'Ojačanje — uspravna cev' });
+  // Uspravna cev pravi dva platna: sa obe njene strane stoji isti U profil kao bočne vođice platna (levo kopija desne, desno kopija leve),
+  // a prečke u njih ulaze isto koliko i u bočne.
+  const boundsOf = (p: CustomPart) => { const sh = materialShape(materials.find((x) => x.id === p.materialId) ?? mat); return sh.type === 'linear' ? partBounds(p, sh) : null; };
+  // vođice prečke: zapisane (`guides`) ili uspravni profil u koji prečka ulazi krajem
+  // (samo U profili: prečka u njih ulazi ili do njih dolazi; ram i druge cevi nisu vođice platna)
+  const isU = (p: CustomPart) => { const m = materials.find((x) => x.id === p.materialId); const sh = m ? materialShape(m) : null; return !!sh && sh.type === 'linear' && !!sh.u; };
+  const verticals = scaled.parts.filter((p) => !p.cut45 && !p.id.startsWith('rf_') && Math.abs(Math.sin((p.angleDeg * Math.PI) / 180)) > 0.99 && isU(p));
+  const guidesOf = (p: CustomPart): [string, string] | null => {
+    if (p.guides?.length === 2) return p.guides;
+    const b = boundsOf(p); if (!b) return null;
+    const hit = (x: number, left: boolean) => verticals.find((v) => { const q = boundsOf(v); return !!q && q.y0 < b.y1 - 0.5 && q.y1 > b.y0 + 0.5 && (left ? x >= q.x0 - 0.01 && x <= q.x1 + 0.5 : x >= q.x0 - 0.5 && x <= q.x1 + 0.01); });
+    const l = hit(b.x0, true); const r = hit(b.x1, false);
+    return l && r && l.id !== r.id ? [l.id, r.id] : null;
+  };
+  const sideIds = new Map(cross.map((p) => [p.id, guidesOf(p)]));
+  const pairs = new Map<string, number>();
+  for (const g of sideIds.values()) if (g) pairs.set(g.join('|'), (pairs.get(g.join('|')) ?? 0) + 1);
+  const pair = [...pairs.entries()].sort((a, b) => b[1] - a[1])[0]?.[0].split('|');
+  const sideL = pair ? scaled.parts.find((p) => p.id === pair[0]) : undefined;
+  const sideR = pair ? scaled.parts.find((p) => p.id === pair[1]) : undefined;
+  const Lb = sideL ? boundsOf(sideL) : null; const Rb = sideR ? boundsOf(sideR) : null;
+  const guided = !!(vCount && sideL && sideR && Lb && Rb && Lb.x1 <= Rb.x0);
+  const Lw = guided ? Lb!.x1 - Lb!.x0 : 0; const Rw = guided ? Rb!.x1 - Rb!.x0 : 0;
+  if (guided) {
+    // ceo stub vođica (i komadi presečeni vodoravnim ojačanjem) se kopira
+    const column = (side: CustomPart, b: { x0: number; x1: number }) => scaled.parts.filter((p) => {
+      if (p.materialId !== side.materialId || Math.abs(Math.sin((p.angleDeg * Math.PI) / 180)) < 0.99) return false;
+      const q = boundsOf(p); return !!q && Math.abs(q.x0 - b.x0) < 0.5 && Math.abs(q.x1 - b.x1) < 0.5;
+    });
+    const copy = (p: CustomPart, id: string, dx: number): CustomPart => {
+      const { guides: _g, nests: _n, splitOf: _s, fit: _f, autoGuides: _a, ...rest } = p;
+      return { ...rest, id, x: r1(p.x + dx) };
+    };
+    const len = new Map<number, number>();
+    centers.forEach((xc, i) => {
+      column(sideR!, Rb!).forEach((p, k) => { parts.push(copy(p, `rf_u${i + 1}_l${k ? k + 1 : ''}`, xc - fw / 2 - Rb!.x1)); len.set(p.lengthMm, (len.get(p.lengthMm) ?? 0) + 1); });
+      column(sideL!, Lb!).forEach((p, k) => { parts.push(copy(p, `rf_u${i + 1}_r${k ? k + 1 : ''}`, xc + fw / 2 - Lb!.x0)); len.set(p.lengthMm, (len.get(p.lengthMm) ?? 0) + 1); });
+    });
+    [...len.entries()].forEach(([l, n], i) => rows.push({ key: `u${i}`, name: 'Bočni U profil uz uspravnu cev', materialId: sideR!.materialId, qty: n, lengthMm: r1(l), role: 'Bočni U profil uz uspravnu cev' }));
+  }
   // vodoravne cevi: komad između dve uspravne cevi, odnosno između uspravne cevi i bočne strane
   const edges: [number, number][] = [];
   let from = inner.x0;
-  for (const xc of centers) { edges.push([from, xc - fw / 2]); from = xc + fw / 2; }
+  for (const xc of centers) { edges.push([from, xc - fw / 2 - Rw]); from = xc + fw / 2 + Lw; }
   edges.push([from, inner.x1]);
   const segs = edges.filter(([a, b]) => b - a > 1);
   ys.forEach((yc, j) => {
@@ -132,19 +178,32 @@ export function planReinforce(scaled: CustomModel, cfg: Reinforce | undefined, m
   [...lens.entries()].forEach(([len, n], i) => rows.push({ key: `h${i}`, name: 'Ojačanje — vodoravna cev', materialId: mat.id, qty: n, lengthMm: len, role: 'Ojačanje — vodoravna cev' }));
   // komadi prečki koje cevi seku
   const cuts = new Map<string, [number, number][]>();
+  const pieceGuides = new Map<string, [string, string][]>();
+  let gapW = fw;
   if (vCount) {
     for (const p of cross) {
       const sh = materialShape(materials.find((x) => x.id === p.materialId) ?? mat);
       if (sh.type !== 'linear') continue;
       const b = partBounds(p, sh);
       const pieces: [number, number][] = [];
-      let s = b.x0;
-      for (const xc of centers) { if (xc - fw / 2 > s + 0.5 && xc + fw / 2 < b.x1 - 0.5) { pieces.push([s, xc - fw / 2]); s = xc + fw / 2; } }
-      pieces.push([s, b.x1]);
-      if (pieces.length > 1) cuts.set(p.id, pieces);
+      const sides = sideIds.get(p.id);
+      const inGuides = guided && sides?.[0] === sideL!.id && sides?.[1] === sideR!.id;
+      // prečka ulazi u U profil uz cev isto koliko i u bočni: u levi (kopija desne vođice) koliko u desnu, u desni koliko u levu
+      const insL = inGuides ? Lb!.x1 - b.x0 : 0; const insR = inGuides ? b.x1 - Rb!.x0 : 0;
+      const before = inGuides ? Rw - insR : 0; const after = inGuides ? Lw - insL : 0;
+      const ids: [string, string][] = [];
+      let s = b.x0; let left = sides?.[0] ?? '';
+      centers.forEach((xc, i) => {
+        if (xc - fw / 2 - before > s + 0.5 && xc + fw / 2 + after < b.x1 - 0.5) {
+          pieces.push([s, xc - fw / 2 - before]); ids.push([left, `rf_u${i + 1}_l`]);
+          s = xc + fw / 2 + after; left = `rf_u${i + 1}_r`;
+        }
+      });
+      pieces.push([s, b.x1]); ids.push([left, sides?.[1] ?? '']);
+      if (pieces.length > 1) { cuts.set(p.id, pieces); if (inGuides) { pieceGuides.set(p.id, ids); gapW = fw + before + after; } }
     }
   }
-  return { parts, rows, inner, materialId: mat.id, vCount, tubeW: fw, cuts };
+  return { parts, rows, inner, materialId: mat.id, vCount, tubeW: fw, gapW, cuts, pieceGuides };
 }
 
 /** crtež sa ojačanjem (isti crtež kad ga nema) */
@@ -158,8 +217,9 @@ export function withReinforce(scaled: CustomModel, cfg: Reinforce | undefined, m
     const sh = materials.find((x) => x.id === p.materialId);
     const s = sh ? materialShape(sh) : null;
     const b0 = s && s.type === 'linear' ? partBounds(p, s).x0 : p.x;
-    // krajnji komadi ulaze u bočne U vođice (ne razvlače se do njih, ali im ne smetaju)
-    return pieces.map(([a, b], i) => ({ ...p, id: `${p.id}_c${i + 1}`, x: Math.ceil((p.x + (a - b0)) * 10) / 10, lengthMm: Math.floor((b - a - 0.1) * 10) / 10, guides: undefined, fit: undefined, nests: i === 0 || i === pieces.length - 1 ? p.guides : undefined }));
+    // krajnji komadi ulaze u bočne U vođice (ne razvlače se do njih, ali im ne smetaju); uz U profile cevi svaki komad je prečka svog platna
+    const g = plan.pieceGuides.get(p.id);
+    return pieces.map(([a, b], i) => ({ ...p, id: `${p.id}_c${i + 1}`, x: Math.ceil((p.x + (a - b0)) * 10) / 10, lengthMm: Math.floor((b - a - 0.1) * 10) / 10, guides: g?.[i], fit: undefined, nests: i === 0 || i === pieces.length - 1 ? p.guides : undefined }));
   });
   return { ...scaled, parts: [...base, ...plan.parts] };
 }

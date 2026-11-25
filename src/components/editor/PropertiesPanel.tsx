@@ -615,6 +615,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
       <>
         <PropertyGroup title="Mere i boja kapije">
         <GateDesignEntry project={project} gate={g} />
+        {g.sliding.drawnLeaf && <GateFrameBox gate={g} />}
         <ColorField stacked value={g.color} testId="field-color" onChange={(c) => st.setItemColor(id, c)} finish={g.finish} onFinishChange={(f) => st.setItemFinish(id, f)} />
         </PropertyGroup>
         <PropertyGroup title="Stubovi kapije"><GateOwnPosts project={project} id={id} g={g} /></PropertyGroup>

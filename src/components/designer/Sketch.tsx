@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { CUSTOM_KIND_LABELS, partBounds, type CustomModel } from '../../domain/models/custom';
 import { guideReport } from '../../domain/models/guides';
 import type { Material } from '../../domain/models/types';
-import { buildSketch, fmtNum, type Sketch } from '../../domain/models/sketch';
+import { buildSketch, fmtNum, type ChainDim, type Sketch } from '../../domain/models/sketch';
 import { GuideSection } from './GuideSection';
 import { PartSvg, resolveParts } from './PartsSvg';
 
@@ -34,10 +34,16 @@ const trunc = (s: string, n: number): string => (s.length > n ? `${s.slice(0, n 
  * dužine, širine, razmaci uspravnih delova), tabela delova sa dužinama i brojem komada i presek prečke u U profilu sa uglom nagiba.
  * Sve je u milimetrima; sve boje i veličine su zadate atributima, pa se ista skica koristi na ekranu i u PDF-u.
  */
-export function SketchSvg({ model, materials, className, style, bare, tint }: { model: CustomModel; materials: Material[]; className?: string; style?: React.CSSProperties; bare?: boolean; tint?: string }) {
+export function SketchSvg({ model, materials, className, style, bare, tint, hide, mute, title, chains }: {
+  model: CustomModel; materials: Material[]; className?: string; style?: React.CSSProperties; bare?: boolean; tint?: string;
+  /** korak sklapanja: delovi koji se ne crtaju (dolaze kasnije) i delovi nacrtani bledo, bez broja (već sklopljeni); brojevi su iz celog crteža */
+  hide?: string[]; mute?: string[]; title?: string;
+  /** kote koraka sklapanja (npr. gde se postavlja ojačanje u ram): levi i donji lanac i u sklopnom crtežu */
+  chains?: { left?: ChainDim[]; bottom?: ChainDim[] };
+}) {
   const sk = useMemo(() => buildSketch(model, materials), [model, materials]);
   const parts = useMemo(() => resolveParts(model, materials), [model, materials]);
-  const d = drawSketch({ model, materials, sk, parts, bare, tint });
+  const d = drawSketch({ model, materials, sk, parts, bare, tint, hide: hide ? new Set(hide) : undefined, mute: mute ? new Set(mute) : undefined, title, chains });
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox={`${d.minX} ${d.minY} ${d.vw} ${d.vh}`} width={Math.round(d.vw)} height={Math.round(d.vh)} className={className} style={style} role="img" aria-label={`Skica sa kotama: ${model.name}`} data-testid="sketch-svg" fontFamily={FONT}>
       {d.node}
@@ -53,11 +59,15 @@ interface DrawOpts {
   bare?: boolean;
   /** sklopni crtež elementa: svi delovi u boji elementa (umesto boja pozicija) */
   tint?: string;
+  /** korak sklapanja: delovi koji se ne crtaju i delovi nacrtani bledo, bez broja */
+  hide?: Set<string>; mute?: Set<string>;
+  chains?: { left?: ChainDim[]; bottom?: ChainDim[] };
 }
 
 /** Crta skicu: vraća sadržaj i veličinu platna (koordinate su u mm modela, y raste naniže). Odvojeni delovi se crtaju istim postupkom. */
-function drawSketch({ model, materials, sk: skIn, parts, base, fsOverride, title, bare, tint }: DrawOpts): { node: React.ReactNode; minX: number; minY: number; vw: number; vh: number } {
-  const sk: Sketch = bare ? { ...skIn, left: [], bottom: [], top: [], right: [], welds: [], groups: [], separate: [], oblique: skIn.oblique } : skIn;
+function drawSketch({ model, materials, sk: skIn, parts: allParts, base, fsOverride, title, bare, tint, hide, mute, chains }: DrawOpts): { node: React.ReactNode; minX: number; minY: number; vw: number; vh: number } {
+  const parts = hide ? allParts.filter((r) => !hide.has(r.part.id)) : allParts;
+  const sk: Sketch = bare ? { ...skIn, left: chains?.left ?? [], bottom: chains?.bottom ?? [], top: [], right: [], welds: [], groups: [], separate: [], oblique: skIn.oblique } : skIn;
   const compact = !!base || !!bare;
   const W = model.widthMm; const H = model.heightMm;
   const fs = fsOverride ?? Math.max(8, Math.max(W, H) * 0.0185);
@@ -146,13 +156,13 @@ function drawSketch({ model, materials, sk: skIn, parts, base, fsOverride, title
   );
   const typeLabel = CUSTOM_KIND_LABELS[model.kind];
   const ref = base ?? sk;
-  const colorOf = (id: string): string => { if (tint) return tint; const no = ref.noOf.get(id); return no ? ref.positions[no - 1].color : '#e2e8f0'; };
+  const colorOf = (id: string): string => { if (mute?.has(id)) return '#e5e7eb'; if (tint) return tint; const no = ref.noOf.get(id); return no ? ref.positions[no - 1].color : '#e2e8f0'; };
 
   /* ---- oznake pozicija: krug na delu, pomeren duž dela tako da se ne preklapa sa drugim oznakama ---- */
   const tagR = 0.85 * fs;
   const placed: { x: number; y: number }[] = [];
   const tags = ref.positions.flatMap((p) => {
-    const r = parts.find((x) => p.partIds.includes(x.part.id));
+    const r = parts.find((x) => p.partIds.includes(x.part.id) && !mute?.has(x.part.id));
     if (!r) return [];
     const b = partBounds(r.part, r.shape);
     const horiz = b.x1 - b.x0 >= b.y1 - b.y0;

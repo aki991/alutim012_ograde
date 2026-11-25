@@ -3,13 +3,15 @@ import { itemSlope } from '../domain/geometry/stair';
 import { developStairSketch } from '../domain/models/stairSketch';
 import { createElement } from 'react';
 import { SketchSvg } from '../components/designer/Sketch';
-import { CUSTOM_KIND_LABELS, type CustomModel } from '../domain/models/custom';
+import { CUSTOM_KIND_LABELS, partBounds, type CustomModel } from '../domain/models/custom';
+import { materialShape } from '../domain/models/materialShape';
 import { customLiftOf, customModelOf, scaledWithReinforce } from '../domain/models/customRegistry';
 import { builtinToCustom } from '../domain/models/fromBuiltin';
 import type { AppSettings, Customer, FenceModelId, Material, Project } from '../domain/models/types';
 import { leafHeightOf, slidingH } from '../domain/gates/slidingLayout';
 import { computeLayout } from '../domain/geometry/layout';
-import { buildSketch } from '../domain/models/sketch';
+import { buildSketch, type ChainDim } from '../domain/models/sketch';
+import { isFramePart } from '../domain/models/frame';
 import { resolveSliding } from '../domain/gates/slidingAssembly';
 import { inPrintScope, PRINT_SCOPE_LABELS, type PrintScope } from '../domain/pricing/cutting';
 import { itemLabel } from '../utils/labels';
@@ -22,9 +24,9 @@ import { loadHeaderLogos } from './pdfHeader';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 /** SVG tekst skice (samostalan fajl, sa veličinom iz viewBox-a). */
-export async function sketchSvgString(model: CustomModel, materials: Material[], bare = false, tint?: string): Promise<{ svg: string; width: number; height: number }> {
+export async function sketchSvgString(model: CustomModel, materials: Material[], bare = false, tint?: string, step?: { hide?: string[]; mute?: string[]; title?: string; chains?: { left?: ChainDim[]; bottom?: ChainDim[] } }): Promise<{ svg: string; width: number; height: number }> {
   const { renderToStaticMarkup } = await import('react-dom/server');
-  const svg = renderToStaticMarkup(createElement(SketchSvg, { model, materials, bare, tint }));
+  const svg = renderToStaticMarkup(createElement(SketchSvg, { model, materials, bare, tint, ...step }));
   const m = /viewBox="([-\d.e]+) ([-\d.e]+) ([-\d.e]+) ([-\d.e]+)"/.exec(svg);
   if (!m) throw new Error('Skica nije mogla da se napravi.');
   return { svg: `<?xml version="1.0" encoding="UTF-8"?>${svg}`, width: Number(m[3]), height: Number(m[4]) };
@@ -147,6 +149,80 @@ export async function elementAssembly(project: Project, idx: number, materials: 
   // visina legende (pt): zaglavlje + redovi (red sa uglom ima dve linije); crtež se uklapa u ostatak stranice
   const legendH = 16 + sk.positions.reduce((n, p) => n + (p.angle !== '—' ? 24 : 15), 0) + (hw.length ? 24 + hw.length * 15 : 0);
   return { png, width, height, legend: { stack: [table, ...(hwTable ? [hwTable] : [])] }, legendH };
+}
+
+/** Deo rama kapije za prvi korak sklapanja: ram (uglovi 45°), uspravne cevi ojačanja (platno šire od 2,5 m) i vodoravna ojačanja. */
+export const isGateFramePart = (p: CustomModel['parts'][number]): boolean => isFramePart(p) || p.id.startsWith('rf_v') || p.id.startsWith('rf_h') || !!p.divider;
+
+/** Koraci sklapanja kapije: koji delovi (po brojevima pozicija sklopnog crteža) idu u ram, a koji su ispuna modela koja se ubacuje u ram. */
+export function gateStepParts(model: CustomModel, materials: Material[]): { frame: string[]; infill: string[]; frameNos: number[]; infillNos: number[] } | null {
+  const linear = model.parts.filter((p) => !p.hw && !p.joint3d);
+  const frame = linear.filter(isGateFramePart).map((p) => p.id);
+  const infill = linear.filter((p) => !isGateFramePart(p)).map((p) => p.id);
+  if (!frame.length || !infill.length || !model.parts.some(isFramePart)) return null;
+  const sk = buildSketch(model, materials);
+  const nos = (ids: string[]) => { const set = new Set(ids); return sk.positions.filter((p) => p.partIds.some((id) => set.has(id))).map((p) => p.no); };
+  return { frame, infill, frameNos: nos(frame), infillNos: nos(infill) };
+}
+
+/**
+ * Kote za postavljanje ojačanja u ram (prvi korak): po širini svetli otvori od unutrašnje ivice rama do uspravne cevi i između cevi
+ * (sa širinom cevi), po visini isto za vodoravna ojačanja. Prazno kad ojačanja nema.
+ */
+export function frameStepChains(model: CustomModel, materials: Material[]): { left: ChainDim[]; bottom: ChainDim[] } {
+  const W = model.widthMm; const H = model.heightMm;
+  const boxes = model.parts.flatMap((p) => {
+    const m = materials.find((x) => x.id === p.materialId); const sh = m ? materialShape(m) : null;
+    return sh && sh.type === 'linear' && !p.hw && !p.joint3d ? [{ p, b: partBounds(p, sh) }] : [];
+  });
+  const vertical = (p: CustomModel['parts'][number]) => Math.abs(Math.sin((p.angleDeg * Math.PI) / 180)) > 0.99;
+  const frame = boxes.filter(({ p }) => isFramePart(p));
+  const r1 = (n: number) => Math.round(n * 10) / 10;
+  const chain = (lo: number, hi: number, tubes: [number, number][]): ChainDim[] => {
+    const out: ChainDim[] = []; let at = lo;
+    for (const [a, b] of [...tubes].sort((x, y) => x[0] - y[0])) {
+      if (a - at > 0.5) out.push({ a: at, b: a, value: r1(a - at), kind: 'offset' });
+      out.push({ a, b, value: r1(b - a), kind: 'gap' }); at = b;
+    }
+    if (hi - at > 0.5) out.push({ a: at, b: hi, value: r1(hi - at), kind: 'offset' });
+    return out;
+  };
+  // unutrašnje ivice rama (bez rama: ivice platna)
+  const innerL = Math.max(0, ...frame.filter(({ p, b }) => vertical(p) && b.x0 < W / 2).map(({ b }) => b.x1));
+  const innerR = Math.min(W, ...frame.filter(({ p, b }) => vertical(p) && b.x1 > W / 2).map(({ b }) => b.x0));
+  const innerB = Math.max(0, ...frame.filter(({ p, b }) => !vertical(p) && b.y0 < H / 2).map(({ b }) => b.y1));
+  const innerT = Math.min(H, ...frame.filter(({ p, b }) => !vertical(p) && b.y1 > H / 2).map(({ b }) => b.y0));
+  const vTubes = boxes.filter(({ p }) => p.id.startsWith('rf_v')).map(({ b }) => [b.x0, b.x1] as [number, number]);
+  const hBands = new Map<string, [number, number]>();
+  for (const { p, b } of boxes) if (p.id.startsWith('rf_h') || p.divider) hBands.set(`${r1(b.y0)}|${r1(b.y1)}`, [b.y0, b.y1]);
+  return { bottom: vTubes.length ? chain(innerL, innerR, vTubes) : [], left: hBands.size ? chain(innerB, innerT, [...hBands.values()]) : [] };
+}
+
+/**
+ * Redosled sklapanja kapije za radni nalog: 1) ram sa uspravnim cevima ojačanja i vodoravnim ojačanjima, 2) u gotov ram se ubacuje
+ * ispuna izabranog modela (bočni U profili, prečke …). Brojevi pozicija su isti kao na sklopnom crtežu i u tabeli. Null kad kapija nema ram.
+ */
+export interface GateStep { title: string; png: string; rows: { no: number; name: string; length: string; count: number }[] }
+
+export async function gateAssemblySteps(project: Project, idx: number, materials: Material[], color: string): Promise<{ steps: GateStep[] } | null> {
+  const it = project.items[idx];
+  if (!it || it.kind !== 'gate') return null;
+  const model = elementModel(project, idx, materials);
+  if (!model) return null;
+  const sp = gateStepParts(model, materials);
+  if (!sp) return null;
+  const hw = model.parts.filter((p) => p.hw || p.joint3d).map((p) => p.id);
+  const sk = buildSketch(model, materials);
+  const rows = (nos: number[]) => sk.positions.filter((p) => nos.includes(p.no)).map((p) => ({ no: p.no, name: p.name, length: p.length, count: p.count }));
+  const draw = async (title: string, hide: string[], mute: string[], chains?: { left: ChainDim[]; bottom: ChainDim[] }) => {
+    const { svg, width, height } = await sketchSvgString(model, materials, true, color, { hide: [...hide, ...hw], mute, title, chains });
+    const px = Math.min(2400, Math.round(width * Math.min(3, 2400 / width)));
+    return svgToPng(svg, px, Math.min(Math.round((px * height) / width), 3400));
+  };
+  return { steps: [
+    { title: 'Korak 1 — ram sa ojačanjima', png: await draw('Korak 1 — ram kapije sa uspravnim cevima i ojačanjima (kote: mesto ojačanja od unutrašnje ivice rama)', sp.infill, [], frameStepChains(model, materials)), rows: rows(sp.frameNos) },
+    { title: 'Korak 2 — ispuna modela u ram', png: await draw('Korak 2 — u gotov ram se ubacuje ispuna modela', [], sp.frame), rows: rows(sp.infillNos) },
+  ] };
 }
 
 /**

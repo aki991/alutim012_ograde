@@ -28,7 +28,7 @@ export function autoFrameRot(model: CustomModel, material: Material, materials: 
 export interface FrameSides { left: boolean; right: boolean; top: boolean; bottom: boolean }
 export const ALL_FRAME_SIDES: FrameSides = { left: true, right: true, top: true, bottom: true };
 
-export function modelWithFrame(model: CustomModel, material: Material | undefined, materials: Material[] = [], rotIn?: number, sides: FrameSides = ALL_FRAME_SIDES): CustomModel | { error: string } {
+export function modelWithFrame(model: CustomModel, material: Material | undefined, materials: Material[] = [], rotIn?: number, sides: FrameSides = ALL_FRAME_SIDES, boundsIn?: { x0: number; y0: number; x1: number; y1: number }): CustomModel | { error: string } {
   const shape = material ? materialShape(material) : null;
   if (!material || shape?.type !== 'linear') return { error: 'Ram se pravi od profila (cevi, U i sličnih profila).' };
   if (!sides.left && !sides.right && !sides.top && !sides.bottom) return { error: 'Izaberite bar jednu stranu rama.' };
@@ -38,7 +38,7 @@ export function modelWithFrame(model: CustomModel, material: Material | undefine
   const r3 = (n: number) => Math.round(n * 1000) / 1000;
   const f = face;
   // ram ide oko svega što je nacrtano (mere modela proizlaze iz crteža)
-  const cb = contentBounds(model, (p) => materialShape(materials.find((m) => m.id === p.materialId) ?? material));
+  const cb = boundsIn ?? contentBounds(model, (p) => materialShape(materials.find((m) => m.id === p.materialId) ?? material));
   if (!cb) return { error: 'Prvo nacrtajte platno, pa dodajte ram oko njega.' };
   const { x0, y0, x1, y1 } = cb;
   const fl = sides.left ? f : 0; const fr = sides.right ? f : 0; const fb = sides.bottom ? f : 0; const ft = sides.top ? f : 0;

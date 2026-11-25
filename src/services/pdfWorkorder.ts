@@ -11,7 +11,7 @@ import { getPdfMake, renderBlob } from './pdf';
 import { schemaSvg } from './workorderSvg';
 import { sameElementGroups } from './workorderGroups';
 import { slidingWorkSvg } from './slidingWorkSvg';
-import { elementAssembly, elementModel, sketchSvgString } from './pdfSketch';
+import { elementAssembly, elementModel, gateAssemblySteps, sketchSvgString, type GateStep } from './pdfSketch';
 import { pdfFinishing } from './pdfFinishing';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -128,7 +128,7 @@ export async function buildWorkorderPdfBlob(project: Project, customer: Customer
       ? ['Delovi isečeni po krojnoj listi', 'Krilo i rep zavareni po crtežu', 'Okov ugrađen', 'Hod proveren', 'Mere proverene', 'Boja bez oštećenja']
       : [
           'Delovi isečeni po krojnoj listi',
-          e.isGate ? 'Kapija sklopljena' : 'Element sklopljen',
+          e.isGate ? 'Ram zavaren, ispuna ubačena' : 'Element sklopljen',
           ...(e.isGate ? ['Šarke i brava ugrađene', 'Funkcija proverena'] : []),
           'Mere proverene',
           'Boja bez oštećenja',
@@ -185,11 +185,39 @@ export async function buildWorkorderPdfBlob(project: Project, customer: Customer
         { width: '*', stack: [{ text: 'SKICA SA KOTAMA', fontSize: 7.5, bold: true, color: MUTED, characterSpacing: 0.5, margin: [0, 0, 0, 2] }, { image: right, fit: [386, maxH], alignment: 'center' }] },
       ], columnGap: 14, margin: [0, 2, 0, 6] }
     : { image: left, fit: [786, maxH], alignment: 'center', margin: [0, 2, 0, 6] });
+  // kapija: redovno sklapanje u dva koraka — prvo ram (sa uspravnim cevima preko 2,5 m i ojačanjima), pa se u njega ubacuje ispuna modela
+  const stepsPage = async (idx: number | undefined, heading: string, col: string): Promise<any | null> => {
+    if (idx === undefined) return null;
+    const st = await gateAssemblySteps(project, idx, materials, col);
+    if (!st) return null;
+    const stepTable = (rows: GateStep['rows']): any => ({
+      table: {
+        headerRows: 1, dontBreakRows: true, widths: [16, '*', 46, 22],
+        body: [[label('BR.'), label('DEO'), { ...label('DUŽINA'), alignment: 'right' }, { ...label('KOM.'), alignment: 'right' }],
+          ...rows.map((r) => [{ text: String(r.no), bold: true, fontSize: 9, color: col }, { text: r.name, fontSize: 8.5 }, { text: r.length, fontSize: 8.5, alignment: 'right' }, { text: String(r.count), fontSize: 8.5, bold: true, alignment: 'right' }])],
+      },
+      layout: { hLineColor: () => LINE, hLineWidth: (i: number, node: any) => (i === 0 || i === node.table.body.length ? 0 : 0.4), vLineWidth: () => 0, paddingTop: () => 2, paddingBottom: () => 2, paddingLeft: () => 2, paddingRight: () => 3 },
+    });
+    const longest = Math.max(...st.steps.map((x) => x.rows.length));
+    const imgH = Math.max(120, Math.min(330, 531 - 56 - (longest + 1) * 15 - 40));
+    return {
+      pageBreak: 'before',
+      stack: [
+        section(`Redosled sklapanja — ${heading}`, 'Prvo se zavari ram sa uspravnim cevima (krilo šire od 2,5 m) i ojačanjima, pa se u gotov ram ubacuje ispuna izabranog modela (bočni U profili, prečke). Brojevi su isti kao na sklopnom crtežu.'),
+        { columns: st.steps.map((x) => ({ width: '*', stack: [
+          { text: x.title.toUpperCase(), fontSize: 8, bold: true, color: col, characterSpacing: 0.4, margin: [0, 0, 0, 3] },
+          { image: x.png, fit: [386, imgH], alignment: 'center', margin: [0, 0, 0, 6] },
+          stepTable(x.rows),
+        ] })), columnGap: 14 },
+      ],
+    };
+  };
   for (const grp of groups) {
     const e = grp.rep;
     const n = grp.members.length;
     const heading = `${tagsOf(grp)} ${labelOf(grp)}${n > 1 ? ` (${n}×)` : ''}`;
     const col = colors.get(e.key) ?? '#475569';
+    const steps = e.isGate ? await stepsPage(e.slidingIndex ?? e.itemIndex, heading, col) : null;
     if (e.slidingIndex === undefined) {
       // ograda i krilne kapije: sklopni crtež u boji elementa (iste boje kao shema i kartica elementa), sa tabelom brojeva pored
       if (e.itemIndex === undefined) continue;
@@ -204,6 +232,7 @@ export async function buildWorkorderPdfBlob(project: Project, customer: Customer
           a.legend,
         ],
       });
+      if (steps) assemblies.push(steps);
       continue;
     }
     const d = slidingWorkSvg(project, e.slidingIndex, e.parts, materials, col);
@@ -237,6 +266,7 @@ export async function buildWorkorderPdfBlob(project: Project, customer: Customer
         legend,
       ],
     });
+    if (steps) assemblies.push(steps);
   }
 
   const postsTable: any = wo.posts.length

@@ -16,12 +16,12 @@ import { removeStair, setStairGroup } from '../domain/geometry/stairOps';
 import { defaultModelId, FENCE_MODELS, REMOVED_MODELS, TERRACE_NO_GATES, isTerraceModel, projectModelId } from '../domain/models/catalog';
 import { allFenceModels, customModelOf, effectiveModelId, registerCustomModels, setHiddenModels } from '../domain/models/customRegistry';
 import type { CustomModel } from '../domain/models/custom';
-import { framedModelId, hasRealFrame, suggestFrameMaterial, wantsGateFrame } from '../domain/models/gateFrame';
+import { drawnFrameOf, framedModelId, hasRealFrame, suggestFrameMaterial, wantsGateFrame } from '../domain/models/gateFrame';
 import { RAM_TUBE_DEFAULT_MM, isTubesModel, tubesDims } from '../domain/models/tubes';
 import { presetTitle, slidingForModel, specFromPreset, type SlidingSpec } from '../domain/gates/slidingAssembly';
 import { defaultGateConfig, gateClearWidth, gateConfigFromGate, gateFieldsFromModel, GATE_TYPE_LABELS, leafKeyOf, postDimsOf, withModelPosts } from '../domain/gates/gateModels';
 import { postHalfSum } from '../domain/geometry/layout';
-import { propagateItemChange, type EditScope } from '../domain/geometry/editScope';
+import { editScopeTargets, propagateItemChange, type EditScope } from '../domain/geometry/editScope';
 import { leafKey, leafSeed } from '../domain/models/leafSeed';
 import { doubleGateSeed, singleGateSeed } from '../domain/models/doubleGateSeed';
 import { pairWidth } from '../domain/models/pairHardware';
@@ -133,7 +133,8 @@ interface AppState {
   patchPost: (id: string, patch: Partial<Post>, key?: string) => void;
   setItemModel: (id: string, modelId: FenceModelId) => void;
   /** ram kapije od kvadratne cevi (materijal iz cenovnika); null = bez rama */
-  setGateFrame: (itemId: string, materialId: string | null) => void;
+  /** ram kapije: cev (null = bez rama, odnosno ram iz crteža) i koja strana cevi je čelo; važi i za ostale kapije po izabranom opsegu */
+  setGateFrame: (itemId: string, materialId: string | null, rot?: 0 | 90) => void;
   /** model sa ramom za prikaz kapije od zadatog modela ograde (sličice na stranici Modeli kapija); isti model kad ram ne ide */
   gateInfillWithFrame: (modelId: string) => string;
   setItemColor: (id: string, color: string) => void;
@@ -298,13 +299,13 @@ export const useAppStore = create<AppState>((set, get) => {
   };
 
   /** izvedeni model kapije sa ramom (osnovni model + cev rama): dodaje se u katalog ako ga još nema; vraća njegov ID */
-  const ensureFramedModel = (baseId: string, materialId: string): string | null => {
-    const id = framedModelId(baseId, materialId);
+  const ensureFramedModel = (baseId: string, materialId: string, rot?: 0 | 90): string | null => {
+    const id = framedModelId(baseId, materialId, rot);
     const list = get().settings.customModels ?? [];
     if (list.some((m) => m.id === id)) return id;
     const base = customModelOf(baseId);
     if (!base || !get().materials.some((m) => m.id === materialId)) return null;
-    const stub: CustomModel = { id, name: base.name, kind: 'gate', widthMm: base.widthMm, heightMm: base.heightMm, color: base.color, parts: [], derivedFrom: baseId, frameMaterialId: materialId, updatedAt: new Date().toISOString() };
+    const stub: CustomModel = { id, name: base.name, kind: 'gate', widthMm: base.widthMm, heightMm: base.heightMm, color: base.color, parts: [], derivedFrom: baseId, frameMaterialId: materialId, ...(rot !== undefined ? { frameRot: rot } : {}), updatedAt: new Date().toISOString() };
     const customModels = [...list, stub];
     registerCustomModels(customModels, get().materials);
     set((s) => ({ settings: { ...s.settings, customModels } }));
@@ -318,16 +319,21 @@ export const useAppStore = create<AppState>((set, get) => {
   const withGateFrames = (p: Project, prev?: Project): Project => {
     let changed = false;
     const items = p.items.map((it): LayoutItem => {
-      if (it.kind !== 'gate' || it.gateType === 'sliding') return it;
+      // klizna kapija sa krilom od modela (kao na stranici Modeli kapija) dobija isti ram kao krilne; stari sklop sa svojim ramom ne
+      const sliding = it.kind === 'gate' && it.gateType === 'sliding';
+      if (it.kind !== 'gate' || (sliding && it.sliding && !it.sliding.drawnLeaf)) return it;
       const was = prev?.items.find((x) => x.id === it.id);
       const gf = it.params.gateFrame;
-      const ours = !!gf && it.infillModelId === framedModelId(gf.baseId, gf.materialId);
-      if (was && was.kind === 'gate' && (was.infillModelId === it.infillModelId || ours)) return it;
+      const ours = !!gf && it.infillModelId === framedModelId(gf.baseId, gf.materialId, gf.rot);
+      // klizna kapija dodata pre ovog pravila (ram nikad nije određen) dobija ram pri prvoj izmeni projekta
+      if (was && was.kind === 'gate' && (was.infillModelId === it.infillModelId || ours) && !(sliding && gf === undefined)) return it;
       // „bez rama“ izabrano na kapiji sa ramom: model se vraća na osnovni i tako ostaje
       if (was && was.kind === 'gate' && gf === null && was.params.gateFrame?.baseId === it.infillModelId) return it;
       if (!was && gf !== undefined && ours) return it;
       const base = (ours ? gf!.baseId : it.infillModelId) as string;
       const decide = (patch: Partial<Gate['params']>, infill?: string): LayoutItem => { changed = true; return { ...it, ...(infill ? { infillModelId: infill as FenceModelId } : {}), params: { ...it.params, ...patch } } as LayoutItem; };
+      // klizna kapija od modela sa cevima u U profilima: krilo je isto kao na stranici Modeli kapija (bez dodatog rama)
+      if (sliding && isTubesModel(base as FenceModelId)) return decide({ gateFrame: null }, base);
       if (isTubesModel(base as FenceModelId)) {
         const ram = it.params.ram ?? 'tube';
         return decide({ gateFrame: null, ram, ...(ram === 'tube' && it.params.ramMm === undefined ? { ramMm: Math.max(RAM_TUBE_DEFAULT_MM, Math.round(tubesDims(it.params).uDepthMm)) } : {}) }, base);
@@ -773,15 +779,24 @@ export const useAppStore = create<AppState>((set, get) => {
       const mat = suggestFrameMaterial(m, get().materials);
       return (mat && ensureFramedModel(modelId, mat.id)) || modelId;
     },
-    setGateFrame(itemId, materialId) {
+    setGateFrame(itemId, materialId, rot) {
+      const cur = currentProject();
+      if (!cur) return;
+      // opseg izmene (samo ova kapija / sve kapije / sve): svaka kapija dobija istu cev oko svog modela
+      const scope = get().editor.scope ?? 'one';
+      const targets = new Set(scope === 'one' ? [itemId] : editScopeTargets(cur, itemId, scope));
       get().mutate((p) => ({
         ...p,
         items: p.items.map((it) => {
-          if (it.id !== itemId || it.kind !== 'gate') return it;
-          const baseId = it.params.gateFrame?.baseId ?? it.infillModelId;
-          if (!materialId) return { ...it, infillModelId: baseId, params: { ...it.params, gateFrame: null } } as LayoutItem;
-          const id = ensureFramedModel(baseId, materialId);
-          return id ? ({ ...it, infillModelId: id as FenceModelId, params: { ...it.params, gateFrame: { baseId, materialId } } } as LayoutItem) : it;
+          if (!targets.has(it.id) || it.kind !== 'gate' || isTubesModel(it.infillModelId)) return it;
+          const baseId = it.params.gateFrame?.baseId ?? customModelOf(it.infillModelId)?.derivedFrom ?? it.infillModelId;
+          const base = customModelOf(baseId);
+          if (!base) return it;
+          const drawn = drawnFrameOf(base);
+          // bez cevi, ili ista cev i čelo kao ram nacrtan u modelu: kapija koristi sam model
+          if (!materialId || (drawn && drawn.materialId === materialId && (rot === undefined || rot === drawn.rot))) return { ...it, infillModelId: baseId as FenceModelId, params: { ...it.params, gateFrame: null } } as LayoutItem;
+          const id = ensureFramedModel(baseId, materialId, rot);
+          return id ? ({ ...it, infillModelId: id as FenceModelId, params: { ...it.params, gateFrame: { baseId, materialId, ...(rot !== undefined ? { rot } : {}) } } } as LayoutItem) : it;
         }),
       }), `gframe:${itemId}`);
     },

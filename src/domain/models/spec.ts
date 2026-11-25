@@ -238,12 +238,13 @@ export function evaluateItemParts(modelId: FenceModelId, specs: ModelSpecs | und
     const t = terraceEvaluated(modelId, c.widthMm, c.heightMm - lift, c.params.slats, c.slopeFactor ?? 1, lift);
     if (t) return t;
     const custom = customModelOf(modelId);
-    // odsečen ugao polja menja delove samo na tom polju: računa se iz delova postavljenih na polje
-    if (custom && (c.params.slats?.cornerCut || custom.parts.some((p) => p.endCuts || p.autoGuides === false || (p.lengthMm > 0 && !p.heightMm && p.angleDeg % 90 !== 0)))) {
+    // odsečen ugao polja i uspravne cevi ojačanja (sa U profilima uz njih) menjaju delove na tom polju: računa se iz delova postavljenih na polje
+    const widths = c.leafWidthsMm?.length ? c.leafWidthsMm : [c.widthMm];
+    if (custom && (c.params.slats?.cornerCut || widths.some((w) => customReinforceSplit(modelId, w, c.heightMm - lift, c.params.slats)) || custom.parts.some((p) => p.endCuts || p.autoGuides === false || (p.lengthMm > 0 && !p.heightMm && p.angleDeg % 90 !== 0)))) {
       // Iste stvarne mere i broj komada kao u crtežu, uključujući kose profile i svako krilo zasebno.
       return (c.leafWidthsMm?.length ? c.leafWidthsMm : [c.widthMm]).flatMap((width, i) => {
         const scaled = scaledWithReinforce(custom, width, c.heightMm - lift, c.params.slats);
-        return evaluateSpec([...customSpec(scaled), ...extraSpecFor(modelId, specs)], specVars({ ...c, widthMm: width, heightMm: scaled.heightMm, slopeFactor: 1, leafWidthsMm: undefined, leafIndex: i, doubleGate: false }));
+        return evaluateSpec([...customSpec(scaled, true), ...extraSpecFor(modelId, specs)], specVars({ ...c, widthMm: width, heightMm: scaled.heightMm, slopeFactor: 1, leafWidthsMm: undefined, leafIndex: i, doubleGate: false }));
       });
     }
   }
@@ -256,7 +257,7 @@ export function evaluateItemSpec(parts: SpecPart[], c: SpecContext): EvaluatedPa
     const rows = customReinforceRows(c.modelId, width, c.heightMm - (c.params.liftMm ?? customLiftOf(c.modelId)), c.params.slats);
     return rows.length ? [...parts, ...rows.map((r, i): SpecPart => ({ id: `rf_${r.key}_${i}`, name: r.name, materialId: r.materialId, group: 'Profili ispune', qty: String(r.qty), lengthMm: String(r.lengthMm), enabled: true, role: r.role, note: 'ojačanje platna: dužina sa crteža' }))] : parts;
   };
-  // prečke koje uspravne cevi seku: svaka prečka postaje n + 1 komada dužine (L − n·širina cevi) / (n + 1)
+  // prečke koje uspravne cevi seku: svaka prečka postaje n + 1 komada dužine (L − n·(cev + U profili uz nju)) / (n + 1)
   const split = (evs: EvaluatedPart[], width: number): EvaluatedPart[] => {
     const s = customReinforceSplit(c.modelId, width, c.heightMm - (c.params.liftMm ?? customLiftOf(c.modelId)), c.params.slats);
     if (!s) return evs;
@@ -264,7 +265,7 @@ export function evaluateItemSpec(parts: SpecPart[], c: SpecContext): EvaluatedPa
       const p = ev.part;
       const horizontal = !!p.lengthMm && /\bW\b/.test(p.lengthMm) && !/\bH\b/.test(p.lengthMm) && !p.miterMm && p.group === 'Profili ispune' && !p.id.startsWith('rf_');
       if (!horizontal || ev.lengthMm === null || ev.lengthMm <= width * 0.5 || ev.error) return ev;
-      const len = Math.max(0, (ev.lengthMm - s.n * s.tubeW) / (s.n + 1));
+      const len = Math.max(0, (ev.lengthMm - s.n * s.gapW) / (s.n + 1));
       const qty = ev.qty * (s.n + 1);
       return { ...ev, qty, lengthMm: len, materialQty: (qty * len) / 1000, part: { ...p, note: `${p.note ? `${p.note}; ` : ''}seče se na ${s.n + 1} komada (uspravne cevi ojačanja)` } };
     });

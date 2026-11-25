@@ -1,6 +1,6 @@
 import { isFramePart, modelWithFrame } from './frame';
 import { materialShape, sectionFace } from './materialShape';
-import type { CustomModel } from './custom';
+import { partBounds, type CustomModel } from './custom';
 import type { Material } from './types';
 
 /**
@@ -8,7 +8,7 @@ import type { Material } from './types';
  * (`derivedFrom` + `frameMaterialId`), koji se pri učitavanju sastavlja iz osnovnog modela, pa izmena osnovnog crteža važi i za kapiju.
  */
 export const FRAMED_SEP = '~gf~';
-export const framedModelId = (baseId: string, materialId: string): string => `${baseId}${FRAMED_SEP}${materialId}`;
+export const framedModelId = (baseId: string, materialId: string, rot?: 0 | 90): string => `${baseId}${FRAMED_SEP}${materialId}${rot === undefined ? '' : `~r${rot}`}`;
 
 /** Ima li crtež ram: delovi sa rezom 45° ili ramovski profil. */
 export function hasRealFrame(m: Pick<CustomModel, 'parts'> & Partial<Pick<CustomModel, 'widthMm' | 'heightMm'>>, materials: Material[] = []): boolean {
@@ -70,9 +70,52 @@ export function suggestFrameMaterial(model: Pick<CustomModel, 'parts'>, material
   return best?.m ?? null;
 }
 
-/** crtež sa ramom od izabrane cevi oko celog crteža (rez 45°); ram već nacrtan se ne dodaje drugi put */
-export function framedGateModel(base: CustomModel, mat: Material, materials: Material[]): CustomModel | { error: string } {
+/**
+ * Crtež sa ramom od izabrane cevi (rez 45°) i zadatim okretanjem preseka (koja strana je čelo; bez njega po dubini modela). Crtež koji
+ * već ima ram (rez 45°) dobija novu cev umesto postojeće: ispuna ostaje ista, a okov na ramu i izvan njega prati ivicu rama.
+ * Ram nacrtan bez reza 45° se ne menja.
+ */
+export function framedGateModel(base: CustomModel, mat: Material, materials: Material[], rot?: 0 | 90): CustomModel | { error: string } {
+  const r = rot ?? frameRotFor(mat, modelDepthMm(base.parts.some(isFramePart) ? { parts: base.parts.filter((p) => !isFramePart(p)) } : base, materials));
+  if (base.parts.some(isFramePart)) return reframedModel(base, mat, materials, r);
   if (hasRealFrame(base, materials)) return base;
-  return modelWithFrame(base, mat, materials, frameRotFor(mat, modelDepthMm(base, materials)));
+  return modelWithFrame(base, mat, materials, r);
+}
+
+/** materijal i okretanje postojećeg rama crteža (rez 45°); null kad ga nema */
+export function drawnFrameOf(m: Pick<CustomModel, 'parts'>): { materialId: string; rot: 0 | 90 } | null {
+  const f = m.parts.find(isFramePart);
+  return f ? { materialId: f.materialId, rot: (((f.rot % 180) + 180) % 180) === 90 ? 90 : 0 } : null;
+}
+
+function reframedModel(base: CustomModel, mat: Material, materials: Material[], rot: 0 | 90): CustomModel | { error: string } {
+  const W = base.widthMm; const H = base.heightMm;
+  const shapeOf = (id: string) => materialShape(materials.find((m) => m.id === id) ?? mat);
+  const frame = base.parts.filter(isFramePart).map((p) => ({ p, b: partBounds(p, shapeOf(p.materialId)), v: Math.abs(Math.sin((p.angleDeg * Math.PI) / 180)) > 0.99 }));
+  const L = frame.filter((f) => f.v && f.b.x0 < W / 2); const R = frame.filter((f) => f.v && f.b.x1 > W / 2);
+  const B = frame.filter((f) => !f.v && f.b.y0 < H / 2); const T = frame.filter((f) => !f.v && f.b.y1 > H / 2);
+  const inner = { x0: L.length ? Math.max(...L.map((f) => f.b.x1)) : 0, x1: R.length ? Math.min(...R.map((f) => f.b.x0)) : W, y0: B.length ? Math.max(...B.map((f) => f.b.y1)) : 0, y1: T.length ? Math.min(...T.map((f) => f.b.y0)) : H };
+  const rest = base.parts.filter((p) => !isFramePart(p));
+  const out = modelWithFrame({ ...base, parts: rest }, mat, materials, rot, { left: L.length > 0, right: R.length > 0, top: T.length > 0, bottom: B.length > 0 }, inner);
+  if ('error' in out) return out;
+  // ispuna je pomerena za razliku debljine rama; deo na ramu ili izvan njega (okov) prati svoju ivicu rama
+  const s = materialShape(mat); const face = s.type === 'linear' ? sectionFace(s.section, rot).face : 0;
+  const nl = L.length ? face : 0; const nb = B.length ? face : 0;
+  const W2 = out.widthMm; const H2 = out.heightMm;
+  const map = (x: number, lo: number, hi: number, n0: number, size: number, size2: number): number => {
+    if (x < 0) return x;
+    if (x < lo) return lo > 0 ? (x / lo) * n0 : x;
+    if (x <= hi) return x - lo + n0;
+    if (x <= size) { const band = size - hi; const nb2 = size2 - (hi - lo + n0); return hi - lo + n0 + (band > 0 ? ((x - hi) / band) * nb2 : 0); }
+    return x + size2 - size;
+  };
+  const moved = new Map(rest.map((p) => {
+    const b = partBounds(p, shapeOf(p.materialId));
+    const cx = (b.x0 + b.x1) / 2; const cy = (b.y0 + b.y1) / 2;
+    const dx = map(cx, inner.x0, inner.x1, nl, W, W2) - cx - (nl - inner.x0);
+    const dy = map(cy, inner.y0, inner.y1, nb, H, H2) - cy - (nb - inner.y0);
+    return [p.id, [dx, dy] as const];
+  }));
+  return { ...out, parts: out.parts.map((p) => { const d = moved.get(p.id); return d && (Math.abs(d[0]) > 1e-6 || Math.abs(d[1]) > 1e-6) ? { ...p, x: p.x + d[0], y: p.y + d[1] } : p; }) };
 }
 

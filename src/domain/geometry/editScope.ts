@@ -72,6 +72,8 @@ export function propagateItemChange(prev: Project, next: Project, id: string, sc
     const patch: Rec = sameKind ? { ...sameKey } : { ...crossKey };
     const own = (it.params as unknown as Rec);
     const merged = applyParamChanges(beforeParams, afterParams, own);
+    // ram kapije (cev oko modela te kapije) se postavlja posebno za svaku kapiju u opsegu (setGateFrame), ne prepisuje se
+    if (Object.hasOwn(paramPatch, 'gateFrame')) { if (own.gateFrame !== undefined) merged.gateFrame = own.gateFrame; else delete merged.gateFrame; }
     if (Object.hasOwn(paramPatch, 'slats')) {
       const slats = { ...(merged.slats as Rec ?? {}) }; const mine = (own.slats ?? {}) as Rec;
       if (mine.postOverrides !== undefined) slats.postOverrides = mine.postOverrides; else delete slats.postOverrides;

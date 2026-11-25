@@ -64,9 +64,9 @@ export function registerCustomModels(models: CustomModel[] | undefined, material
     if (!m.derivedFrom) continue;
     const base = REG.get(m.derivedFrom); const mat = materials.find((x) => x.id === m.frameMaterialId);
     if (!base || !mat) continue;
-    const f = framedGateModel(base, mat, materials);
+    const f = framedGateModel(base, mat, materials, m.frameRot);
     if ('error' in f) continue;
-    const r = { ...f, id: m.id, name: base.name, kind: 'gate' as const, draft: undefined, derivedFrom: m.derivedFrom, frameMaterialId: m.frameMaterialId };
+    const r = { ...f, id: m.id, name: base.name, kind: 'gate' as const, draft: undefined, derivedFrom: m.derivedFrom, frameMaterialId: m.frameMaterialId, ...(m.frameRot !== undefined ? { frameRot: m.frameRot } : {}) };
     REG.set(m.id, r); all[m.id] = defOf(r);
   }
 }
@@ -162,11 +162,11 @@ export function customReinforceRows(modelId: string, widthMm: number, heightMm: 
 }
 
 /** uspravne cevi koje seku prečke: broj i širina cevi (null kad ih nema); prečke se u krojnoj listi dele na n + 1 komada */
-export function customReinforceSplit(modelId: string, widthMm: number, heightMm: number, slats?: SlatOverride): { n: number; tubeW: number; cuts: Map<string, [number, number][]> } | null {
+export function customReinforceSplit(modelId: string, widthMm: number, heightMm: number, slats?: SlatOverride): { n: number; tubeW: number; gapW: number; cuts: Map<string, [number, number][]> } | null {
   const m = REG.get(modelId);
   if (!m || m.kind === 'terrace') return null;
   const plan = planReinforce(scaledModel(m, widthMm, heightMm, slats), slats?.reinforce, MATERIALS);
-  return plan && plan.vCount > 0 ? { n: plan.vCount, tubeW: plan.tubeW, cuts: plan.cuts } : null;
+  return plan && plan.vCount > 0 ? { n: plan.vCount, tubeW: plan.tubeW, gapW: plan.gapW, cuts: plan.cuts } : null;
 }
 
 /** broj uspravnih cevi ojačanja i unutrašnja visina platna zadate veličine (za prikaz u podešavanjima) */
@@ -386,7 +386,7 @@ export function customPartRoles(m: CustomModel): Map<string, string> {
  * Specifikacija nacrtanog modela: svaki deo sa crteža postaje stavka. Dužine prate veličinu polja: vodoravni profili se
  * skaliraju sa širinom (W), uspravni sa visinom (H), a broj delova ostaje kao na crtežu.
  */
-export function customSpec(m: CustomModel): SpecPart[] {
+export function customSpec(m: CustomModel, placed = false): SpecPart[] {
   const rows = new Map<string, SpecPart & { n: number; area: number }>();
   const roles = customPartRoles(m);
   const guideIds = guideIdsOf(m.parts, MATERIALS);
@@ -416,7 +416,11 @@ export function customSpec(m: CustomModel): SpecPart[] {
     row.n += 1; row.area += sheetAreaMm2(p) / 1e6;
     rows.set(key, row);
   }
-  const spec: SpecPart[] = [...rows.entries()].map(([key, { n, area, ...part }]) => ({
+  // `placed`: crtež je već postavljen na polje (razvučen, sa ojačanjem i rezovima), pa je broj komada tačno broj delova na crtežu
+  const spec: SpecPart[] = [...rows.entries()].map(([key, { n, area, ...part }]) => placed ? {
+    ...part,
+    qty: key.endsWith('|m2') ? `${Math.round(area * 10000) / 10000}*W/${m.widthMm}*H/${m.heightMm}` : String(n),
+  } : ({
     ...part,
     qty: key.endsWith('|m2') ? `${Math.round(area * 10000) / 10000}*W/${m.widthMm}*H/${m.heightMm}` : slatsIn.has(key) ? (n > slatsIn.get(key)! ? `SLATS+${n - slatsIn.get(key)!}` : 'SLATS') : patKinds.has(key) ? [...patKinds.get(key)!.kinds].sort().map((j) => `HBAR${j}`).join('+') + (n > patKinds.get(key)!.n ? `+${n - patKinds.get(key)!.n}` : '') : String(n),
     note: key.endsWith('|m2') ? 'površina (m²) prati širinu i visinu polja' : slatsIn.has(key) ? 'uspravne letvice: broj se računa za širinu polja (jednak razmak), dužina prati visinu' : patKinds.has(key) ? 'vodoravne prečke: broj se računa za visinu polja (jednak razmak), dužina prati širinu' : part.note ?? (part.lengthMm ? 'dužina sa crteža, prati veličinu polja' : undefined),

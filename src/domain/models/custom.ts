@@ -142,6 +142,8 @@ export interface CustomModel {
   /** ograda: ima li kapija od ovog modela ram od kvadratne cevi (bez vrednosti: ima, osim modela sa tarabicama) */
   gateFrame?: boolean;
   frameMaterialId?: string;
+  /** izvedeni model kapije sa ramom: okretanje preseka cevi rama (koja strana je čelo); bez vrednosti po dubini modela */
+  frameRot?: 0 | 90;
   name: string;
   /** ograda (dvorište), kapija ili ograda za terasu (posebna stranica i crtanje, samo materijali za terase) */
   kind: 'fence' | 'gate' | 'terrace';
