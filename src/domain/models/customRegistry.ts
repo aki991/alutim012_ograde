@@ -1,5 +1,6 @@
 import { tolFormula } from './tolerance';
 import { profileCutData } from './profileCuts';
+import { applyCornerCut } from './cornerCut';
 import { endsLabel } from '../pricing/cutEnds';
 import { setRailingRangeProvider } from '../geometry/layout';
 import { FEATURES } from '../../config/features';
@@ -149,7 +150,8 @@ function stretchedModel(m: CustomModel, widthMm: number, heightMm: number): Cust
 export function scaledWithReinforce(m: CustomModel, widthMm: number, heightMm: number, slats?: SlatOverride): CustomModel {
   // ograda za terasu nema ojačanje cevima (stubove i prečke crta sam model)
   if (m.kind === 'terrace') return scaledModel(m, widthMm, heightMm, slats);
-  return withReinforce(scaledModel(m, widthMm, heightMm, slats), slats?.reinforce, MATERIALS);
+  // odsečen gornji ugao polja: posle ojačanja, da se i cevi ojačanja seku po kosini
+  return applyCornerCut(withReinforce(scaledModel(m, widthMm, heightMm, slats), slats?.reinforce, MATERIALS), slats?.cornerCut, MATERIALS);
 }
 
 /** redovi krojne liste za ojačanje platna zadate veličine (prazno kad ga nema ili model nije nacrtan) */

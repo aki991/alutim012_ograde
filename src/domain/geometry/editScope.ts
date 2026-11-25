@@ -75,6 +75,8 @@ export function propagateItemChange(prev: Project, next: Project, id: string, sc
     if (Object.hasOwn(paramPatch, 'slats')) {
       const slats = { ...(merged.slats as Rec ?? {}) }; const mine = (own.slats ?? {}) as Rec;
       if (mine.postOverrides !== undefined) slats.postOverrides = mine.postOverrides; else delete slats.postOverrides;
+      // odsečen ugao važi samo za polje na kome je zadat (kraj ograde), ne prenosi se na ostala polja
+      if (mine.cornerCut !== undefined) slats.cornerCut = mine.cornerCut; else delete slats.cornerCut;
       if (Object.keys(slats).length) merged.slats = slats; else delete merged.slats;
     }
     // raspored stubova na stepeništu (prvi stub na podu / poslednji stub na stepeniku) ostaje svom polju

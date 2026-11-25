@@ -1,4 +1,5 @@
 import { ChoiceGroup } from '../ui/ChoiceGroup';
+import { CornerCutSettings } from './CornerCutSettings';
 import { colorHex } from '../../domain/models/catalog';
 import { isTerraceBoundary, parseTerracePostId, patchTerracePost, restoreTerracePosts, setTerracePostsEnabled } from '../../domain/geometry/terracePosts';
 import { hasFreeStairPickets } from '../../domain/models/sharedTerrace';
@@ -602,6 +603,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
         </PropertyGroup>}
         {!isTerraceModel(it.modelId) && isCustomModel(it.modelId) && <PropertyGroup title="Napredne opcije">
           <ReinforceSettings id={id} modelId={it.modelId} widthMm={li.clearWidth} heightMm={it.heightMm} params={it.params} />
+          <CornerCutSettings id={id} modelId={it.modelId} widthMm={li.clearWidth} heightMm={it.heightMm} params={it.params} />
         </PropertyGroup>}
       </>
     );

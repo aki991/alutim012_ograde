@@ -47,6 +47,11 @@ export function vBarFill(space: number, bar: number, gap: number, left: number, 
  */
 /** ručno zadate mere letvica na polju ili krilu (mm); mera bez vrednosti ostaje kakva je na crtežu modela */
 export interface SlatOverride {
+  /**
+   * Odsečen gornji ugao polja (kosina na kraju ograde): na strani `side` vrh polja je niži za `dropMm` na samoj ivici, a kosa linija
+   * počinje `inMm` od ivice. Bočni profil se nastavlja kosim profilom istog materijala, a delovi ispune se seku po kosini.
+   */
+  cornerCut?: import('./cornerCut').CornerCut;
   /** Izvedeni spojevi sa susednim poljima; isti krajevi cevi koriste se u prikazu i krojnoj listi. */
   cornerConnections?: import('../geometry/pipeJoints').PipeConnection[];
   /** Tolerancija stakla na ovom polju (ukupno umanjenje samo širine); bez vrednosti važi model. */

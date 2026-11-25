@@ -238,7 +238,8 @@ export function evaluateItemParts(modelId: FenceModelId, specs: ModelSpecs | und
     const t = terraceEvaluated(modelId, c.widthMm, c.heightMm - lift, c.params.slats, c.slopeFactor ?? 1, lift);
     if (t) return t;
     const custom = customModelOf(modelId);
-    if (custom?.parts.some((p) => p.endCuts || p.autoGuides === false || (p.lengthMm > 0 && !p.heightMm && p.angleDeg % 90 !== 0))) {
+    // odsečen ugao polja menja delove samo na tom polju: računa se iz delova postavljenih na polje
+    if (custom && (c.params.slats?.cornerCut || custom.parts.some((p) => p.endCuts || p.autoGuides === false || (p.lengthMm > 0 && !p.heightMm && p.angleDeg % 90 !== 0)))) {
       // Iste stvarne mere i broj komada kao u crtežu, uključujući kose profile i svako krilo zasebno.
       return (c.leafWidthsMm?.length ? c.leafWidthsMm : [c.widthMm]).flatMap((width, i) => {
         const scaled = scaledWithReinforce(custom, width, c.heightMm - lift, c.params.slats);

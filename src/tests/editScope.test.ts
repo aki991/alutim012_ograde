@@ -87,3 +87,14 @@ describe('kapija sa 2 stuba uz betonske stubove na krajevima', () => {
     expect(own.posts.map((x) => x.type)).toEqual(['concrete', 'gate', 'gate', 'concrete', 'concrete']);
   });
 });
+
+describe('odsečen gornji ugao ostaje samo na svom polju', () => {
+  it('izmena kosine na jednom polju se ne prenosi na ostala', () => {
+    const a = createFence(); const b = createFence();
+    const prev = createProject('kosina', [a, b]);
+    const next = { ...prev, items: prev.items.map((it) => it.id === a.id && it.kind === 'fence' ? { ...it, params: { ...it.params, slats: { cornerCut: { side: 'right' as const, dropMm: 300, inMm: 400 } } } } : it) };
+    const out = propagateItemChange(prev, next, a.id, 'all');
+    const other = out.items.find((it) => it.id === b.id);
+    expect(other && 'params' in other ? other.params.slats?.cornerCut : 'x').toBeUndefined();
+  });
+});

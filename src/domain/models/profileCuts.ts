@@ -230,3 +230,61 @@ export function fitProfile(model: CustomModel, id: string, targetId: string | un
   if (targetId) return fitProfileCorner(model, id, targetId, materials);
   return { error: 'Nema profila za uklapanje. Preklopite kraj ovog profila sa drugim profilom u istoj dubini (npr. kosu cev preko rama), pa kliknite „Prilagodi ugao“.' };
 }
+
+/** Ivica kraja posle odsecanja pravom x = a + b · u: početak uzima veću vrednost (max), kraj manju (min). */
+function lineEnvelope(line: Pt[], f: FaceLine, start: boolean): Pt[] {
+  const us = line.map((q) => q[1]);
+  for (let i = 1; i < line.length; i++) {
+    const [x0, u0] = line[i - 1]; const [x1, u1] = line[i];
+    const k = Math.abs(u1 - u0) < 1e-12 ? 0 : (x1 - x0) / (u1 - u0);
+    if (Math.abs(k - f.b) < 1e-12) continue;
+    const u = (f.a - x0 + u0 * k) / (k - f.b);
+    if (u > Math.min(u0, u1) + 1e-6 && u < Math.max(u0, u1) - 1e-6) us.push(u);
+  }
+  const pick = start ? Math.max : Math.min;
+  const pts = us.sort((p, q) => p - q).map((u) => [pick(lineAt(line, u), f.a + f.b * u), u] as Pt);
+  const out: Pt[] = [pts[0]];
+  for (let k = 1; k < pts.length - 1; k++) if (Math.abs(cross(sub(pts[k], out[out.length - 1]), sub(pts[k + 1], pts[k]))) > 1e-6) out.push(pts[k]);
+  out.push(pts[pts.length - 1]);
+  return out;
+}
+
+/**
+ * Odseca profil pravom kroz tačku `P` sa pravcem `dir`; ostaje strana na kojoj je tačka `keep`. Kraj koji prelazi pravu dobija kos rez
+ * (ili dva reza kad prava seče i postojeći rez). Vraća isti deo kad ga prava ne dodiruje, a null kad ceo otpada.
+ * Vođice i uklapanja (U profili) ostaju, pa prečka zadržava toleranciju u krojnoj listi.
+ */
+export function clipProfileByLine(p: CustomPart, shape: MatShape, P: Pt, dir: Pt, keep: Pt): CustomPart | null {
+  if (shape.type !== 'linear') return p;
+  const face = sectionFace(shape.section, partAngle(p));
+  const a = p.angleDeg * Math.PI / 180; const d: Pt = [Math.cos(a), Math.sin(a)]; const n: Pt = [-d[1], d[0]];
+  const local = (q: Pt): Pt => [dot(sub(q, [p.x, p.y]), d), dot(sub(q, [p.x, p.y]), n)];
+  const lp = local(P); const dl: Pt = [dot(dir, d), dot(dir, n)]; const kp = local(keep);
+  const base: CustomPart = p.endCuts ? p : { ...p, endCuts: profileEndCuts(p), cut45: undefined, miter: undefined, miterEnds: undefined, plumbEnds: undefined, cutStartDeg: undefined, cutEndDeg: undefined };
+  const lines = linearEndLines(base, face.u0, face.u1);
+  if (Math.abs(dl[1]) < 1e-9) {
+    // prava paralelna sa profilom: profil ostaje ceo ili ceo otpada
+    const keepSide = Math.sign(kp[1] - lp[1]);
+    const inside = [face.u0, face.u1].every((u) => Math.sign(u - lp[1]) === keepSide || Math.abs(u - lp[1]) < 1e-6);
+    const outside = [face.u0, face.u1].every((u) => Math.sign(u - lp[1]) === -keepSide || Math.abs(u - lp[1]) < 1e-6);
+    return inside ? p : outside ? null : p;
+  }
+  const b = dl[0] / dl[1];
+  const f: FaceLine = { a: lp[0] - lp[1] * b, b };
+  const greater = kp[0] > f.a + f.b * kp[1];
+  const all = [...lines.start, ...lines.end];
+  const fx = (u: number) => f.a + f.b * u;
+  // ceo profil je na strani koja ostaje / koja otpada
+  if (all.every(([x, u]) => greater ? x >= fx(u) - 1e-6 : x <= fx(u) + 1e-6)) return p;
+  if (all.every(([x, u]) => greater ? x <= fx(u) + 1e-6 : x >= fx(u) - 1e-6)) return null;
+  const start = greater ? lineEnvelope(lines.start, f, true) : lines.start;
+  const end = greater ? lines.end : lineEnvelope(lines.end, f, false);
+  if (start.length > 3 || end.length > 3) return p;
+  const deg = (q: Pt, r: Pt) => 90 - Math.atan((r[0] - q[0]) / (r[1] - q[1])) * 180 / Math.PI;
+  const cutOf = (line: Pt[]): [number, EndTip | null] => line.length === 2 ? [deg(line[0], line[1]), null] : [deg(line[0], line[1]), { deg: deg(line[1], line[2]), at: (line[1][1] - face.u0) / face.face }];
+  const [c0, t0] = cutOf(start); const [c1, t1] = cutOf(end);
+  const x0 = Math.min(...start.map((q) => q[0])); const x1 = Math.max(...end.map((q) => q[0]));
+  const o = along([p.x, p.y], d, x0);
+  const next: CustomPart = { ...base, x: o[0], y: o[1], lengthMm: x1 - x0, endCuts: [c0, c1], endTips: t0 || t1 ? [t0, t1] : undefined };
+  return valid(next, face) && next.lengthMm >= 5 ? next : null;
+}
