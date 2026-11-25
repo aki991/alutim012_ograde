@@ -683,7 +683,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
       {it.kind === 'fence' && <nav aria-label="Podešavanja elementa" className="flex flex-wrap gap-1 py-2">
         {([['element-basics', 'Mere'], ...(terraceFence ? [['post-settings', 'Stubovi']] : []), ['element-infill', 'Ispuna'], ['element-stair', terraceFence ? 'Stepenište' : 'Teren'], ...(terraceFence ? [['element-joints', 'Spojevi']] : [])]).map(([target, name]) => <button type="button" key={target} className="btn btn-sm !px-2 !text-xs" onClick={(e) => e.currentTarget.closest('[data-testid="panel-item"]')?.querySelector(`[data-testid="${target}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })}>{name}</button>)}
       </nav>}
-      {body}
+      {/* radnje elementa su na vrhu, iznad mera i boje */}
       <PropertyGroup title="Radnje elementa">
       <div className="flex flex-wrap gap-1.5 mb-2" data-testid="item-actions">
         {!terraceFence && <button className="btn btn-sm" data-testid="btn-duplicate" onClick={() => st.duplicateSelected(1)}><Copy size={14} />Dupliraj</button>}
@@ -691,6 +691,7 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
       </div>
       {!terraceFence && <DuplicateMany kind={it.kind} />}
       </PropertyGroup>
+      {body}
     </Section>
   );
 }
