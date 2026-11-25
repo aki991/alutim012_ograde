@@ -4,6 +4,7 @@ import { FENCE_MODELS } from '../models/catalog';
 import { createCorner, createFence, createGate, createOpening, DEFAULT_FENCE_HEIGHT_MM, DEFAULT_FENCE_WIDTH_MM, DEFAULT_GATE_HEIGHT_MM } from '../models/factories';
 import type { FenceModelId, FenceParams, Finish, GateType, LayoutItem, Mm, Project } from '../models/types';
 import { computeLayout, outerWidthMm } from './layout';
+import { withoutCornerCut } from '../models/cornerCut';
 
 export type NewItemSpec =
   | { kind: 'fence'; modelId?: FenceModelId; stair?: boolean }
@@ -41,7 +42,8 @@ export function referenceDims(p: Project, selectedId?: string | null): Reference
     outerWidthMm: ref.kind === 'fence' ? outerWidthMm(p, p.items.indexOf(ref)) : null,
     clearWidthMm: ref.kind === 'fence' ? computeLayout(p).items[p.items.indexOf(ref)]?.clearWidth ?? null : null,
     heightMm: ref.heightMm,
-    params: ref.params,
+    // odsečen ugao je samo na polju na kome je zadat (kraj ograde): nov element ga ne preuzima
+    params: withoutCornerCut(ref.params),
     color: ref.color,
     finish: ref.finish,
     plinthMm: ref.kind === 'fence' ? ref.plinthMm : undefined,

@@ -4,6 +4,7 @@ import { applyPostRoles, createPost } from '../models/factories';
 import { CONCRETE_POST_WIDTH_MM, PLINTH_DEFAULT_MM, type FenceModelId, FenceSection, type Finish, Gate, LayoutItem, Post, Project } from '../models/types';
 import { widthRangeFor } from '../validation/limits';
 import { computeLayout, isHiddenPost, isSpacer, outerWidthMm, postHalfSum, sumModularWidths } from './layout';
+import { withoutCornerCut } from '../models/cornerCut';
 
 const touch = (p: Project): Project => ({ ...p, updatedAt: new Date().toISOString() });
 
@@ -89,7 +90,8 @@ export function duplicateItem(p: Project, id: string): { project: Project; newId
   const i = indexOfItem(p, id);
   if (i < 0) return { project: p, newId: null };
   const src = p.items[i];
-  const copy = { ...src, id: uid(src.kind), ...('params' in src ? { params: { ...src.params } } : {}) } as LayoutItem;
+  // kopija ne preuzima odsečen ugao: kosina je samo na kraju ograde
+  const copy = { ...src, id: uid(src.kind), ...('params' in src ? { params: withoutCornerCut({ ...src.params }) } : {}) } as LayoutItem;
   return { project: insertItem(p, copy, i + 1), newId: copy.id };
 }
 

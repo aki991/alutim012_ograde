@@ -38,6 +38,7 @@ import { applyPostTemplate as applyPostTemplateTo } from '../domain/models/postT
 import { remapMissingMaterials, repairBrokenGuides } from '../domain/models/materialRemap';
 import { bookProjectStock, isStockStatus, unbookProjectStock } from '../domain/pricing/stockBooking';
 import { uid } from '../utils/id';
+import { stripGateCornerCuts } from '../domain/models/cornerCut';
 
 export interface RemotePatch {
   projects?: { upsert: Project[]; remove: string[] };
@@ -622,7 +623,7 @@ export const useAppStore = create<AppState>((set, get) => {
       // izmena izabranog elementa važi i za ostale prema izabranom opsegu („Sva platna“, „Sve kapije“, „Platna i kapije“)
       const sel = get().editor.selection; const scope = get().editor.scope ?? 'one';
       if (scope !== 'one' && sel?.type === 'item') next = propagateItemChange(cur, next, sel.id, scope);
-      next = withGateFrames(next, cur);
+      next = stripGateCornerCuts(withGateFrames(next, cur));
       const mg = mergeTerraceRuns(next);
       next = withRunPosts(mg.project, get().materials);
       const selNow = get().editor.selection;

@@ -1,6 +1,7 @@
 import { FENCE_MODELS, LEGACY_COLORS, LEGACY_MODEL_MAP, normalizeColorKey, RAL_COLORS } from '../models/catalog';
 import { applyPostRoles, DEFAULT_PRICING } from '../models/factories';
 import { SCHEMA_VERSION, type LayoutItem, type Post, type Project } from '../models/types';
+import { stripGateCornerCuts } from '../models/cornerCut';
 
 export const EXPORT_APP_ID = 'alu-tim-012';
 
@@ -16,6 +17,8 @@ export function migrateProject(p: Project): Project {
   let out = p;
   if (out.items.length === 0 && out.posts.length > 0) out = { ...out, posts: [] };
   if (out.schemaVersion !== SCHEMA_VERSION) out = { ...out, schemaVersion: SCHEMA_VERSION };
+  // kapija nema odsečen ugao: kosina koju je preuzela od ograde se uklanja
+  out = stripGateCornerCuts(out);
   // klizna kapija sa nacrtanim krilom: visina kapije je ukupna visina od tla (ranije visina krila), kao kod ograde i stubova pored nje
   if (out.items.some((it) => it.kind === 'gate' && it.sliding?.drawnLeaf && !it.sliding.heightTotal)) {
     out = { ...out, items: out.items.map((it) => (it.kind === 'gate' && it.sliding?.drawnLeaf && !it.sliding.heightTotal ? { ...it, heightMm: it.heightMm + it.sliding.frameBottomY, sliding: { ...it.sliding, heightTotal: true } } : it)) };

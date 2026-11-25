@@ -143,3 +143,19 @@ export function applyCornerCut(model: CustomModel, cut: CornerCut | undefined, m
   }
   return { ...model, parts };
 }
+
+/** Parametri bez odsečenog ugla: kosina pripada samo polju na kome je zadata, ne prenosi se na nov, dupliran ni susedni element. */
+export function withoutCornerCut<T extends { slats?: { cornerCut?: CornerCut } }>(params: T): T {
+  if (!params.slats?.cornerCut) return params;
+  const { cornerCut: _c, ...slats } = params.slats;
+  return { ...params, slats: Object.keys(slats).length ? slats : undefined };
+}
+
+/** Kapija nema odsečen ugao (nudi se samo na polju ograde); kosina koju je kapija ranije preuzela od ograde se uklanja. */
+export function stripGateCornerCuts<P extends { items: Item[] }, Item extends { kind: string }>(p: P): P {
+  if (!p.items.some((it) => it.kind === 'gate' && (it as { params?: { slats?: { cornerCut?: CornerCut } } }).params?.slats?.cornerCut)) return p;
+  return { ...p, items: p.items.map((it) => {
+    const params = (it as { params?: { slats?: { cornerCut?: CornerCut } } }).params;
+    return it.kind === 'gate' && params?.slats?.cornerCut ? { ...it, params: withoutCornerCut(params) } : it;
+  }) };
+}

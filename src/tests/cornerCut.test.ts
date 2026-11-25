@@ -10,6 +10,10 @@ import { cutAngle } from '../domain/models/profileCuts';
 import { computeLayout } from '../domain/geometry/layout';
 import { buildCutList } from '../domain/pricing/production';
 import type { FenceModelId, Material } from '../domain/models/types';
+import { newItemFor } from '../domain/geometry/newItem';
+import { duplicateItem } from '../domain/geometry/operations';
+import { migrateProject } from '../domain/validation/project';
+import { createGate } from '../domain/models/factories';
 
 const U = 'mat_u_60x28';
 const BAR = 'mat_ek_kv000007';
@@ -119,5 +123,38 @@ describe('odsečen gornji ugao polja', () => {
   it('bez kosine model ostaje isti', () => {
     expect(applyCornerCut(slats, undefined, mats)).toBe(slats);
     expect(applyCornerCut(slats, { side: 'right', dropMm: 0, inMm: 100 }, mats)).toBe(slats);
+  });
+});
+
+describe('odsečen ugao ostaje samo na polju ograde', () => {
+  const cc = { side: 'right' as const, dropMm: 300, inMm: 400 };
+  const cutFence = () => { const f = createFence(); f.params = { ...f.params, slats: { cornerCut: cc, leftMm: 20 } }; return f; };
+
+  it('nova klizna kapija i novo polje uz ogradu sa kosinom ne preuzimaju kosinu, ostala podešavanja da', () => {
+    const fence = cutFence();
+    const project = createProject('kosina', [fence]);
+    for (const spec of [{ kind: 'gate' as const, gateType: 'sliding' as const, modelId: fence.modelId }, { kind: 'fence' as const, modelId: fence.modelId }]) {
+      const { item } = newItemFor(project, spec, fence.modelId, fence.id);
+      expect('params' in item && item.params.slats?.cornerCut).toBeFalsy();
+      expect('params' in item && item.params.slats?.leftMm).toBe(20);
+    }
+    expect(fence.params.slats?.cornerCut).toEqual(cc);
+  });
+
+  it('dupliranje polja ne prenosi kosinu', () => {
+    const fence = cutFence();
+    const { project, newId } = duplicateItem(createProject('kosina', [fence]), fence.id);
+    const copy = project.items.find((it) => it.id === newId)!;
+    expect('params' in copy && copy.params.slats?.cornerCut).toBeFalsy();
+  });
+
+  it('kapija koja je ranije preuzela kosinu je gubi pri učitavanju projekta', () => {
+    const gate = createGate('sliding'); gate.params = { ...gate.params, slats: { cornerCut: cc } };
+    const fence = cutFence();
+    const out = migrateProject(createProject('kosina', [fence, gate]));
+    const g = out.items.find((it) => it.kind === 'gate')!;
+    expect('params' in g && g.params.slats).toBeUndefined();
+    const f = out.items.find((it) => it.kind === 'fence')!;
+    expect('params' in f && f.params.slats?.cornerCut).toEqual(cc);
   });
 });
