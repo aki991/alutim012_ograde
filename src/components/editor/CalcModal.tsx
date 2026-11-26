@@ -1,6 +1,9 @@
 import { useMemo } from 'react';
+import { Undo2 } from 'lucide-react';
 import { buildBom, computePrice } from '../../domain/pricing/calc';
-import type { Project } from '../../domain/models/types';
+import { followsKgPrice, priceFromKg } from '../../domain/pricing/kgPrice';
+import { previousPrice, previousPricing, pricingRestored, pricingWithNew, withNewPrice, withRestoredPrice } from '../../domain/pricing/previousPrice';
+import type { PricingPriceKey, Project } from '../../domain/models/types';
 import { useAppStore } from '../../store/useAppStore';
 import { fmtMoney, fmtNum, fromCurrency, toCurrency } from '../../utils/units';
 import { NumberField, PriceInput, SegmentedField, ToggleField } from '../forms/Fields';
@@ -25,6 +28,10 @@ export function CalcModal({ project, onClose }: { project: Project; onClose: () 
   const curStep = settings.currency === 'EUR' ? 0.1 : 10;
   const setPricing = (patch: Partial<typeof pr>, key?: string) => mutate((p) => ({ ...p, updatedAt: new Date().toISOString(), settings: { ...p.settings, pricing: { ...p.settings.pricing, ...patch } } }), key ?? null);
   const empty = project.items.length === 0;
+  // cene rada, montaže i plastificiranja: izmena pamti staru cenu, a dugme ispod polja je vraća
+  const setPrice = (key: PricingPriceKey, rsd: number, k: string) => mutate((p) => ({ ...p, updatedAt: new Date().toISOString(), settings: { ...p.settings, pricing: pricingWithNew(p.settings.pricing, key, rsd) } }), k);
+  const restorePrice = (key: PricingPriceKey) => mutate((p) => ({ ...p, updatedAt: new Date().toISOString(), settings: { ...p.settings, pricing: pricingRestored(p.settings.pricing, key) } }));
+  const restoreHint = (key: PricingPriceKey) => { const prev = previousPricing(pr, key); return prev === null ? undefined : <RestoreButton label={money(prev)} testId={`price-restore-${key}`} onClick={() => restorePrice(key)} />; };
 
   return (
     <Modal
@@ -54,8 +61,14 @@ export function CalcModal({ project, onClose }: { project: Project; onClose: () 
                     <td className="td !px-2"><div className="font-medium text-[13px] leading-snug break-words">{l.name}</div><div className="text-[11px] text-muted">{l.group}{l.group !== 'Dodatni materijal' && (l.missingPrice || l.unitPriceNet <= 0) && <span className="text-amber-800"> · {l.missingPrice ? 'materijal nije u cenovniku' : 'cena 0 — proveriti'}</span>}</div></td>
                     <td className="td !px-2 text-right tabular-nums text-[13px]" title={`Geometrijski: ${fmtNum(l.geometricQty, 2)} ${l.unit}`}>{fmtNum(l.purchaseQty, l.unit === 'kom' ? 0 : 2)}<span className="text-muted"> {l.unit}</span></td>
                     <td className="td !px-2 text-right">
-                      {mat ? (
-                        <PriceInput label={`Cena: ${l.name}`} testId={`price-input-${mat.id}`} className="!py-1 !px-2" rsd={mat.unitPrice} onChange={(v) => upsertMaterial({ ...mat, unitPrice: v })} />
+                      {mat && followsKgPrice(mat, settings.kgPrice) && priceFromKg(mat, settings.kgPrice!.priceRsd) !== null ? (
+                        // cena iz zajedničke cene po kg: menja se na stranici Materijali i cene
+                        <span className="text-[13px] tabular-nums" data-testid={`price-from-kg-${mat.id}`} title="Cena se računa iz cene po kilogramu za cevi i mase materijala">{fmtNum(cur(mat.unitPrice), 2)}<span className="block text-[11px] text-muted">iz cene po kg</span></span>
+                      ) : mat ? (
+                        <>
+                          <PriceInput label={`Cena: ${l.name}`} testId={`price-input-${mat.id}`} className="!py-1 !px-2" rsd={mat.unitPrice} onChange={(v) => upsertMaterial(withNewPrice(mat, v))} />
+                          {previousPrice(mat) !== null && <RestoreButton label={money(previousPrice(mat)!)} testId={`price-restore-${mat.id}`} onClick={() => upsertMaterial(withRestoredPrice(mat))} />}
+                        </>
                       ) : <span className="text-[13px] tabular-nums">{fmtNum(cur(l.unitPriceNet), 2)}</span>}
                     </td>
                     <td className="td !px-2 text-right tabular-nums font-semibold text-[13px]">{fmtNum(cur(l.total), settings.currency === 'EUR' ? 2 : 0)}</td>
@@ -83,18 +96,27 @@ export function CalcModal({ project, onClose }: { project: Project; onClose: () 
           <div className="rounded-lg bg-primary-50 px-3 py-3 flex justify-between items-baseline mb-4"><b>Ukupno sa PDV-om</b><b className="text-xl tabular-nums" data-testid="calc-total">{money(price.grossTotal)}</b></div>
 
           <h3 className="font-semibold mb-1">Parametri cene</h3>
-          <NumberField label="Plastificiranje po m² (neto)" testId="calc-coating-rate" unit={`${settings.currency}/m²`} value={cur(pr.coatingPerM2Rsd ?? 0)} range={{ min: 0, max: 100000 }} allowZero integer={false} step={curStep} onCommit={(v) => setPricing({ coatingPerM2Rsd: fromCur(v) }, 'coating')} />
+          <NumberField label="Plastificiranje po m² (neto)" testId="calc-coating-rate" unit={`${settings.currency}/m²`} value={cur(pr.coatingPerM2Rsd ?? 0)} range={{ min: 0, max: 100000 }} allowZero integer={false} step={curStep} onCommit={(v) => setPrice('coatingPerM2Rsd', fromCur(v), 'coating')} hint={restoreHint('coatingPerM2Rsd')} />
           <SegmentedField label="Zarada" value={pr.profitMode} options={[{ value: 'margin', label: 'Marža' }, { value: 'markup', label: 'Uvećanje' }]} onChange={(v) => setPricing({ profitMode: v })} testId="profit-mode" />
           <NumberField label={pr.profitMode === 'margin' ? 'Marža' : 'Uvećanje'} unit="%" value={pr.profitPercent} range={{ min: 0, max: 99 }} allowZero integer={false} step={1} onCommit={(v) => setPricing({ profitPercent: v }, 'pp')} />
           <NumberField label="Popust" unit="%" value={pr.discountPercent} range={LIMITS.percent} allowZero integer={false} step={1} onCommit={(v) => setPricing({ discountPercent: v }, 'dp')} />
           <NumberField label="PDV" unit="%" value={pr.vatPercent} range={LIMITS.percent} allowZero integer={false} step={1} onCommit={(v) => setPricing({ vatPercent: v }, 'vat')} />
           <ToggleField label="Cene su bruto" checked={pr.pricesIncludeVat} onLabel="Sa PDV-om" offLabel="Bez PDV-a" onChange={(v) => setPricing({ pricesIncludeVat: v })} />
-          <NumberField label="Rad po m²" unit={`${settings.currency}/m²`} value={cur(pr.laborPerM2Rsd)} range={{ min: 0, max: 100000 }} allowZero integer={false} step={curStep} onCommit={(v) => setPricing({ laborPerM2Rsd: fromCur(v) }, 'l1')} />
-          <NumberField label="Rad po kapiji" unit={settings.currency} value={cur(pr.laborPerGateRsd)} range={{ min: 0, max: 500000 }} allowZero integer={false} step={curStep} onCommit={(v) => setPricing({ laborPerGateRsd: fromCur(v) }, 'l2')} />
-          <NumberField label="Montaža po m" unit={`${settings.currency}/m`} value={cur(pr.installPerMeterRsd)} range={{ min: 0, max: 100000 }} allowZero integer={false} step={curStep} onCommit={(v) => setPricing({ installPerMeterRsd: fromCur(v) }, 'i1')} />
-          <NumberField label="Montaža po kapiji" unit={settings.currency} value={cur(pr.installPerGateRsd)} range={{ min: 0, max: 500000 }} allowZero integer={false} step={curStep} onCommit={(v) => setPricing({ installPerGateRsd: fromCur(v) }, 'i2')} />
+          <NumberField label="Rad po m²" unit={`${settings.currency}/m²`} value={cur(pr.laborPerM2Rsd)} range={{ min: 0, max: 100000 }} allowZero integer={false} step={curStep} onCommit={(v) => setPrice('laborPerM2Rsd', fromCur(v), 'l1')} hint={restoreHint('laborPerM2Rsd')} />
+          <NumberField label="Rad po kapiji" unit={settings.currency} value={cur(pr.laborPerGateRsd)} range={{ min: 0, max: 500000 }} allowZero integer={false} step={curStep} onCommit={(v) => setPrice('laborPerGateRsd', fromCur(v), 'l2')} hint={restoreHint('laborPerGateRsd')} />
+          <NumberField label="Montaža po m" unit={`${settings.currency}/m`} value={cur(pr.installPerMeterRsd)} range={{ min: 0, max: 100000 }} allowZero integer={false} step={curStep} onCommit={(v) => setPrice('installPerMeterRsd', fromCur(v), 'i1')} hint={restoreHint('installPerMeterRsd')} />
+          <NumberField label="Montaža po kapiji" unit={settings.currency} value={cur(pr.installPerGateRsd)} range={{ min: 0, max: 500000 }} allowZero integer={false} step={curStep} onCommit={(v) => setPrice('installPerGateRsd', fromCur(v), 'i2')} hint={restoreHint('installPerGateRsd')} />
         </div>
       </div>
     </Modal>
+  );
+}
+
+/** dugme koje vraća cenu upisanu pre poslednje izmene */
+function RestoreButton({ label, testId, onClick }: { label: string; testId: string; onClick: () => void }) {
+  return (
+    <button type="button" className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline whitespace-nowrap" data-testid={testId} title={`Vrati staru cenu: ${label}`} onClick={onClick}>
+      <Undo2 size={11} />Vrati {label}
+    </button>
   );
 }

@@ -229,7 +229,12 @@ export interface PricingSettings {
   /** Neto cena plastificiranja po m² razvijene površine. Stari projekti: 0. */
   coatingPerM2Rsd?: number;
   currency: string;
+  /** cene rada, montaže i plastificiranja pre poslednje izmene u kalkulaciji (za dugme „Vrati staru cenu“) */
+  previous?: Partial<Record<PricingPriceKey, number>>;
 }
+
+/** cene u parametrima obračuna koje imaju dugme „Vrati staru cenu“ */
+export type PricingPriceKey = 'coatingPerM2Rsd' | 'laborPerM2Rsd' | 'laborPerGateRsd' | 'installPerMeterRsd' | 'installPerGateRsd';
 
 export interface ProjectSettings {
   totalMode: TotalMode;
@@ -330,6 +335,8 @@ export interface Material {
   unitCorrection?: { from: MaterialUnit; to: MaterialUnit; originalPrice: number };
   /** Jedinična cena u RSD (neto ili bruto, prema podešavanju) */
   unitPrice: number;
+  /** cena pre poslednje izmene u kalkulaciji (za dugme „Vrati staru cenu“) */
+  prevUnitPrice?: number;
   wastePercent: number;
   demo: boolean;
   /**
