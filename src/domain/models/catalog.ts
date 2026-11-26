@@ -1,12 +1,23 @@
 import panelMeta from '../../assets/panels/meta.json';
 import { RAL_CHART } from '../../data/ralChart';
+import { WOOD_DECORS, type WoodGroup } from '../../data/drvo-dekori';
 import type { FenceModelId, FenceParams, Finish, GateType, PostType, MountingType } from './types';
 
-export interface RalColor { key: string; name: string; hex: string }
+export interface RalColor {
+  key: string; name: string; hex: string;
+  /** drvo dekor: grupa na karti, svetliji i tamniji ton i šifra folije (kad je potvrđena) */
+  wood?: { group: WoodGroup; light: string; dark: string; renolit?: string };
+}
 
 /** Jedine boje u aplikaciji: RAL boje sa RAL ton karte (slika karte koju koristi radionica). */
 export const COLOR_CHART: RalColor[] = RAL_CHART.map(([code, hex]) => ({ key: `RAL ${code}`, name: `RAL ${code}`, hex }));
 export const RAL_COLORS: RalColor[] = COLOR_CHART;
+/** Drvo dekori (src/data/drvo-dekori.ts): biraju se na karti boja kao i RAL boje; ključ je „Dekor <naziv>“, npr. „Dekor Orah“. */
+export const WOOD_COLORS: RalColor[] = WOOD_DECORS.map((d) => ({ key: `Dekor ${d.name}`, name: d.name, hex: d.hex, wood: { group: d.group, light: d.light, dark: d.dark, renolit: d.renolit } }));
+export const isWoodColor = (key: string): boolean => !!colorInfo(key)?.wood;
+const WOOD_BY_HEX = new Map<string, RalColor>(WOOD_COLORS.map((c) => [c.hex.toUpperCase(), c]));
+/** drvo dekor po tonu boje: prikazi koji dobijaju samo boju (3D materijali) prepoznaju dekor i crtaju šaru */
+export const woodColorByHex = (hex: string): RalColor | undefined => WOOD_BY_HEX.get(hex.toUpperCase());
 
 /** RAL boje koje zamenjuju stare nazive (bela, inox, dekor drvo): koriste ih početne boje modela i izgled stubova. */
 export const WHITE_COLOR = 'RAL 9003';
@@ -16,7 +27,7 @@ export const DEKOR_COLOR = 'RAL 8011';
 export const LEGACY_COLORS: Readonly<Record<string, string>> = { BELA: WHITE_COLOR, INOX: INOX_COLOR, 'DEKOR ORAH': DEKOR_COLOR };
 export const normalizeColorKey = (key: string): string => LEGACY_COLORS[key] ?? key;
 
-const COLOR_INDEX = new Map<string, RalColor>(COLOR_CHART.map((c) => [c.key, c]));
+const COLOR_INDEX = new Map<string, RalColor>([...COLOR_CHART, ...WOOD_COLORS].map((c) => [c.key, c]));
 export const colorInfo = (key: string): RalColor | undefined => COLOR_INDEX.get(normalizeColorKey(key));
 
 export const colorHex = (key: string): string => (key.startsWith('#') ? key : colorInfo(key)?.hex ?? '#383E42');

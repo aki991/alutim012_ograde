@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { woodMaterialProps, type WoodUv } from './woodTexture';
 
 /** Deljeni materijali (po boji) — ne prave se iznova pri svakom renderu. */
 const metal = new Map<string, THREE.MeshStandardMaterial>();
@@ -6,7 +7,9 @@ const metal = new Map<string, THREE.MeshStandardMaterial>();
 export function metalMaterial(hex: string): THREE.MeshStandardMaterial {
   let m = metal.get(hex);
   if (!m) {
-    m = new THREE.MeshStandardMaterial({ color: hex, roughness: 0.55, metalness: 0.35 });
+    // drvo dekor: tekstura drveta, bez metalnog sjaja
+    const wood = woodMaterialProps(hex);
+    m = wood.map ? new THREE.MeshStandardMaterial({ ...wood, roughness: 0.7, metalness: 0.05 }) : new THREE.MeshStandardMaterial({ color: hex, roughness: 0.55, metalness: 0.35 });
     metal.set(hex, m);
   }
   return m;
@@ -23,11 +26,13 @@ export const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
 
 /** Mat obojena površina (plastifikacija) bez metalnog sjaja: boja na ekranu ostaje bliska zadatoj. */
 const body = new Map<string, THREE.MeshStandardMaterial>();
-export function bodyMaterial(hex: string): THREE.MeshStandardMaterial {
-  let m = body.get(hex);
+export function bodyMaterial(hex: string, uv: WoodUv = 'box'): THREE.MeshStandardMaterial {
+  // drvo dekor: tekstura zavisi od toga kako telo daje koordinate (kutija ili profil izvučen u mm); obična boja je ista za sve
+  const key = woodMaterialProps(hex).map ? `${hex}|${uv}` : hex;
+  let m = body.get(key);
   if (!m) {
-    m = new THREE.MeshStandardMaterial({ color: hex, roughness: 0.75, metalness: 0.05 });
-    body.set(hex, m);
+    m = new THREE.MeshStandardMaterial({ ...woodMaterialProps(hex, uv), roughness: 0.75, metalness: 0.05 });
+    body.set(key, m);
   }
   return m;
 }

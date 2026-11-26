@@ -1,6 +1,8 @@
 import { ChoiceGroup } from '../ui/ChoiceGroup';
 import { useState } from 'react';
-import { COLOR_CHART, DEFAULT_FAVORITE_COLORS, FAVORITE_COLOR_COUNT, FINISHES, colorHex, colorInfo, type RalColor } from '../../domain/models/catalog';
+import { COLOR_CHART, DEFAULT_FAVORITE_COLORS, FAVORITE_COLOR_COUNT, FINISHES, WOOD_COLORS, colorHex, colorInfo, isWoodColor, type RalColor } from '../../domain/models/catalog';
+import { WOOD_DECORS, WOOD_GROUPS } from '../../data/drvo-dekori';
+import { GrainFilter, grainSeed } from '../fences/woodGrain';
 import type { Finish } from '../../domain/models/types';
 import { Modal } from '../ui/Modal';
 
@@ -15,11 +17,44 @@ export function normalizeFavorites(saved?: string[]): string[] {
 }
 
 function Cell({ c, on, onPick }: { c: RalColor; on: boolean; onPick: (key: string) => void }) {
+  const title = c.name === c.key ? c.key : `${c.key} — ${c.name}`;
   return (
-    <button type="button" data-testid="chart-color" data-color={c.key} aria-pressed={on} title={c.name === c.key ? c.key : `${c.key} — ${c.name}`} onClick={() => onPick(c.key)}
+    <button type="button" data-testid="chart-color" data-color={c.key} aria-pressed={on} title={title} onClick={() => onPick(c.key)}
       className={`flex items-stretch rounded-md overflow-hidden border text-left ${on ? 'border-primary ring-2 ring-primary' : 'border-line hover:border-slate-400'}`}>
-      <span className="bg-slate-400 text-white text-[10.5px] leading-none px-1.5 py-2 w-[68px] shrink-0 self-stretch flex items-center whitespace-nowrap">{c.key}</span>
+      <span className={`bg-slate-400 text-white text-[10.5px] leading-none px-1.5 py-2 shrink-0 self-stretch flex items-center whitespace-nowrap w-[68px]`}>{c.key}</span>
       <span className="flex-1 min-h-[28px]" style={{ background: swatchBackground(c.key) }} />
+    </button>
+  );
+}
+
+/** mešavina dva tona (za traku od pet nijansi ispod uzorka) */
+function mixHex(a: string, b: string, t = 0.5): string {
+  const p = (h: string, i: number) => parseInt(h.slice(1 + 2 * i, 3 + 2 * i), 16);
+  return `#${[0, 1, 2].map((i) => Math.round(p(a, i) * (1 - t) + p(b, i) * t).toString(16).padStart(2, '0')).join('')}`;
+}
+
+/**
+ * Drvo dekor na karti: veliki uzorak sa šarom drveta (iste pruge kao na crtežu ograde), ispod traka od pet nijansi
+ * (svetli ton … osnovni … tamni ton), pa naziv dekora i kod boje.
+ */
+function WoodCard({ c, on, onPick }: { c: RalColor; on: boolean; onPick: (key: string) => void }) {
+  const w = c.wood!;
+  const fid = `wood-card-${grainSeed(c.key)}-${c.key.replace(/[^a-z0-9]/gi, '')}`;
+  const en = WOOD_DECORS.find((d) => `Dekor ${d.name}` === c.key)?.nameEn;
+  const tones = [w.light, mixHex(w.light, c.hex), c.hex, mixHex(c.hex, w.dark), w.dark];
+  return (
+    <button type="button" data-testid="chart-color" data-color={c.key} aria-pressed={on} title={`${c.key}${w.renolit ? ` — Renolit ${w.renolit}` : ''} (boja je približna)`} onClick={() => onPick(c.key)}
+      className={`flex flex-col rounded-lg overflow-hidden border bg-white text-left ${on ? 'border-primary ring-2 ring-primary' : 'border-line hover:border-slate-400'}`}>
+      <svg viewBox="0 0 600 260" preserveAspectRatio="none" className="block w-full h-[104px]" aria-hidden="true" data-testid="wood-swatch">
+        <defs><GrainFilter id={fid} seed={grainSeed(c.key)} /></defs>
+        <rect width="600" height="260" fill={c.hex} filter={`url(#${fid})`} />
+      </svg>
+      <span className="flex h-2.5">{tones.map((t, i) => <span key={i} className="flex-1" style={{ background: t }} />)}</span>
+      <span className="px-2.5 pt-1.5 pb-2 leading-tight">
+        <span className="block font-semibold text-[13.5px]">{c.name}</span>
+        {en && <span className="block text-[11.5px] text-muted">{en}</span>}
+        <span className="block text-[11.5px] tabular-nums text-slate-600 mt-0.5">{c.hex.toUpperCase()}{w.renolit ? ` · Renolit ${w.renolit}` : ''}</span>
+      </span>
     </button>
   );
 }
@@ -34,6 +69,8 @@ export function ColorChartModal({ value, finish, favorites, onPick, onFinish, on
 }) {
   const [edit, setEdit] = useState(false);
   const [slot, setSlot] = useState(0);
+  // karta: RAL ton karta ili drvo dekor; otvara se ona na kojoj je trenutna boja
+  const [chart, setChart] = useState<'ral' | 'wood'>(isWoodColor(value) ? 'wood' : 'ral');
   const favs = normalizeFavorites(favorites);
 
   const choose = (key: string) => {
@@ -77,10 +114,31 @@ export function ColorChartModal({ value, finish, favorites, onPick, onFinish, on
         </p>
       </div>
 
-      <div className="text-[13px] font-semibold mb-1.5">RAL ton karta</div>
-      <div className="grid gap-1.5 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6" data-testid="chart-grid">
-        {COLOR_CHART.map((c) => <Cell key={c.key} c={c} on={c.key === value} onPick={choose} />)}
+      <div className="mb-2">
+        <ChoiceGroup label="Karta boja" value={chart} onChange={setChart}
+          options={[{ value: 'ral', label: 'RAL ton karta', testId: 'chart-tab-ral' }, { value: 'wood', label: 'Drvo dekor', testId: 'chart-tab-wood' }]} />
       </div>
+      {chart === 'ral' ? (
+        <>
+          <div className="text-[13px] font-semibold mb-1.5">RAL ton karta</div>
+          <div className="grid gap-1.5 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6" data-testid="chart-grid">
+            {COLOR_CHART.map((c) => <Cell key={c.key} c={c} on={c.key === value} onPick={choose} />)}
+          </div>
+        </>
+      ) : (
+        <div data-testid="chart-wood">
+          <div className="text-[13px] font-semibold mb-0.5">Drvo dekor</div>
+          <p className="text-[12px] text-slate-600 mb-1.5">Boje su približne (za prikaz na ekranu); stvarni ton određuje uzorak folije.</p>
+          {WOOD_GROUPS.map((g) => (
+            <div key={g} className="mb-2.5">
+              <div className="text-[12px] font-semibold text-slate-600 mb-1">{g} · {WOOD_COLORS.filter((c) => c.wood!.group === g).length}</div>
+              <div className="grid gap-2.5 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4" data-testid={`chart-wood-${g}`}>
+                {WOOD_COLORS.filter((c) => c.wood!.group === g).map((c) => <WoodCard key={c.key} c={c} on={c.key === value} onPick={choose} />)}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </Modal>
   );
 }

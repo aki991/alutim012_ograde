@@ -9,12 +9,16 @@ import { memo } from 'react';
 import { activeLeafIndex, doubleLeafBoxes, swingLeafBoxes } from '../../domain/geometry/gates';
 import { computeLayout, isSpacer } from '../../domain/geometry/layout';
 import { cornerInfo, isCorner } from '../../domain/geometry/corner';
-import { colorHex, GATE_LABELS, hasLightFence, leftPostShared, postDrawnByItems, rodCountFor } from '../../domain/models/catalog';
+import { colorHex, isWoodColor, GATE_LABELS, hasLightFence, leftPostShared, postDrawnByItems, rodCountFor } from '../../domain/models/catalog';
 import type { Post, Project } from '../../domain/models/types';
 import { postCapBottom, postCapTop } from '../../domain/models/postTemplates';
 import { fmtMm } from '../../utils/units';
 import { itemLabel } from '../../utils/labels';
 import { InfillArt, SvgDefs } from '../fences/InfillArt';
+import { woodFilter } from '../fences/woodGrain';
+
+/** drvo dekor: šara drveta preko crteža elementa (vlakna vodoravno na letvicama i kapijama, uspravno na stubovima) */
+const grain = (color: string, dir: 'h' | 'v'): string | undefined => (isWoodColor(color) ? woodFilter(dir) : undefined);
 import { GateArt } from '../gates/GateArt';
 import { slidingOverflow } from '../../domain/gates/slidingLayout';
 import { isProductionPost } from '../../domain/models/productionPosts';
@@ -424,10 +428,10 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
               );
             })()}
             {it.kind === 'fence' && !isRl10Model(it.modelId) && (
-              <InfillArt artRange={[li.railingStart - li.clearStart, li.railingEnd - li.clearStart]} modelId={it.modelId} x={x} y={y} w={w} h={it.heightMm} frame={it.params.frameMm} barSize={it.params.barSizeMm} gap={it.params.gapMm} lift={it.params.liftMm} slats={{ ...it.params.slats, stairTan: t }} hex={colorHex(it.color)} colorKey={it.color} postWidths={[layout.posts[li.index].widthMm, layout.posts[li.index + 1].widthMm]} skipLeftPost={layout.posts[li.index].post.removed || leftPostShared(project.items, li.index) || isStairPost(project.items, li.index)} skipRightPost={layout.posts[li.index + 1].post.removed || isStairPost(project.items, li.index + 1)} sloped={li.floorStart !== li.floorEnd} axis={{ x: li.axisStart, w: li.axisEnd - li.axisStart }} rodCount={rodCountFor(it.modelId, it.params, it.heightMm) ?? undefined} ram={ramInsets(it.modelId, it.params)} uid={it.id} />
+              <g filter={grain(it.color, 'h')}><InfillArt artRange={[li.railingStart - li.clearStart, li.railingEnd - li.clearStart]} modelId={it.modelId} x={x} y={y} w={w} h={it.heightMm} frame={it.params.frameMm} barSize={it.params.barSizeMm} gap={it.params.gapMm} lift={it.params.liftMm} slats={{ ...it.params.slats, stairTan: t }} hex={colorHex(it.color)} colorKey={it.color} postWidths={[layout.posts[li.index].widthMm, layout.posts[li.index + 1].widthMm]} skipLeftPost={layout.posts[li.index].post.removed || leftPostShared(project.items, li.index) || isStairPost(project.items, li.index)} skipRightPost={layout.posts[li.index + 1].post.removed || isStairPost(project.items, li.index + 1)} sloped={li.floorStart !== li.floorEnd} axis={{ x: li.axisStart, w: li.axisEnd - li.axisStart }} rodCount={rodCountFor(it.modelId, it.params, it.heightMm) ?? undefined} ram={ramInsets(it.modelId, it.params)} uid={it.id} /></g>
             )}
             {/* klizna kapija (sklop) se crta posebno, iza stubova (vidi dole) */}
-            {it.kind === 'gate' && !(it.gateType === 'sliding' && it.sliding) && <GateArt gate={it} x={x} y={y} w={w} h={it.heightMm} hex={colorHex(it.color)} px={px} realistic={opts.transparent} showDims={opts.showDimensions && !compact} />}
+            {it.kind === 'gate' && !(it.gateType === 'sliding' && it.sliding) && <g filter={grain(it.color, 'h')}><GateArt gate={it} x={x} y={y} w={w} h={it.heightMm} hex={colorHex(it.color)} px={px} realistic={opts.transparent} showDims={opts.showDimensions && !compact} /></g>}
             {it.kind === 'opening' && isCorner(it) && (() => {
               // ugaoni spoj: prečke i rukohvat se savijaju između dva stuba (u razvijenom prikazu — kratka cev sa oznakom ugla)
               const info = cornerInfo(project, li.index);
@@ -478,7 +482,7 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
         const t = run > 0 ? (li.floorEnd - li.floorStart) / run : 0;
         return (
           <g key={`sl-${it.id}`} opacity={dimmedId === it.id ? 0.3 : 1} data-item-art={it.id} pointerEvents="none" transform={t !== 0 ? `matrix(1 ${-t} 0 1 0 ${t * li.axisStart})` : undefined}>
-            <GateArt gate={it} x={li.clearStart} y={y} w={li.clearWidth} h={it.heightMm} hex={colorHex(it.color)} px={px} realistic={opts.transparent} showDims={opts.showDimensions && !compact} />
+            <g filter={grain(it.color, 'h')}><GateArt gate={it} x={li.clearStart} y={y} w={li.clearWidth} h={it.heightMm} hex={colorHex(it.color)} px={px} realistic={opts.transparent} showDims={opts.showDimensions && !compact} /></g>
           </g>
         );
       })}
@@ -506,7 +510,7 @@ function FrontViewBase({ project, scale, options, selectedId, selectedType, sele
               </>
             );
           })()}
-          {!isRl10Post(project.items, lp.index) && (!postDrawnByItems(project.items, lp.index) || isStairPost(project.items, lp.index)) && <PostArt post={{ ...lp.post, heightMm: lp.lengthMm }} x={lp.x} groundY={groundY - lp.floorMm - lp.baseMm} hex={colorHex(lp.post.color)} plinthMm={lp.levelMm} />}
+          {!isRl10Post(project.items, lp.index) && (!postDrawnByItems(project.items, lp.index) || isStairPost(project.items, lp.index)) && <g filter={grain(lp.post.color, 'v')}><PostArt post={{ ...lp.post, heightMm: lp.lengthMm }} x={lp.x} groundY={groundY - lp.floorMm - lp.baseMm} hex={colorHex(lp.post.color)} plinthMm={lp.levelMm} /></g>}
           {interactive && <rect
             x={lp.x + lp.shiftMm - lp.post.widthMm / 2 - 10 * px} y={groundY - lp.floorMm - lp.topMm - 70} width={lp.post.widthMm + 20 * px} height={lp.lengthMm + 70}
             fill="transparent" data-hit="post" data-id={lp.post.id} style={{ cursor: 'pointer' }}

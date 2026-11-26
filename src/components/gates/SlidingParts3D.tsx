@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import * as THREE from 'three';
+import { woodMaterialProps } from '../editor/three/woodTexture';
 import { CATCH_BACK, type Component, type Role, type Shape } from '../../domain/gates/slidingAssembly';
 import { boxGeometry } from '../editor/three/materials';
 import { SLIDING_COLORS } from './SlidingAssemblyArt';
@@ -16,7 +17,7 @@ const matCache = new Map<string, THREE.MeshStandardMaterial>();
 function mat(hex: string, metal: boolean): THREE.MeshStandardMaterial {
   const k = `${hex}|${metal}`;
   let m = matCache.get(k);
-  if (!m) { m = new THREE.MeshStandardMaterial({ color: hex, roughness: metal ? 0.35 : 0.6, metalness: metal ? 0.7 : 0.15, side: THREE.DoubleSide }); matCache.set(k, m); }
+  if (!m) { m = new THREE.MeshStandardMaterial({ ...(metal ? { color: hex } : woodMaterialProps(hex)), roughness: metal ? 0.35 : 0.6, metalness: metal ? 0.7 : 0.15, side: THREE.DoubleSide }); matCache.set(k, m); }
   return m;
 }
 

@@ -6,6 +6,7 @@ import { FENCE_MODELS, panelArt, panelTiles, railArt, railBands, RAIL_POST_MM } 
 import type { FenceModelId } from '../../domain/models/types';
 import { customLiftOf, customPartsFor } from '../../domain/models/customRegistry';
 import { PartSvg } from '../designer/PartsSvg';
+import { WoodGrainFilters } from './woodGrain';
 
 export const GAP_TINT = '#cdd7d0';
 
@@ -40,6 +41,8 @@ export function SvgDefs() {
           <circle cx="110" cy="110" r="9" />
         </g>
       </pattern>
+      {/* šara drveta za drvo dekore (letvice vodoravno, stubovi uspravno) */}
+      <WoodGrainFilters />
       <pattern id="ground-hatch" width="60" height="60" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
         <line x1="0" y1="0" x2="0" y2="60" stroke="#b9c2cc" strokeWidth="6" />
       </pattern>

@@ -109,6 +109,9 @@ function SolidMesh({ s, material }: { s: Solid; material: THREE.Material }) {
 export function PartMesh({ part: source, shape, hex, materialKey, selected }: { part: CustomPart; shape: MatShape; hex: string; materialKey: string; selected: boolean }) {
   const part = source.tube3d ? { ...source, ...source.tube3d } : source;
   const material = selected ? selectedMaterial : bodyMaterial(hex);
+  // drvo dekor: izvučeni profili i ploče imaju koordinate teksture u mm (vidi WoodUv)
+  const along = selected ? selectedMaterial : bodyMaterial(hex, 'mm-along');
+  const plane = selected ? selectedMaterial : bodyMaterial(hex, 'mm-plane');
   const matrix = useMemo(() => {
     // osa profila leži u ravni crteža; širina preseka ide upravno na nju (u ravni), a dubina preseka ka posmatraču
     const a = (part.angleDeg * Math.PI) / 180;
@@ -119,14 +122,14 @@ export function PartMesh({ part: source, shape, hex, materialKey, selected }: { 
   if (part.joint3d) return <group position={[part.x, part.y, part.z]}><CornerJointMesh joint={part.joint3d} material={material} /></group>;
   if (shape.type === 'sheet') {
     const h = part.heightMm ?? 0;
-    if (part.bottomSlopeMm) return <SlopedSheet part={part} thick={shape.thick} material={shape.glass && !selected ? glassMaterial : material} />;
+    if (part.bottomSlopeMm) return <SlopedSheet part={part} thick={shape.thick} material={shape.glass && !selected ? glassMaterial : plane} />;
     return <mesh geometry={boxGeometry} material={shape.glass && !selected ? glassMaterial : material} position={[part.x + part.lengthMm / 2, part.y + h / 2, part.z]} scale={[part.lengthMm, h, shape.thick]} />;
   }
   // kraj sa dva reza (šiljak) se crta kao obris izvučen po dubini; CutBar deformiše presek samo jednim rezom po kraju
-  if (shape.type === 'linear' && part.endCuts && !part.endTips?.some(Boolean)) return <CutBar part={part} section={shape.section} material={material} materialKey={materialKey} matrix={matrix} />;
-  if (shape.type === 'linear' && hasAngledEnds(part)) return <PlumbBar part={part} section={shape.section} material={material} />;
+  if (shape.type === 'linear' && part.endCuts && !part.endTips?.some(Boolean)) return <CutBar part={part} section={shape.section} material={along} materialKey={materialKey} matrix={matrix} />;
+  if (shape.type === 'linear' && hasAngledEnds(part)) return <PlumbBar part={part} section={shape.section} material={plane} />;
   if (shape.type === 'linear') {
-    return <mesh geometry={extruded(materialKey, shape.section, partAngle(part), part.lengthMm)} material={material} matrix={matrix} matrixAutoUpdate={false} castShadow />;
+    return <mesh geometry={extruded(materialKey, shape.section, partAngle(part), part.lengthMm)} material={along} matrix={matrix} matrixAutoUpdate={false} castShadow />;
   }
   return (
     <group position={[part.x, part.y, part.z]} rotation={[0, 0, (part.angleDeg * Math.PI) / 180]}>
