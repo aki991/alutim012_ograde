@@ -92,8 +92,8 @@ export function widthDims(layout: ReturnType<typeof computeLayout>): WidthDim[] 
 }
 
 /**
- * Kote visine sa leve strane: najviše tri — jedna za sva platna ograde, jedna za sve stubove i jedna za sve kapije (ako ih ima),
- * jer kapije obično nisu iste visine kao platna. Svaka kota pokazuje najvišu meru svoje vrste, a klik menja visinu svih.
+ * Kote visine sa leve strane: po jedna za svaku različitu visinu platna ograde i kapije, i jedna za stubove (najviši stub).
+ * Klik na kotu menja visinu svih elemenata te vrste.
  */
 export interface HeightGroup { key: string; kind: 'fence' | 'post' | 'gate'; heightMm: number; plinthMm: number; id: string; /** nivo poda (stepenište, terasa) */ floorMm: number; /** elementi te vrste nisu iste visine: kota pokazuje najvišu */ mixed: boolean }
 export function heightGroups(project: Project, _preferId?: string | null, production = false): HeightGroup[] {
@@ -102,8 +102,15 @@ export function heightGroups(project: Project, _preferId?: string | null, produc
   for (const kind of ['fence', 'gate'] as const) {
     const all = layout.items.filter((li) => li.item.kind === kind);
     if (!all.length) continue;
-    const top = all.reduce((a, li) => (li.item.heightMm > a.item.heightMm ? li : a), all[0]);
-    out.push({ key: kind, kind, heightMm: top.item.heightMm, plinthMm: top.plinthMm, id: top.item.id, floorMm: Math.min(top.floorStart, top.floorEnd), mixed: new Set(all.map((li) => Math.round(li.item.heightMm))).size > 1 });
+    // svaka različita visina (i podnožje) ima svoju kotu, od niže ka višoj
+    const byHeight = new Map<string, LaidItem>();
+    for (const li of all) {
+      const k = `${Math.round(li.item.heightMm)}-${Math.round(li.plinthMm)}`;
+      const prev = byHeight.get(k);
+      if (!prev || Math.min(li.floorStart, li.floorEnd) < Math.min(prev.floorStart, prev.floorEnd)) byHeight.set(k, li);
+    }
+    [...byHeight.entries()].sort(([, a], [, b]) => a.item.heightMm + a.plinthMm - (b.item.heightMm + b.plinthMm)).forEach(([k, li]) =>
+      out.push({ key: `${kind}-${k}`, kind, heightMm: li.item.heightMm, plinthMm: li.plinthMm, id: li.item.id, floorMm: Math.min(li.floorStart, li.floorEnd), mixed: false }));
     if (kind === 'fence') {
       const posts = layout.posts.filter((lp) => !lp.hidden && (!production || isProductionPost(lp.post)));
       if (posts.length) {

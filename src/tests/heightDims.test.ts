@@ -11,11 +11,15 @@ const mixed = () => createProject('p', [
 ]);
 
 describe('kote visine sa leve strane', () => {
-  it('najviše tri: ograda, stubovi i kapije; kota pokazuje najvišu meru', () => {
+  it('svaka različita visina platna i kapije ima svoju kotu; stubovi jednu', () => {
     const g = heightGroups(mixed());
-    expect(g.map((x) => x.kind)).toEqual(['fence', 'post', 'gate']);
-    expect(g[0]).toMatchObject({ heightMm: 1700, mixed: true });
-    expect(g[2]).toMatchObject({ heightMm: 1400, mixed: false });
+    expect(g.map((x) => x.kind)).toEqual(['fence', 'fence', 'post', 'gate']);
+    expect(g.map((x) => x.kind === 'post' ? null : x.heightMm)).toEqual([1500, 1700, null, 1400]);
+    expect(g.filter((x) => x.kind !== 'post').every((x) => !x.mixed)).toBe(true);
+    expect(new Set(g.map((x) => x.key)).size).toBe(g.length);
+    // ista visina na više platna: jedna kota
+    const same = createProject('s', [createFence({ modelId: 'h_narrow', heightMm: 1500 }), createFence({ modelId: 'h_narrow', heightMm: 1500 }), createGate('single', { infillModelId: 'h_narrow', heightMm: 1500 })]);
+    expect(heightGroups(same).map((x) => x.kind)).toEqual(['fence', 'post', 'gate']);
     // bez kapija nema treće kote
     expect(heightGroups(createProject('q', [createFence({ modelId: 'h_narrow' })])).map((x) => x.kind)).toEqual(['fence', 'post']);
   });
