@@ -112,7 +112,7 @@ function PostCard({ type, subtitle, model, hasSelection, onApply }: { type: Post
   return <CatalogCard testId={`cat-post-${type}`} title={POST_LABELS[type]} subtitle={subtitle} thumb={<MiniThumb project={mini} grey={isLightColor(FENCE_MODELS[model].defaultColor)} />} onAdd={onApply} addLabel={hasSelection ? 'Primeni na stub' : 'Primeni na sve'} />;
 }
 
-export type ThumbKind = 'fence' | 'stair' | 'opening' | 'corner' | 'concrete' | GateType;
+export type ThumbKind = 'fence' | 'fence-bare' | 'stair' | 'opening' | 'corner' | 'concrete' | GateType;
 
 /** Sličica elementa izabranog modela (ista u katalogu i u prozoru „Dodaj element"), 150 × 118 px: isti crtež kao u 2D prikazu. */
 export function ElementThumb({ kind, model, size }: { kind: ThumbKind; model: FenceModelId; size?: { width: number; height: number } }) {
@@ -126,6 +126,7 @@ export function ElementThumb({ kind, model, size }: { kind: ThumbKind; model: Fe
     }
     if (kind === 'stair') return createProject('m', [createFence({ modelId: model, widthMm: 2400, heightMm: 800, stair: { riseMm: 700 } })]);
     if (kind === 'fence' || kind === 'corner') return createProject('m', [sampleFence(model)]);
+    if (kind === 'fence-bare') { const p = createProject('m', [sampleFence(model)]); return { ...p, posts: p.posts.map((x) => ({ ...x, removed: true })) }; }
     return createProject('m', [createGate(kind, { infillModelId: model })]);
   }, `t-${kind}-${model}`);
   if (kind === 'corner') return <CornerThumb grey={grey} />;
@@ -170,7 +171,7 @@ const SLIDING_CARDS: { id: string; title: string; subtitle: string; thumb: Slidi
 ];
 
 /**
- * Katalog elemenata izabranog modela. Prvi red: platno, pešačka, jednokrilna, dvokrilna, klizna i samostojeća klizna kapija (klizne sa izborom
+ * Katalog elemenata izabranog modela. Prvi red: platno bez stubova, platno sa stubovima, pešačka, jednokrilna, dvokrilna, klizna i samostojeća klizna kapija (klizne sa izborom
  * ručna / motorna). Drugi red: prazan prostor, aluminijumski i betonski stub (podnožje stuba se zadaje u podešavanjima stuba). Posebni modeli i šabloni
  * kapija se ne nude ovde (nalaze se na stranici Modeli kapija). Model se bira jednom (menja se na svim elementima projekta).
  */
@@ -225,7 +226,12 @@ export function Catalog({ onBeginDrag }: { onBeginDrag: (source: DragSource, e: 
       <div className="space-y-3" data-testid="catalog-items">
         {/* prvi red: platno i kapije */}
         <div className="flex flex-wrap gap-3" data-testid="catalog-row-elements">
-          <CatalogCard testId="cat-fence" title="Platno" subtitle={`${def.name}${terrace ? '' : `
+          {!terrace && (
+            <CatalogCard testId="cat-fence-bare" title="Platno" subtitle={`Samo platno, bez stubova
+${DEFAULT_FENCE_WIDTH_MM} × ${DEFAULT_FENCE_HEIGHT_MM} mm`} thumb={<ElementThumb kind="fence-bare" model={model} />}
+              onAdd={() => addElement({ kind: 'fence', modelId: model, noPosts: true })} onDragStart={startDrag({ kind: 'fence', modelId: model, noPosts: true }, `Platno bez stubova — ${def.name}`)} />
+          )}
+          <CatalogCard testId="cat-fence" title={terrace ? 'Platno' : 'Platno sa stubovima'} subtitle={`${def.name}${terrace ? '' : `
 ${DEFAULT_FENCE_WIDTH_MM} × ${DEFAULT_FENCE_HEIGHT_MM} mm`}`} thumb={<ElementThumb kind="fence" model={model} />} onAdd={() => addElement({ kind: 'fence', modelId: model })} onDragStart={startDrag({ kind: 'fence', modelId: model }, `Platno — ${def.name}`)} />
           {terrace && (
             <CatalogCard testId="cat-fence-angled" title="Platno pod uglom" subtitle="Sledeće platno skreće: ugao se upisuje u polju „Rotacija polja“" thumb={<ElementThumb kind="fence" model={model} />}

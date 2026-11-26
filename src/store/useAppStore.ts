@@ -8,7 +8,7 @@ import { withSquareGlassMaterials, withTerraceMaterials } from '../data/terraceM
 import { createSeedData } from '../data/seed';
 import { loadAll, saveAll, wipeAll } from '../db';
 import {
-  changeColor, changeFinish, changeModelAll, widthChangeProblem, setItemsWidth, duplicateItem, indexOfItem, insertItem, moveItemBy, setOuterWidth, withConcretePosts, updateItem, updateItemParams, updatePost,
+  changeColor, changeFinish, changeModelAll, widthChangeProblem, setItemsWidth, duplicateItem, indexOfItem, insertItem, moveItemBy, setItemPostsRemoved, setOuterWidth, withConcretePosts, updateItem, updateItemParams, updatePost,
 } from '../domain/geometry/operations';
 import { newItemFor } from '../domain/geometry/newItem';
 import { computeLayout } from '../domain/geometry/layout';
@@ -54,7 +54,7 @@ export type Selection = { type: 'item' | 'post'; id: string } | null;
 export type EditorView = 'front' | 'top' | 'three' | 'split' | 'dims' | 'bom' | 'photo';
 
 export type NewElementSpec =
-  | { kind: 'fence'; modelId: FenceModelId; /** polje stepeništa (samo ograde za terase) */ stair?: boolean; /** polje pod uglom prema prethodnom (stepeni, samo ograde za terase): skretanje trase na njegovom levom stubu */ turnDeg?: number }
+  | { kind: 'fence'; modelId: FenceModelId; /** polje stepeništa (samo ograde za terase) */ stair?: boolean; /** polje pod uglom prema prethodnom (stepeni, samo ograde za terase): skretanje trase na njegovom levom stubu */ turnDeg?: number; /** platno bez stubova: stubovi sa obe strane se izostavljaju (osim stuba uz kapiju) */ noPosts?: boolean }
   | { kind: 'gate'; gateType: GateType; modelId?: FenceModelId; /** kapija između betonskih stubova */ concrete?: boolean; /** moj model kapije (ID) koji se postavlja umesto osnovne kapije */ gateModelId?: string }
   | { kind: 'opening' }
   | { kind: 'corner' };
@@ -711,6 +711,9 @@ export const useAppStore = create<AppState>((set, get) => {
           const at = q.items.findIndex((x) => x.id === item.id);
           if (at > 0) q = { ...q, posts: q.posts.map((x, i) => (i === at ? { ...x, turnDeg: spec.turnDeg } : x)) };
         }
+        // platno bez stubova izostavlja stubove sa obe strane; platno sa stubovima i kapija ih vraćaju (stubovi ograde za terasu su deo modela)
+        if (spec.kind === 'fence' && spec.noPosts) q = setItemPostsRemoved(q, item.id, true);
+        else if ((spec.kind === 'fence' && !isTerraceModel(spec.modelId)) || spec.kind === 'gate') q = setItemPostsRemoved(q, item.id, false);
         let w = setOuterWidth(spec.kind === 'gate' && spec.concrete ? withConcretePosts(q, item.id) : q, item.id, outer);
         // zadata svetla širina (sa U profilima): spoljna se dopuni za polovine stubova, tako da otvor bude tačno tražen
         if (clearWidthMm) {

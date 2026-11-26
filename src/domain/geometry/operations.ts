@@ -100,6 +100,22 @@ export function updateItem(p: Project, id: string, patch: Partial<FenceSection> 
   return touch(applyPostRoles({ ...p, items }));
 }
 
+/**
+ * Stubovi sa obe strane elementa: `removed: true` ih izostavlja (platno bez stubova), `false` ih vraća.
+ * Stub uz kapiju se nikad ne izostavlja: kapija visi na stubu.
+ */
+export function setItemPostsRemoved(p: Project, id: string, removed: boolean): Project {
+  const i = indexOfItem(p, id);
+  if (i < 0) return p;
+  const nextToGate = (k: number) => p.items[k - 1]?.kind === 'gate' || p.items[k]?.kind === 'gate';
+  const posts = p.posts.map((post, k) => {
+    if (k !== i && k !== i + 1) return post;
+    if (removed) return nextToGate(k) ? post : { ...post, removed: true };
+    return post.removed ? { ...post, removed: false } : post;
+  });
+  return { ...p, posts };
+}
+
 /** Zadaje spoljnu (zauzetu) dužinu elementa: osa–osa se računa oduzimanjem polovina susednih stubova. */
 export function setOuterWidth(p: Project, id: string, outerMm: number): Project {
   const i = indexOfItem(p, id);
