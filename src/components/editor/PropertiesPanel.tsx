@@ -455,8 +455,21 @@ function ItemPanel({ project, id }: { project: Project; id: string }) {
   const stairIn = stairGroupAt(project.items, index) !== null;
   const common = (
     <>
-      {!stairIn && <NumberField label="Širina" testId="field-width" value={Math.round(outerWidthMm(project, index))} range={{ min: Math.round(wRange.min + half), max: Math.round(wRange.max + half) }} onCommit={(v) => st.setWidth(id, v, `w:${id}`)}
+      {!stairIn && it.kind === 'gate' && <NumberField label="Širina" testId="field-width" value={Math.round(outerWidthMm(project, index))} range={{ min: Math.round(wRange.min + half), max: Math.round(wRange.max + half) }} onCommit={(v) => st.setWidth(id, v, `w:${id}`)}
         hint={isTotalLocked(project) ? 'Ukupna dužina je zaključana: ostala platna se prilagođavaju da zbir ostane isti.' : undefined} />}
+      {/* platno: širina bez stubića, a ispod nje širina sa stubićima; obe važe za izabrani opseg izmena (npr. „Sva platna“) */}
+      {!stairIn && it.kind !== 'gate' && (() => {
+        const posts = Math.round(outerWidthMm(project, index) - li.clearWidth);
+        const outerRange = { min: Math.round(wRange.min + half), max: Math.round(wRange.max + half) };
+        return (
+          <>
+            <NumberField label="Širina" testId="field-clear-width" value={Math.round(li.clearWidth)} range={{ min: Math.max(1, outerRange.min - posts), max: outerRange.max - posts }} onCommit={(v) => st.setItemWidth(id, v, 'clear', `w:${id}`)}
+              hint={isTotalLocked(project) ? 'Platno bez stubića. Ukupna dužina je zaključana: ostala platna se prilagođavaju da zbir ostane isti.' : 'Platno bez stubića'} />
+            <NumberField label="Širina sa stubićima" testId="field-width" value={Math.round(outerWidthMm(project, index))} range={outerRange} onCommit={(v) => st.setItemWidth(id, v, 'outer', `w:${id}`)}
+              hint="Platno i po pola susednih stubića" />
+          </>
+        );
+      })()}
       <NumberField label="Visina" testId="field-height" value={it.heightMm} range={heightRangeFor(it)} onCommit={(v) => (stairIn ? st.mutate((p) => setStairGroup(p, id, { heightMm: v }), `h:${id}`) : st.patchItem(id, { heightMm: v }, 'h'))} />
     </>
   );

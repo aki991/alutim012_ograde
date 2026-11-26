@@ -111,6 +111,31 @@ export function setOuterWidth(p: Project, id: string, outerMm: number): Project 
   return res.remainingMm === 0 ? res.project : p;
 }
 
+/**
+ * Zadaje istu širinu svim navedenim elementima: svetlu (platno između stubića) ili spoljnu (sa stubićima). Svakom elementu se mera osa–osa
+ * menja za razliku do zadate širine, pa stubići ostaju kakvi jesu. Zaključana ukupna dužina se popunjava ostalim slobodnim platnima;
+ * kad to ne može, ili širina nekog elementa izlazi iz granica, ništa se ne menja i vraća se razlog.
+ */
+export function setItemsWidth(p: Project, ids: string[], mm: number, mode: 'clear' | 'outer'): { project: Project; problem: string | null } {
+  const laid = computeLayout(p);
+  const targets = new Set(ids);
+  let problem: string | null = null;
+  const items = p.items.map((it, i) => {
+    if (!targets.has(it.id)) return it;
+    const cur = mode === 'clear' ? laid.items[i].clearWidth : outerWidthMm(p, i);
+    const widthMm = Math.max(1, Math.round(it.widthMm + mm - cur));
+    const r = widthRangeFor(it);
+    if (!problem && (widthMm < r.min || widthMm > r.max)) problem = `širina ${i + 1}. elementa bi izašla iz dozvoljenih granica (${r.min}–${r.max} mm osa–osa).`;
+    return { ...it, widthMm } as LayoutItem;
+  });
+  if (problem) return { project: p, problem };
+  const q = touch(applyPostRoles({ ...p, items }));
+  if (!isTotalLocked(q)) return { project: q, problem: null };
+  const res = autoFillToFixedTotal(q, q.settings.fillStrategy, ids);
+  return res.remainingMm === 0 ? { project: res.project, problem: null }
+    : { project: p, problem: `ukupna dužina je zaključana, a ostala platna ne mogu da popune razliku (${res.reason ?? 'granice širine'}). Otključajte ukupnu dužinu ili neko platno.` };
+}
+
 /** Ukupna dužina je zaključana (režim „Fiksna"): zbir mera osa–osa je zadata vrednost. */
 export const isTotalLocked = (p: Project): boolean => p.settings.totalMode === 'fixed';
 

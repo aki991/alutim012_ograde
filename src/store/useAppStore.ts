@@ -8,7 +8,7 @@ import { withSquareGlassMaterials, withTerraceMaterials } from '../data/terraceM
 import { createSeedData } from '../data/seed';
 import { loadAll, saveAll, wipeAll } from '../db';
 import {
-  changeColor, changeFinish, changeModelAll, widthChangeProblem, duplicateItem, indexOfItem, insertItem, moveItemBy, setOuterWidth, withConcretePosts, updateItem, updateItemParams, updatePost,
+  changeColor, changeFinish, changeModelAll, widthChangeProblem, setItemsWidth, duplicateItem, indexOfItem, insertItem, moveItemBy, setOuterWidth, withConcretePosts, updateItem, updateItemParams, updatePost,
 } from '../domain/geometry/operations';
 import { newItemFor } from '../domain/geometry/newItem';
 import { computeLayout } from '../domain/geometry/layout';
@@ -142,18 +142,23 @@ interface AppState {
   setItemFinish: (id: string, finish: import('../domain/models/types').Finish | undefined) => void;
   /** zadaje spoljnu širinu platna; sa zaključanom ukupnom dužinom se ostala platna prilagođavaju, a ako ne može — obaveštenje i bez izmene */
   setWidth: (id: string, outerMm: number, key?: string) => boolean;
+  /**
+   * širina iz svojstava elementa: svetla (platno bez stubića) ili spoljna (sa stubićima). Važi za izabrani opseg izmena
+   * („Sva platna“: sva platna dobijaju istu širinu); ako ne može — obaveštenje i bez izmene
+   */
+  setItemWidth: (id: string, mm: number, mode: 'clear' | 'outer', key?: string) => boolean;
 
   upsertCustomer: (c: Customer) => void;
   removeCustomer: (id: string) => void;
   upsertMaterial: (m: Material) => void;
   setMaterials: (list: Material[]) => void;
+  /** jedna cena po kg za cevi (i U profile): upisuje se u podešavanja i odmah preračunava cene svih tih materijala; null je isključuje */
+  setKgPrice: (kg: import('../domain/pricing/kgPrice').KgPrice | null) => void;
   removeMaterial: (id: string) => void;
   updateSettings: (patch: Partial<AppSettings>) => void;
   /** briše ručno nacrtan model; projekti koji ga koriste prelaze na podrazumevani model iz kataloga */
   removeCustomModel: (id: string) => void;
   /** dorada modela iz kataloga: pravi crtež od njegovih delova kao nov model (nov tip) i vraća njegov ID */
-  /** jedna cena po kg za cevi (i U profile): upisuje se u podešavanja i odmah preračunava cene svih tih materijala; null je isključuje */
-  setKgPrice: (kg: import('../domain/pricing/kgPrice').KgPrice | null) => void;
   startDorada: (builtinId: FenceModelId) => string;
   /** dorađen model zamenjuje model iz kataloga („sačuvaj na istom tipu“): projekti sa originalom prelaze na njega */
   replaceBuiltin: (customId: string) => void;
@@ -812,6 +817,21 @@ export const useAppStore = create<AppState>((set, get) => {
       const problem = widthChangeProblem(cur, id, outerMm);
       if (problem) { get().setNotice(`Nije moguće: ${problem}`); return false; }
       get().mutate((p) => setOuterWidth(p, id, outerMm), key);
+      return true;
+    },
+    setItemWidth(id, mm, mode, key) {
+      const cur = currentProject();
+      const src = cur?.items.find((i) => i.id === id);
+      if (!cur || !src) return false;
+      const scope = get().editor.scope ?? 'one';
+      // samo elementi iste vrste (platna na platna, kapije na kapije); stepenište ima svoj raspon
+      const ids = scope === 'one' ? [id] : editScopeTargets(cur, id, scope).filter((t) => {
+        const it = cur.items.find((x) => x.id === t);
+        return t === id || (!!it && it.kind === src.kind && !('stair' in it && it.stair));
+      });
+      const res = setItemsWidth(cur, ids.length ? ids : [id], mm, mode);
+      if (res.problem) { get().setNotice(`Nije moguće: ${res.problem}`); return false; }
+      get().mutate(() => res.project, key);
       return true;
     },
 
