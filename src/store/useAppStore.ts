@@ -28,6 +28,7 @@ import { pairWidth } from '../domain/models/pairHardware';
 import { builtinToCustom } from '../domain/models/fromBuiltin';
 import { cleanMaterialName } from '../domain/models/materialTitle';
 import { withMaterialUnits } from '../domain/models/materialUnits';
+import { withKgPrice } from '../domain/pricing/kgPrice';
 import { createFence, createGate, createProject, DEFAULT_FENCE_WIDTH_MM, nowIso } from '../domain/models/factories';
 import { emptyHistory, recordChange, redo as redoH, undo as undoH, type History } from '../domain/models/history';
 import type {
@@ -151,6 +152,8 @@ interface AppState {
   /** briše ručno nacrtan model; projekti koji ga koriste prelaze na podrazumevani model iz kataloga */
   removeCustomModel: (id: string) => void;
   /** dorada modela iz kataloga: pravi crtež od njegovih delova kao nov model (nov tip) i vraća njegov ID */
+  /** jedna cena po kg za cevi (i U profile): upisuje se u podešavanja i odmah preračunava cene svih tih materijala; null je isključuje */
+  setKgPrice: (kg: import('../domain/pricing/kgPrice').KgPrice | null) => void;
   startDorada: (builtinId: FenceModelId) => string;
   /** dorađen model zamenjuje model iz kataloga („sačuvaj na istom tipu“): projekti sa originalom prelaze na njega */
   replaceBuiltin: (customId: string) => void;
@@ -444,7 +447,8 @@ export const useAppStore = create<AppState>((set, get) => {
               if (next) { materials = next; squareGlassAdded = true; } else localStorage.setItem(SQUARE_GLASS_KEY, '1');
             }
           } catch { /* bez localStorage-a: preskače se */ }
-          const massMaterials = materials.map(withMaterialUnits);
+          // cene cevi pod zajedničkom cenom po kg prate masu i posle dopune mase
+          const massMaterials = materials.map((m) => withKgPrice(withMaterialUnits(m), settings.kgPrice));
           const massChanged = massMaterials.some((m, i) => m !== materials[i]);
           materials = massMaterials;
           // delovi nacrtanih modela sa obrisanim materijalom prelaze na isti materijal (ista šifra) iz cenovnika, npr. čep tarabice K100018
@@ -821,10 +825,15 @@ export const useAppStore = create<AppState>((set, get) => {
       }));
     },
     upsertMaterial(m) {
-      m = withMaterialUnits(m);
+      // cev ili U profil pod zajedničkom cenom po kg: cena prati masu (i kad se masa ili presek promene)
+      m = withKgPrice(withMaterialUnits(m), get().settings.kgPrice);
       set((s) => ({ materials: s.materials.some((x) => x.id === m.id) ? s.materials.map((x) => (x.id === m.id ? m : x)) : [...s.materials, m] }));
     },
-    setMaterials(materials) { set({ materials: materials.map(withMaterialUnits) }); },
+    setMaterials(materials) { const kg = get().settings.kgPrice; set({ materials: materials.map((m) => withKgPrice(withMaterialUnits(m), kg)) }); },
+    setKgPrice(kg) {
+      get().updateSettings({ kgPrice: kg });
+      if (kg) set((s) => ({ materials: s.materials.map((m) => withKgPrice(m, kg)) }));
+    },
     removeMaterial(id) { set((s) => ({ materials: s.materials.filter((x) => x.id !== id) })); },
     updateSettings(patch) {
       set((s) => {

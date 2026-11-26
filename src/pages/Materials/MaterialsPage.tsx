@@ -21,6 +21,8 @@ import { readXlsx } from '../../services/xlsx';
 import { downloadCsv } from '../../services/exports';
 import { downloadMaterialsPdf } from '../../services/pdf';
 import { useAppStore } from '../../store/useAppStore';
+import { KgPriceCard } from '../../components/models/KgPriceCard';
+import { followsKgPrice, priceFromKg } from '../../domain/pricing/kgPrice';
 import { FEATURES, visibleMaterials } from '../../config/features';
 import { collectMaterialUsage } from '../../domain/models/materialUsage';
 import { uid } from '../../utils/id';
@@ -143,6 +145,7 @@ export default function MaterialsPage() {
           <button className="btn btn-primary" data-testid="btn-add-material" onClick={openNew}><Plus size={17} />Dodaj materijal</button>
         </div>} />
       {ioError && <p className="text-sm text-[#b42318] mb-2" role="alert">{ioError}</p>}
+      <KgPriceCard />
       <div className="card p-4">
         <div className="flex flex-wrap gap-3 mb-4">
           <div className="relative flex-1 min-w-[220px] max-w-[380px]"><Search size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" /><input className="input !pl-10" placeholder="Pretraga po nazivu" aria-label="Pretraga materijala" value={q} onChange={(e) => setQ(e.target.value)} /></div>
@@ -177,7 +180,10 @@ export default function MaterialsPage() {
                   <td className="td text-slate-600">{CATS[m.category]}</td>
                   <td className="td"><select aria-label={`Jedinica: ${m.name}`} className="input !w-20 !py-1" value={selectedPriceUnit(m)} disabled={materialPriceUnits(m).length === 1} onChange={(e) => upsertMaterial(selectMaterialPriceUnit(m, e.target.value as MaterialUnit))}>{materialPriceUnits(m).map((u) => <option key={u} value={u}>{MATERIAL_UNIT_LABELS[u]}</option>)}</select>{m.unitCorrection && <span className="block text-[11px] text-amber-700 mt-1" title={`Ispravljena jedinica ${m.unitCorrection.from} → ${m.unitCorrection.to}. Proverite da cena odgovara novoj jedinici.`}>Proveri osnovicu cene</span>}</td>
                   <td className="td text-right tabular-nums whitespace-nowrap" data-testid="material-mass" title={excludesMaterialMass(m) ? 'Izuzeto iz mase aluminijumskog materijala' : m.massReference ?? 'Unesite potvrđenu masu u prozoru Izmeni'}>{formatMaterialMass(m)}</td>
-                  <td className="td"><PriceInput label={`Cena: ${m.name}`} className="!py-1" precision={2} rsd={materialPriceInUnit(m)} onChange={(v) => upsertMaterial({ ...m, unitPrice: materialPriceToBase(m, v), unitCorrection: undefined })} />{priceUsesEstimatedMass(m) && <span className="block text-[11px] text-muted mt-1" data-testid="price-estimated">≈ prema procenjenoj masi</span>}</td>
+                  <td className="td">{followsKgPrice(m, settings.kgPrice) && priceFromKg(m, settings.kgPrice!.priceRsd) !== null
+                    // cena iz zajedničke cene po kg: menja se u kartici „Cena po kilogramu za cevi“
+                    ? <span className="block tabular-nums text-right pr-2" data-testid="price-from-kg" title="Cena se računa iz cene po kilogramu za cevi i mase materijala">{fmtMoney(materialPriceInUnit(m), settings.currency, settings.currencyRateToEur)}<span className="block text-[11px] text-muted">iz cene po kg</span></span>
+                    : <PriceInput label={`Cena: ${m.name}`} className="!py-1" precision={2} rsd={materialPriceInUnit(m)} onChange={(v) => upsertMaterial({ ...m, unitPrice: materialPriceToBase(m, v), unitCorrection: undefined })} />}{priceUsesEstimatedMass(m) && <span className="block text-[11px] text-muted mt-1" data-testid="price-estimated">≈ prema procenjenoj masi</span>}</td>
                   <td className="td"><NumInput ariaLabel={`Otpad: ${m.name}`} min={0} max={100} required unit="%" value={m.wastePercent}
                     onCommit={(v) => { if (v !== null) upsertMaterial({ ...m, wastePercent: v }); }} /></td>
                   <td className="td text-right whitespace-nowrap"><button className="btn btn-sm" title="Izmena materijala: naziv, kategorija i sve mere preseka (cena, jedinica i otpad se menjaju i direktno u tabeli)" data-testid="material-edit" onClick={() => { setIsNew(false); setForm(m); }}>Izmeni</button> <button className="btn btn-sm btn-icon" title="Kopiraj materijal: otvara kopiju sa istim merama i presekom, pa promeniš samo ono što treba" aria-label={`Kopiraj ${m.name}`} data-testid="material-copy" onClick={() => copyMaterial(m)}><Copy size={14} /></button> <button className="btn btn-sm btn-icon btn-danger" aria-label={`Obriši ${m.name}`} onClick={() => setDel(m)}><Trash2 size={14} /></button></td>

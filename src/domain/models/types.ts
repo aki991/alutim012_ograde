@@ -403,6 +403,8 @@ export interface StockBookingRecord {
 }
 
 export interface AppSettings {
+  /** jedna cena po kilogramu za čelične cevi (i po izboru U profile): cene tih materijala se računaju iz nje i mase; bez vrednosti cene su ručne */
+  kgPrice?: import('../pricing/kgPrice').KgPrice | null;
   /** pet boja za brzi izbor u svim poljima za boju (strana karta boja ih menja); bez vrednosti važe podrazumevane */
   favoriteColors?: string[];
   /** napredni prikaz dužina: fiksna ukupna dužina, modularna dužina (osa–osa), zbir svetlih otvora i položaji stubova */
